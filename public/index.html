@@ -92,9 +92,7 @@
   }
   setTimeout(killLoader, 700);
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function () {
-      setTimeout(killLoader, 50);
-    });
+    document.addEventListener('DOMContentLoaded', function () { setTimeout(killLoader, 50); });
   } else {
     setTimeout(killLoader, 50);
   }
@@ -170,7 +168,7 @@
       <button type="button" id="removeAttachmentBtn"><i class="ri-close-line"></i></button>
     </div>
 
-    <form class="composer" id="composerForm">
+    <form class="composer" id="composerForm" onsubmit="return false;">
       <button type="button" class="icon-btn" id="attachBtn" title="Attach"><i class="ri-attachment-2"></i></button>
       <input type="file" id="fileInput" hidden>
       <button type="button" class="icon-btn" id="micBtn" title="Voice"><i class="ri-mic-line"></i></button>
@@ -219,7 +217,7 @@
   <button class="modal-close" data-close="loginModal"><i class="ri-close-line"></i></button>
   <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt=""><h2 id="loginTitle">Sign in</h2></div>
   <p class="modal-sub">Sign in to save your chats across visits. Guests can still chat.</p>
-  <form id="simpleLoginForm">
+  <form id="simpleLoginForm" onsubmit="return false;">
     <label class="field-label">Name</label>
     <input type="text" id="simpleLoginName" placeholder="Alex" required autocomplete="name">
     <label class="field-label">Email</label>
