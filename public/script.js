@@ -1,5 +1,5 @@
 /* ============================================================
-   MiroxAI — frontend (browser)
+   MiroxAI — frontend
    ============================================================ */
 
 let __config = null;
@@ -14,20 +14,28 @@ let __trialRemaining = 10, __trialLimit = 10;
 const LS_KEY = "miroxai_conversations_v1";
 let __conversations = [];
 
+/* ---------- GUARANTEED loading screen dismissal ---------- */
+function hideLoader() {
+  const l = document.getElementById("loadingScreen");
+  if (l) l.classList.add("hidden");
+}
+setTimeout(hideLoader, 1500); // hard ceiling — never stays up more than 1.5s
+
 /* ============================================================
-   BOOT
+   BOOT — fire-and-forget, never blocks the UI
    ============================================================ */
-window.addEventListener("load", async () => {
-  await loadConfig();
-  setTimeout(() => { const l = $("#loadingScreen"); if (l) l.classList.add("hidden"); }, 350);
+window.addEventListener("load", () => {
+  loadConfig();               // no await
   loadBackground();
   loadAppearance();
-  await loadMe();                 // <- user session loaded
-  loadChatsFromLS();
-  renderHistory();
+  loadMe().then(() => {
+    loadChatsFromLS();
+    renderHistory();
+  });
   syncRailDefault();
   wireAll();
-  setTimeout(showLunaAnnouncementOnce, 900);
+  setTimeout(showLunaAnnouncementOnce, 1200);
+  hideLoader();
 });
 
 /* ============================================================
@@ -35,7 +43,8 @@ window.addEventListener("load", async () => {
    ============================================================ */
 async function loadConfig() {
   try {
-    const r = await fetch("/config.json", { cache: "no-store" });
+    const r = await fetch("/api/config", { cache: "no-store" });
+    if (!r.ok) throw new Error("bad status");
     __config = await r.json();
   } catch {
     __config = {
@@ -122,11 +131,6 @@ function updateRailToggleIcon() {
   railToggleIcon.className = document.body.classList.contains("rail-collapsed")
     ? "ri-side-bar-line" : "ri-contract-left-line";
 }
-railToggleBtn?.addEventListener("click", () => {
-  document.body.classList.toggle("rail-collapsed");
-  try { localStorage.setItem("miroxai_rail_collapsed", document.body.classList.contains("rail-collapsed") ? "1" : "0"); } catch {}
-  updateRailToggleIcon();
-});
 
 /* ============================================================
    SIDEBAR
@@ -135,11 +139,6 @@ const sidebar      = $("#sidebar");
 const sidebarScrim = $("#sidebarScrim");
 const openSidebar  = () => { sidebar?.classList.add("open"); sidebarScrim?.classList.add("open"); };
 const closeSidebar = () => { sidebar?.classList.remove("open"); sidebarScrim?.classList.remove("open"); };
-
-$("#hamburgerBtn")?.addEventListener("click", openSidebar);
-$("#sidebarCloseBtn")?.addEventListener("click", closeSidebar);
-sidebarScrim?.addEventListener("click", closeSidebar);
-$("#brandLogo")?.addEventListener("click", () => { startNewChat(); if (window.innerWidth <= 860) closeSidebar(); });
 
 /* ============================================================
    APPEARANCE
@@ -165,15 +164,9 @@ function saveAppearance(patch) {
   localStorage.setItem("miroxai_appearance", JSON.stringify(m));
   applyAppearance(m);
 }
-document.addEventListener("click", e => {
-  const t = e.target.closest("[data-mode]"); if (t && t.closest("#modeOptions")) saveAppearance({ mode: t.dataset.mode });
-  const s = e.target.closest(".swatch");     if (s && s.dataset.theme)        saveAppearance({ theme: s.dataset.theme });
-  const c = e.target.closest("[data-corner]"); if (c && c.closest("#cornerOptions")) saveAppearance({ corner: c.dataset.corner });
-  const f = e.target.closest("[data-font]"); if (f && f.closest("#fontOptions"))   saveAppearance({ font: f.dataset.font });
-});
 
 /* ============================================================
-   CHAT STORAGE (only persists for signed-in users)
+   CHAT STORAGE
    ============================================================ */
 function loadChatsFromLS() {
   if (!__user) { __conversations = []; return; }
@@ -181,7 +174,7 @@ function loadChatsFromLS() {
   catch { __conversations = []; }
 }
 function saveChatsToLS() {
-  if (!__user) return;   // guests don't persist
+  if (!__user) return;
   try { localStorage.setItem(LS_KEY, JSON.stringify(__conversations.slice(0, 100))); } catch {}
 }
 function currentConvo() {
@@ -240,37 +233,6 @@ function startNewChat() {
   $("#mainEl")?.classList.add("new-chat");
   renderHistory();
 }
-$("#newChatBtn")?.addEventListener("click", () => {
-  startNewChat();
-  if (window.innerWidth <= 860) closeSidebar();
-});
-
-/* ============================================================
-   SIDEBAR SEARCH
-   ============================================================ */
-const chatSearchInput = $("#chatSearchInput");
-const clearSearchBtn  = $("#clearSearchBtn");
-chatSearchInput?.addEventListener("input", () => {
-  const q = chatSearchInput.value.trim();
-  clearSearchBtn?.classList.toggle("visible", !!q);
-  const list = $("#historyList"); if (!list) return;
-  list.innerHTML = "";
-  if (!__user) { list.innerHTML = '<li class="history-empty">Sign in to search</li>'; return; }
-  const items = __conversations.filter(c => !q || (c.title || "").toLowerCase().includes(q.toLowerCase()));
-  if (!items.length) { list.innerHTML = '<li class="history-empty">No matches</li>'; return; }
-  items.forEach(c => {
-    const li = document.createElement("li");
-    li.className = "history-item";
-    li.innerHTML = `<i class="ri-chat-3-line"></i><div><span>${escapeHtml(c.title || "New chat")}</span></div>`;
-    li.addEventListener("click", () => openConversationLS(c.id));
-    list.appendChild(li);
-  });
-});
-clearSearchBtn?.addEventListener("click", () => {
-  chatSearchInput.value = "";
-  clearSearchBtn.classList.remove("visible");
-  renderHistory();
-});
 
 /* ============================================================
    MESSAGE HELPERS
@@ -321,8 +283,7 @@ async function sendMessage(userText) {
     convo = {
       id: "c_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4),
       title: userText.slice(0, 48) || "New chat",
-      messages: [],
-      updatedAt: Date.now(),
+      messages: [], updatedAt: Date.now(),
     };
     __conversations.unshift(convo);
     currentConversationId = convo.id;
@@ -418,7 +379,53 @@ async function sendMessage(userText) {
    ============================================================ */
 function wireAll() {
 
-  /* -------- Composer -------- */
+  railToggleBtn?.addEventListener("click", () => {
+    document.body.classList.toggle("rail-collapsed");
+    try { localStorage.setItem("miroxai_rail_collapsed", document.body.classList.contains("rail-collapsed") ? "1" : "0"); } catch {}
+    updateRailToggleIcon();
+  });
+
+  $("#hamburgerBtn")?.addEventListener("click", openSidebar);
+  $("#sidebarCloseBtn")?.addEventListener("click", closeSidebar);
+  sidebarScrim?.addEventListener("click", closeSidebar);
+  $("#brandLogo")?.addEventListener("click", () => { startNewChat(); if (window.innerWidth <= 860) closeSidebar(); });
+
+  document.addEventListener("click", e => {
+    const t = e.target.closest("[data-mode]"); if (t && t.closest("#modeOptions")) saveAppearance({ mode: t.dataset.mode });
+    const s = e.target.closest(".swatch");     if (s && s.dataset.theme)        saveAppearance({ theme: s.dataset.theme });
+    const c = e.target.closest("[data-corner]"); if (c && c.closest("#cornerOptions")) saveAppearance({ corner: c.dataset.corner });
+    const f = e.target.closest("[data-font]"); if (f && f.closest("#fontOptions"))   saveAppearance({ font: f.dataset.font });
+  });
+
+  $("#newChatBtn")?.addEventListener("click", () => {
+    startNewChat();
+    if (window.innerWidth <= 860) closeSidebar();
+  });
+
+  const chatSearchInput = $("#chatSearchInput");
+  const clearSearchBtn  = $("#clearSearchBtn");
+  chatSearchInput?.addEventListener("input", () => {
+    const q = chatSearchInput.value.trim();
+    clearSearchBtn?.classList.toggle("visible", !!q);
+    const list = $("#historyList"); if (!list) return;
+    list.innerHTML = "";
+    if (!__user) { list.innerHTML = '<li class="history-empty">Sign in to search</li>'; return; }
+    const items = __conversations.filter(c => !q || (c.title || "").toLowerCase().includes(q.toLowerCase()));
+    if (!items.length) { list.innerHTML = '<li class="history-empty">No matches</li>'; return; }
+    items.forEach(c => {
+      const li = document.createElement("li");
+      li.className = "history-item";
+      li.innerHTML = `<i class="ri-chat-3-line"></i><div><span>${escapeHtml(c.title || "New chat")}</span></div>`;
+      li.addEventListener("click", () => openConversationLS(c.id));
+      list.appendChild(li);
+    });
+  });
+  clearSearchBtn?.addEventListener("click", () => {
+    chatSearchInput.value = "";
+    clearSearchBtn.classList.remove("visible");
+    renderHistory();
+  });
+
   $("#composerForm")?.addEventListener("submit", e => {
     e.preventDefault();
     if (isReplying) return;
@@ -431,7 +438,6 @@ function wireAll() {
     $("#sendBtn").disabled = isReplying || !$("#messageInput").value.trim();
   });
 
-  /* -------- Attach -------- */
   $("#attachBtn")?.addEventListener("click", () => $("#fileInput").click());
   $("#fileInput")?.addEventListener("change", () => {
     const f = $("#fileInput").files[0]; if (!f) return;
@@ -442,7 +448,6 @@ function wireAll() {
     $("#attachmentPreview").style.display = "none";
   });
 
-  /* -------- Mic -------- */
   const micBtn = $("#micBtn");
   let recognition = null;
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -463,7 +468,6 @@ function wireAll() {
     try { recognition.start(); micBtn.classList.add("recording"); } catch {}
   });
 
-  /* -------- Settings -------- */
   $("#settingsBtn")?.addEventListener("click", () => {
     openModal("settingsModal");
     loadPersona();
@@ -476,7 +480,6 @@ function wireAll() {
     document.querySelector(`.settings-pane[data-pane="${t.dataset.tab}"]`)?.classList.add("active");
   }));
 
-  /* -------- Rail buttons -------- */
   $("#talkModeBtn")?.addEventListener("click", () => {
     $("#callOverlay").classList.add("open");
     $("#callStatus").textContent = "Voice calling unavailable";
@@ -495,10 +498,8 @@ function wireAll() {
     else { openModal("plansModal"); loadPlans(); loadUserKeys(); }
   });
 
-  /* -------- User chip -------- */
   $("#userChip")?.addEventListener("click", () => { if (!__user) openModal("loginModal"); });
 
-  /* -------- Rename chat -------- */
   $("#editTitleBtn")?.addEventListener("click", () => {
     const current = $("#chatTitle").textContent;
     const next = prompt("Rename this chat", current);
@@ -509,7 +510,6 @@ function wireAll() {
     if (convo) { convo.title = trimmed; saveChatsToLS(); renderHistory(); }
   });
 
-  /* -------- Login -------- */
   $("#simpleLoginForm")?.addEventListener("submit", async e => {
     e.preventDefault();
     const status = $("#loginStatus");
@@ -521,13 +521,13 @@ function wireAll() {
       const r = await fetch("/api/auth/simple-login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
         body: JSON.stringify({ name, email }),
       });
       const d = await r.json();
       if (!d.ok) throw new Error(d.error || "Failed");
       status.textContent = "Signed in ✅";
       closeModal("loginModal");
-      // Important: refresh state from server (this reads the Set-Cookie)
       await loadMe();
       loadChatsFromLS();
       renderHistory();
@@ -536,7 +536,6 @@ function wireAll() {
     }
   });
 
-  /* -------- Logout -------- */
   $("#logoutBtn")?.addEventListener("click", async () => {
     try { await fetch("/api/logout", { method: "POST" }); } catch {}
     __user = null; window.__user = null; __tier = "free";
@@ -550,7 +549,6 @@ function wireAll() {
     startNewChat();
   });
 
-  /* -------- Persona -------- */
   $("#savePersonaBtn")?.addEventListener("click", async () => {
     if (!__user) { $("#personaStatus").textContent = "Sign in first."; return; }
     const p = $("#personaInput").value;
@@ -566,7 +564,6 @@ function wireAll() {
     } catch { s.textContent = "Failed."; }
   });
 
-  /* -------- Memory -------- */
   $("#addMemoryBtn")?.addEventListener("click", async () => {
     if (!__user) return;
     const v = $("#memoryInput").value.trim(); if (!v) return;
@@ -579,7 +576,6 @@ function wireAll() {
     loadMemory();
   });
 
-  /* -------- Server check -------- */
   $("#connectServerBtn")?.addEventListener("click", async () => {
     const s = $("#serverStatus"); s.textContent = "Checking…";
     try {
@@ -589,7 +585,6 @@ function wireAll() {
     } catch { s.textContent = "Server unreachable."; }
   });
 
-  /* -------- Support -------- */
   $("#submitReportBtn")?.addEventListener("click", async () => {
     const status  = $("#reportStatus");
     if (!__user) { status.textContent = "Sign in to send a ticket."; return; }
@@ -612,7 +607,6 @@ function wireAll() {
     } catch { status.textContent = "Failed."; }
   });
 
-  /* -------- API keys -------- */
   $("#generateKeyBtn")?.addEventListener("click", async () => {
     const status = $("#keyGenStatus");
     if (!__user) { status.textContent = "Sign in first."; return; }
@@ -633,7 +627,6 @@ function wireAll() {
     } catch { status.textContent = "Failed."; }
   });
 
-  /* -------- Image -------- */
   $("#generateImageBtn")?.addEventListener("click", async () => {
     const prompt = $("#imagePromptInput").value.trim(); if (!prompt) return;
     const btn    = $("#generateImageBtn");
@@ -662,18 +655,46 @@ function wireAll() {
     } finally { btn.disabled = false; }
   });
 
-  /* -------- Video (stub) -------- */
   $("#generateVideoBtn")?.addEventListener("click", () => {
     $("#videoStudioStatus").textContent = "Video generation isn't enabled on this deployment.";
   });
 
-  /* -------- Model picker -------- */
   $("#modelPickerBtn")?.addEventListener("click", e => {
     e.stopPropagation();
     $("#modelPickerMenu")?.classList.toggle("open");
   });
   document.addEventListener("click", e => {
     if (!e.target.closest("#modelPicker")) $("#modelPickerMenu")?.classList.remove("open");
+  });
+
+  /* Background */
+  $("#bgUploadZone")?.addEventListener("click", () => $("#bgFileInput").click());
+  $("#bgFileInput")?.addEventListener("change", () => {
+    const f = $("#bgFileInput").files[0]; if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      bgState.url = reader.result;
+      saveBackgroundPrefs(); applyBackground(); populateBackgroundUI();
+    };
+    reader.readAsDataURL(f);
+  });
+  $("#bgUrlApplyBtn")?.addEventListener("click", () => {
+    const u = $("#bgUrlInput").value.trim(); if (!u) return;
+    bgState.url = u; saveBackgroundPrefs(); applyBackground();
+  });
+  $("#bgDimInput")?.addEventListener("input", e => {
+    bgState.dim = parseInt(e.target.value);
+    $("#bgDimLabel").textContent = bgState.dim + "%";
+    applyBackground(); saveBackgroundPrefs();
+  });
+  $("#bgBlurInput")?.addEventListener("input", e => {
+    bgState.blur = parseInt(e.target.value);
+    $("#bgBlurLabel").textContent = bgState.blur + "px";
+    applyBackground(); saveBackgroundPrefs();
+  });
+  $("#bgRemoveBtn")?.addEventListener("click", () => {
+    bgState.url = null; saveBackgroundPrefs(); applyBackground();
+    $("#bgUrlInput").value = "";
   });
 }
 
@@ -682,7 +703,7 @@ function wireAll() {
    ============================================================ */
 async function loadMe() {
   try {
-    const r = await fetch("/api/me");
+    const r = await fetch("/api/me", { credentials: "same-origin" });
     const d = await r.json();
     window.__user = d.user || null;
     __user = window.__user;
@@ -841,34 +862,6 @@ function populateBackgroundUI() {
   const urlEl = $("#bgUrlInput");
   if (urlEl) urlEl.value = bgState.url && !bgState.url.startsWith("data:") ? bgState.url : "";
 }
-$("#bgUploadZone")?.addEventListener("click", () => $("#bgFileInput").click());
-$("#bgFileInput")?.addEventListener("change", () => {
-  const f = $("#bgFileInput").files[0]; if (!f) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    bgState.url = reader.result;
-    saveBackgroundPrefs(); applyBackground(); populateBackgroundUI();
-  };
-  reader.readAsDataURL(f);
-});
-$("#bgUrlApplyBtn")?.addEventListener("click", () => {
-  const u = $("#bgUrlInput").value.trim(); if (!u) return;
-  bgState.url = u; saveBackgroundPrefs(); applyBackground();
-});
-$("#bgDimInput")?.addEventListener("input", e => {
-  bgState.dim = parseInt(e.target.value);
-  $("#bgDimLabel").textContent = bgState.dim + "%";
-  applyBackground(); saveBackgroundPrefs();
-});
-$("#bgBlurInput")?.addEventListener("input", e => {
-  bgState.blur = parseInt(e.target.value);
-  $("#bgBlurLabel").textContent = bgState.blur + "px";
-  applyBackground(); saveBackgroundPrefs();
-});
-$("#bgRemoveBtn")?.addEventListener("click", () => {
-  bgState.url = null; saveBackgroundPrefs(); applyBackground();
-  $("#bgUrlInput").value = "";
-});
 
 /* ============================================================
    PERSONA / MEMORY loaders
@@ -906,7 +899,7 @@ async function loadMemory() {
 }
 
 /* ============================================================
-   PLANS / KEYS / REPORTS
+   PLANS / KEYS / REPORTS loaders
    ============================================================ */
 async function loadPlans() {
   try {
