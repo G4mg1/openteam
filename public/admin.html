@@ -32,7 +32,7 @@ body{font-family:Inter,-apple-system,sans-serif;background:#08080c;color:#f4f4f8
 .tab.active{color:#818cf8;border-bottom-color:#818cf8}
 .pane{display:none}
 .pane.active{display:block}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px}
 .stat{background:#13131a;border:1px solid #1e1e28;border-radius:14px;padding:14px 16px}
 .stat-n{font-size:22px;font-weight:700;font-family:'JetBrains Mono',monospace}
 .stat-l{font-size:11px;color:#8f8f9d;text-transform:uppercase;font-weight:700;margin-top:2px}
@@ -58,25 +58,23 @@ tr:hover td{background:#17171f}
 .pill.signin{background:rgba(22,163,74,.15);color:#86efac}
 .pill.signup{background:rgba(59,130,246,.15);color:#93c5fd}
 .pill.logout{background:#1e1e28;color:#8f8f9d}
-.pill.error{background:rgba(239,68,68,.15);color:#fca5a5}
 .pill.deleted{background:rgba(220,38,38,.2);color:#fca5a5}
 .tier-select{background:#0e0e14;border:1px solid #2a2a36;color:#f4f4f8;padding:6px 9px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer}
 .thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;padding:14px}
 .thumb{position:relative;aspect-ratio:1/1;border-radius:10px;overflow:hidden;background:#0e0e14;border:1px solid #1e1e28}
 .thumb img{width:100%;height:100%;object-fit:cover;display:block}
-.thumb-info{position:absolute;inset:auto 0 0 0;background:linear-gradient(0deg,rgba(0,0,0,.85),transparent);padding:8px;font-size:11px;color:#e5e7eb;line-height:1.35}
-.thumb-info .u{font-family:'JetBrains Mono',monospace;font-size:10px;color:#a0a0ab;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
-.thumb-info .p{font-size:11px;color:#e5e7eb;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;margin-top:2px}
-.kb-row{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.thumb-info{position:absolute;inset:auto 0 0 0;background:linear-gradient(0deg,rgba(0,0,0,.85),transparent);padding:8px;font-size:11px;color:#e5e7eb}
+.thumb-info .u{font-family:'JetBrains Mono',monospace;font-size:10px;color:#a0a0ab;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.thumb-info .p{font-size:11px;color:#e5e7eb;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px}
+.kb-row{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;padding:14px 18px 0}
 .kb-row input{flex:1;min-width:160px;padding:9px 12px;background:#08080c;border:1px solid #1e1e28;color:#f4f4f8;border-radius:9px;font-size:13px;outline:none}
-.kb-row input:focus{border-color:#6366f1}
 .kb-row textarea{flex:2;min-width:220px;padding:9px 12px;background:#08080c;border:1px solid #1e1e28;color:#f4f4f8;border-radius:9px;font-size:13px;outline:none;resize:vertical;min-height:60px;font-family:inherit}
-.kb-list{padding:14px}
+.kb-list{padding:14px 18px}
 .kb-item{background:#0e0e14;border:1px solid #1e1e28;border-radius:10px;padding:10px 14px;margin-bottom:8px;font-size:13px;display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
 .kb-item .content{flex:1;min-width:0;word-break:break-word}
 .kb-item .q{font-weight:700;color:#a5b4fc;margin-bottom:4px}
 .kb-item .a{color:#c8c8d2;font-size:12.5px;white-space:pre-wrap}
-.toast{position:fixed;bottom:20px;right:20px;background:#13131a;border:1px solid #2a2a36;color:#f4f4f8;padding:12px 18px;border-radius:11px;font-size:13px;font-weight:600;opacity:0;transform:translateY(6px);transition:.2s;pointer-events:none;box-shadow:0 20px 60px -20px rgba(0,0,0,.6)}
+.toast{position:fixed;bottom:20px;right:20px;background:#13131a;border:1px solid #2a2a36;color:#f4f4f8;padding:12px 18px;border-radius:11px;font-size:13px;font-weight:600;opacity:0;transform:translateY(6px);transition:.2s;pointer-events:none}
 .toast.show{opacity:1;transform:none}
 .maintenance-banner{background:rgba(220,38,38,.12);border:1px solid rgba(220,38,38,.3);color:#fca5a5;padding:10px 16px;border-radius:10px;font-size:13px;font-weight:600;margin-bottom:14px}
 </style>
@@ -104,34 +102,21 @@ async function render(){
 }
 
 function renderLogin(){
-  root.innerHTML=`
-    <div class="top"><div class="brand"><img src="/logo.png" onerror="this.style.display='none'"><div class="brand-name">Mirox Admin</div><span class="badge">Console</span></div></div>
-    <div class="login-card">
-      <h1>Admin access</h1><p>Enter the admin password.</p>
-      <label>Password</label>
-      <input id="pw" type="password" placeholder="••••" autofocus maxlength="32">
-      <button id="loginBtn">Unlock</button>
-      <div class="err" id="err"></div>
-    </div>`;
+  root.innerHTML=`<div class="top"><div class="brand"><img src="/logo.png" onerror="this.style.display='none'"><div class="brand-name">Mirox Admin</div><span class="badge">Console</span></div></div>
+    <div class="login-card"><h1>Admin access</h1><p>Enter the admin password.</p>
+    <label>Password</label><input id="pw" type="password" placeholder="••••" autofocus maxlength="32">
+    <button id="loginBtn">Unlock</button><div class="err" id="err"></div></div>`;
   const pw=document.getElementById('pw'),btn=document.getElementById('loginBtn'),err=document.getElementById('err');
   async function go(){const p=pw.value.trim();if(!p)return;btn.disabled=true;err.textContent='';
-    try{const {data}=await safeApi('/api/admin/login',{method:'POST',body:JSON.stringify({password:p})});
-      if(!data.ok)throw new Error(data.error||'Failed');render();
-    }catch(e){err.textContent=e.message;}finally{btn.disabled=false;}}
-  btn.addEventListener('click',go);
-  pw.addEventListener('keydown',e=>{if(e.key==='Enter')go();});
+    try{const {data}=await safeApi('/api/admin/login',{method:'POST',body:JSON.stringify({password:p})});if(!data.ok)throw new Error(data.error||'Failed');render();}
+    catch(e){err.textContent=e.message;}finally{btn.disabled=false;}}
+  btn.addEventListener('click',go);pw.addEventListener('keydown',e=>{if(e.key==='Enter')go();});
 }
 
 async function renderDash(){
   root.innerHTML=`
-    <div class="top">
-      <div class="brand">
-        <img src="/logo.png" onerror="this.style.display='none'">
-        <div class="brand-name">Mirox Admin</div>
-        <span class="badge">Console</span>
-      </div>
-      <button class="logout-btn" id="lo">Sign out</button>
-    </div>
+    <div class="top"><div class="brand"><img src="/logo.png" onerror="this.style.display='none'"><div class="brand-name">Mirox Admin</div><span class="badge">Console</span></div>
+    <button class="logout-btn" id="lo">Sign out</button></div>
     <div id="maintBanner"></div>
     <div class="stats" id="stats"></div>
     <div class="tabs">
@@ -142,60 +127,23 @@ async function renderDash(){
       <button class="tab" data-tab="kb">AI Knowledge</button>
       <button class="tab" data-tab="tools">Tools</button>
     </div>
-
-    <div class="pane active" data-pane="users">
-      <div class="card"><div class="card-head"><h2>Users</h2><button class="btn" id="rfUsers">Refresh</button></div><div id="usersBox"><div class="empty">Loading…</div></div></div>
-    </div>
-
-    <div class="pane" data-pane="chats">
-      <div class="card"><div class="card-head"><h2>Chat logs</h2><button class="btn" id="rfChats">Refresh</button></div><div id="chatsBox"><div class="empty">Loading…</div></div></div>
-    </div>
-
-    <div class="pane" data-pane="images">
-      <div class="card"><div class="card-head"><h2>Image logs</h2><button class="btn" id="rfImages">Refresh</button></div><div id="imagesBox"><div class="empty">Loading…</div></div></div>
-    </div>
-
-    <div class="pane" data-pane="logs">
-      <div class="card"><div class="card-head"><h2>Account logs</h2><button class="btn" id="rfLogs">Refresh</button></div><div id="logsBox"><div class="empty">Loading…</div></div></div>
-    </div>
-
-    <div class="pane" data-pane="kb">
-      <div class="card">
-        <div class="card-head"><h2>AI Knowledge Base</h2><button class="btn" id="rfKb">Refresh</button></div>
-        <div class="kb-list">
-          <div class="kb-row">
-            <input id="kbQ" placeholder="Question (optional)">
-            <textarea id="kbA" placeholder="Answer / fact to always remember"></textarea>
-            <button class="btn primary" id="kbAdd">Add</button>
-          </div>
-          <div id="kbBox" class="empty">Loading…</div>
-        </div>
-      </div>
-    </div>
-
+    <div class="pane active" data-pane="users"><div class="card"><div class="card-head"><h2>Users</h2><button class="btn" id="rfUsers">Refresh</button></div><div id="usersBox"><div class="empty">Loading…</div></div></div></div>
+    <div class="pane" data-pane="chats"><div class="card"><div class="card-head"><h2>Chat logs</h2><button class="btn" id="rfChats">Refresh</button></div><div id="chatsBox"><div class="empty">Loading…</div></div></div></div>
+    <div class="pane" data-pane="images"><div class="card"><div class="card-head"><h2>Image logs</h2><button class="btn" id="rfImages">Refresh</button></div><div id="imagesBox"><div class="empty">Loading…</div></div></div></div>
+    <div class="pane" data-pane="logs"><div class="card"><div class="card-head"><h2>Account logs</h2><button class="btn" id="rfLogs">Refresh</button></div><div id="logsBox"><div class="empty">Loading…</div></div></div></div>
+    <div class="pane" data-pane="kb"><div class="card"><div class="card-head"><h2>AI Knowledge Base</h2><button class="btn" id="rfKb">Refresh</button></div>
+      <div class="kb-row"><input id="kbQ" placeholder="Question (optional)"><textarea id="kbA" placeholder="Answer / fact to always remember"></textarea><button class="btn primary" id="kbAdd">Add</button></div>
+      <div id="kbBox" class="kb-list"><div class="empty">Loading…</div></div>
+    </div></div>
     <div class="pane" data-pane="tools">
-      <div class="card"><div class="card-head"><h2>Maintenance mode</h2></div>
-        <div style="padding:14px 18px">
-          <p class="small" style="margin-bottom:10px">When enabled, the chat is blocked for all users with a maintenance message.</p>
-          <button class="btn" id="maintToggle">Toggle maintenance</button>
-          <span id="maintState" style="margin-left:12px" class="small"></span>
-        </div>
-      </div>
-      <div class="card"><div class="card-head"><h2>Broadcast</h2></div>
-        <div style="padding:14px 18px">
-          <div class="kb-row"><input id="bcMsg" placeholder="Message shown to all users"><button class="btn primary" id="bcSend">Send</button></div>
-          <p class="small">Current: <span id="bcCurrent">none</span></p>
-        </div>
-      </div>
+      <div class="card"><div class="card-head"><h2>Maintenance mode</h2></div><div style="padding:14px 18px"><p class="small" style="margin-bottom:10px">When enabled, chat is blocked for all users.</p><button class="btn" id="maintToggle">Toggle maintenance</button><span id="maintState" style="margin-left:12px" class="small"></span></div></div>
+      <div class="card"><div class="card-head"><h2>Broadcast</h2></div><div style="padding:14px 18px"><div class="kb-row" style="padding:0"><input id="bcMsg" placeholder="Message shown to all users"><button class="btn primary" id="bcSend">Send</button></div><p class="small" style="margin-top:8px">Current: <span id="bcCurrent">none</span></p></div></div>
     </div>`;
-
   document.getElementById('lo').addEventListener('click',async()=>{try{await safeApi('/api/admin/logout',{method:'POST'});}catch{}render();});
-
   document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
     document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
     document.querySelectorAll('.pane').forEach(x=>x.classList.remove('active'));
-    t.classList.add('active');
-    document.querySelector(`.pane[data-pane="${t.dataset.tab}"]`)?.classList.add('active');
+    t.classList.add('active');document.querySelector(`.pane[data-pane="${t.dataset.tab}"]`)?.classList.add('active');
     if(t.dataset.tab==='users')loadUsers();
     if(t.dataset.tab==='chats')loadChats();
     if(t.dataset.tab==='images')loadImages();
@@ -203,7 +151,6 @@ async function renderDash(){
     if(t.dataset.tab==='kb')loadKb();
     if(t.dataset.tab==='tools')loadTools();
   }));
-
   document.getElementById('rfUsers').addEventListener('click',loadUsers);
   document.getElementById('rfChats').addEventListener('click',loadChats);
   document.getElementById('rfImages').addEventListener('click',loadImages);
@@ -212,15 +159,13 @@ async function renderDash(){
   document.getElementById('kbAdd').addEventListener('click',addKb);
   document.getElementById('maintToggle').addEventListener('click',toggleMaint);
   document.getElementById('bcSend').addEventListener('click',sendBc);
-
   loadStats();loadUsers();loadTools();
 }
 
 async function loadStats(){
   const sb=document.getElementById('stats');
   try{const {data}=await safeApi('/api/admin/stats');
-    sb.innerHTML=`
-      <div class="stat"><div class="stat-n">${data.total||0}</div><div class="stat-l">Users</div></div>
+    sb.innerHTML=`<div class="stat"><div class="stat-n">${data.total||0}</div><div class="stat-l">Users</div></div>
       <div class="stat"><div class="stat-n">${data.free||0}</div><div class="stat-l">Free</div></div>
       <div class="stat"><div class="stat-n">${data.pro||0}</div><div class="stat-l">Pro</div></div>
       <div class="stat"><div class="stat-n">${data.ultimate||0}</div><div class="stat-l">Ultimate</div></div>
@@ -234,24 +179,14 @@ async function loadUsers(){
   const box=document.getElementById('usersBox');
   try{const {data}=await safeApi('/api/admin/users');const us=data.users||[];
     if(!us.length){box.innerHTML='<div class="empty">No users yet.</div>';return;}
-    box.innerHTML=`<table><thead><tr><th>Email</th><th>Name</th><th>Tier</th><th>Joined</th><th>Change</th><th></th></tr></thead><tbody>${
-      us.map(u=>{const t=u.tier||'free';const dt=u.created_at?new Date(u.created_at*1000).toLocaleString():'—';
-        return `<tr>
-          <td class="mono">${esc(u.email)}</td>
-          <td>${esc(u.name||'—')}</td>
-          <td><span class="pill ${t}">${t}</span></td>
-          <td class="small">${dt}</td>
-          <td><select class="tier-select" data-email="${esc(u.email)}">
-            <option value="free" ${t==='free'?'selected':''}>Free</option>
-            <option value="pro" ${t==='pro'?'selected':''}>Pro</option>
-            <option value="ultimate" ${t==='ultimate'?'selected':''}>Ultimate</option>
-          </select></td>
-          <td><button class="btn danger" data-del="${esc(u.email)}">Delete</button></td>
-        </tr>`;}).join('')}</tbody></table>`;
+    box.innerHTML=`<table><thead><tr><th>Email</th><th>Name</th><th>Tier</th><th>Joined</th><th>Change</th><th></th></tr></thead><tbody>${us.map(u=>{
+      const t=u.tier||'free';const dt=u.created_at?new Date(u.created_at*1000).toLocaleString():'—';
+      return `<tr><td class="mono">${esc(u.email)}</td><td>${esc(u.name||'—')}</td><td><span class="pill ${t}">${t}</span></td><td class="small">${dt}</td>
+        <td><select class="tier-select" data-email="${esc(u.email)}"><option value="free" ${t==='free'?'selected':''}>Free</option><option value="pro" ${t==='pro'?'selected':''}>Pro</option><option value="ultimate" ${t==='ultimate'?'selected':''}>Ultimate</option></select></td>
+        <td><button class="btn danger" data-del="${esc(u.email)}">Delete</button></td></tr>`;}).join('')}</tbody></table>`;
     box.querySelectorAll('.tier-select').forEach(s=>s.addEventListener('change',async()=>{
       const email=s.dataset.email,tier=s.value;
-      try{const {data}=await safeApi('/api/admin/set-tier',{method:'POST',body:JSON.stringify({email,tier})});
-        if(!data.ok)throw new Error(data.error||'Failed');toast(`Set ${email} → ${tier}`);loadStats();}catch(e){toast(e.message);}
+      try{const {data}=await safeApi('/api/admin/set-tier',{method:'POST',body:JSON.stringify({email,tier})});if(!data.ok)throw new Error(data.error||'Failed');toast(`Set ${email} → ${tier}`);loadStats();}catch(e){toast(e.message);}
     }));
     box.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',async()=>{
       if(!confirm('Delete this user?'))return;
@@ -264,14 +199,11 @@ async function loadChats(){
   const box=document.getElementById('chatsBox');
   try{const {data}=await safeApi('/api/admin/chats');const cs=data.chats||[];
     if(!cs.length){box.innerHTML='<div class="empty">No chats yet.</div>';return;}
-    box.innerHTML=`<table><thead><tr><th>Time</th><th>User</th><th>Model</th><th>Message</th><th>Reply</th></tr></thead><tbody>${
-      cs.map(c=>`<tr>
-        <td class="small">${new Date(c.ts*1000).toLocaleString()}</td>
-        <td class="mono">${esc(c.email)}</td>
-        <td>${esc(c.model||'—')}</td>
-        <td class="small">${esc((c.message||'').slice(0,180))}</td>
-        <td class="small">${esc((c.reply||'').slice(0,220))}</td>
-      </tr>`).join('')}</tbody></table>`;
+    box.innerHTML=`<table><thead><tr><th>Time</th><th>User</th><th>Model</th><th>Message</th><th>Reply</th></tr></thead><tbody>${cs.map(c=>`<tr>
+      <td class="small">${new Date(c.ts*1000).toLocaleString()}</td>
+      <td class="mono">${esc(c.email)}</td><td>${esc(c.model||'—')}</td>
+      <td class="small">${esc((c.message||'').slice(0,180))}</td>
+      <td class="small">${esc((c.reply||'').slice(0,220))}</td></tr>`).join('')}</tbody></table>`;
   }catch{box.innerHTML='<div class="empty">Failed.</div>';}
 }
 
@@ -279,11 +211,7 @@ async function loadImages(){
   const box=document.getElementById('imagesBox');
   try{const {data}=await safeApi('/api/admin/images');const imgs=data.images||[];
     if(!imgs.length){box.innerHTML='<div class="empty">No images yet.</div>';return;}
-    box.innerHTML=`<div class="thumbs">${imgs.map(i=>`
-      <div class="thumb">
-        <img src="${esc(i.url)}" alt="" loading="lazy" onerror="this.style.opacity=0.2">
-        <div class="thumb-info"><span class="u">${esc(i.email)}</span><span class="p">${esc((i.prompt||'').slice(0,60))}</span></div>
-      </div>`).join('')}</div>`;
+    box.innerHTML=`<div class="thumbs">${imgs.map(i=>`<div class="thumb"><img src="${esc(i.url)}" alt="" loading="lazy" onerror="this.style.opacity=0.2"><div class="thumb-info"><span class="u">${esc(i.email)}</span><span class="p">${esc((i.prompt||'').slice(0,60))}</span></div></div>`).join('')}</div>`;
   }catch{box.innerHTML='<div class="empty">Failed.</div>';}
 }
 
@@ -291,12 +219,9 @@ async function loadLogs(){
   const box=document.getElementById('logsBox');
   try{const {data}=await safeApi('/api/admin/logs');const ls=data.logs||[];
     if(!ls.length){box.innerHTML='<div class="empty">No logs yet.</div>';return;}
-    box.innerHTML=`<table><thead><tr><th>Time</th><th>Email</th><th>Event</th><th>User Agent</th></tr></thead><tbody>${
-      ls.map(l=>{const ev=l.event||'';const cls=ev.includes('sign')?'signin':ev==='logout'?'logout':ev==='deleted'?'deleted':'';
-        return `<tr><td class="small">${new Date(l.ts*1000).toLocaleString()}</td>
-          <td class="mono">${esc(l.email)}</td>
-          <td><span class="pill ${cls}">${esc(ev)}</span></td>
-          <td class="small">${esc((l.ua||'').slice(0,60))}</td></tr>`;}).join('')}</tbody></table>`;
+    box.innerHTML=`<table><thead><tr><th>Time</th><th>Email</th><th>Event</th><th>User Agent</th></tr></thead><tbody>${ls.map(l=>{
+      const ev=l.event||'';const cls=ev.includes('sign')?'signin':ev==='logout'?'logout':ev==='deleted'?'deleted':'';
+      return `<tr><td class="small">${new Date(l.ts*1000).toLocaleString()}</td><td class="mono">${esc(l.email)}</td><td><span class="pill ${cls}">${esc(ev)}</span></td><td class="small">${esc((l.ua||'').slice(0,60))}</td></tr>`;}).join('')}</tbody></table>`;
   }catch{box.innerHTML='<div class="empty">Failed.</div>';}
 }
 
@@ -304,52 +229,36 @@ async function loadKb(){
   const box=document.getElementById('kbBox');
   try{const {data}=await safeApi('/api/admin/kb');const kb=data.kb||[];
     if(!kb.length){box.innerHTML='<div class="empty">No knowledge entries.</div>';return;}
-    box.innerHTML=kb.map(k=>`<div class="kb-item">
-      <div class="content">
-        ${k.q?`<div class="q">${esc(k.q)}</div>`:''}
-        <div class="a">${esc(k.a)}</div>
-      </div>
-      <button class="btn danger" data-kbdel="${k.id}">Remove</button>
-    </div>`).join('');
-    box.querySelectorAll('[data-kbdel]').forEach(b=>b.addEventListener('click',async()=>{
-      await safeApi('/api/admin/kb/'+b.dataset.kbdel,{method:'DELETE'});
-      loadKb();
-    }));
+    box.innerHTML=kb.map(k=>`<div class="kb-item"><div class="content">${k.q?`<div class="q">${esc(k.q)}</div>`:''}<div class="a">${esc(k.a)}</div></div><button class="btn danger" data-kbdel="${k.id}">Remove</button></div>`).join('');
+    box.querySelectorAll('[data-kbdel]').forEach(b=>b.addEventListener('click',async()=>{await safeApi('/api/admin/kb/'+b.dataset.kbdel,{method:'DELETE'});loadKb();}));
   }catch{box.innerHTML='<div class="empty">Failed.</div>';}
 }
 async function addKb(){
   const q=document.getElementById('kbQ').value.trim();
   const a=document.getElementById('kbA').value.trim();
   if(!a){toast('Answer required');return;}
-  try{const {data}=await safeApi('/api/admin/kb',{method:'POST',body:JSON.stringify({q,a})});
-    if(!data.ok)throw new Error(data.error||'Failed');
-    document.getElementById('kbQ').value='';document.getElementById('kbA').value='';
-    toast('Added to knowledge');loadKb();
+  try{const {data}=await safeApi('/api/admin/kb',{method:'POST',body:JSON.stringify({q,a})});if(!data.ok)throw new Error(data.error||'Failed');
+    document.getElementById('kbQ').value='';document.getElementById('kbA').value='';toast('Added');loadKb();
   }catch(e){toast(e.message);}
 }
 
 async function loadTools(){
-  try{
-    const r=await fetch('/api/health');const d=await r.json();
+  try{const r=await fetch('/api/health');const d=await r.json();
     document.getElementById('maintState').textContent=d.maintenance?'ON':'OFF';
-    if(d.maintenance)document.getElementById('maintBanner').innerHTML='<div class="maintenance-banner">⚠️ Maintenance mode is ON — chat is blocked.</div>';
-    else document.getElementById('maintBanner').innerHTML='';
+    document.getElementById('maintBanner').innerHTML=d.maintenance?'<div class="maintenance-banner">⚠️ Maintenance mode is ON — chat is blocked.</div>':'';
     const b=await fetch('/api/admin/broadcast');const bd=await b.json();
     document.getElementById('bcCurrent').textContent=bd.message||'none';
   }catch{}
 }
 async function toggleMaint(){
-  try{
-    const r=await fetch('/api/health');const h=await r.json();
+  try{const r=await fetch('/api/health');const h=await r.json();
     await safeApi('/api/admin/maintenance',{method:'POST',body:JSON.stringify({enabled:!h.maintenance})});
     loadTools();toast('Toggled');
   }catch(e){toast(e.message);}
 }
 async function sendBc(){
   const m=document.getElementById('bcMsg').value.trim();if(!m)return;
-  try{await safeApi('/api/admin/broadcast',{method:'POST',body:JSON.stringify({message:m})});
-    document.getElementById('bcMsg').value='';toast('Broadcast sent');loadTools();
-  }catch(e){toast(e.message);}
+  try{await safeApi('/api/admin/broadcast',{method:'POST',body:JSON.stringify({message:m})});document.getElementById('bcMsg').value='';toast('Broadcast sent');loadTools();}catch(e){toast(e.message);}
 }
 
 render();
