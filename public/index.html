@@ -6,14 +6,80 @@
 <meta name="theme-color" content="#fafafb">
 <title>MiroxAI — by OpenSurr</title>
 <link rel="icon" type="image/png" href="/logo.png">
+
+<!-- === GLOBAL IMAGE ERROR HANDLER ===
+     Catches every failed <img> on the page — static and dynamically
+     added — and hides it gracefully so nothing renders as a broken icon. -->
+<script>
+(function () {
+  function hideBrokenImage(img) {
+    if (!img || img.tagName !== 'IMG') return;
+    img.style.visibility = 'hidden';
+    img.style.display = 'none';
+    img.setAttribute('data-broken', '1');
+    // If it's inside an avatar, show a fallback letter
+    var parent = img.parentElement;
+    if (parent && parent.classList.contains('ai-avatar') && !parent.querySelector('.avatar-fallback')) {
+      var fb = document.createElement('span');
+      fb.className = 'avatar-fallback';
+      fb.textContent = 'M';
+      fb.style.fontWeight = '800';
+      fb.style.fontSize = '12px';
+      fb.style.color = 'currentColor';
+      parent.appendChild(fb);
+    }
+    if (parent && parent.classList.contains('call-orb-wrap') && !parent.querySelector('.orb-fallback')) {
+      var ofb = document.createElement('div');
+      ofb.className = 'orb-fallback';
+      ofb.style.width = '96px';
+      ofb.style.height = '96px';
+      ofb.style.borderRadius = '50%';
+      ofb.style.background = 'linear-gradient(135deg,var(--accent),var(--accent-hover))';
+      ofb.style.zIndex = '2';
+      ofb.style.boxShadow = '0 0 40px var(--accent-glow)';
+      parent.appendChild(ofb);
+    }
+  }
+
+  // Capture-phase listener: fires for every <img> error, including new ones
+  document.addEventListener('error', function (e) {
+    if (e.target && e.target.tagName === 'IMG') {
+      hideBrokenImage(e.target);
+    }
+  }, true);
+
+  // Also sweep already-broken images at DOMContentLoaded
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('img').forEach(function (img) {
+      if (img.complete && img.naturalWidth === 0 && img.src) {
+        hideBrokenImage(img);
+      }
+    });
+  });
+})();
+</script>
+<!-- ================================= -->
+
 <link href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css" rel="stylesheet">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
 <style>
-  /* Extra safety: if the CSS above fails to load, still hide the loader */
-  #loadingScreen.force-hidden { opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; display: none !important; }
+  #loadingScreen.force-hidden {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    display: none !important;
+  }
+  /* Fallback avatar letter, shown when the AI logo can't load */
+  .avatar-fallback {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+  }
 </style>
 </head>
 <body>
@@ -21,15 +87,13 @@
 <div id="userBackground" aria-hidden="true"></div>
 
 <div id="loadingScreen">
-  <img src="/logo.png" alt="" class="load-logo theme-logo" onerror="this.style.display='none'">
+  <img src="/logo.png" alt="" class="load-logo theme-logo">
   <span class="load-name">MiroxAI</span>
   <span class="load-sub">by OpenSurr</span>
   <div class="load-bar"><span></span></div>
 </div>
 
-<!-- ================= BULLETPROOF LOADER FAILSAFE =================
-     This runs even if script.js fails to load.
-     The loader is guaranteed to disappear within ~700ms.        -->
+<!-- Bulletproof loader failsafe — runs even if script.js fails -->
 <script>
 (function () {
   function killLoader() {
@@ -39,9 +103,7 @@
     l.classList.add('force-hidden');
     l.style.display = 'none';
   }
-  // Hard ceiling — always fires
   setTimeout(killLoader, 700);
-  // Also fire as soon as the DOM is ready (whichever comes first)
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function () {
       setTimeout(killLoader, 50);
@@ -51,14 +113,13 @@
   }
 })();
 </script>
-<!-- ============================================================== -->
 
 <div class="app">
   <div class="sidebar-scrim" id="sidebarScrim"></div>
 
   <aside class="sidebar" id="sidebar">
     <div class="brand">
-      <img src="/logo.png" alt="" class="theme-logo" id="brandLogo" title="Home" onerror="this.style.display='none'">
+      <img src="/logo.png" alt="" class="theme-logo" id="brandLogo" title="Home">
       <span>MiroxAI</span>
       <button class="sidebar-close" id="sidebarCloseBtn"><i class="ri-close-line"></i></button>
     </div>
@@ -106,13 +167,13 @@
 
     <div class="chat" id="chat">
       <div class="message ai">
-        <div class="avatar ai-avatar"><img src="/logo.png" alt="" class="theme-logo" onerror="this.style.display='none'"></div>
+        <div class="avatar ai-avatar"><img src="/logo.png" alt="" class="theme-logo"></div>
         <div class="bubble-wrap"><div class="bubble">Hi, I'm Mirox — built by the OpenSurr team. You can chat right away as a guest. Sign in only if you want your chats saved.</div></div>
       </div>
     </div>
 
     <div class="welcome-hero" id="welcomeHero">
-      <img src="/logo.png" alt="" class="theme-logo hero-logo" onerror="this.style.display='none'">
+      <img src="/logo.png" alt="" class="theme-logo hero-logo">
       <span class="hero-text">What would you like to talk about?</span>
     </div>
 
@@ -160,7 +221,7 @@
 
 <div class="modal-overlay" id="lunaAnnounceModal"><div class="modal announce-modal">
   <button class="modal-close" data-close="lunaAnnounceModal"><i class="ri-close-line"></i></button>
-  <div class="announce-hero"><img src="/Luna.png" alt="Luna" class="announce-img" onerror="this.style.display='none'"></div>
+  <div class="announce-hero"><img src="/Luna.png" alt="Luna" class="announce-img"></div>
   <div class="modal-brand" style="justify-content:center;text-align:center;padding-right:0;"><h2 id="announceTitle">Meet Luna</h2></div>
   <p class="modal-sub" style="text-align:center;" id="announceBody">Loading…</p>
   <div class="announce-points" id="announcePoints"></div>
@@ -169,7 +230,7 @@
 
 <div class="modal-overlay" id="loginModal"><div class="modal">
   <button class="modal-close" data-close="loginModal"><i class="ri-close-line"></i></button>
-  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt="" onerror="this.style.display='none'"><h2 id="loginTitle">Sign in</h2></div>
+  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt=""><h2 id="loginTitle">Sign in</h2></div>
   <p class="modal-sub">Sign in to save your chats across visits. Guests can still chat.</p>
   <form id="simpleLoginForm">
     <label class="field-label">Name</label>
@@ -183,7 +244,7 @@
 
 <div class="modal-overlay" id="settingsModal"><div class="modal wide">
   <button class="modal-close" data-close="settingsModal"><i class="ri-close-line"></i></button>
-  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt="" onerror="this.style.display='none'"><h2>Settings</h2></div>
+  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt=""><h2>Settings</h2></div>
   <div class="settings-tabs">
     <button class="settings-tab active" data-tab="general">General</button>
     <button class="settings-tab" data-tab="appearance">Appearance</button>
@@ -253,7 +314,7 @@
 
 <div class="modal-overlay" id="supportModal"><div class="modal wide">
   <button class="modal-close" data-close="supportModal"><i class="ri-close-line"></i></button>
-  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt="" onerror="this.style.display='none'"><h2>Contact Support</h2></div>
+  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt=""><h2>Contact Support</h2></div>
   <p class="modal-sub">A support agent will reply in 15 to 30 minutes.</p>
   <label class="field-label">Subject</label>
   <input type="text" id="reportSubject" placeholder="Short summary (optional)">
@@ -266,7 +327,7 @@
 
 <div class="modal-overlay" id="plansModal"><div class="modal wide">
   <button class="modal-close" data-close="plansModal"><i class="ri-close-line"></i></button>
-  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt="" onerror="this.style.display='none'"><h2>Plans</h2></div>
+  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt=""><h2>Plans</h2></div>
   <p class="modal-sub">Free users get 10 Eclipse (Ultimate) chats per day, then fall back to Luna.</p>
   <div class="plans-grid" id="plansGrid"></div>
   <div class="keys-section">
@@ -285,7 +346,7 @@
 
 <div class="modal-overlay" id="backgroundModal"><div class="modal wide">
   <button class="modal-close" data-close="backgroundModal"><i class="ri-close-line"></i></button>
-  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt="" onerror="this.style.display='none'"><h2>Background</h2></div>
+  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt=""><h2>Background</h2></div>
   <p class="modal-sub">Pick an image — it saves instantly.</p>
   <div class="ext-upload-zone" id="bgUploadZone">
     <i class="ri-upload-cloud-2-line"></i>
@@ -305,7 +366,7 @@
 
 <div class="modal-overlay" id="imageModal"><div class="modal wide">
   <button class="modal-close" data-close="imageModal"><i class="ri-close-line"></i></button>
-  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt="" onerror="this.style.display='none'"><h2>Image Studio</h2></div>
+  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt=""><h2>Image Studio</h2></div>
   <textarea id="imagePromptInput" class="image-prompt" placeholder="A fox curled up in fresh snow..." rows="3"></textarea>
   <button class="generate-btn" id="generateImageBtn"><i class="ri-magic-line"></i> Generate</button>
   <p class="field-hint" id="imageStudioStatus"></p>
@@ -314,7 +375,7 @@
 
 <div class="modal-overlay" id="videoModal"><div class="modal wide">
   <button class="modal-close" data-close="videoModal"><i class="ri-close-line"></i></button>
-  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt="" onerror="this.style.display='none'"><h2>Video Studio</h2></div>
+  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt=""><h2>Video Studio</h2></div>
   <p class="modal-sub">Video generation is coming soon.</p>
   <textarea id="videoPromptInput" class="image-prompt" placeholder="A fox running through falling snow..." rows="3"></textarea>
   <button class="generate-btn" id="generateVideoBtn" disabled><i class="ri-movie-2-line"></i> Generate video</button>
@@ -325,7 +386,7 @@
   <div class="call-status" id="callStatus">Connecting…</div>
   <div class="call-orb-wrap">
     <div class="call-orb-ring"></div><div class="call-orb-ring delay"></div>
-    <img src="/logo.png" alt="" class="call-orb theme-logo" onerror="this.style.display='none'">
+    <img src="/logo.png" alt="" class="call-orb theme-logo">
   </div>
   <p class="call-transcript" id="callTranscript"></p>
   <div class="call-controls">
