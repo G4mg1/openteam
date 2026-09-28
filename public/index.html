@@ -2,11 +2,10 @@
 <html lang="en" data-mode="light" data-theme="warm" data-corner="soft" data-font="system">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5">
 <meta name="theme-color" content="#fafafb">
-<meta name="color-scheme" content="light dark">
 <title>MiroxAI — by OpenSurr</title>
-<link rel="icon" type="image/png" href="logo.png">
+<link rel="icon" type="image/png" href="/logo.png">
 <link href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css" rel="stylesheet">
 <link id="hljs-dark" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/atom-one-dark.min.css" disabled>
 <link id="hljs-light" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/atom-one-light.min.css">
@@ -17,19 +16,10 @@
 </head>
 <body>
 
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <defs>
-    <linearGradient id="videoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#c4694b"/>
-      <stop offset="100%" stop-color="#8b5cf6"/>
-    </linearGradient>
-  </defs>
-</svg>
-
 <div id="userBackground" aria-hidden="true"></div>
 
 <div id="loadingScreen">
-  <img src="logo.png" alt="" class="load-logo theme-logo" onerror="this.style.display='none'">
+  <img src="/logo.png" alt="" class="load-logo theme-logo">
   <span class="load-name">MiroxAI</span>
   <span class="load-sub">by OpenSurr</span>
   <div class="load-bar"><span></span></div>
@@ -40,7 +30,7 @@
 
   <aside class="sidebar" id="sidebar">
     <div class="brand">
-      <img src="logo.png" alt="" class="theme-logo" id="brandLogo" title="Home" onerror="this.style.display='none'">
+      <img src="/logo.png" alt="" class="theme-logo" id="brandLogo" title="Home">
       <span>MiroxAI</span>
       <button class="sidebar-close" id="sidebarCloseBtn"><i class="ri-close-line"></i></button>
     </div>
@@ -88,28 +78,25 @@
 
     <div class="chat" id="chat">
       <div class="message ai">
-        <div class="avatar ai-avatar"><img src="logo.png" alt="" class="theme-logo" onerror="this.style.display='none'"></div>
-        <div class="bubble-wrap"><div class="bubble">Hi, I'm Mirox — built by the OpenSurr team. Ask me anything, attach a file or image, or ask me to send an email.<br><br><b>Try:</b> <code>build me a todo app</code> · <code>/image a fox in snow</code></div></div>
+        <div class="avatar ai-avatar"><img src="/logo.png" alt="" class="theme-logo"></div>
+        <div class="bubble-wrap"><div class="bubble">Hi, I'm Mirox — built by the OpenSurr team. Ask me anything.</div></div>
       </div>
     </div>
 
     <div class="welcome-hero" id="welcomeHero">
-      <img src="logo.png" alt="" class="theme-logo hero-logo" onerror="this.style.display='none'">
+      <img src="/logo.png" alt="" class="theme-logo hero-logo">
       <span class="hero-text">What would you like to talk about?</span>
     </div>
 
     <div class="attachment-preview" id="attachmentPreview" style="display:none;">
-      <span class="att-spinner" id="attSpinner"><i class="ri-loader-4-line"></i></span>
-      <span class="att-icon" id="attIcon" style="display:none;"><i class="ri-file-text-line"></i></span>
-      <img id="attThumb" class="att-thumb" style="display:none;" alt="">
-      <span id="attachmentName">Reading file…</span>
+      <span class="att-icon" id="attIcon"><i class="ri-file-text-line"></i></span>
+      <span id="attachmentName">File</span>
       <button type="button" id="removeAttachmentBtn"><i class="ri-close-line"></i></button>
     </div>
 
     <form class="composer" id="composerForm">
       <button type="button" class="icon-btn" id="attachBtn" title="Attach"><i class="ri-attachment-2"></i></button>
       <input type="file" id="fileInput" hidden>
-      <button type="button" class="icon-btn" id="searchToggleBtn" title="Web search"><i class="ri-search-line"></i></button>
       <button type="button" class="icon-btn" id="micBtn" title="Voice"><i class="ri-mic-line"></i></button>
 
       <div class="model-picker" id="modelPicker">
@@ -120,8 +107,6 @@
         </button>
         <div class="model-picker-menu" id="modelPickerMenu"></div>
       </div>
-
-      <div class="composer-thinking-dots" aria-hidden="true"><span></span><span></span><span></span></div>
 
       <input type="text" id="messageInput" placeholder="Message Mirox…" autocomplete="off" spellcheck="true">
       <button type="submit" class="send-btn" id="sendBtn"><i class="ri-arrow-up-line"></i></button>
@@ -142,14 +127,12 @@
     </div>
   </aside>
 
-  <button class="rail-toggle" id="railToggleBtn" title="Minimize tools">
-    <i class="ri-contract-left-line" id="railToggleIcon"></i>
-  </button>
+  <button class="rail-toggle" id="railToggleBtn" title="Minimize tools"><i class="ri-contract-left-line" id="railToggleIcon"></i></button>
 </div>
 
 <div class="modal-overlay" id="lunaAnnounceModal"><div class="modal announce-modal">
   <button class="modal-close" data-close="lunaAnnounceModal"><i class="ri-close-line"></i></button>
-  <div class="announce-hero"><img src="Luna.png" alt="Luna" class="announce-img" onerror="this.style.display='none'"></div>
+  <div class="announce-hero"><img src="/luna.png" alt="Luna" class="announce-img" onerror="this.style.display='none'"></div>
   <div class="modal-brand" style="justify-content:center;text-align:center;padding-right:0;"><h2 id="announceTitle">Meet Luna</h2></div>
   <p class="modal-sub" style="text-align:center;" id="announceBody">Loading…</p>
   <div class="announce-points" id="announcePoints"></div>
@@ -158,7 +141,7 @@
 
 <div class="modal-overlay" id="loginModal"><div class="modal">
   <button class="modal-close" data-close="loginModal"><i class="ri-close-line"></i></button>
-  <div class="modal-brand"><h2 id="loginTitle">Sign in</h2></div>
+  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt=""><h2 id="loginTitle">Sign in</h2></div>
   <p class="modal-sub">Enter your name and email to begin.</p>
   <form id="simpleLoginForm">
     <label class="field-label">Name</label>
@@ -170,69 +153,20 @@
   <p class="field-hint" id="loginStatus"></p>
 </div></div>
 
-<div class="modal-overlay" id="supportModal"><div class="modal wide">
-  <button class="modal-close" data-close="supportModal"><i class="ri-close-line"></i></button>
-  <div class="modal-brand"><h2>Contact Support</h2></div>
-  <p class="modal-sub">A support agent will reply in <b>15 to 30 minutes</b>.</p>
-  <div id="newTicketForm">
-    <label class="field-label">Category</label>
-    <select id="reportCategory">
-      <option value="general">General question</option>
-      <option value="bug">Bug report</option>
-      <option value="billing">Billing</option>
-      <option value="feature">Feature request</option>
-    </select>
-    <label class="field-label">Subject</label>
-    <input type="text" id="reportSubject" placeholder="Short summary (optional)">
-    <label class="field-label">Message</label>
-    <textarea id="reportMessage" class="image-prompt" rows="5" placeholder="Explain what happened..." required></textarea>
-    <button class="save-btn full" id="submitReportBtn"><i class="ri-send-plane-fill"></i> Send to support</button>
-    <p class="field-hint" id="reportStatus"></p>
-  </div>
-  <div class="support-mine" id="supportMine"></div>
-</div></div>
-
-<div class="modal-overlay" id="plansModal"><div class="modal wide">
-  <button class="modal-close" data-close="plansModal"><i class="ri-close-line"></i></button>
-  <div class="modal-brand"><h2>Plans</h2></div>
-  <p class="modal-sub">Free users get <b>10 Eclipse (Ultimate) chats per day</b>, then fall back to Luna.</p>
-  <div class="plans-grid" id="plansGrid"></div>
-  <div class="keys-section" id="keysSection">
-    <div class="keys-head">
-      <h3><i class="ri-key-2-line"></i> Your API keys</h3>
-      <div class="keys-usage" id="keysUsage"></div>
-    </div>
-    <div class="keys-add">
-      <input type="text" id="newKeyNameInput" placeholder="Key name">
-      <button class="save-btn" id="generateKeyBtn"><i class="ri-add-line"></i> Generate</button>
-    </div>
-    <p class="field-hint" id="keyGenStatus"></p>
-    <ul class="keys-list" id="keysList"></ul>
-  </div>
-</div></div>
-
 <div class="modal-overlay" id="settingsModal"><div class="modal wide">
   <button class="modal-close" data-close="settingsModal"><i class="ri-close-line"></i></button>
-  <div class="modal-brand"><h2>Settings</h2></div>
-  <div class="settings-tabs" id="settingsTabs">
+  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt=""><h2>Settings</h2></div>
+  <div class="settings-tabs">
     <button class="settings-tab active" data-tab="general">General</button>
     <button class="settings-tab" data-tab="appearance">Appearance</button>
     <button class="settings-tab" data-tab="personal">Personal</button>
     <button class="settings-tab" data-tab="memory">Memory</button>
-    <button class="settings-tab admin-only" data-tab="admin" style="display:none;">Admin</button>
   </div>
 
   <div class="settings-pane active" data-pane="general">
     <div class="settings-section"><h4><i class="ri-server-line"></i> Server</h4>
       <button class="save-btn" id="connectServerBtn"><i class="ri-wifi-line"></i> Check server</button>
       <p class="field-hint" id="serverStatus">Not checked yet</p>
-    </div>
-    <div class="settings-section"><h4><i class="ri-shield-user-line"></i> Admin unlock</h4>
-      <div id="adminLoginRow">
-        <input type="password" id="adminPasswordInput" placeholder="Password" maxlength="32">
-        <button class="save-btn" id="adminLoginBtn"><i class="ri-lock-unlock-line"></i> Unlock</button>
-      </div>
-      <p class="field-hint" id="adminStatus"></p>
     </div>
     <div class="settings-section"><h4><i class="ri-logout-box-line"></i> Session</h4>
       <button class="save-btn outline" id="logoutBtn"><i class="ri-logout-box-line"></i> Sign out</button>
@@ -287,33 +221,43 @@
       <ul class="memory-list" id="memoryList"></ul>
     </div>
   </div>
+</div></div>
 
-  <div class="settings-pane" data-pane="admin">
-    <div class="settings-section">
-      <h4><i class="ri-shield-star-line"></i> Admin quick actions</h4>
-      <div class="admin-quick-grid">
-        <button class="admin-quick-btn" id="aqOpenConsole"><i class="ri-external-link-line"></i><span>Console</span></button>
-      </div>
+<div class="modal-overlay" id="supportModal"><div class="modal wide">
+  <button class="modal-close" data-close="supportModal"><i class="ri-close-line"></i></button>
+  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt=""><h2>Contact Support</h2></div>
+  <p class="modal-sub">A support agent will reply in 15 to 30 minutes.</p>
+  <label class="field-label">Subject</label>
+  <input type="text" id="reportSubject" placeholder="Short summary (optional)">
+  <label class="field-label">Message</label>
+  <textarea id="reportMessage" class="image-prompt" rows="5" placeholder="Explain what happened..."></textarea>
+  <button class="save-btn full" id="submitReportBtn"><i class="ri-send-plane-fill"></i> Send to support</button>
+  <p class="field-hint" id="reportStatus"></p>
+  <div class="support-mine" id="supportMine"></div>
+</div></div>
+
+<div class="modal-overlay" id="plansModal"><div class="modal wide">
+  <button class="modal-close" data-close="plansModal"><i class="ri-close-line"></i></button>
+  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt=""><h2>Plans</h2></div>
+  <p class="modal-sub">Free users get 10 Eclipse (Ultimate) chats per day, then fall back to Luna.</p>
+  <div class="plans-grid" id="plansGrid"></div>
+  <div class="keys-section">
+    <div class="keys-head">
+      <h3><i class="ri-key-2-line"></i> Your API keys</h3>
+      <div class="keys-usage" id="keysUsage"></div>
     </div>
-    <div class="settings-section">
-      <h4><i class="ri-vip-crown-2-line"></i> Grant subscription</h4>
-      <label class="field-label">User email</label>
-      <input type="email" id="grantEmailInput" placeholder="user@example.com">
-      <label class="field-label">Plan</label>
-      <select id="grantTierInput">
-        <option value="pro">Pro</option>
-        <option value="ultimate">Ultimate</option>
-        <option value="free">Free (downgrade)</option>
-      </select>
-      <button class="save-btn" id="grantTierBtn"><i class="ri-check-line"></i> Grant plan</button>
-      <p class="field-hint" id="grantStatus"></p>
+    <div class="keys-add">
+      <input type="text" id="newKeyNameInput" placeholder="Key name">
+      <button class="save-btn" id="generateKeyBtn"><i class="ri-add-line"></i> Generate</button>
     </div>
+    <p class="field-hint" id="keyGenStatus"></p>
+    <ul class="keys-list" id="keysList"></ul>
   </div>
 </div></div>
 
 <div class="modal-overlay" id="backgroundModal"><div class="modal wide">
   <button class="modal-close" data-close="backgroundModal"><i class="ri-close-line"></i></button>
-  <div class="modal-brand"><h2>Background</h2></div>
+  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt=""><h2>Background</h2></div>
   <p class="modal-sub">Pick an image — it saves instantly.</p>
   <div class="ext-upload-zone" id="bgUploadZone">
     <i class="ri-upload-cloud-2-line"></i>
@@ -329,23 +273,12 @@
   <div class="row" style="margin-top:20px;">
     <button class="save-btn outline" id="bgRemoveBtn"><i class="ri-delete-bin-line"></i> Remove</button>
   </div>
-  <p class="field-hint" id="bgStatus"></p>
 </div></div>
 
 <div class="modal-overlay" id="imageModal"><div class="modal wide">
   <button class="modal-close" data-close="imageModal"><i class="ri-close-line"></i></button>
-  <div class="modal-brand"><h2>Image Studio</h2></div>
-  <p class="modal-sub" id="imageUpgradeHint" style="display:none;">Image generation requires Pro or Ultimate. <a href="#" data-open-plans>Upgrade →</a></p>
+  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt=""><h2>Image Studio</h2></div>
   <textarea id="imagePromptInput" class="image-prompt" placeholder="A fox curled up in fresh snow..." rows="3"></textarea>
-  <div class="studio-row">
-    <div class="studio-group"><p class="studio-label">Style</p>
-      <div class="chip-row" id="styleChips">
-        <button class="chip active" data-style="">None</button><button class="chip" data-style="photo">Photoreal</button>
-        <button class="chip" data-style="illustration">Illustration</button><button class="chip" data-style="anime">Anime</button>
-        <button class="chip" data-style="3d">3D</button>
-      </div>
-    </div>
-  </div>
   <button class="generate-btn" id="generateImageBtn"><i class="ri-magic-line"></i> Generate</button>
   <p class="field-hint" id="imageStudioStatus"></p>
   <div class="gallery" id="imageGallery"></div>
@@ -353,18 +286,18 @@
 
 <div class="modal-overlay" id="videoModal"><div class="modal wide">
   <button class="modal-close" data-close="videoModal"><i class="ri-close-line"></i></button>
-  <div class="modal-brand"><h2>Video Studio <span class="badge-pro">Pro</span></h2></div>
-  <p class="modal-sub">Video generation is coming soon on this deployment.</p>
+  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt=""><h2>Video Studio</h2></div>
+  <p class="modal-sub">Video generation is coming soon.</p>
   <textarea id="videoPromptInput" class="image-prompt" placeholder="A fox running through falling snow..." rows="3"></textarea>
   <button class="generate-btn" id="generateVideoBtn" disabled><i class="ri-movie-2-line"></i> Generate video</button>
-  <p class="field-hint" id="videoStudioStatus"></p>
+  <p class="field-hint" id="videoStudioStatus">Not available on this deployment.</p>
 </div></div>
 
 <div class="call-overlay" id="callOverlay">
   <div class="call-status" id="callStatus">Connecting…</div>
   <div class="call-orb-wrap">
     <div class="call-orb-ring"></div><div class="call-orb-ring delay"></div>
-    <img src="logo.png" alt="" class="call-orb theme-logo" onerror="this.style.display='none'">
+    <img src="/logo.png" alt="" class="call-orb theme-logo">
   </div>
   <p class="call-transcript" id="callTranscript"></p>
   <div class="call-controls">
@@ -373,9 +306,6 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/common.min.js"></script>
 <script src="/script.js"></script>
 </body>
 </html>
