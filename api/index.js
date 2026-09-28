@@ -16,7 +16,7 @@ const HF_CHAT   = 'https://router.huggingface.co/v1/chat/completions';
 const HF_IMAGES = 'https://router.huggingface.co/v1/images/generations';
 
 /* ============================================================
-   SESSION (HMAC-signed cookie — no middleware quirks)
+   SESSION (HMAC-signed cookie)
    ============================================================ */
 function signSession(data) {
   const payload = Buffer.from(JSON.stringify(data)).toString('base64url');
@@ -91,7 +91,7 @@ async function logDiscord(kind, title, description = '', fields = []) {
 }
 
 /* ============================================================
-   MODELS — each with a UNIQUE system prompt (personality)
+   MODELS
    ============================================================ */
 const MODELS = {
   'mirox-luna-1.2': {
@@ -150,7 +150,7 @@ const PLANS = {
 
 const ANNOUNCEMENT = {
   enabled: true, version: 'v1-luna', title: 'Meet Luna',
-  image: 'luna.png',
+  image: 'Luna.png',
   body: 'Luna is now the default — warm, smart, and free.',
   highlights: [
     'Luna — new default, free',
@@ -160,9 +160,6 @@ const ANNOUNCEMENT = {
   ],
 };
 
-/* ============================================================
-   HELPERS
-   ============================================================ */
 const now = () => Math.floor(Date.now() / 1000);
 
 function currentUser(req) {
@@ -170,11 +167,8 @@ function currentUser(req) {
   if (!s.uid) return null;
   if (!USERS[s.uid]) {
     USERS[s.uid] = {
-      email: s.uid,
-      name: s.name || '',
-      tier: s.tier || 'free',
-      created_at: now(),
-      gmail: '',
+      email: s.uid, name: s.name || '', tier: s.tier || 'free',
+      created_at: now(), gmail: '',
     };
   }
   return { ...USERS[s.uid] };
@@ -185,9 +179,9 @@ function keysBox(email)    { if (!KEYS[email])     KEYS[email]     = []; return 
 function ticketsBox(email) { if (!TICKETS[email])  TICKETS[email]  = []; return TICKETS[email]; }
 
 /* ============================================================
-   CONFIG / HEALTH
+   ROUTES — accept both /api/* and /* variants for safety
    ============================================================ */
-app.get(['/config.json', '/api/config'], (req, res) => {
+app.get(['/api/config', '/config', '/config.json'], (req, res) => {
   const u = currentUser(req);
   res.json({
     app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v2' },
@@ -205,14 +199,12 @@ app.get(['/config.json', '/api/config'], (req, res) => {
   });
 });
 
-app.get(['/api/health', '/api/ping'], (req, res) => {
+app.get(['/api/health', '/health', '/api/ping', '/ping'], (req, res) => {
   res.json({ ok: true, app: 'MiroxAI', hf: !!HF_API_KEY, t: now() });
 });
 
-/* ============================================================
-   AUTH
-   ============================================================ */
-app.post('/api/auth/simple-login', async (req, res) => {
+/* ------------------------- AUTH ------------------------- */
+app.post(['/api/auth/simple-login', '/auth/simple-login'], async (req, res) => {
   const { name, email } = req.body || {};
   const n = String(name || '').trim().slice(0, 60);
   const e = String(email || '').trim().toLowerCase().slice(0, 120);
@@ -245,12 +237,12 @@ app.post('/api/auth/simple-login', async (req, res) => {
   });
 });
 
-app.post('/api/logout', (req, res) => {
+app.post(['/api/logout', '/logout'], (req, res) => {
   clearSession(res);
   res.json({ ok: true });
 });
 
-app.get('/api/me', (req, res) => {
+app.get(['/api/me', '/me'], (req, res) => {
   const u = currentUser(req);
   if (!u) return res.json({ user: null });
   res.json({
@@ -261,13 +253,10 @@ app.get('/api/me', (req, res) => {
   });
 });
 
-/* ============================================================
-   SUBSCRIPTION
-   ============================================================ */
-app.get('/api/subscription/me', (req, res) => {
+/* ------------------------- SUBSCRIPTION ------------------------- */
+app.get(['/api/subscription/me', '/subscription/me'], (req, res) => {
   const u = currentUser(req);
   if (!u) return res.json({ ok: false, error: 'Sign in first' });
-
   const p = PLANS[u.tier];
   const ks = keysBox(u.email);
   res.json({
@@ -289,15 +278,14 @@ app.get('/api/subscription/me', (req, res) => {
   });
 });
 
-app.get('/api/subscription/plans', (req, res) => {
+app.get(['/api/subscription/plans', '/subscription/plans'], (req, res) => {
   const perks = {
     free: ['Luna & Gen — free models', '10 Eclipse chats/day', 'Image generation', 'Memory & persona'],
     pro: ['Pro & Ultra models', '500 msgs/day', 'Image generation', 'Priority speed'],
     ultimate: ['Eclipse — best model', '5000 msgs/day', 'Everything in Pro', 'Ultimate badge'],
   };
   const out = Object.entries(PLANS).map(([id, p]) => ({
-    id,
-    label: p.label,
+    id, label: p.label,
     tagline: { free: 'Free forever', pro: 'Most popular', ultimate: 'For power users' }[id],
     daily_limit: p.daily_limit,
     price_robux: p.price_robux,
@@ -309,9 +297,7 @@ app.get('/api/subscription/plans', (req, res) => {
   res.json({ ok: true, plans: out, admin_email: 'admin@example.com', admin_phone: '' });
 });
 
-/* ============================================================
-   HF CHAT STREAM
-   ============================================================ */
+/* ------------------------- HF STREAM ------------------------- */
 async function hfStream(modelId, messages, maxTokens) {
   if (!HF_API_KEY) throw new Error('HF_API_KEY not configured');
   const r = await fetch(HF_CHAT, {
@@ -348,7 +334,7 @@ function buildMessages(systemPrompt, history, userText, persona = '', mem = []) 
   return msgs;
 }
 
-app.post('/api/chat/stream', async (req, res) => {
+app.post(['/api/chat/stream', '/chat/stream'], async (req, res) => {
   const { message, history, model: modelKey } = req.body || {};
   const msg = String(message || '').trim();
   if (!msg) return res.status(400).json({ ok: false, error: 'Empty message' });
@@ -358,25 +344,17 @@ app.post('/api/chat/stream', async (req, res) => {
 
   let cfg = MODELS[modelKey] || MODELS['mirox-luna-1.2'];
   if (TIER_RANK[cfg.tier] > TIER_RANK[tier]) {
-    if (!(tier === 'free' && cfg.tier === 'ultimate')) {
-      cfg = MODELS['mirox-luna-1.2'];
-    }
+    if (!(tier === 'free' && cfg.tier === 'ultimate')) cfg = MODELS['mirox-luna-1.2'];
   }
 
   const mem = u ? memBox(u.email) : [];
   const persona = u ? (PERSONAS[u.email] || '') : '';
   const msgs = buildMessages(cfg.prompt, history, msg, persona, mem);
 
-  if (u) {
-    logDiscord('chat', '💬 Chat message', '', [
-      ['User', u.email], ['Model', cfg.label],
-      ['Message', msg.slice(0, 500)], ['Length', `${msg.length} chars`],
-    ]);
-  } else {
-    logDiscord('chat', '💬 Guest message', '', [
-      ['Model', cfg.label], ['Message', msg.slice(0, 500)],
-    ]);
-  }
+  logDiscord('chat', u ? '💬 Chat message' : '💬 Guest message', '', [
+    ['User', u ? u.email : 'guest'], ['Model', cfg.label],
+    ['Message', msg.slice(0, 500)],
+  ]);
 
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -394,7 +372,6 @@ app.post('/api/chat/stream', async (req, res) => {
       const { value, done } = await reader.read();
       if (done) break;
       buf += decoder.decode(value, { stream: true });
-
       let idx;
       while ((idx = buf.indexOf('\n')) !== -1) {
         const line = buf.slice(0, idx).trim();
@@ -412,14 +389,13 @@ app.post('/api/chat/stream', async (req, res) => {
     }
   } catch (e) {
     res.write(`data: ${JSON.stringify({ error: String(e.message).slice(0, 220) })}\n\n`);
-    logDiscord('error', '❌ Chat failed', String(e.message).slice(0, 400),
-      [['User', u ? u.email : 'guest'], ['Model', cfg.label]]);
+    logDiscord('error', '❌ Chat failed', String(e.message).slice(0, 400), [['User', u ? u.email : 'guest']]);
   }
   res.write(`data: ${JSON.stringify({ done: true, model: cfg.label, ms: Date.now() - t0 })}\n\n`);
   res.end();
 });
 
-app.post('/api/chat', async (req, res) => {
+app.post(['/api/chat', '/chat'], async (req, res) => {
   const { message, history, model: modelKey } = req.body || {};
   const msg = String(message || '').trim();
   if (!msg) return res.status(400).json({ ok: false, error: 'Empty message' });
@@ -463,15 +439,13 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-/* ============================================================
-   MEMORY / PERSONA (require sign-in)
-   ============================================================ */
-app.get('/api/memory', (req, res) => {
+/* ------------------------- MEMORY / PERSONA ------------------------- */
+app.get(['/api/memory', '/memory'], (req, res) => {
   const u = currentUser(req);
   if (!u) return res.json({ ok: true, facts: [] });
   res.json({ ok: true, facts: memBox(u.email) });
 });
-app.post('/api/memory', (req, res) => {
+app.post(['/api/memory', '/memory'], (req, res) => {
   const u = currentUser(req);
   if (!u) return res.status(401).json({ ok: false, error: 'Sign in first' });
   const fact = String((req.body && req.body.fact) || '').trim().slice(0, 500);
@@ -480,7 +454,7 @@ app.post('/api/memory', (req, res) => {
   memBox(u.email).push(item);
   res.json({ ok: true, fact: item });
 });
-app.delete('/api/memory/:id', (req, res) => {
+app.delete(['/api/memory/:id', '/memory/:id'], (req, res) => {
   const u = currentUser(req);
   if (!u) return res.status(401).json({ ok: false, error: 'Sign in first' });
   const list = memBox(u.email);
@@ -488,22 +462,20 @@ app.delete('/api/memory/:id', (req, res) => {
   if (i >= 0) list.splice(i, 1);
   res.json({ ok: true });
 });
-app.get('/api/settings/persona', (req, res) => {
+app.get(['/api/settings/persona', '/settings/persona'], (req, res) => {
   const u = currentUser(req);
   if (!u) return res.json({ ok: true, persona: '' });
   res.json({ ok: true, persona: PERSONAS[u.email] || '' });
 });
-app.post('/api/settings/persona', (req, res) => {
+app.post(['/api/settings/persona', '/settings/persona'], (req, res) => {
   const u = currentUser(req);
   if (!u) return res.status(401).json({ ok: false, error: 'Sign in first' });
   PERSONAS[u.email] = String((req.body && req.body.persona) || '').slice(0, 2000);
   res.json({ ok: true });
 });
 
-/* ============================================================
-   SUPPORT
-   ============================================================ */
-app.post('/api/report', (req, res) => {
+/* ------------------------- SUPPORT ------------------------- */
+app.post(['/api/report', '/report'], (req, res) => {
   const u = currentUser(req);
   if (!u) return res.status(401).json({ ok: false, error: 'Sign in first' });
   const { subject, category, message } = req.body || {};
@@ -517,33 +489,19 @@ app.post('/api/report', (req, res) => {
   });
   res.json({ ok: true, ticket_id: tid });
 });
-app.get('/api/report/mine', (req, res) => {
+app.get(['/api/report/mine', '/report/mine'], (req, res) => {
   const u = currentUser(req);
   if (!u) return res.json({ ok: true, reports: [] });
   res.json({ ok: true, reports: ticketsBox(u.email) });
 });
-app.post('/api/report/:id/reply', (req, res) => {
-  const u = currentUser(req);
-  if (!u) return res.status(401).json({ ok: false, error: 'Sign in first' });
-  const text = String((req.body && req.body.text) || '').slice(0, 4000);
-  for (const t of ticketsBox(u.email)) {
-    if (t.id === req.params.id) {
-      t.messages.push({ from: 'user', text, ts: now() });
-      t.status = 'open';
-    }
-  }
-  res.json({ ok: true });
-});
 
-/* ============================================================
-   API KEYS
-   ============================================================ */
-app.get('/api/keys', (req, res) => {
+/* ------------------------- API KEYS ------------------------- */
+app.get(['/api/keys', '/keys'], (req, res) => {
   const u = currentUser(req);
   if (!u) return res.json({ ok: true, keys: [] });
   res.json({ ok: true, keys: keysBox(u.email) });
 });
-app.post('/api/keys/generate', (req, res) => {
+app.post(['/api/keys/generate', '/keys/generate'], (req, res) => {
   const u = currentUser(req);
   if (!u) return res.status(401).json({ ok: false, error: 'Sign in first' });
   const name = String((req.body && req.body.name) || 'My key').slice(0, 60);
@@ -557,29 +515,19 @@ app.post('/api/keys/generate', (req, res) => {
   keysBox(u.email).push(k);
   res.json({ ok: true, id: k.id, key: raw });
 });
-app.delete('/api/keys/:id', (req, res) => {
-  const u = currentUser(req);
-  if (!u) return res.status(401).json({ ok: false, error: 'Sign in first' });
-  for (const k of keysBox(u.email)) if (k.id === req.params.id) k.revoked = true;
-  res.json({ ok: true });
-});
 
-/* ============================================================
-   EMAIL stubs
-   ============================================================ */
-app.get('/api/email/status', (req, res) => {
+/* ------------------------- EMAIL stubs ------------------------- */
+app.get(['/api/email/status', '/email/status'], (req, res) => {
   const u = currentUser(req);
   res.json({ ok: true, connected: !!(u && u.gmail), address: (u && u.gmail) || '', used_today: 0, daily_limit: 5 });
 });
-app.post('/api/email/connect',    (req, res) => res.json({ ok: true }));
-app.post('/api/email/disconnect', (req, res) => res.json({ ok: true }));
-app.post('/api/email/test',       (req, res) => res.status(501).json({ ok: false, error: 'Email not enabled' }));
-app.post('/api/email/send',       (req, res) => res.status(501).json({ ok: false, error: 'Email not enabled' }));
+app.post(['/api/email/connect', '/email/connect'],       (req, res) => res.json({ ok: true }));
+app.post(['/api/email/disconnect', '/email/disconnect'], (req, res) => res.json({ ok: true }));
+app.post(['/api/email/test', '/email/test'], (req, res) => res.status(501).json({ ok: false, error: 'Email not enabled' }));
+app.post(['/api/email/send', '/email/send'], (req, res) => res.status(501).json({ ok: false, error: 'Email not enabled' }));
 
-/* ============================================================
-   IMAGE
-   ============================================================ */
-app.post('/api/image/generate', async (req, res) => {
+/* ------------------------- IMAGE ------------------------- */
+app.post(['/api/image/generate', '/image/generate'], async (req, res) => {
   const prompt = String((req.body && req.body.prompt) || '').trim().slice(0, 1000);
   if (!prompt) return res.status(400).json({ ok: false, error: 'Prompt required' });
   if (!HF_API_KEY) return res.status(500).json({ ok: false, error: 'HF_API_KEY missing' });
@@ -614,10 +562,8 @@ app.post('/api/image/generate', async (req, res) => {
   }
 });
 
-/* ============================================================
-   VIDEO stub
-   ============================================================ */
-app.post('/api/video/generate', (req, res) => {
+/* ------------------------- VIDEO stub ------------------------- */
+app.post(['/api/video/generate', '/video/generate'], (req, res) => {
   const u = currentUser(req);
   logDiscord('video', '🎬 Video request', 'Not enabled', [
     ['User', u ? u.email : 'guest'],
@@ -626,21 +572,12 @@ app.post('/api/video/generate', (req, res) => {
   res.status(501).json({ ok: false, error: "Video generation isn't available on this deployment." });
 });
 
-/* ============================================================
-   PAYMENTS stub
-   ============================================================ */
-app.post('/api/payment/hesabpay/create', (req, res) => {
-  res.status(400).json({ ok: false, error: "HesabPay isn't configured." });
-});
-
-/* ============================================================
-   ADMIN
-   ============================================================ */
-app.get('/api/admin/status', (req, res) => {
+/* ------------------------- ADMIN ------------------------- */
+app.get(['/api/admin/status', '/admin/status'], (req, res) => {
   const s = getSession(req);
   res.json({ ok: true, is_admin: !!s.is_admin });
 });
-app.post('/api/admin/login', async (req, res) => {
+app.post(['/api/admin/login', '/admin/login'], async (req, res) => {
   const pw = String((req.body && req.body.password) || '').trim();
   if (pw && pw === ADMIN_PASSWORD) {
     const s = getSession(req);
@@ -650,7 +587,7 @@ app.post('/api/admin/login', async (req, res) => {
   }
   res.status(401).json({ ok: false, error: 'Wrong password' });
 });
-app.post('/api/admin/logout', (req, res) => {
+app.post(['/api/admin/logout', '/admin/logout'], (req, res) => {
   const s = getSession(req);
   delete s.is_admin;
   setSession(res, s);
@@ -663,24 +600,22 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-app.get('/api/admin/users', requireAdmin, (req, res) => {
+app.get(['/api/admin/users', '/admin/users'], requireAdmin, (req, res) => {
   const arr = Object.values(USERS).sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
   res.json({ ok: true, users: arr });
 });
-app.post('/api/admin/set-tier', requireAdmin, async (req, res) => {
+app.post(['/api/admin/set-tier', '/admin/set-tier'], requireAdmin, async (req, res) => {
   const { email, tier } = req.body || {};
   const e = String(email || '').trim().toLowerCase();
   const t = String(tier || 'free').trim().toLowerCase();
   if (!PLANS[t]) return res.status(400).json({ ok: false, error: 'Invalid tier' });
   if (!e) return res.status(400).json({ ok: false, error: 'Email required' });
-
   if (!USERS[e]) USERS[e] = { email: e, name: '', tier: t, created_at: now(), gmail: '' };
   else USERS[e].tier = t;
-
   logDiscord('subscription', '👑 Subscription changed', '', [['User', e], ['New tier', t]]);
   res.json({ ok: true, user: USERS[e] });
 });
-app.get('/api/admin/stats', requireAdmin, (req, res) => {
+app.get(['/api/admin/stats', '/admin/stats'], requireAdmin, (req, res) => {
   const arr = Object.values(USERS);
   res.json({
     ok: true,
@@ -689,6 +624,12 @@ app.get('/api/admin/stats', requireAdmin, (req, res) => {
     pro: arr.filter(x => x.tier === 'pro').length,
     ultimate: arr.filter(x => x.tier === 'ultimate').length,
   });
+});
+
+/* ------------------------- CATCH-ALL for /api ------------------------- */
+app.use((req, res) => {
+  if (req.path.startsWith('/api/')) return res.status(404).json({ ok: false, error: 'Not found' });
+  res.status(404).send('Not found');
 });
 
 module.exports = app;
