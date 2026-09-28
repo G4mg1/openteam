@@ -1,46 +1,70 @@
 const express = require('express');
-const cookieSession = require('cookie-session');
+const crypto  = require('crypto');
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 
-app.use(cookieSession({
-  name: 'mirox_sess',
-  keys: [process.env.SECRET_KEY || 'mirox-dev-secret-please-change-me-1234567890'],
-  maxAge: 30 * 24 * 60 * 60 * 1000,
-  secure: process.env.VERCEL === '1' || process.env.NODE_ENV === 'production',
-  sameSite: 'lax',
-  httpOnly: true,
-}));
-
-/* ------------------------- CONFIG ------------------------- */
-const HF_API_KEY = (process.env.HF_API_KEY || '').trim();
-const DISCORD_WEBHOOK = (process.env.DISCORD_WEBHOOK ||
-  'https://discord.com/api/webhooks/1554014348794667078/1KhZnYj62iJQyRIg7CMIeRiaophKYppiXegaJ54vgbVARlYu1nx1OCSVU-N4PuN69mgI'
-).trim();
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '2010';
+/* ============================================================
+   CONFIG
+   ============================================================ */
+const HF_API_KEY       = (process.env.HF_API_KEY || '').trim();
+const DISCORD_WEBHOOK  = (process.env.DISCORD_WEBHOOK || '').trim();
+const ADMIN_PASSWORD   = process.env.ADMIN_PASSWORD || '2010';
+const SECRET           = process.env.SECRET_KEY || 'mirox-dev-fallback-secret-change-me-please';
 
 const HF_CHAT   = 'https://router.huggingface.co/v1/chat/completions';
 const HF_IMAGES = 'https://router.huggingface.co/v1/images/generations';
 
-/* ------------------------- IN-MEMORY STORES ------------------------- */
-const USERS    = Object.create(null);   // email -> user record
-const CHATS    = Object.create(null);   // email -> { chatId -> chat }
-const MEMORY   = Object.create(null);   // email -> [ {id,text} ]
-const PERSONAS = Object.create(null);   // email -> string
-const KEYS     = Object.create(null);   // email -> [ keys ]
-const TICKETS  = Object.create(null);   // email -> [ tickets ]
+/* ============================================================
+   SESSION (HMAC-signed cookie — no middleware quirks)
+   ============================================================ */
+function signSession(data) {
+  const payload = Buffer.from(JSON.stringify(data)).toString('base64url');
+  const sig = crypto.createHmac('sha256', SECRET).update(payload).digest('base64url');
+  return `${payload}.${sig}`;
+}
+function verifySession(token) {
+  if (!token) return {};
+  const parts = token.split('.');
+  if (parts.length !== 2) return {};
+  const [payload, sig] = parts;
+  const expected = crypto.createHmac('sha256', SECRET).update(payload).digest('base64url');
+  if (expected !== sig) return {};
+  try { return JSON.parse(Buffer.from(payload, 'base64url').toString()); }
+  catch { return {}; }
+}
+function getSession(req) {
+  const raw = req.headers.cookie || '';
+  const m = raw.match(/(?:^|;\s*)mirox_sess=([^;]+)/);
+  if (!m) return {};
+  return verifySession(decodeURIComponent(m[1]));
+}
+function setSession(res, data) {
+  const token = signSession(data);
+  const secure = process.env.VERCEL === '1' ? '; Secure' : '';
+  res.setHeader('Set-Cookie',
+    `mirox_sess=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 60 * 60}${secure}`);
+}
+function clearSession(res) {
+  res.setHeader('Set-Cookie', 'mirox_sess=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
+}
 
-/* ------------------------- DISCORD LOGGING ------------------------- */
+/* ============================================================
+   IN-MEMORY STORES
+   ============================================================ */
+const USERS    = Object.create(null);
+const MEMORY   = Object.create(null);
+const PERSONAS = Object.create(null);
+const KEYS     = Object.create(null);
+const TICKETS  = Object.create(null);
+
+/* ============================================================
+   DISCORD LOGGING
+   ============================================================ */
 const COLORS = {
-  signin:       0x16a34a,
-  chat:         0x3b82f6,
-  image:        0x8b5cf6,
-  video:        0xdc2626,
-  subscription: 0xd97706,
-  error:        0xef4444,
+  signin: 0x16a34a, chat: 0x3b82f6, image: 0x8b5cf6,
+  video: 0xdc2626, subscription: 0xd97706, error: 0xef4444,
 };
-
 async function logDiscord(kind, title, description = '', fields = []) {
   if (!DISCORD_WEBHOOK) return;
   const embed = {
@@ -63,86 +87,110 @@ async function logDiscord(kind, title, description = '', fields = []) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: 'MiroxAI', embeds: [embed] }),
     });
-  } catch (e) {
-    console.error('discord log failed:', e.message);
-  }
+  } catch (e) { console.error('discord log failed:', e.message); }
 }
 
-/* ------------------------- MODELS ------------------------- */
+/* ============================================================
+   MODELS — each with a UNIQUE system prompt (personality)
+   ============================================================ */
 const MODELS = {
-  'mirox-luna-1.2':    { label: 'Luna',    tagline: 'Smart and fast',       tier: 'free',     hf: 'meta-llama/Llama-3.2-3B-Instruct',  tokens: 700,  default: true },
-  'mirox-gen-1':       { label: 'Gen',     tagline: 'Quick and light',      tier: 'free',     hf: 'meta-llama/Llama-3.2-1B-Instruct',  tokens: 512,  fallback: true },
-  'mirox-pro-5':       { label: 'Pro',     tagline: 'Balanced intelligence',tier: 'pro',      hf: 'Qwen/Qwen2.5-7B-Instruct',          tokens: 900 },
-  'mirox-ultra-10':    { label: 'Ultra',   tagline: 'Maximum power',        tier: 'pro',      hf: 'meta-llama/Llama-3.1-8B-Instruct',  tokens: 1200 },
-  'mirox-eclipse-2.0': { label: 'Eclipse', tagline: 'Advanced reasoning',   tier: 'ultimate', hf: 'Qwen/Qwen2.5-14B-Instruct',         tokens: 1400 },
+  'mirox-luna-1.2': {
+    label: 'Luna', tagline: 'Warm & friendly', tier: 'free', default: true,
+    hf: 'meta-llama/Llama-3.2-3B-Instruct', tokens: 700,
+    prompt:
+      'You are Luna, a warm and friendly assistant created by the OpenSurr team. ' +
+      'Speak naturally, with a personal, encouraging tone. ' +
+      'Be brief but caring. Never mention any other company or AI model. ' +
+      'If asked who made you, answer: OpenSurr. If asked your model name, answer: Luna.'
+  },
+  'mirox-gen-1': {
+    label: 'Gen', tagline: 'Quick & concise', tier: 'free', fallback: true,
+    hf: 'meta-llama/Llama-3.2-1B-Instruct', tokens: 512,
+    prompt:
+      'You are Gen, an ultra-concise assistant from the OpenSurr team. ' +
+      'Give the shortest clear answer possible. Skip filler. ' +
+      'Never mention any other company or AI model. If asked who made you, answer: OpenSurr.'
+  },
+  'mirox-pro-5': {
+    label: 'Pro', tagline: 'Balanced & thorough', tier: 'pro',
+    hf: 'Qwen/Qwen2.5-7B-Instruct', tokens: 900,
+    prompt:
+      'You are Pro, a professional assistant from the OpenSurr team. ' +
+      'Give balanced, well-structured answers with clear reasoning. ' +
+      'Use headings or lists when helpful. Never mention any other company or AI model. ' +
+      'If asked who made you, answer: OpenSurr. If asked your model name, answer: Pro.'
+  },
+  'mirox-ultra-10': {
+    label: 'Ultra', tagline: 'Deep reasoning', tier: 'pro',
+    hf: 'meta-llama/Llama-3.1-8B-Instruct', tokens: 1200,
+    prompt:
+      'You are Ultra, an analytical assistant from the OpenSurr team. ' +
+      'Think step by step. Break complex problems into clear logical parts. ' +
+      'Show your reasoning when it helps the user. Never mention any other company or AI model. ' +
+      'If asked who made you, answer: OpenSurr. If asked your model name, answer: Ultra.'
+  },
+  'mirox-eclipse-2.0': {
+    label: 'Eclipse', tagline: 'Advanced & creative', tier: 'ultimate',
+    hf: 'Qwen/Qwen2.5-14B-Instruct', tokens: 1400,
+    prompt:
+      'You are Eclipse, the most advanced assistant from the OpenSurr team. ' +
+      'Blend deep reasoning with creativity. Explore ideas from multiple angles. ' +
+      'Offer novel insights, but stay accurate. Never mention any other company or AI model. ' +
+      'If asked who made you, answer: OpenSurr. If asked your model name, answer: Eclipse.'
+  },
 };
+
 const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
 
 const PLANS = {
-  free:     { label: 'Free',     daily_limit: 50,   ultimate_trial_limit: 10, trial_model: 'mirox-eclipse-2.0', fallback_model: 'mirox-gen-1',     price_robux: 0,    price_afg: 0,   price_hesab: 0,   gamepass_id: '' },
-  pro:      { label: 'Pro',      daily_limit: 500,  ultimate_trial_limit: 0,  trial_model: '',                  fallback_model: 'mirox-pro-5',     price_robux: 250,  price_afg: 120, price_hesab: 150, gamepass_id: '' },
-  ultimate: { label: 'Ultimate', daily_limit: 5000, ultimate_trial_limit: 0,  trial_model: '',                  fallback_model: 'mirox-ultra-10',  price_robux: 1200, price_afg: 450, price_hesab: 550, gamepass_id: '' },
+  free:     { label: 'Free',     daily_limit: 50,   ultimate_trial_limit: 10, price_robux: 0,    price_afg: 0,   price_hesab: 0,   gamepass_id: '' },
+  pro:      { label: 'Pro',      daily_limit: 500,  ultimate_trial_limit: 0,  price_robux: 250,  price_afg: 120, price_hesab: 150, gamepass_id: '' },
+  ultimate: { label: 'Ultimate', daily_limit: 5000, ultimate_trial_limit: 0,  price_robux: 1200, price_afg: 450, price_hesab: 550, gamepass_id: '' },
 };
-
-const SYSTEM_PROMPT = 'You are Mirox, an AI assistant created by the OpenSurr team. Your name is Mirox. Never mention any other company or model. If asked who made you, answer: OpenSurr. Be warm, clear, and concise.';
 
 const ANNOUNCEMENT = {
-  enabled: true,
-  version: 'v1-luna',
-  title: 'Meet Luna',
+  enabled: true, version: 'v1-luna', title: 'Meet Luna',
   image: 'luna.png',
-  body: 'Luna is now the default — smart, fast, and free.',
-  highlights: ['Luna — new default', 'Pro & Ultra on Pro plan', 'Eclipse on Ultimate', 'Image generation ready'],
+  body: 'Luna is now the default — warm, smart, and free.',
+  highlights: [
+    'Luna — new default, free',
+    'Pro & Ultra on Pro plan',
+    'Eclipse on Ultimate',
+    'Guest mode — chat without signing in'
+  ],
 };
 
-/* ------------------------- HELPERS ------------------------- */
+/* ============================================================
+   HELPERS
+   ============================================================ */
 const now = () => Math.floor(Date.now() / 1000);
 
 function currentUser(req) {
-  const uid = req.session && req.session.uid;
-  if (!uid) return null;
-  if (!USERS[uid]) {
-    USERS[uid] = {
-      email: uid,
-      name: (req.session && req.session.name) || '',
-      tier: (req.session && req.session.tier) || 'free',
+  const s = getSession(req);
+  if (!s.uid) return null;
+  if (!USERS[s.uid]) {
+    USERS[s.uid] = {
+      email: s.uid,
+      name: s.name || '',
+      tier: s.tier || 'free',
       created_at: now(),
       gmail: '',
     };
   }
-  return { ...USERS[uid] };
+  return { ...USERS[s.uid] };
 }
 
-function requireUser(fn) {
-  return async (req, res, next) => {
-    if (!req.session || !req.session.uid) {
-      return res.status(401).json({ ok: false, error: 'Sign in first' });
-    }
-    try { await fn(req, res, next); }
-    catch (e) { console.error(e); if (!res.headersSent) res.status(500).json({ ok: false, error: e.message }); }
-  };
-}
+function memBox(email)     { if (!MEMORY[email])   MEMORY[email]   = []; return MEMORY[email]; }
+function keysBox(email)    { if (!KEYS[email])     KEYS[email]     = []; return KEYS[email]; }
+function ticketsBox(email) { if (!TICKETS[email])  TICKETS[email]  = []; return TICKETS[email]; }
 
-function requireAdmin(fn) {
-  return async (req, res, next) => {
-    if (!req.session || !req.session.is_admin) {
-      return res.status(403).json({ ok: false, error: 'Admin only' });
-    }
-    try { await fn(req, res, next); }
-    catch (e) { console.error(e); if (!res.headersSent) res.status(500).json({ ok: false, error: e.message }); }
-  };
-}
-
-function chatBox(email)     { if (!CHATS[email])    CHATS[email]    = Object.create(null); return CHATS[email]; }
-function memBox(email)      { if (!MEMORY[email])   MEMORY[email]   = []; return MEMORY[email]; }
-function keysBox(email)     { if (!KEYS[email])     KEYS[email]     = []; return KEYS[email]; }
-function ticketsBox(email)  { if (!TICKETS[email])  TICKETS[email]  = []; return TICKETS[email]; }
-
-/* ------------------------- CONFIG / HEALTH ------------------------- */
+/* ============================================================
+   CONFIG / HEALTH
+   ============================================================ */
 app.get(['/config.json', '/api/config'], (req, res) => {
   const u = currentUser(req);
   res.json({
-    app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v1' },
+    app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v2' },
     models: Object.entries(MODELS).map(([id, m]) => ({
       id, label: m.label, tagline: m.tagline, tier: m.tier,
       default: !!m.default, fallback: !!m.fallback,
@@ -152,6 +200,7 @@ app.get(['/config.json', '/api/config'], (req, res) => {
     email: { enabled: true, free_daily_limit: 5, paid_daily_limit: 100, signature: 'made by mirox ai', from_name: 'MiroxAI' },
     announcement: ANNOUNCEMENT,
     user_tier: u ? u.tier : 'free',
+    guest: !u,
     hf_ready: !!HF_API_KEY,
   });
 });
@@ -160,7 +209,9 @@ app.get(['/api/health', '/api/ping'], (req, res) => {
   res.json({ ok: true, app: 'MiroxAI', hf: !!HF_API_KEY, t: now() });
 });
 
-/* ------------------------- AUTH ------------------------- */
+/* ============================================================
+   AUTH
+   ============================================================ */
 app.post('/api/auth/simple-login', async (req, res) => {
   const { name, email } = req.body || {};
   const n = String(name || '').trim().slice(0, 60);
@@ -177,14 +228,10 @@ app.post('/api/auth/simple-login', async (req, res) => {
     USERS[e].name = n;
   }
 
-  req.session.uid   = e;
-  req.session.name  = n;
-  req.session.tier  = USERS[e].tier;
+  setSession(res, { uid: e, name: n, tier: USERS[e].tier });
 
   logDiscord('signin', existing ? '👤 Sign in' : '👤 New user', '', [
-    ['Name', n],
-    ['Email', e],
-    ['Tier', USERS[e].tier],
+    ['Name', n], ['Email', e], ['Tier', USERS[e].tier],
     ['Time', new Date().toISOString()],
   ]);
 
@@ -199,7 +246,7 @@ app.post('/api/auth/simple-login', async (req, res) => {
 });
 
 app.post('/api/logout', (req, res) => {
-  req.session = null;
+  clearSession(res);
   res.json({ ok: true });
 });
 
@@ -214,9 +261,13 @@ app.get('/api/me', (req, res) => {
   });
 });
 
-/* ------------------------- SUBSCRIPTION ------------------------- */
-app.get('/api/subscription/me', requireUser(async (req, res) => {
+/* ============================================================
+   SUBSCRIPTION
+   ============================================================ */
+app.get('/api/subscription/me', (req, res) => {
   const u = currentUser(req);
+  if (!u) return res.json({ ok: false, error: 'Sign in first' });
+
   const p = PLANS[u.tier];
   const ks = keysBox(u.email);
   res.json({
@@ -236,7 +287,7 @@ app.get('/api/subscription/me', requireUser(async (req, res) => {
     daily_reset_seconds: 86400,
     lite_mode: false,
   });
-}));
+});
 
 app.get('/api/subscription/plans', (req, res) => {
   const perks = {
@@ -258,7 +309,9 @@ app.get('/api/subscription/plans', (req, res) => {
   res.json({ ok: true, plans: out, admin_email: 'admin@example.com', admin_phone: '' });
 });
 
-/* ------------------------- HF CHAT STREAM ------------------------- */
+/* ============================================================
+   HF CHAT STREAM
+   ============================================================ */
 async function hfStream(modelId, messages, maxTokens) {
   if (!HF_API_KEY) throw new Error('HF_API_KEY not configured');
   const r = await fetch(HF_CHAT, {
@@ -269,12 +322,8 @@ async function hfStream(modelId, messages, maxTokens) {
       'Accept': 'text/event-stream',
     },
     body: JSON.stringify({
-      model: modelId,
-      messages,
-      max_tokens: maxTokens,
-      temperature: 0.7,
-      top_p: 0.95,
-      stream: true,
+      model: modelId, messages, max_tokens: maxTokens,
+      temperature: 0.7, top_p: 0.95, stream: true,
     }),
   });
   if (!r.ok) {
@@ -285,8 +334,8 @@ async function hfStream(modelId, messages, maxTokens) {
   return r.body;
 }
 
-function buildMessages(history, userText, persona = '', mem = []) {
-  const msgs = [{ role: 'system', content: SYSTEM_PROMPT }];
+function buildMessages(systemPrompt, history, userText, persona = '', mem = []) {
+  const msgs = [{ role: 'system', content: systemPrompt }];
   if (persona) msgs.push({ role: 'system', content: `User preference: ${String(persona).slice(0, 1500)}` });
   if (mem.length) {
     msgs.push({ role: 'system', content: 'Remember: ' + mem.slice(-8).map(m => m.text).join(' | ') });
@@ -299,29 +348,35 @@ function buildMessages(history, userText, persona = '', mem = []) {
   return msgs;
 }
 
-app.post('/api/chat/stream', requireUser(async (req, res) => {
+app.post('/api/chat/stream', async (req, res) => {
   const { message, history, model: modelKey } = req.body || {};
   const msg = String(message || '').trim();
   if (!msg) return res.status(400).json({ ok: false, error: 'Empty message' });
 
   const u = currentUser(req);
+  const tier = u ? u.tier : 'free';
+
   let cfg = MODELS[modelKey] || MODELS['mirox-luna-1.2'];
-  if (TIER_RANK[cfg.tier] > TIER_RANK[u.tier]) {
-    if (!(u.tier === 'free' && cfg.tier === 'ultimate')) {
+  if (TIER_RANK[cfg.tier] > TIER_RANK[tier]) {
+    if (!(tier === 'free' && cfg.tier === 'ultimate')) {
       cfg = MODELS['mirox-luna-1.2'];
     }
   }
 
-  const mem = memBox(u.email);
-  const persona = PERSONAS[u.email] || '';
-  const msgs = buildMessages(history, msg, persona, mem);
+  const mem = u ? memBox(u.email) : [];
+  const persona = u ? (PERSONAS[u.email] || '') : '';
+  const msgs = buildMessages(cfg.prompt, history, msg, persona, mem);
 
-  logDiscord('chat', '💬 Chat message', '', [
-    ['User', u.email],
-    ['Model', cfg.label],
-    ['Message', msg.slice(0, 500)],
-    ['Length', `${msg.length} chars`],
-  ]);
+  if (u) {
+    logDiscord('chat', '💬 Chat message', '', [
+      ['User', u.email], ['Model', cfg.label],
+      ['Message', msg.slice(0, 500)], ['Length', `${msg.length} chars`],
+    ]);
+  } else {
+    logDiscord('chat', '💬 Guest message', '', [
+      ['Model', cfg.label], ['Message', msg.slice(0, 500)],
+    ]);
+  }
 
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -351,38 +406,38 @@ app.post('/api/chat/stream', requireUser(async (req, res) => {
           const obj = JSON.parse(payload);
           const ch = obj.choices || [];
           const delta = ch[0] && ch[0].delta && ch[0].delta.content;
-          if (delta) {
-            res.write(`data: ${JSON.stringify({ d: delta })}\n\n`);
-          }
+          if (delta) res.write(`data: ${JSON.stringify({ d: delta })}\n\n`);
         } catch {}
       }
     }
   } catch (e) {
     res.write(`data: ${JSON.stringify({ error: String(e.message).slice(0, 220) })}\n\n`);
     logDiscord('error', '❌ Chat failed', String(e.message).slice(0, 400),
-      [['User', u.email], ['Model', cfg.label]]);
+      [['User', u ? u.email : 'guest'], ['Model', cfg.label]]);
   }
   res.write(`data: ${JSON.stringify({ done: true, model: cfg.label, ms: Date.now() - t0 })}\n\n`);
   res.end();
-}));
+});
 
-app.post('/api/chat', requireUser(async (req, res) => {
+app.post('/api/chat', async (req, res) => {
   const { message, history, model: modelKey } = req.body || {};
   const msg = String(message || '').trim();
   if (!msg) return res.status(400).json({ ok: false, error: 'Empty message' });
 
   const u = currentUser(req);
+  const tier = u ? u.tier : 'free';
   let cfg = MODELS[modelKey] || MODELS['mirox-luna-1.2'];
-  const mem = memBox(u.email);
-  const persona = PERSONAS[u.email] || '';
-  const msgs = buildMessages(history, msg, persona, mem);
+  if (TIER_RANK[cfg.tier] > TIER_RANK[tier]) cfg = MODELS['mirox-luna-1.2'];
+
+  const mem = u ? memBox(u.email) : [];
+  const persona = u ? (PERSONAS[u.email] || '') : '';
+  const msgs = buildMessages(cfg.prompt, history, msg, persona, mem);
 
   try {
     const stream = await hfStream(cfg.hf, msgs, cfg.tokens);
     const reader = stream.getReader();
     const decoder = new TextDecoder();
-    let buf = '';
-    let out = '';
+    let buf = '', out = '';
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
@@ -406,118 +461,133 @@ app.post('/api/chat', requireUser(async (req, res) => {
   } catch (e) {
     res.status(502).json({ ok: false, error: String(e.message).slice(0, 200) });
   }
-}));
+});
 
-/* ------------------------- MEMORY ------------------------- */
-app.get('/api/memory', requireUser(async (req, res) => {
-  res.json({ ok: true, facts: memBox(currentUser(req).email) });
-}));
-
-app.post('/api/memory', requireUser(async (req, res) => {
+/* ============================================================
+   MEMORY / PERSONA (require sign-in)
+   ============================================================ */
+app.get('/api/memory', (req, res) => {
+  const u = currentUser(req);
+  if (!u) return res.json({ ok: true, facts: [] });
+  res.json({ ok: true, facts: memBox(u.email) });
+});
+app.post('/api/memory', (req, res) => {
+  const u = currentUser(req);
+  if (!u) return res.status(401).json({ ok: false, error: 'Sign in first' });
   const fact = String((req.body && req.body.fact) || '').trim().slice(0, 500);
   if (!fact) return res.status(400).json({ ok: false, error: 'Fact required' });
   const item = { id: Math.random().toString(36).slice(2, 10), text: fact };
-  memBox(currentUser(req).email).push(item);
+  memBox(u.email).push(item);
   res.json({ ok: true, fact: item });
-}));
-
-app.delete('/api/memory/:id', requireUser(async (req, res) => {
-  const list = memBox(currentUser(req).email);
-  const idx = list.findIndex(m => m.id === req.params.id);
-  if (idx >= 0) list.splice(idx, 1);
+});
+app.delete('/api/memory/:id', (req, res) => {
+  const u = currentUser(req);
+  if (!u) return res.status(401).json({ ok: false, error: 'Sign in first' });
+  const list = memBox(u.email);
+  const i = list.findIndex(m => m.id === req.params.id);
+  if (i >= 0) list.splice(i, 1);
   res.json({ ok: true });
-}));
-
-/* ------------------------- PERSONA ------------------------- */
-app.get('/api/settings/persona', requireUser(async (req, res) => {
-  res.json({ ok: true, persona: PERSONAS[currentUser(req).email] || '' });
-}));
-
-app.post('/api/settings/persona', requireUser(async (req, res) => {
-  PERSONAS[currentUser(req).email] = String((req.body && req.body.persona) || '').slice(0, 2000);
+});
+app.get('/api/settings/persona', (req, res) => {
+  const u = currentUser(req);
+  if (!u) return res.json({ ok: true, persona: '' });
+  res.json({ ok: true, persona: PERSONAS[u.email] || '' });
+});
+app.post('/api/settings/persona', (req, res) => {
+  const u = currentUser(req);
+  if (!u) return res.status(401).json({ ok: false, error: 'Sign in first' });
+  PERSONAS[u.email] = String((req.body && req.body.persona) || '').slice(0, 2000);
   res.json({ ok: true });
-}));
+});
 
-/* ------------------------- SUPPORT ------------------------- */
-app.post('/api/report', requireUser(async (req, res) => {
+/* ============================================================
+   SUPPORT
+   ============================================================ */
+app.post('/api/report', (req, res) => {
+  const u = currentUser(req);
+  if (!u) return res.status(401).json({ ok: false, error: 'Sign in first' });
   const { subject, category, message } = req.body || {};
   const tid = 't_' + Math.random().toString(36).slice(2, 12);
-  const tk = {
+  ticketsBox(u.email).unshift({
     id: tid,
     subject: String(subject || '(no subject)').slice(0, 120),
     category: String(category || 'general').slice(0, 40),
-    status: 'open',
-    unread_user: 0,
-    created_at: now(),
+    status: 'open', unread_user: 0, created_at: now(),
     messages: [{ from: 'user', text: String(message || '').slice(0, 4000), ts: now() }],
-  };
-  ticketsBox(currentUser(req).email).unshift(tk);
+  });
   res.json({ ok: true, ticket_id: tid });
-}));
-
-app.get('/api/report/mine', requireUser(async (req, res) => {
-  res.json({ ok: true, reports: ticketsBox(currentUser(req).email) });
-}));
-
-app.post('/api/report/:id/reply', requireUser(async (req, res) => {
-  const tid = req.params.id;
+});
+app.get('/api/report/mine', (req, res) => {
+  const u = currentUser(req);
+  if (!u) return res.json({ ok: true, reports: [] });
+  res.json({ ok: true, reports: ticketsBox(u.email) });
+});
+app.post('/api/report/:id/reply', (req, res) => {
+  const u = currentUser(req);
+  if (!u) return res.status(401).json({ ok: false, error: 'Sign in first' });
   const text = String((req.body && req.body.text) || '').slice(0, 4000);
-  for (const t of ticketsBox(currentUser(req).email)) {
-    if (t.id === tid) {
+  for (const t of ticketsBox(u.email)) {
+    if (t.id === req.params.id) {
       t.messages.push({ from: 'user', text, ts: now() });
       t.status = 'open';
     }
   }
   res.json({ ok: true });
-}));
+});
 
-/* ------------------------- API KEYS ------------------------- */
-app.get('/api/keys', requireUser(async (req, res) => {
-  res.json({ ok: true, keys: keysBox(currentUser(req).email) });
-}));
-
-app.post('/api/keys/generate', requireUser(async (req, res) => {
+/* ============================================================
+   API KEYS
+   ============================================================ */
+app.get('/api/keys', (req, res) => {
+  const u = currentUser(req);
+  if (!u) return res.json({ ok: true, keys: [] });
+  res.json({ ok: true, keys: keysBox(u.email) });
+});
+app.post('/api/keys/generate', (req, res) => {
+  const u = currentUser(req);
+  if (!u) return res.status(401).json({ ok: false, error: 'Sign in first' });
   const name = String((req.body && req.body.name) || 'My key').slice(0, 60);
-  const crypto = require('crypto');
   const raw = 'mx_' + crypto.randomBytes(24).toString('base64url');
   const k = {
     id: 'k_' + Math.random().toString(36).slice(2, 10),
-    name,
-    key: raw,
+    name, key: raw,
     preview: raw.slice(0, 8) + '…' + raw.slice(-4),
-    revoked: false,
-    created_at: now(),
-    tier: currentUser(req).tier,
+    revoked: false, created_at: now(), tier: u.tier,
   };
-  keysBox(currentUser(req).email).push(k);
+  keysBox(u.email).push(k);
   res.json({ ok: true, id: k.id, key: raw });
-}));
-
-app.delete('/api/keys/:id', requireUser(async (req, res) => {
-  for (const k of keysBox(currentUser(req).email)) {
-    if (k.id === req.params.id) k.revoked = true;
-  }
-  res.json({ ok: true });
-}));
-
-/* ------------------------- EMAIL (stubs) ------------------------- */
-app.get('/api/email/status', requireUser(async (req, res) => {
+});
+app.delete('/api/keys/:id', (req, res) => {
   const u = currentUser(req);
-  res.json({ ok: true, connected: !!u.gmail, address: u.gmail || '', used_today: 0, daily_limit: 5 });
-}));
-app.post('/api/email/connect',    requireUser(async (req, res) => res.json({ ok: true })));
-app.post('/api/email/disconnect', requireUser(async (req, res) => res.json({ ok: true })));
-app.post('/api/email/test',       requireUser(async (req, res) => res.status(501).json({ ok: false, error: 'Email not enabled' })));
-app.post('/api/email/send',       requireUser(async (req, res) => res.status(501).json({ ok: false, error: 'Email not enabled' })));
+  if (!u) return res.status(401).json({ ok: false, error: 'Sign in first' });
+  for (const k of keysBox(u.email)) if (k.id === req.params.id) k.revoked = true;
+  res.json({ ok: true });
+});
 
-/* ------------------------- IMAGE ------------------------- */
-app.post('/api/image/generate', requireUser(async (req, res) => {
+/* ============================================================
+   EMAIL stubs
+   ============================================================ */
+app.get('/api/email/status', (req, res) => {
+  const u = currentUser(req);
+  res.json({ ok: true, connected: !!(u && u.gmail), address: (u && u.gmail) || '', used_today: 0, daily_limit: 5 });
+});
+app.post('/api/email/connect',    (req, res) => res.json({ ok: true }));
+app.post('/api/email/disconnect', (req, res) => res.json({ ok: true }));
+app.post('/api/email/test',       (req, res) => res.status(501).json({ ok: false, error: 'Email not enabled' }));
+app.post('/api/email/send',       (req, res) => res.status(501).json({ ok: false, error: 'Email not enabled' }));
+
+/* ============================================================
+   IMAGE
+   ============================================================ */
+app.post('/api/image/generate', async (req, res) => {
   const prompt = String((req.body && req.body.prompt) || '').trim().slice(0, 1000);
   if (!prompt) return res.status(400).json({ ok: false, error: 'Prompt required' });
   if (!HF_API_KEY) return res.status(500).json({ ok: false, error: 'HF_API_KEY missing' });
 
   const u = currentUser(req);
-  logDiscord('image', '🎨 Image request', '', [['User', u.email], ['Prompt', prompt.slice(0, 500)]]);
+  logDiscord('image', '🎨 Image request', '', [
+    ['User', u ? u.email : 'guest'], ['Prompt', prompt.slice(0, 500)],
+  ]);
 
   try {
     const r = await fetch(HF_IMAGES, {
@@ -525,69 +595,79 @@ app.post('/api/image/generate', requireUser(async (req, res) => {
       headers: { 'Authorization': `Bearer ${HF_API_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'black-forest-labs/FLUX.1-schnell',
-        prompt,
-        n: 1,
-        size: '1024x1024',
-        response_format: 'url',
+        prompt, n: 1, size: '1024x1024', response_format: 'url',
       }),
     });
     if (!r.ok) {
-      logDiscord('error', '❌ Image failed', `HTTP ${r.status}`, [['User', u.email], ['Prompt', prompt.slice(0, 300)]]);
+      logDiscord('error', '❌ Image failed', `HTTP ${r.status}`, [['User', u ? u.email : 'guest']]);
       return res.status(502).json({ ok: false, error: `HTTP ${r.status}` });
     }
     const j = await r.json();
     const item = (j.data || [{}])[0];
     const url = item.url || (item.b64_json ? ('data:image/png;base64,' + item.b64_json) : null);
     if (!url) return res.status(502).json({ ok: false, error: 'No image returned' });
-    logDiscord('image', '✅ Image generated', '', [['User', u.email], ['Model', 'FLUX.1-schnell']]);
+    logDiscord('image', '✅ Image generated', '', [['User', u ? u.email : 'guest']]);
     res.json({ ok: true, image: url, url, model: 'FLUX.1-schnell', provider: 'Hugging Face' });
   } catch (e) {
-    logDiscord('error', '❌ Image error', String(e.message).slice(0, 300), [['User', u.email]]);
+    logDiscord('error', '❌ Image error', String(e.message).slice(0, 300), []);
     res.status(502).json({ ok: false, error: String(e.message).slice(0, 200) });
   }
-}));
+});
 
-/* ------------------------- VIDEO ------------------------- */
-app.post('/api/video/generate', requireUser(async (req, res) => {
+/* ============================================================
+   VIDEO stub
+   ============================================================ */
+app.post('/api/video/generate', (req, res) => {
   const u = currentUser(req);
   logDiscord('video', '🎬 Video request', 'Not enabled', [
-    ['User', u.email],
+    ['User', u ? u.email : 'guest'],
     ['Prompt', String((req.body && req.body.prompt) || '').slice(0, 300)],
   ]);
   res.status(501).json({ ok: false, error: "Video generation isn't available on this deployment." });
-}));
-
-/* ------------------------- PAYMENTS ------------------------- */
-app.post('/api/payment/hesabpay/create', requireUser(async (req, res) => {
-  res.status(400).json({ ok: false, error: "HesabPay isn't configured." });
-}));
-
-/* ------------------------- ADMIN ------------------------- */
-app.get('/api/admin/status', (req, res) => {
-  res.json({ ok: true, is_admin: !!(req.session && req.session.is_admin) });
 });
 
+/* ============================================================
+   PAYMENTS stub
+   ============================================================ */
+app.post('/api/payment/hesabpay/create', (req, res) => {
+  res.status(400).json({ ok: false, error: "HesabPay isn't configured." });
+});
+
+/* ============================================================
+   ADMIN
+   ============================================================ */
+app.get('/api/admin/status', (req, res) => {
+  const s = getSession(req);
+  res.json({ ok: true, is_admin: !!s.is_admin });
+});
 app.post('/api/admin/login', async (req, res) => {
   const pw = String((req.body && req.body.password) || '').trim();
   if (pw && pw === ADMIN_PASSWORD) {
-    req.session.is_admin = true;
+    const s = getSession(req);
+    setSession(res, { ...s, is_admin: true });
     logDiscord('signin', '🔐 Admin login', '', [['Time', new Date().toISOString()]]);
     return res.json({ ok: true });
   }
   res.status(401).json({ ok: false, error: 'Wrong password' });
 });
-
 app.post('/api/admin/logout', (req, res) => {
-  if (req.session) req.session.is_admin = false;
+  const s = getSession(req);
+  delete s.is_admin;
+  setSession(res, s);
   res.json({ ok: true });
 });
 
-app.get('/api/admin/users', requireAdmin(async (req, res) => {
+function requireAdmin(req, res, next) {
+  const s = getSession(req);
+  if (!s.is_admin) return res.status(403).json({ ok: false, error: 'Admin only' });
+  next();
+}
+
+app.get('/api/admin/users', requireAdmin, (req, res) => {
   const arr = Object.values(USERS).sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
   res.json({ ok: true, users: arr });
-}));
-
-app.post('/api/admin/set-tier', requireAdmin(async (req, res) => {
+});
+app.post('/api/admin/set-tier', requireAdmin, async (req, res) => {
   const { email, tier } = req.body || {};
   const e = String(email || '').trim().toLowerCase();
   const t = String(tier || 'free').trim().toLowerCase();
@@ -599,9 +679,8 @@ app.post('/api/admin/set-tier', requireAdmin(async (req, res) => {
 
   logDiscord('subscription', '👑 Subscription changed', '', [['User', e], ['New tier', t]]);
   res.json({ ok: true, user: USERS[e] });
-}));
-
-app.get('/api/admin/stats', requireAdmin(async (req, res) => {
+});
+app.get('/api/admin/stats', requireAdmin, (req, res) => {
   const arr = Object.values(USERS);
   res.json({
     ok: true,
@@ -610,7 +689,6 @@ app.get('/api/admin/stats', requireAdmin(async (req, res) => {
     pro: arr.filter(x => x.tier === 'pro').length,
     ultimate: arr.filter(x => x.tier === 'ultimate').length,
   });
-}));
+});
 
-/* ------------------------- EXPORT ------------------------- */
 module.exports = app;
