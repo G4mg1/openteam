@@ -1,516 +1,118 @@
-const LS_CHATS  = "mirox_chats_v1";
-const LS_MODEL  = "mirox_model";
-const LS_THEME  = "mirox_theme";
-
+let __config = null;
 const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
 
-const state = {
-    user: null,
-    models: [],
-    model: "luna",
-    chats: [],
-    chatId: null,
-    streaming: false,
-    tier: "free",
-};
+let currentConversationId = null, isReplying = false;
+let __user = null, __tier = "free";
+let __imagesAllowed = true, __dailyRemaining = 50, __dailyLimit = 50;
+let __trialRemaining = 10, __trialLimit = 10;
+let __emailConnected = false;
+let expandedTickets = new Set();
 
-const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
-
-function escapeHtml(s) {
-    const d = document.createElement("div");
-    d.textContent = s == null ? "" : String(s);
-    return d.innerHTML;
-}
-function uid() {
-    return "c_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
-}
-
-function loadChats() {
-    try { state.chats = JSON.parse(localStorage.getItem(LS_CHATS)) || []; }
-    catch { state.chats = []; }
-}
-function saveChats() {
-    try { localStorage.setItem(LS_CHATS, JSON.stringify(state.chats.slice(0, 80))); } catch {}
-}
-function currentChat() {
-    return state.chats.find(c => c.id === state.chatId) || null;
-}
-
-function applyTheme(mode) {
-    document.documentElement.setAttribute("data-theme", mode);
-    $("#themeBtn").innerHTML = mode === "dark"
-    ? '<i class="ri-sun-line"></i>'
-    : '<i class="ri-moon-line"></i>';
-    localStorage.setItem(LS_THEME, mode);
-}
-
-function openModal(id)  { $("#" + id).classList.add("open"); }
-function closeModal(id) { $("#" + id).classList.remove("open"); }
-
-document.addEventListener("click", e => {
-    const closeBtn = e.target.closest("[data-close]");
-    if (closeBtn) closeBtn.closest(".overlay").classList.remove("open");
-    if (e.target.classList.contains("overlay")) e.target.classList.remove("open");
+window.addEventListener("load", async () => {
+  await loadConfig();
+  setTimeout(() => { const l = $("#loadingScreen"); if (l) l.classList.add("hidden"); }, 350);
+  loadBackground();
+  loadAppearance();
+  await loadMe();
+  renderHistoryFromLS();
+  syncRailDefault();
+  setTimeout(showLunaAnnouncementOnce, 900);
 });
 
-function openSidebar()  { $("#sidebar").classList.add("open"); $("#scrim").classList.add("open"); }
-function closeSidebar() { $("#sidebar").classList.remove("open"); $("#scrim").classList.remove("open"); }
-
-async function api(path, opts = {}) {
-    return fetch(path, {
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        ...opts,
-    });
+// ---------- CONFIG ----------
+async function loadConfig() {
+  try {
+    const r = await fetch("/config.json", { cache: "no-store" });
+    __config = await r.json();
+  } catch {
+    __config = {
+      app: { name: "MiroxAI", made_by: "OpenSurr" },
+      models: [
+        { id: "mirox-luna-1.2", label: "Luna", tagline: "Smart and fast", tier: "free", default: true },
+        { id: "mirox-gen-1", label: "Gen", tagline: "Quick and light", tier: "free", fallback: true }
+      ],
+      plans: { free: { label: "Free", daily_limit: 50, ultimate_trial_limit: 10 } },
+      payments: { hesabpay: { enabled: false }, robux: { enabled: true }, afg_cash: { enabled: true } },
+      email: { enabled: true, free_daily_limit: 5 },
+      announcement: { enabled: false },
+    };
+  }
+  window.__config = __config;
+  buildModelPickerMenu();
+  updateDisclaimer();
+}
+const getDefaultModel = () => {
+  const d = (__config?.models || []).find(m => m.default);
+  return d ? d.id : "mirox-luna-1.2";
+};
+function updateDisclaimer() {
+  const el = $("#disclaimer"); if (!el) return;
+  const brand = __config?.app?.made_by || "OpenSurr";
+  el.innerHTML = `Mirox can make mistakes. Made by the <b>${brand}</b> team.`;
 }
 
-async function loadModels() {
-    try {
-        const r = await api("/api/config");
-        const d = await r.json();
-        state.models = d.models || [];
-        if (d.user_tier) state.tier = d.user_tier;
-        if (!d.hf_ready) {
-            addSystem("Server HF key is missing. Set HF_API_KEY in Vercel env variables.");
-        }
-    } catch {
-        state.models = [{ id: "luna", label: "Luna", tier: "free" }];
-    }
-    renderModelMenu();
-    updateModelLabel();
-}
-function renderModelMenu() {
-    const menu = $("#modelMenu");
-    menu.innerHTML = state.models.map(m => {
-        const locked = TIER_RANK[m.tier || "free"] > TIER_RANK[state.tier || "free"];
-        return `
-        <button data-model="${m.id}" class="${m.id === state.model ? "active" : ""}">
-        <span>${escapeHtml(m.label)}${locked ? " 🔒" : ""}</span>
-        <small>${locked ? `${m.tier} plan required` : "Fast, general purpose"}</small>
-        </button>
-        `;
-    }).join("");
-    menu.querySelectorAll("[data-model]").forEach(b => {
-        b.addEventListener("click", () => {
-            const m = state.models.find(x => x.id === b.dataset.model);
-            if (m && TIER_RANK[m.tier || "free"] > TIER_RANK[state.tier || "free"]) return;
-            state.model = b.dataset.model;
-            localStorage.setItem(LS_MODEL, state.model);
-            updateModelLabel();
-            renderModelMenu();
-            menu.classList.remove("open");
-        });
-    });
-}
-function updateModelLabel() {
-    const m = state.models.find(x => x.id === state.model);
-    $("#modelLabel").textContent = m ? m.label : "Luna";
+// ---------- MODALS ----------
+const openModal = id => { const el = document.getElementById(id); if (el) el.classList.add("open"); };
+const closeModal = id => { const el = document.getElementById(id); if (el) el.classList.remove("open"); };
+document.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", () => closeModal(b.dataset.close)));
+document.querySelectorAll(".modal-overlay").forEach(o => o.addEventListener("click", e => { if (e.target === o) o.classList.remove("open"); }));
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  document.querySelectorAll(".modal-overlay.open").forEach(o => o.classList.remove("open"));
+  $("#modelPickerMenu")?.classList.remove("open");
+});
+
+// ---------- ANNOUNCEMENT ----------
+function showLunaAnnouncementOnce() {
+  const a = __config?.announcement;
+  if (!a || !a.enabled) return;
+  const key = "miroxai_announce_" + (a.version || "v1");
+  try { if (localStorage.getItem(key) === "1") return; } catch {}
+  $("#announceTitle").textContent = a.title || "Announcement";
+  $("#announceBody").textContent = a.body || "";
+  const imgEl = document.querySelector(".announce-img");
+  if (imgEl && a.image) imgEl.src = a.image;
+  const pointsEl = $("#announcePoints");
+  pointsEl.innerHTML = (a.highlights || []).map(h => `<div class="announce-point"><i class="ri-check-line"></i><span>${escapeHtml(h)}</span></div>`).join("");
+  openModal("lunaAnnounceModal");
+  const dismiss = () => { try { localStorage.setItem(key, "1"); } catch {} closeModal("lunaAnnounceModal"); };
+  $("#announceOkBtn").onclick = dismiss;
+  document.querySelector('#lunaAnnounceModal [data-close]')?.addEventListener("click", dismiss);
 }
 
-async function loadMe() {
-    try {
-        const r = await api("/api/me");
-        const d = await r.json();
-        state.user = d.user;
-        if (d.user) state.tier = d.user.tier || "free";
-    } catch { state.user = null; }
-    updateUserUI();
-    renderModelMenu();
+// ---------- RAIL ----------
+const railToggleBtn = $("#railToggleBtn");
+const railToggleIcon = $("#railToggleIcon");
+function syncRailDefault() {
+  try { if (localStorage.getItem("miroxai_rail_collapsed") === "1") document.body.classList.add("rail-collapsed"); } catch {}
+  updateRailToggleIcon();
 }
-function updateUserUI() {
-    const name = state.user ? state.user.name : "Sign in";
-    const tier = state.user ? (state.user.tier || "free") : "—";
-    $("#userName").textContent = name;
-    $("#userTier").textContent = state.user
-    ? (tier.charAt(0).toUpperCase() + tier.slice(1) + " plan")
-    : "—";
-    $("#userAvatar").textContent = state.user
-    ? (state.user.name || "?").trim().charAt(0).toUpperCase()
-    : "?";
+function updateRailToggleIcon() {
+  if (!railToggleIcon) return;
+  const collapsed = document.body.classList.contains("rail-collapsed");
+  railToggleIcon.className = collapsed ? "ri-side-bar-line" : "ri-contract-left-line";
 }
+railToggleBtn?.addEventListener("click", () => {
+  document.body.classList.toggle("rail-collapsed");
+  try { localStorage.setItem("miroxai_rail_collapsed", document.body.classList.contains("rail-collapsed") ? "1" : "0"); } catch {}
+  updateRailToggleIcon();
+});
 
-function renderHistory() {
-    const box = $("#history");
-    box.innerHTML = "";
-    const chats = state.chats.slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-    if (!chats.length) {
-        box.innerHTML = '<div class="hist-empty">No chats yet</div>';
-        return;
-    }
-    chats.forEach(c => {
-        const el = document.createElement("div");
-        el.className = "hist-item" + (c.id === state.chatId ? " active" : "");
-        el.innerHTML = `
-        <i class="ri-chat-3-line"></i>
-        <span>${escapeHtml(c.title || "New chat")}</span>
-        <button class="hist-del" title="Delete"><i class="ri-close-line"></i></button>
-        `;
-        el.addEventListener("click", e => {
-            if (e.target.closest(".hist-del")) return;
-            state.chatId = c.id;
-            renderCurrentChat();
-            renderHistory();
-            closeSidebar();
-        });
-        el.querySelector(".hist-del").addEventListener("click", e => {
-            e.stopPropagation();
-            state.chats = state.chats.filter(x => x.id !== c.id);
-            if (state.chatId === c.id) { state.chatId = null; renderCurrentChat(); }
-            saveChats();
-            renderHistory();
-        });
-        box.appendChild(el);
-    });
-}
+// ---------- SIDEBAR ----------
+const sidebar = $("#sidebar"), sidebarScrim = $("#sidebarScrim");
+const openSidebar = () => { sidebar?.classList.add("open"); sidebarScrim?.classList.add("open"); };
+const closeSidebar = () => { sidebar?.classList.remove("open"); sidebarScrim?.classList.remove("open"); };
+$("#hamburgerBtn")?.addEventListener("click", openSidebar);
+$("#sidebarCloseBtn")?.addEventListener("click", closeSidebar);
+sidebarScrim?.addEventListener("click", closeSidebar);
+$("#brandLogo")?.addEventListener("click", () => { startNewChat(); if (window.innerWidth <= 860) closeSidebar(); });
 
-function renderCurrentChat() {
-    const chat = $("#chat");
-    chat.innerHTML = "";
-    const convo = currentChat();
-    if (!convo || !convo.messages.length) {
-        chat.innerHTML = `
-        <div class="welcome" id="welcome">
-        <div class="welcome-mark">M</div>
-        <h1>How can I help?</h1>
-        <p>Ask anything. Mirox will respond instantly.</p>
-        </div>`;
-        $("#title").textContent = "New chat";
-        $("#subtitle").textContent = "";
-        return;
-    }
-    $("#title").textContent = convo.title || "Chat";
-    $("#subtitle").textContent = "";
-    convo.messages.forEach(m => addMessage(m.role, m.content));
-    chat.scrollTop = chat.scrollHeight;
-}
-
-function addMessage(role, content, opts = {}) {
-    const chat = $("#chat");
-    const welcome = chat.querySelector(".welcome");
-    if (welcome) welcome.remove();
-
-    const wrap = document.createElement("div");
-    wrap.className = "msg " + role;
-
-    const isUser = role === "user";
-    const avatarHtml = isUser
-    ? '<div class="avatar"><i class="ri-user-3-line"></i></div>'
-    : '<div class="avatar">M</div>';
-
-    wrap.innerHTML = `
-    ${avatarHtml}
-    <div class="bubble"></div>
-    `;
-    const bubble = wrap.querySelector(".bubble");
-
-    if (opts.thinking) {
-        bubble.innerHTML = '<div class="thinking"><span></span><span></span><span></span></div>';
-        wrap.dataset.thinking = "1";
-    } else if (opts.html) {
-        bubble.innerHTML = content;
-    } else {
-        bubble.textContent = content || "";
-    }
-
-    chat.appendChild(wrap);
-    chat.scrollTop = chat.scrollHeight;
-    return wrap;
-}
-
-function addSystem(text) {
-    const chat = $("#chat");
-    const welcome = chat.querySelector(".welcome");
-    if (welcome) welcome.remove();
-    const wrap = document.createElement("div");
-    wrap.className = "msg error";
-    wrap.innerHTML = `
-    <div class="avatar"><i class="ri-error-warning-line"></i></div>
-    <div class="bubble">${escapeHtml(text)}</div>
-    `;
-    chat.appendChild(wrap);
-    chat.scrollTop = chat.scrollHeight;
-}
-
-function scrollBottom(force) {
-    const chat = $("#chat");
-    const near = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 220;
-    if (force || near) chat.scrollTop = chat.scrollHeight;
-}
-
-function newChat() {
-    state.chatId = null;
-    renderCurrentChat();
-    renderHistory();
-    closeSidebar();
-    setTimeout(() => $("#input").focus(), 50);
-}
-
-async function sendMessage(text) {
-    if (state.streaming) return;
-    text = (text || "").trim();
-    if (!text) return;
-
-    if (!state.user) {
-        openModal("loginModal");
-        return;
-    }
-
-    let convo = currentChat();
-    if (!convo) {
-        convo = {
-            id: uid(),
-            title: text.slice(0, 48) || "New chat",
-            messages: [],
-            updatedAt: Date.now(),
-        };
-        state.chats.unshift(convo);
-        state.chatId = convo.id;
-        $("#title").textContent = convo.title;
-        renderHistory();
-    }
-
-    convo.messages.push({ role: "user", content: text });
-    convo.updatedAt = Date.now();
-    saveChats();
-    addMessage("user", text);
-    scrollBottom(true);
-
-    const aiWrap = addMessage("ai", "", { thinking: true });
-    const bubble = aiWrap.querySelector(".bubble");
-    state.streaming = true;
-    $("#sendBtn").disabled = true;
-
-    try {
-        const history = convo.messages
-        .slice(0, -1)
-        .map(m => ({ role: m.role, content: m.content }));
-
-        const response = await api("/api/chat", {
-            method: "POST",
-            body: JSON.stringify({ message: text, history, model: state.model }),
-        });
-
-        if (!response.ok || !response.body) {
-            let msg = "Request failed";
-            try { const e = await response.json(); msg = e.error || msg; } catch {}
-            throw new Error(msg);
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        let full = "";
-        let first = true;
-
-        while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-
-            let idx;
-            while ((idx = buffer.indexOf("\n\n")) !== -1) {
-                const chunk = buffer.slice(0, idx);
-                buffer = buffer.slice(idx + 2);
-
-                for (const line of chunk.split("\n")) {
-                    if (!line.startsWith("data:")) continue;
-                    const payload = line.slice(5).trim();
-                    if (!payload) continue;
-
-                    let evt;
-                    try { evt = JSON.parse(payload); } catch { continue; }
-
-                    if (evt.d) {
-                        if (first) { bubble.innerHTML = ""; first = false; }
-                        full += evt.d;
-                        bubble.innerHTML = escapeHtml(full) + '<span class="cursor"></span>';
-                        scrollBottom(false);
-                    } else if (evt.done) {
-                        bubble.textContent = full || "(empty reply)";
-                        $("#subtitle").textContent =
-                        (evt.model || "") + (evt.ms ? ` · ${evt.ms}ms` : "");
-                    } else if (evt.error) {
-                        throw new Error(evt.error);
-                    }
-                }
-            }
-        }
-
-        if (!full) bubble.textContent = "(empty reply)";
-
-        convo.messages.push({ role: "assistant", content: full });
-        convo.updatedAt = Date.now();
-        saveChats();
-    } catch (err) {
-        bubble.textContent = err.message || "Something went wrong.";
-        aiWrap.classList.add("error");
-    } finally {
-        state.streaming = false;
-        $("#sendBtn").disabled = !$("#input").value.trim();
-        scrollBottom(false);
-    }
-}
-
-function autosize() {
-    const el = $("#input");
-    el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 180) + "px";
-}
-
-function wireComposer() {
-    const input = $("#input");
-    const form  = $("#composer");
-    const send  = $("#sendBtn");
-
-    input.addEventListener("input", () => {
-        autosize();
-        send.disabled = state.streaming || !input.value.trim();
-    });
-
-    input.addEventListener("keydown", e => {
-        if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            form.dispatchEvent(new Event("submit"));
-        }
-    });
-
-    form.addEventListener("submit", e => {
-        e.preventDefault();
-        const text = input.value;
-        input.value = "";
-        autosize();
-        send.disabled = true;
-        sendMessage(text);
-    });
-}
-
-function wireImage() {
-    $("#imageBtn").addEventListener("click", () => {
-        if (!state.user) { openModal("loginModal"); return; }
-        openModal("imageModal");
-        $("#imageStatus").textContent = "";
-        $("#imageResult").innerHTML = "";
-        $("#imageResult").classList.remove("show");
-        setTimeout(() => $("#imagePrompt").focus(), 100);
-    });
-
-    $("#imageGo").addEventListener("click", async () => {
-        const prompt = $("#imagePrompt").value.trim();
-        if (!prompt) return;
-        const btn = $("#imageGo");
-        btn.disabled = true;
-        $("#imageStatus").textContent = "Generating… this can take 15–30 seconds.";
-        $("#imageResult").classList.remove("show");
-        $("#imageResult").innerHTML = "";
-        try {
-            const r = await api("/api/image", {
-                method: "POST",
-                body: JSON.stringify({ prompt }),
-            });
-            const d = await r.json();
-            if (!d.ok) throw new Error(d.error || "Failed");
-            $("#imageResult").innerHTML = `<img src="${d.url}" alt="generated image">`;
-            $("#imageResult").classList.add("show");
-            $("#imageStatus").textContent = "";
-        } catch (e) {
-            $("#imageStatus").textContent = e.message;
-        } finally {
-            btn.disabled = false;
-        }
-    });
-}
-
-function wireLogin() {
-    $("#loginForm").addEventListener("submit", async e => {
-        e.preventDefault();
-        const name  = $("#loginName").value.trim();
-        const email = $("#loginEmail").value.trim();
-        const status = $("#loginStatus");
-        const btn = $("#loginBtn");
-        if (!name || !email) return;
-        btn.disabled = true;
-        status.textContent = "Signing in…";
-        try {
-            const r = await api("/api/auth/login", {
-                method: "POST",
-                body: JSON.stringify({ name, email }),
-            });
-            const d = await r.json();
-            if (!d.ok) throw new Error(d.error || "Failed");
-            state.user = d.user;
-            state.tier = d.user.tier || "free";
-            updateUserUI();
-            renderModelMenu();
-            closeModal("loginModal");
-            status.textContent = "";
-            $("#input").focus();
-        } catch (err) {
-            status.textContent = err.message;
-        } finally {
-            btn.disabled = false;
-        }
-    });
-
-    $("#userName").parentElement.parentElement.addEventListener("click", e => {
-        if (!state.user) return;
-        if (e.target.closest("#themeBtn")) return;
-        if (confirm("Sign out?")) {
-            api("/api/auth/logout", { method: "POST" }).then(() => {
-                state.user = null;
-                state.tier = "free";
-                updateUserUI();
-                renderModelMenu();
-                newChat();
-            });
-        }
-    });
-}
-
-function wireTopLevel() {
-    $("#newChatBtn").addEventListener("click", newChat);
-    $("#openSidebar").addEventListener("click", openSidebar);
-    $("#closeSidebar").addEventListener("click", closeSidebar);
-    $("#scrim").addEventListener("click", closeSidebar);
-
-    $("#themeBtn").addEventListener("click", e => {
-        e.stopPropagation();
-        const cur = document.documentElement.getAttribute("data-theme");
-        applyTheme(cur === "dark" ? "light" : "dark");
-    });
-
-    $("#modelBtn").addEventListener("click", e => {
-        e.stopPropagation();
-        $("#modelMenu").classList.toggle("open");
-    });
-    document.addEventListener("click", e => {
-        if (!e.target.closest("#modelPicker")) $("#modelMenu").classList.remove("open");
-    });
-}
-
-async function boot() {
-    const savedTheme = localStorage.getItem(LS_THEME) || "light";
-    applyTheme(savedTheme);
-
-    loadChats();
-    const savedModel = localStorage.getItem(LS_MODEL);
-    if (savedModel) state.model = savedModel;
-
-    wireTopLevel();
-    wireComposer();
-    wireImage();
-    wireLogin();
-
-    await loadModels();
-    await loadMe();
-    renderCurrentChat();
-    renderHistory();
-    autosize();
-
-    if (!state.user) {
-        setTimeout(() => openModal("loginModal"), 350);
-    } else {
-        setTimeout(() => $("#input").focus(), 100);
-    }
-}
-
-boot();
+// ---------- APPEARANCE ----------
+const root = document.documentElement;
+function applyAppearance({ mode, theme, corner, font }) {
+  if (mode) root.setAttribute("data-mode", mode);
+  if (theme) root.setAttribute("data-theme", theme);
+  if (corner) root.setAttribute("data-corner", corner);
+  if (font) root.setAttribute("data-font", font);
+  $$("#modeOptions .option-btn").forEach(b => b.classList.toggle("active", b.dataset.mode === (
