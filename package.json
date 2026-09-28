@@ -1,0 +1,9 @@
+{
+  "name": "mirox",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "express": "^4.19.2",
+    "cookie-session": "^2.1.0"
+  }
+}
