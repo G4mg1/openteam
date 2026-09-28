@@ -15,7 +15,7 @@ const LS_KEY = "miroxai_conversations_v1";
 let __conversations = [];
 
 /* ============================================================
-   BULLETPROOF LOADER KILLER — runs immediately on script load
+   LOADER KILLER — runs immediately
    ============================================================ */
 function killLoader() {
   const l = document.getElementById("loadingScreen");
@@ -23,15 +23,72 @@ function killLoader() {
   l.classList.add("hidden", "force-hidden");
   l.style.display = "none";
 }
-// Fire immediately + again shortly after (belt and braces)
 killLoader();
 setTimeout(killLoader, 400);
 setTimeout(killLoader, 1500);
 
 /* ============================================================
-   BOOT — uses DOMContentLoaded, NOT window.load
+   COMPOSER WIRING — THE MOST IMPORTANT PART
+   Bound immediately, never skipped.
+   ============================================================ */
+function wireComposerNow() {
+  const form  = document.getElementById("composerForm");
+  const input = document.getElementById("messageInput");
+  const send  = document.getElementById("sendBtn");
+
+  if (form && !form.__wired) {
+    form.__wired = true;
+    form.addEventListener("submit", function (e) {
+      if (e) { e.preventDefault(); e.stopPropagation(); }
+      handleSend();
+      return false;
+    });
+  }
+
+  if (input && !input.__wired) {
+    input.__wired = true;
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && !e.shiftKey) {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        handleSend();
+      }
+    });
+    input.addEventListener("input", function () {
+      if (send) send.disabled = isReplying || !input.value.trim();
+    });
+  }
+
+  if (send && !send.__wired) {
+    send.__wired = true;
+    send.addEventListener("click", function (e) {
+      if (e) { e.preventDefault(); e.stopPropagation(); }
+      handleSend();
+    });
+  }
+
+  function handleSend() {
+    try {
+      if (isReplying) return;
+      const inp = document.getElementById("messageInput");
+      if (!inp) return;
+      const t = (inp.value || "").trim();
+      if (!t) return;
+      inp.value = "";
+      const sb = document.getElementById("sendBtn");
+      if (sb) sb.disabled = true;
+      sendMessage(t);
+    } catch (err) {
+      console.error("send failed:", err);
+    }
+  }
+}
+
+/* ============================================================
+   BOOT — DOMContentLoaded, never blocks
    ============================================================ */
 function boot() {
+  killLoader();
+  try { wireComposerNow(); } catch (e) { console.error("wireComposer", e); }
   try { loadConfig(); } catch (e) { console.error("loadConfig", e); }
   try { loadBackground(); } catch (e) { console.error("loadBackground", e); }
   try { loadAppearance(); } catch (e) { console.error("loadAppearance", e); }
@@ -53,6 +110,10 @@ if (document.readyState === "loading") {
 } else {
   boot();
 }
+
+/* Re-wire composer if the DOM ever changes */
+setTimeout(wireComposerNow, 100);
+setTimeout(wireComposerNow, 500);
 
 /* ============================================================
    CONFIG
@@ -267,7 +328,7 @@ function addMessage(text, sender) {
   const m = document.createElement("div");
   m.className = `message ${sender}`;
   const avatarHtml = sender === "ai"
-    ? `<div class="avatar ai-avatar"><img src="/logo.png" alt="" onerror="this.style.display='none'"></div>`
+    ? `<div class="avatar ai-avatar"><img src="/logo.png" alt=""></div>`
     : `<div class="avatar"><i class="ri-user-3-line"></i></div>`;
   m.innerHTML = `${avatarHtml}<div class="bubble-wrap"><div class="bubble"></div></div>`;
   const bubble = m.querySelector(".bubble");
@@ -281,7 +342,7 @@ function addThinking() {
   const chat = $("#chat"); if (!chat) return null;
   const m = document.createElement("div");
   m.className = "message ai";
-  m.innerHTML = `<div class="avatar ai-avatar"><img src="/logo.png" alt="" onerror="this.style.display='none'"></div><div class="bubble-wrap"><div class="bubble"><div class="thinking"><span class="thinking-dots"><span></span><span></span><span></span></span></div></div></div>`;
+  m.innerHTML = `<div class="avatar ai-avatar"><img src="/logo.png" alt=""></div><div class="bubble-wrap"><div class="bubble"><div class="thinking"><span class="thinking-dots"><span></span><span></span><span></span></span></div></div></div>`;
   chat.appendChild(m);
   chat.scrollTop = chat.scrollHeight;
   return m.querySelector(".bubble");
@@ -396,7 +457,7 @@ async function sendMessage(userText) {
 }
 
 /* ============================================================
-   WIRE EVERYTHING
+   WIRE EVERYTHING ELSE (not the composer — that's already wired)
    ============================================================ */
 function wireAll() {
 
@@ -445,19 +506,6 @@ function wireAll() {
     chatSearchInput.value = "";
     clearSearchBtn.classList.remove("visible");
     renderHistory();
-  });
-
-  $("#composerForm")?.addEventListener("submit", e => {
-    e.preventDefault();
-    if (isReplying) return;
-    const t = $("#messageInput").value.trim();
-    if (!t) return;
-    $("#messageInput").value = "";
-    sendMessage(t);
-  });
-  $("#messageInput")?.addEventListener("input", () => {
-    const sb = $("#sendBtn");
-    if (sb) sb.disabled = isReplying || !$("#messageInput").value.trim();
   });
 
   $("#attachBtn")?.addEventListener("click", () => $("#fileInput").click());
@@ -532,31 +580,35 @@ function wireAll() {
     if (convo) { convo.title = trimmed; saveChatsToLS(); renderHistory(); }
   });
 
-  $("#simpleLoginForm")?.addEventListener("submit", async e => {
-    e.preventDefault();
-    const status = $("#loginStatus");
-    const name   = $("#simpleLoginName").value.trim();
-    const email  = $("#simpleLoginEmail").value.trim();
-    if (!name || !email) { status.textContent = "Name and email required."; return; }
-    status.textContent = "Signing in…";
-    try {
-      const r = await fetch("/api/auth/simple-login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ name, email }),
-      });
-      const d = await r.json();
-      if (!d.ok) throw new Error(d.error || "Failed");
-      status.textContent = "Signed in ✅";
-      closeModal("loginModal");
-      await loadMe();
-      loadChatsFromLS();
-      renderHistory();
-    } catch (err) {
-      status.textContent = err.message;
-    }
-  });
+  const loginForm = document.getElementById("simpleLoginForm");
+  if (loginForm && !loginForm.__wired) {
+    loginForm.__wired = true;
+    loginForm.addEventListener("submit", async e => {
+      e.preventDefault();
+      const status = $("#loginStatus");
+      const name   = $("#simpleLoginName").value.trim();
+      const email  = $("#simpleLoginEmail").value.trim();
+      if (!name || !email) { status.textContent = "Name and email required."; return; }
+      status.textContent = "Signing in…";
+      try {
+        const r = await fetch("/api/auth/simple-login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ name, email }),
+        });
+        const d = await r.json();
+        if (!d.ok) throw new Error(d.error || "Failed");
+        status.textContent = "Signed in ✅";
+        closeModal("loginModal");
+        await loadMe();
+        loadChatsFromLS();
+        renderHistory();
+      } catch (err) {
+        status.textContent = err.message;
+      }
+    });
+  }
 
   $("#logoutBtn")?.addEventListener("click", async () => {
     try { await fetch("/api/logout", { method: "POST" }); } catch {}
@@ -689,7 +741,6 @@ function wireAll() {
     if (!e.target.closest("#modelPicker")) $("#modelPickerMenu")?.classList.remove("open");
   });
 
-  /* Background */
   $("#bgUploadZone")?.addEventListener("click", () => $("#bgFileInput").click());
   $("#bgFileInput")?.addEventListener("change", () => {
     const f = $("#bgFileInput").files[0]; if (!f) return;
@@ -886,7 +937,7 @@ function populateBackgroundUI() {
 }
 
 /* ============================================================
-   PERSONA / MEMORY / PLANS / KEYS / REPORTS
+   PERSONA / MEMORY / PLANS / KEYS / REPORTS loaders
    ============================================================ */
 async function loadPersona() {
   if (!__user) { $("#personaInput").value = ""; return; }
