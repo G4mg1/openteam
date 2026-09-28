@@ -14,29 +14,45 @@ let __trialRemaining = 10, __trialLimit = 10;
 const LS_KEY = "miroxai_conversations_v1";
 let __conversations = [];
 
-/* ---------- GUARANTEED loading screen dismissal ---------- */
-function hideLoader() {
+/* ============================================================
+   BULLETPROOF LOADER KILLER — runs immediately on script load
+   ============================================================ */
+function killLoader() {
   const l = document.getElementById("loadingScreen");
-  if (l) l.classList.add("hidden");
+  if (!l) return;
+  l.classList.add("hidden", "force-hidden");
+  l.style.display = "none";
 }
-setTimeout(hideLoader, 1500); // hard ceiling — never stays up more than 1.5s
+// Fire immediately + again shortly after (belt and braces)
+killLoader();
+setTimeout(killLoader, 400);
+setTimeout(killLoader, 1500);
 
 /* ============================================================
-   BOOT — fire-and-forget, never blocks the UI
+   BOOT — uses DOMContentLoaded, NOT window.load
    ============================================================ */
-window.addEventListener("load", () => {
-  loadConfig();               // no await
-  loadBackground();
-  loadAppearance();
+function boot() {
+  try { loadConfig(); } catch (e) { console.error("loadConfig", e); }
+  try { loadBackground(); } catch (e) { console.error("loadBackground", e); }
+  try { loadAppearance(); } catch (e) { console.error("loadAppearance", e); }
+  try { wireAll(); } catch (e) { console.error("wireAll", e); }
+  try { syncRailDefault(); } catch (e) { console.error("syncRailDefault", e); }
+
   loadMe().then(() => {
-    loadChatsFromLS();
-    renderHistory();
+    try { loadChatsFromLS(); renderHistory(); } catch (e) { console.error(e); }
+  }).catch(() => {
+    try { renderHistory(); } catch (e) {}
   });
-  syncRailDefault();
-  wireAll();
+
   setTimeout(showLunaAnnouncementOnce, 1200);
-  hideLoader();
-});
+  killLoader();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", boot);
+} else {
+  boot();
+}
 
 /* ============================================================
    CONFIG
@@ -113,7 +129,7 @@ function showLunaAnnouncementOnce() {
     try { localStorage.setItem(key, "1"); } catch {}
     closeModal("lunaAnnounceModal");
   };
-  $("#announceOkBtn").onclick = dismiss;
+  const btn = $("#announceOkBtn"); if (btn) btn.onclick = dismiss;
   document.querySelector('#lunaAnnounceModal [data-close]')?.addEventListener("click", dismiss);
 }
 
@@ -155,13 +171,15 @@ function applyAppearance({ mode, theme, corner, font }) {
   $$("#fontOptions .option-btn").forEach(b => b.classList.toggle("active", b.dataset.font === (font || root.getAttribute("data-font"))));
 }
 function loadAppearance() {
-  const s = JSON.parse(localStorage.getItem("miroxai_appearance") || "{}");
+  let s = {};
+  try { s = JSON.parse(localStorage.getItem("miroxai_appearance") || "{}"); } catch {}
   applyAppearance({ mode: s.mode || "light", theme: s.theme || "warm", corner: s.corner || "soft", font: s.font || "system" });
 }
 function saveAppearance(patch) {
-  const c = JSON.parse(localStorage.getItem("miroxai_appearance") || "{}");
+  let c = {};
+  try { c = JSON.parse(localStorage.getItem("miroxai_appearance") || "{}"); } catch {}
   const m = { ...c, ...patch };
-  localStorage.setItem("miroxai_appearance", JSON.stringify(m));
+  try { localStorage.setItem("miroxai_appearance", JSON.stringify(m)); } catch {}
   applyAppearance(m);
 }
 
@@ -227,9 +245,10 @@ function openConversationLS(id) {
 
 function startNewChat() {
   currentConversationId = null;
-  $("#chat").innerHTML = "";
-  $("#chatTitle").textContent = "New chat";
-  $("#chatSubtitle").textContent = "";
+  const chat = $("#chat");
+  if (chat) chat.innerHTML = "";
+  const t = $("#chatTitle"); if (t) t.textContent = "New chat";
+  const s = $("#chatSubtitle"); if (s) s.textContent = "";
   $("#mainEl")?.classList.add("new-chat");
   renderHistory();
 }
@@ -287,7 +306,7 @@ async function sendMessage(userText) {
     };
     __conversations.unshift(convo);
     currentConversationId = convo.id;
-    $("#chatTitle").textContent = convo.title;
+    const t = $("#chatTitle"); if (t) t.textContent = convo.title;
     renderHistory();
   }
 
@@ -298,7 +317,7 @@ async function sendMessage(userText) {
 
   const bubble = addThinking();
   isReplying = true;
-  $("#sendBtn").disabled = true;
+  const sendBtn = $("#sendBtn"); if (sendBtn) sendBtn.disabled = true;
 
   try {
     const history = convo.messages
@@ -354,8 +373,8 @@ async function sendMessage(userText) {
               chat.scrollTop = chat.scrollHeight;
           } else if (evt.done) {
             bubble.textContent = full || "(empty reply)";
-            $("#chatSubtitle").textContent =
-              (evt.model || "") + (evt.ms ? ` · ${evt.ms}ms` : "");
+            const sub = $("#chatSubtitle");
+            if (sub) sub.textContent = (evt.model || "") + (evt.ms ? ` · ${evt.ms}ms` : "");
           } else if (evt.error) {
             throw new Error(evt.error);
           }
@@ -370,7 +389,9 @@ async function sendMessage(userText) {
     bubble.textContent = err.message || "Something went wrong.";
   } finally {
     isReplying = false;
-    $("#sendBtn").disabled = !$("#messageInput").value.trim();
+    const sendBtn = $("#sendBtn");
+    const inp = $("#messageInput");
+    if (sendBtn) sendBtn.disabled = !(inp && inp.value.trim());
   }
 }
 
@@ -435,17 +456,18 @@ function wireAll() {
     sendMessage(t);
   });
   $("#messageInput")?.addEventListener("input", () => {
-    $("#sendBtn").disabled = isReplying || !$("#messageInput").value.trim();
+    const sb = $("#sendBtn");
+    if (sb) sb.disabled = isReplying || !$("#messageInput").value.trim();
   });
 
   $("#attachBtn")?.addEventListener("click", () => $("#fileInput").click());
   $("#fileInput")?.addEventListener("change", () => {
     const f = $("#fileInput").files[0]; if (!f) return;
-    $("#attachmentPreview").style.display = "flex";
-    $("#attachmentName").textContent = f.name;
+    const p = $("#attachmentPreview"); if (p) p.style.display = "flex";
+    const n = $("#attachmentName"); if (n) n.textContent = f.name;
   });
   $("#removeAttachmentBtn")?.addEventListener("click", () => {
-    $("#attachmentPreview").style.display = "none";
+    const p = $("#attachmentPreview"); if (p) p.style.display = "none";
   });
 
   const micBtn = $("#micBtn");
@@ -459,7 +481,7 @@ function wireAll() {
       let t = "";
       for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
       $("#messageInput").value = t;
-      $("#sendBtn").disabled = false;
+      const sb = $("#sendBtn"); if (sb) sb.disabled = false;
     };
     recognition.onend = () => micBtn?.classList.remove("recording");
   }
@@ -540,12 +562,12 @@ function wireAll() {
     try { await fetch("/api/logout", { method: "POST" }); } catch {}
     __user = null; window.__user = null; __tier = "free";
     __conversations = [];
-    $("#userChipLabel").textContent = "Sign in";
-    $("#simpleLoginName").value = "";
-    $("#simpleLoginEmail").value = "";
-    $("#tierLabel").textContent = "Guest mode";
-    $("#tierMeta").textContent = "Sign in to save chats";
-    $("#upgradeBtn").textContent = "Sign in";
+    const cl = $("#userChipLabel"); if (cl) cl.textContent = "Sign in";
+    const n = $("#simpleLoginName"); if (n) n.value = "";
+    const em = $("#simpleLoginEmail"); if (em) em.value = "";
+    const tl = $("#tierLabel"); if (tl) tl.textContent = "Guest mode";
+    const tm = $("#tierMeta");  if (tm) tm.textContent = "Sign in to save chats";
+    const ub = $("#upgradeBtn"); if (ub) ub.textContent = "Sign in";
     startNewChat();
   });
 
@@ -864,7 +886,7 @@ function populateBackgroundUI() {
 }
 
 /* ============================================================
-   PERSONA / MEMORY loaders
+   PERSONA / MEMORY / PLANS / KEYS / REPORTS
    ============================================================ */
 async function loadPersona() {
   if (!__user) { $("#personaInput").value = ""; return; }
@@ -897,10 +919,6 @@ async function loadMemory() {
     });
   } catch {}
 }
-
-/* ============================================================
-   PLANS / KEYS / REPORTS loaders
-   ============================================================ */
 async function loadPlans() {
   try {
     const r = await fetch("/api/subscription/plans");
@@ -930,7 +948,6 @@ async function loadPlans() {
     );
   } catch {}
 }
-
 async function loadUserKeys() {
   const list = $("#keysList"); if (!list) return;
   if (!__user) { list.innerHTML = '<li class="key-empty">Sign in to manage API keys.</li>'; return; }
@@ -943,7 +960,6 @@ async function loadUserKeys() {
       <div class="key-value">${escapeHtml(k.preview || "")}</div></div></li>`).join("");
   } catch {}
 }
-
 async function loadMyReports() {
   const box = $("#supportMine"); if (!box) return;
   if (!__user) { box.innerHTML = ""; return; }
