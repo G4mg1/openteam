@@ -1,576 +1,554 @@
-const express = require('express');
-const crypto  = require('crypto');
+const $=s=>document.querySelector(s),$$=s=>document.querySelectorAll(s);
+let __config=null,__user=null,__tier="free",__model=null;
+let currentConversationId=null,isReplying=false,__conversations=[],pendingFiles=[];
+let bgState={url:null,dim:45,blur:0},recognition=null,callRecognition=null;
+let synth=window.speechSynthesis,callActive=false,callMuted=false,micStream=null;
+const LS_KEY="miroxai_conversations_v1",TOKEN_KEY="mirox_token",USER_SETTINGS_KEY="miroxai_user_settings";
 
-const app = express();
-app.use(express.json({ limit: '10mb' }));
+function getToken(){try{return localStorage.getItem(TOKEN_KEY)||"";}catch{return"";}}
+function setToken(t){try{t?localStorage.setItem(TOKEN_KEY,t):localStorage.removeItem(TOKEN_KEY);}catch{}}
+function authFetch(u,o={}){const h={"Content-Type":"application/json",...(o.headers||{})};const t=getToken();if(t)h.Authorization="Bearer "+t;return fetch(u,{...o,headers:h,credentials:"same-origin",cache:"no-store"});}
 
-/* ---------- CONFIG ---------- */
-const HF_API_KEY      = (process.env.HF_API_KEY || '').trim();
-const DISCORD_WEBHOOK = (process.env.DISCORD_WEBHOOK || '').trim();
-const ADMIN_PASSWORD  = process.env.ADMIN_PASSWORD || '2010';
-const SECRET          = process.env.SECRET_KEY || 'mirox-dev-fallback-secret-change-me-please';
+function killLoader(){const l=document.getElementById("loadingScreen");if(l){l.classList.add("hidden","force-hidden");l.style.display="none";}}
+killLoader();setTimeout(killLoader,400);setTimeout(killLoader,1500);
 
-// Correct URLs — hf-inference path for chat (bypasses provider selection)
-const HF_CHAT_BASE = 'https://router.huggingface.co/hf-inference/models';
-const HF_IMAGES    = 'https://router.huggingface.co/v1/images/generations';
+function escapeHtml(s){const d=document.createElement("div");d.textContent=s==null?"":String(s);return d.innerHTML;}
+const getDefaultModel=()=>(__config?.models||[]).find(m=>m.default)?.id||"mirox-luna-1.2";
+function uid(){return "c_"+Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);}
 
-/* ---------- SESSION ---------- */
-function signSession(data) {
-  const payload = Buffer.from(JSON.stringify(data)).toString('base64url');
-  const sig = crypto.createHmac('sha256', SECRET).update(payload).digest('base64url');
-  return `${payload}.${sig}`;
+function openModal(id){const el=document.getElementById(id);if(el)el.classList.add("open");}
+function closeModal(id){const el=document.getElementById(id);if(el)el.classList.remove("open");}
+function openSidebar(){$("#sidebar")?.classList.add("open");$("#sidebarScrim")?.classList.add("open");}
+function closeSidebar(){$("#sidebar")?.classList.remove("open");$("#sidebarScrim")?.classList.remove("open");}
+
+let userSettings={temperature:0.7,length:"medium",language:"en",autoscroll:true,soundOn:true,notifOn:true,voiceRate:1,voiceName:""};
+function loadUserSettings(){try{const s=JSON.parse(localStorage.getItem(USER_SETTINGS_KEY)||"{}");userSettings={...userSettings,...s};}catch{}}
+function saveUserSettings(){try{localStorage.setItem(USER_SETTINGS_KEY,JSON.stringify(userSettings));}catch{}if(__user){authFetch("/api/settings/user",{method:"POST",body:JSON.stringify({settings:userSettings})}).catch(()=>{});}}
+
+document.addEventListener("click",function(e){
+  const t=e.target,closest=s=>t.closest(s);
+  const closer=closest("[data-close]");if(closer){closeModal(closer.dataset.close);return;}
+  if(t.classList.contains("modal-overlay")){t.classList.remove("open");return;}
+  if(closest("#hamburgerBtn")){openSidebar();return;}
+  if(closest("#sidebarCloseBtn")){closeSidebar();return;}
+  if(t.id==="sidebarScrim"){closeSidebar();return;}
+  if(closest("#brandLogo")){startNewChat();if(window.innerWidth<=860)closeSidebar();return;}
+  if(closest("#newChatBtn")){startNewChat();if(window.innerWidth<=860)closeSidebar();return;}
+  if(closest("#userChip")){if(!__user)openModal("loginModal");return;}
+  if(closest("#upgradeBtn")){if(!__user)openModal("loginModal");else{openModal("plansModal");loadPlans();loadUserKeys();}return;}
+  if(closest("#settingsBtn")){openModal("settingsModal");loadPersona();loadMemory();renderSettings();return;}
+  if(closest("#imageModeBtn")){openModal("imageModal");return;}
+  if(closest("#backgroundModeBtn")){openModal("backgroundModal");populateBackgroundUI();return;}
+  if(closest("#plansModeBtn")){openModal("plansModal");loadPlans();loadUserKeys();return;}
+  if(closest("#supportModeBtn")){openModal("supportModal");loadMyReports();return;}
+  if(closest("#talkModeBtn")){startCall();return;}
+  if(closest("#callEndBtn")){endCall();return;}
+  if(closest("#callMuteBtn")){toggleMute();return;}
+  if(closest("#modelPickerBtn")){e.stopPropagation();$("#modelPickerMenu")?.classList.toggle("open");return;}
+  const mo=closest(".model-option");if(mo){selectModel(mo.dataset.modelId);return;}
+  if(!closest("#modelPicker"))$("#modelPickerMenu")?.classList.remove("open");
+  const tab=closest(".settings-tab");
+  if(tab){document.querySelectorAll(".settings-tab").forEach(x=>x.classList.remove("active"));document.querySelectorAll(".settings-pane").forEach(x=>x.classList.remove("active"));tab.classList.add("active");document.querySelector(`.settings-pane[data-pane="${tab.dataset.tab}"]`)?.classList.add("active");return;}
+  const modeBtn=closest("[data-mode]");if(modeBtn&&modeBtn.closest("#modeOptions")){saveAppearance({mode:modeBtn.dataset.mode});return;}
+  const swatch=closest(".swatch");if(swatch&&swatch.dataset.theme){saveAppearance({theme:swatch.dataset.theme});return;}
+  const cornerBtn=closest("[data-corner]");if(cornerBtn&&cornerBtn.closest("#cornerOptions")){saveAppearance({corner:cornerBtn.dataset.corner});return;}
+  const fontBtn=closest("[data-font]");if(fontBtn&&fontBtn.closest("#fontOptions")){saveAppearance({font:fontBtn.dataset.font});return;}
+  const lenBtn=closest("[data-length]");
+  if(lenBtn){document.querySelectorAll("#lengthOptions .option-btn").forEach(x=>x.classList.remove("active"));lenBtn.classList.add("active");userSettings.length=lenBtn.dataset.length;saveUserSettings();return;}
+  const tg=closest("[data-toggle]");
+  if(tg){const k=tg.dataset.toggle;userSettings[k]=!userSettings[k];tg.textContent=tg.textContent.replace(/ON|OFF/,userSettings[k]?"ON":"OFF");tg.classList.toggle("active",userSettings[k]);saveUserSettings();return;}
+  if(closest("#railToggleBtn")){document.body.classList.toggle("rail-collapsed");try{localStorage.setItem("miroxai_rail_collapsed",document.body.classList.contains("rail-collapsed")?"1":"0");}catch{}updateRailToggleIcon();return;}
+  if(closest("#attachBtn")){$("#fileInput")?.click();return;}
+  if(closest("#removeAttachmentBtn")){pendingFiles=[];const p=$("#attachmentPreview");if(p)p.style.display="none";return;}
+  if(closest("#searchToggleBtn")){$("#searchToggleBtn").classList.toggle("active");return;}
+  if(closest("#micBtn")){startMic();return;}
+  if(closest("#editTitleBtn")){const cur=$("#chatTitle")?.textContent||"";const nxt=prompt("Rename this chat",cur);if(nxt===null)return;const tr=nxt.trim();if(!tr)return;if($("#chatTitle"))$("#chatTitle").textContent=tr;const c=currentConvo();if(c){c.title=tr;saveChatsToLS();renderHistory();}return;}
+  if(closest("#logoutBtn")){doLogout();return;}
+  if(closest("#savePersonaBtn")){savePersona();return;}
+  if(closest("#addMemoryBtn")){addMemory();return;}
+  if(closest("#submitReportBtn")){submitReport();return;}
+  if(closest("#generateKeyBtn")){genKey();return;}
+  if(closest("#generateImageBtn")){genImage();return;}
+  if(closest("#bgUploadZone")){$("#bgFileInput")?.click();return;}
+  if(closest("#bgUrlApplyBtn")){const u=$("#bgUrlInput")?.value.trim();if(!u)return;bgState.url=u;saveBgPrefs();applyBackground();return;}
+  if(closest("#bgRemoveBtn")){bgState.url=null;saveBgPrefs();applyBackground();if($("#bgUrlInput"))$("#bgUrlInput").value="";return;}
+  if(closest("#requestMicBtn")){requestMic();return;}
+  if(closest("#testVoiceBtn")){speak("Hi, this is Mirox, made by the OpenSurr team.");return;}
+  const hist=closest(".history-item");
+  if(hist){if(t.closest(".history-delete")){const id=hist.dataset.id;__conversations=__conversations.filter(x=>x.id!==id);if(currentConversationId===id)startNewChat();saveChatsToLS();renderHistory();e.stopPropagation();return;}const id=hist.dataset.id;if(id){openConversationLS(id);if(window.innerWidth<=860)closeSidebar();}return;}
+});
+
+document.addEventListener("keydown",function(e){
+  if(e.key==="Escape"){document.querySelectorAll(".modal-overlay.open").forEach(o=>o.classList.remove("open"));$("#modelPickerMenu")?.classList.remove("open");return;}
+  if(e.key==="Enter"&&e.target?.id==="messageInput"&&!e.shiftKey){e.preventDefault();handleSend();}
+});
+document.addEventListener("submit",function(e){e.preventDefault();if(e.target?.id==="composerForm")handleSend();if(e.target?.id==="simpleLoginForm")doLogin();},true);
+document.addEventListener("click",function(e){if(e.target?.closest&&e.target.closest("#sendBtn")){e.preventDefault();handleSend();}});
+document.addEventListener("input",function(e){
+  if(e.target?.id==="messageInput"){const sb=$("#sendBtn");if(sb)sb.disabled=isReplying||!e.target.value.trim();}
+  if(e.target?.id==="bgDimInput"){bgState.dim=parseInt(e.target.value);if($("#bgDimLabel"))$("#bgDimLabel").textContent=bgState.dim+"%";applyBackground();saveBgPrefs();}
+  if(e.target?.id==="bgBlurInput"){bgState.blur=parseInt(e.target.value);if($("#bgBlurLabel"))$("#bgBlurLabel").textContent=bgState.blur+"px";applyBackground();saveBgPrefs();}
+  if(e.target?.id==="tempInput"){userSettings.temperature=parseInt(e.target.value)/10;if($("#tempLabel"))$("#tempLabel").textContent=userSettings.temperature.toFixed(1);saveUserSettings();}
+  if(e.target?.id==="voiceRateInput"){userSettings.voiceRate=parseFloat(e.target.value);if($("#voiceRateLabel"))$("#voiceRateLabel").textContent=userSettings.voiceRate.toFixed(1)+"×";saveUserSettings();}
+});
+document.addEventListener("change",function(e){
+  if(e.target?.id==="fileInput"){handleFiles(e.target.files);e.target.value="";}
+  if(e.target?.id==="bgFileInput"){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{bgState.url=r.result;saveBgPrefs();applyBackground();populateBackgroundUI();};r.readAsDataURL(f);e.target.value="";}
+  if(e.target?.id==="langSelect"){userSettings.language=e.target.value;saveUserSettings();}
+  if(e.target?.id==="voiceSelect"){userSettings.voiceName=e.target.value;saveUserSettings();}
+});
+
+function handleFiles(files){
+  if(!files?.length)return;
+  pendingFiles=[];
+  let loaded=0;const total=files.length;
+  Array.from(files).forEach(f=>{
+    if(f.size>2*1024*1024){loaded++;if(loaded===total)updatePreview();return;}
+    if(f.type.startsWith("image/")){pendingFiles.push({name:f.name,content:"[Image: "+f.name+"]",type:"image"});loaded++;if(loaded===total)updatePreview();return;}
+    const r=new FileReader();
+    r.onload=()=>{pendingFiles.push({name:f.name,content:String(r.result).slice(0,50000)});loaded++;if(loaded===total)updatePreview();};
+    r.onerror=()=>{loaded++;if(loaded===total)updatePreview();};
+    r.readAsText(f);
+  });
 }
-function verifySession(token) {
-  if (!token) return {};
-  const parts = token.split('.');
-  if (parts.length !== 2) return {};
-  const [payload, sig] = parts;
-  const expected = crypto.createHmac('sha256', SECRET).update(payload).digest('base64url');
-  if (expected !== sig) return {};
-  try { return JSON.parse(Buffer.from(payload, 'base64url').toString()); } catch { return {}; }
+function updatePreview(){
+  const p=$("#attachmentPreview");
+  if(pendingFiles.length){p.style.display="flex";$("#attachmentList").textContent=pendingFiles.map(f=>f.name).join(", ");}
+  else p.style.display="none";
 }
-function getSession(req) {
-  // 1. Check Authorization: Bearer <token>
-  const auth = req.headers.authorization || '';
-  if (auth.startsWith('Bearer ')) {
-    const s = verifySession(auth.slice(7).trim());
-    if (s && s.uid) return s;
+
+function handleSend(){
+  if(isReplying)return;
+  const inp=$("#messageInput");if(!inp)return;
+  const text=(inp.value||"").trim();
+  if(!text&&!pendingFiles.length)return;
+  inp.value="";
+  const sb=$("#sendBtn");if(sb)sb.disabled=true;
+  sendMessage(text);
+}
+async function sendMessage(userText){
+  if(isReplying)return;
+  userText=(userText||"").trim();
+  if(!userText&&!pendingFiles.length)return;
+  $("#mainEl")?.classList.remove("new-chat");
+  let convo;
+  if(__user){
+    convo=currentConvo();
+    if(!convo){convo={id:uid(),title:(userText||"New chat").slice(0,48),messages:[],updatedAt:Date.now()};__conversations.unshift(convo);currentConversationId=convo.id;const t=$("#chatTitle");if(t)t.textContent=convo.title;renderHistory();}
+  }else{convo={id:"guest",title:(userText||"New chat").slice(0,48),messages:[],updatedAt:Date.now()};}
+  const filesForSend=pendingFiles.slice();
+  pendingFiles=[];updatePreview();
+  convo.messages.push({role:"user",text:userText});
+  convo.updatedAt=Date.now();
+  if(__user)saveChatsToLS();
+  addMessage(userText||"[attached files]","user");
+  const bubble=addThinking();
+  isReplying=true;
+  const sb=$("#sendBtn");if(sb)sb.disabled=true;
+  const useSearch=$("#searchToggleBtn")?.classList.contains("active");
+  try{
+    const history=convo.messages.slice(0,-1).map(m=>({role:m.role==="ai"?"assistant":"user",content:m.text||m.content}));
+    const r=await authFetch("/api/chat/stream",{method:"POST",body:JSON.stringify({message:userText,history,model:__model||getDefaultModel(),web_search:!!useSearch,files:filesForSend})});
+    if(!r.ok||!r.body){let m="Request failed";try{const e=await r.json();m=e.error||m;}catch{}throw new Error(m);}
+    const reader=r.body.getReader(),dec=new TextDecoder();
+    let buf="",full="",first=true;
+    while(true){
+      const {value,done}=await reader.read();if(done)break;
+      buf+=dec.decode(value,{stream:true});
+      let idx;
+      while((idx=buf.indexOf("\n\n"))!==-1){
+        const chunk=buf.slice(0,idx);buf=buf.slice(idx+2);
+        for(const line of chunk.split("\n")){
+          if(!line.startsWith("data:"))continue;
+          const pl=line.slice(5).trim();if(!pl)continue;
+          let evt;try{evt=JSON.parse(pl);}catch{continue;}
+          if(evt.d){
+            if(first){bubble.innerHTML="";first=false;}
+            full+=evt.d;bubble.textContent=full;
+            const cur=document.createElement("span");cur.className="stream-cursor";bubble.appendChild(cur);
+            const chat=$("#chat");
+            if(userSettings.autoscroll&&chat.scrollHeight-chat.scrollTop-chat.clientHeight<200)chat.scrollTop=chat.scrollHeight;
+          }else if(evt.done){bubble.textContent=full||"(empty reply)";const sub=$("#chatSubtitle");if(sub)sub.textContent=(evt.model||"")+(evt.ms?` · ${evt.ms}ms`:"");}
+          else if(evt.error)throw new Error(evt.error);
+        }
+      }
+    }
+    bubble.textContent=full||"(empty reply)";
+    convo.messages.push({role:"ai",text:full});
+    convo.updatedAt=Date.now();
+    if(__user)saveChatsToLS();
+  }catch(err){bubble.textContent=err.message||"Something went wrong.";}
+  finally{isReplying=false;if(sb)sb.disabled=!($("#messageInput")?.value.trim());}
+}
+
+function addMessage(text,sender){
+  const chat=$("#chat");if(!chat)return null;
+  const m=document.createElement("div");m.className=`message ${sender}`;
+  const avatarHtml=sender==="ai"?`<div class="avatar ai-avatar"><img src="/logo.png" alt=""></div>`:`<div class="avatar"><i class="ri-user-3-line"></i></div>`;
+  m.innerHTML=`${avatarHtml}<div class="bubble-wrap"><div class="bubble"></div></div>`;
+  const bubble=m.querySelector(".bubble");bubble.textContent=text||"";
+  chat.appendChild(m);chat.scrollTop=chat.scrollHeight;
+  return {message:m,bubble};
+}
+function addThinking(){
+  const chat=$("#chat");if(!chat)return null;
+  const m=document.createElement("div");m.className="message ai";
+  m.innerHTML=`<div class="avatar ai-avatar"><img src="/logo.png" alt=""></div><div class="bubble-wrap"><div class="bubble"><div class="thinking"><span class="thinking-dots"><span></span><span></span><span></span></span></div></div></div>`;
+  chat.appendChild(m);chat.scrollTop=chat.scrollHeight;
+  return m.querySelector(".bubble");
+}
+
+function loadChatsFromLS(){if(!__user){__conversations=[];return;}try{__conversations=JSON.parse(localStorage.getItem(LS_KEY))||[];}catch{__conversations=[];}}
+function saveChatsToLS(){if(!__user)return;try{localStorage.setItem(LS_KEY,JSON.stringify(__conversations.slice(0,100)));}catch{}}
+function currentConvo(){return __conversations.find(c=>c.id===currentConversationId)||null;}
+function renderHistory(){
+  const list=$("#historyList");if(!list)return;list.innerHTML="";
+  if(!__user){list.innerHTML='<li class="history-empty">Guest mode — chats aren\'t saved. Sign in to keep them.</li>';return;}
+  const sorted=__conversations.slice().sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+  if(!sorted.length){list.innerHTML='<li class="history-empty">No conversations yet</li>';return;}
+  sorted.forEach(c=>{
+    const li=document.createElement("li");
+    li.className="history-item"+(c.id===currentConversationId?" active":"");
+    li.dataset.id=c.id;
+    li.innerHTML=`<i class="ri-chat-3-line"></i><div><span>${escapeHtml(c.title||"New chat")}</span></div><button class="history-delete"><i class="ri-delete-bin-line"></i></button>`;
+    list.appendChild(li);
+  });
+}
+function openConversationLS(id){
+  const c=__conversations.find(x=>x.id===id);if(!c)return;
+  currentConversationId=id;
+  const t=$("#chatTitle");if(t)t.textContent=c.title||"Chat";
+  $("#mainEl")?.classList.remove("new-chat");
+  const chat=$("#chat");if(chat)chat.innerHTML="";
+  (c.messages||[]).forEach(m=>addMessage(m.text||m.content||"",m.role==="ai"?"ai":"user"));
+  renderHistory();
+}
+function startNewChat(){
+  currentConversationId=null;
+  const chat=$("#chat");if(chat)chat.innerHTML="";
+  const t=$("#chatTitle");if(t)t.textContent="New chat";
+  const s=$("#chatSubtitle");if(s)s.textContent="";
+  $("#mainEl")?.classList.add("new-chat");
+  renderHistory();
+}
+
+async function doLogin(){
+  const s=$("#loginStatus");
+  const name=$("#simpleLoginName")?.value.trim()||"";
+  const email=$("#simpleLoginEmail")?.value.trim()||"";
+  if(!name||!email){if(s)s.textContent="Name and email required.";return;}
+  if(s)s.textContent="Signing in…";
+  try{
+    const r=await authFetch("/api/auth/simple-login",{method:"POST",body:JSON.stringify({name,email})});
+    const d=await r.json();
+    if(!d.ok)throw new Error(d.error||"Failed");
+    if(d.token)setToken(d.token);
+    if(s)s.textContent="Signed in ✅";
+    closeModal("loginModal");
+    await loadMe();loadChatsFromLS();renderHistory();
+  }catch(err){if(s)s.textContent=err.message;}
+}
+async function doLogout(){
+  try{await authFetch("/api/logout",{method:"POST"});}catch{}
+  setToken(null);
+  __user=null;__tier="free";__conversations=[];
+  const cl=$("#userChipLabel");if(cl)cl.textContent="Sign in";
+  const n=$("#simpleLoginName");if(n)n.value="";
+  const e=$("#simpleLoginEmail");if(e)e.value="";
+  const tl=$("#tierLabel");if(tl)tl.textContent="Guest mode";
+  const tm=$("#tierMeta");if(tm)tm.textContent="Sign in to save chats";
+  const ub=$("#upgradeBtn");if(ub)ub.textContent="Sign in";
+  startNewChat();
+}
+
+async function loadConfig(){
+  try{const r=await fetch("/api/config",{cache:"no-store"});if(!r.ok)throw new Error();__config=await r.json();}
+  catch{__config={app:{name:"MiroxAI",made_by:"OpenSurr"},models:[{id:"mirox-luna-1.2",label:"Luna",tagline:"Warm & friendly",tier:"free",default:true}],announcement:{enabled:false}};}
+  window.__config=__config;buildModelPickerMenu();
+}
+async function loadMe(){
+  try{const r=await authFetch("/api/me");const d=await r.json();__user=d.user||null;if(!__user)setToken(null);}
+  catch{__user=null;}
+  const cl=$("#userChipLabel");if(cl)cl.textContent=__user?__user.name:"Sign in";
+  const lt=$("#loginTitle");if(lt)lt.textContent=__user?"Update profile":"Sign in";
+  if(__user){
+    if($("#simpleLoginName"))$("#simpleLoginName").value=__user.name||"";
+    if($("#simpleLoginEmail"))$("#simpleLoginEmail").value=__user.email||"";
+    __tier=__user.tier||"free";
+    const tl=$("#tierLabel");if(tl)tl.textContent=(__user.tier_label||"Free")+" plan";
+    const ub=$("#upgradeBtn");if(ub)ub.textContent=__tier==="free"?"Upgrade":"Manage";
+    try{const r=await authFetch("/api/settings/user");const d=await r.json();if(d.ok&&d.settings){userSettings={...userSettings,...d.settings};saveUserSettings();}}catch{}
+  }else{
+    __tier="free";
+    const tl=$("#tierLabel");if(tl)tl.textContent="Guest mode";
+    const tm=$("#tierMeta");if(tm)tm.textContent="Sign in to save chats";
+    const ub=$("#upgradeBtn");if(ub)ub.textContent="Sign in";
   }
-  // 2. Check cookie
-  const raw = req.headers.cookie || '';
-  const m = raw.match(/(?:^|;\s*)mirox_sess=([^;]+)/);
-  if (!m) return {};
-  return verifySession(decodeURIComponent(m[1]));
+  refreshModelLocks();
 }
-function setSession(res, data) {
-  const token = signSession(data);
-  const secure = process.env.VERCEL === '1' ? '; Secure' : '';
-  res.setHeader('Set-Cookie',
-    `mirox_sess=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 60 * 60}${secure}`);
-  return token;
+function renderSettings(){
+  if($("#tempInput"))$("#tempInput").value=Math.round(userSettings.temperature*10);
+  if($("#tempLabel"))$("#tempLabel").textContent=userSettings.temperature.toFixed(1);
+  document.querySelectorAll("#lengthOptions .option-btn").forEach(b=>b.classList.toggle("active",b.dataset.length===userSettings.length));
+  if($("#langSelect"))$("#langSelect").value=userSettings.language;
+  if($("#toggleSound"))$("#toggleSound").textContent="Sound: "+(userSettings.soundOn?"ON":"OFF");
+  if($("#toggleNotif"))$("#toggleNotif").textContent="Notifications: "+(userSettings.notifOn?"ON":"OFF");
+  if($("#toggleScroll"))$("#toggleScroll").textContent="Auto-scroll: "+(userSettings.autoscroll?"ON":"OFF");
+  if($("#voiceRateInput"))$("#voiceRateInput").value=userSettings.voiceRate;
+  if($("#voiceRateLabel"))$("#voiceRateLabel").textContent=userSettings.voiceRate.toFixed(1)+"×";
+  loadVoices();
 }
-function clearSession(res) {
-  res.setHeader('Set-Cookie', 'mirox_sess=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
+async function loadPersona(){if(!__user){if($("#personaInput"))$("#personaInput").value="";return;}try{const r=await authFetch("/api/settings/persona");const d=await r.json();if($("#personaInput"))$("#personaInput").value=d.persona||"";}catch{}}
+async function savePersona(){
+  if(!__user){$("#personaStatus").textContent="Sign in first.";return;}
+  const p=$("#personaInput")?.value||"";
+  const s=$("#personaStatus");if(s)s.textContent="Saving…";
+  try{const r=await authFetch("/api/settings/persona",{method:"POST",body:JSON.stringify({persona:p})});const d=await r.json();if(s)s.textContent=d.ok?"Saved.":"Failed.";}
+  catch{if(s)s.textContent="Failed.";}
 }
-
-const USERS = Object.create(null);
-const MEMORY = Object.create(null);
-const PERSONAS = Object.create(null);
-const KEYS = Object.create(null);
-const TICKETS = Object.create(null);
-
-/* ---------- DISCORD ---------- */
-const COLORS = { signin:0x16a34a, chat:0x3b82f6, image:0x8b5cf6, video:0xdc2626, subscription:0xd97706, error:0xef4444 };
-async function logDiscord(kind, title, description = '', fields = []) {
-  if (!DISCORD_WEBHOOK) return;
-  const embed = {
-    title, description: (description || '').slice(0, 2000),
-    color: COLORS[kind] || 0x6366f1,
-    footer: { text: 'MiroxAI' }, timestamp: new Date().toISOString(),
-  };
-  if (fields?.length) embed.fields = fields.map(([k, v]) => ({ name: String(k).slice(0, 200), value: String(v).slice(0, 1000), inline: false }));
-  try {
-    await fetch(DISCORD_WEBHOOK, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: 'MiroxAI', embeds: [embed] }),
+async function loadMemory(){
+  const list=$("#memoryList");if(!list)return;list.innerHTML="";
+  if(!__user){list.innerHTML='<li class="memory-empty">Sign in to use memory.</li>';return;}
+  try{
+    const r=await authFetch("/api/memory");const d=await r.json();
+    const facts=d.facts||[];
+    if(!facts.length){list.innerHTML='<li class="memory-empty">Nothing remembered yet.</li>';return;}
+    facts.forEach(f=>{
+      const li=document.createElement("li");
+      li.innerHTML=`<span>${escapeHtml(f.text)}</span><button class="memory-delete" data-id="${f.id}"><i class="ri-delete-bin-line"></i></button>`;
+      li.querySelector(".memory-delete").addEventListener("click",async()=>{await authFetch("/api/memory/"+f.id,{method:"DELETE"});loadMemory();});
+      list.appendChild(li);
     });
-  } catch (e) { console.error('discord log failed:', e.message); }
+  }catch{}
+}
+async function addMemory(){
+  if(!__user)return;
+  const v=$("#memoryInput")?.value.trim();if(!v)return;
+  await authFetch("/api/memory",{method:"POST",body:JSON.stringify({fact:v})});
+  $("#memoryInput").value="";loadMemory();
+}
+async function loadPlans(){
+  try{
+    const r=await fetch("/api/subscription/plans",{cache:"no-store"});const d=await r.json();
+    const plans=d.plans||[],grid=$("#plansGrid");if(!grid)return;
+    grid.innerHTML=plans.map(p=>{
+      const isCur=__user&&__tier===p.id,feat=p.id==="pro";
+      let price='<span style="color:var(--text-muted);font-weight:700">Free</span>';
+      if(p.price_robux>0)price=`R$ ${p.price_robux}<span style="font-size:11px;color:var(--text-muted);display:block">or ${p.price_afg} AFG</span>`;
+      let buyBtn;
+      if(p.id==="free")buyBtn=`<div class="plan-buy disabled">Free forever</div>`;
+      else if(isCur)buyBtn=`<div class="plan-buy disabled">Current plan</div>`;
+      else buyBtn=`<div class="plan-buy">Contact admin</div>`;
+      return `<div class="plan-card${feat?" featured":""}${isCur?" current":""}">${isCur?'<span class="plan-badge current">Current</span>':(feat?'<span class="plan-badge">Popular</span>':"")}<div class="plan-name">${escapeHtml(p.label)}</div><div class="plan-tagline">${escapeHtml(p.tagline)}</div><div class="plan-price">${price}</div><ul class="plan-perks">${p.perks.map(x=>`<li><i class="ri-check-line"></i><span>${escapeHtml(x)}</span></li>`).join("")}</ul>${buyBtn}</div>`;
+    }).join("");
+  }catch{}
+}
+async function loadUserKeys(){
+  const list=$("#keysList");if(!list)return;
+  if(!__user){list.innerHTML='<li class="key-empty">Sign in to manage API keys.</li>';return;}
+  try{const r=await authFetch("/api/keys");const d=await r.json();const keys=d.keys||[];if(!keys.length){list.innerHTML='<li class="key-empty">No keys yet.</li>';return;}list.innerHTML=keys.map(k=>`<li class="key-item"><div class="key-info"><div class="key-name">${escapeHtml(k.name)}</div><div class="key-value">${escapeHtml(k.preview||"")}</div></div></li>`).join("");}catch{}
+}
+async function genKey(){
+  if(!__user){$("#keyGenStatus").textContent="Sign in first.";return;}
+  const n=$("#newKeyNameInput")?.value.trim()||"My key";
+  const s=$("#keyGenStatus");if(s)s.textContent="Generating…";
+  try{const r=await authFetch("/api/keys/generate",{method:"POST",body:JSON.stringify({name:n})});const d=await r.json();if(d.ok){if(s)s.innerHTML=`Created ✅ — <code>${escapeHtml(d.key)}</code>`;if($("#newKeyNameInput"))$("#newKeyNameInput").value="";loadUserKeys();}else if(s)s.textContent=d.error||"Failed.";}catch{if(s)s.textContent="Failed.";}
+}
+async function submitReport(){
+  const s=$("#reportStatus");
+  if(!__user){if(s)s.textContent="Sign in to send a ticket.";return;}
+  const sub=$("#reportSubject")?.value.trim()||"";
+  const msg=$("#reportMessage")?.value.trim()||"";
+  if(!msg){if(s)s.textContent="Please describe your issue.";return;}
+  if(s)s.textContent="Sending…";
+  try{const r=await authFetch("/api/report",{method:"POST",body:JSON.stringify({subject:sub,message:msg,category:"general"})});const d=await r.json();if(d.ok){if(s)s.textContent="Ticket sent ✅";if($("#reportSubject"))$("#reportSubject").value="";if($("#reportMessage"))$("#reportMessage").value="";loadMyReports();}else if(s)s.textContent=d.error||"Failed.";}catch{if(s)s.textContent="Failed.";}
+}
+async function loadMyReports(){
+  const box=$("#supportMine");if(!box)return;
+  if(!__user){box.innerHTML="";return;}
+  try{const r=await authFetch("/api/report/mine");const d=await r.json();const reports=d.reports||[];if(!reports.length){box.innerHTML="";return;}box.innerHTML=`<h4 style="font-size:12px;color:var(--text-muted);margin-bottom:10px">YOUR TICKETS</h4>`+reports.map(t=>`<div style="background:var(--panel-2);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px;font-size:13px"><b>${escapeHtml(t.subject)}</b><span style="color:var(--text-muted);font-size:11.5px"> · ${escapeHtml(t.status)}</span><div style="color:var(--text-muted);font-size:12px;margin-top:4px">${escapeHtml((t.messages[0]||{}).text||"")}</div></div>`).join("");}catch{}
 }
 
-/* ============================================================
-   MODELS — plain HF IDs. The URL path forces hf-inference.
-   Only models the free serverless actually serves are used.
-   ============================================================ */
-const MODELS = {
-  'mirox-luna-1.2': {
-    label: 'Luna', tagline: 'Warm & friendly', tier: 'free', default: true,
-    chain: [
-      'Qwen/Qwen2.5-7B-Instruct',
-      'mistralai/Mistral-7B-Instruct-v0.3',
-      'HuggingFaceH4/zephyr-7b-beta',
-      'meta-llama/Llama-3.2-3B-Instruct',
-    ],
-    tokens: 700,
-    prompt: 'You are Luna, a warm and friendly assistant created by the OpenSurr team. Speak naturally, with a personal, encouraging tone. Be brief but caring. Never mention any other company or AI model. If asked who made you, answer: OpenSurr. If asked your model name, answer: Luna.'
-  },
-  'mirox-gen-1': {
-    label: 'Gen', tagline: 'Quick & concise', tier: 'free', fallback: true,
-    chain: [
-      'HuggingFaceH4/zephyr-7b-beta',
-      'mistralai/Mistral-7B-Instruct-v0.3',
-      'Qwen/Qwen2.5-7B-Instruct',
-    ],
-    tokens: 512,
-    prompt: 'You are Gen, an ultra-concise assistant from the OpenSurr team. Give the shortest clear answer possible. Skip filler. Never mention any other company or AI model. If asked who made you, answer: OpenSurr.'
-  },
-  'mirox-pro-5': {
-    label: 'Pro', tagline: 'Balanced & thorough', tier: 'pro',
-    chain: [
-      'Qwen/Qwen2.5-7B-Instruct',
-      'mistralai/Mistral-7B-Instruct-v0.3',
-      'HuggingFaceH4/zephyr-7b-beta',
-    ],
-    tokens: 900,
-    prompt: 'You are Pro, a professional assistant from the OpenSurr team. Give balanced, well-structured answers with clear reasoning. Use headings or lists when helpful. Never mention any other company or AI model. If asked who made you, answer: OpenSurr. If asked your model name, answer: Pro.'
-  },
-  'mirox-ultra-10': {
-    label: 'Ultra', tagline: 'Deep reasoning', tier: 'pro',
-    chain: [
-      'Qwen/Qwen2.5-7B-Instruct',
-      'mistralai/Mistral-7B-Instruct-v0.3',
-      'HuggingFaceH4/zephyr-7b-beta',
-    ],
-    tokens: 1200,
-    prompt: 'You are Ultra, an analytical assistant from the OpenSurr team. Think step by step. Break complex problems into clear logical parts. Show your reasoning when it helps the user. Never mention any other company or AI model. If asked who made you, answer: OpenSurr. If asked your model name, answer: Ultra.'
-  },
-  'mirox-eclipse-2.0': {
-    label: 'Eclipse', tagline: 'Advanced & creative', tier: 'ultimate',
-    chain: [
-      'Qwen/Qwen2.5-7B-Instruct',
-      'mistralai/Mistral-7B-Instruct-v0.3',
-      'HuggingFaceH4/zephyr-7b-beta',
-    ],
-    tokens: 1400,
-    prompt: 'You are Eclipse, the most advanced assistant from the OpenSurr team. Blend deep reasoning with creativity. Explore ideas from multiple angles. Offer novel insights, but stay accurate. Never mention any other company or AI model. If asked who made you, answer: OpenSurr. If asked your model name, answer: Eclipse.'
-  },
-};
-
-const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
-const PLANS = {
-  free:     { label:'Free',     daily_limit:50,   ultimate_trial_limit:10, price_robux:0,    price_afg:0,   price_hesab:0,   gamepass_id:'' },
-  pro:      { label:'Pro',      daily_limit:500,  ultimate_trial_limit:0,  price_robux:250,  price_afg:120, price_hesab:150, gamepass_id:'' },
-  ultimate: { label:'Ultimate', daily_limit:5000, ultimate_trial_limit:0,  price_robux:1200, price_afg:450, price_hesab:550, gamepass_id:'' },
-};
-const ANNOUNCEMENT = {
-  enabled: true, version: 'v1-luna', title: 'Meet Luna',
-  image: 'Luna.png',
-  body: 'Luna is now the default — warm, smart, and free.',
-  highlights: ['Luna — new default, free','Pro & Ultra on Pro plan','Eclipse on Ultimate','Guest mode — chat without signing in']
-};
-
-const now = () => Math.floor(Date.now() / 1000);
-
-function currentUser(req) {
-  const s = getSession(req);
-  if (!s.uid) return null;
-  if (!USERS[s.uid]) USERS[s.uid] = { email: s.uid, name: s.name || '', tier: s.tier || 'free', created_at: now(), gmail: '' };
-  return { ...USERS[s.uid] };
+function buildModelPickerMenu(){
+  const menu=$("#modelPickerMenu");if(!menu)return;
+  const models=__config?.models||[];
+  menu.innerHTML=models.map(m=>{const tier=m.tier||"free";const badge=tier!=="free"?`<span class="model-tier-badge ${tier}">${tier}</span>`:"";return `<button type="button" class="model-option" data-model-id="${m.id}" data-tier="${tier}"><span class="model-option-icon">${(m.label||"?")[0]}</span><span class="model-option-body"><span class="model-option-name">${escapeHtml(m.label)} ${badge}</span><span class="model-option-tag">${escapeHtml(m.tagline||"")}</span></span></button>`;}).join("");
+  const def=getDefaultModel();__model=def;updateModelPickerLabel(def);
+}
+function updateModelPickerLabel(id){
+  const m=(__config?.models||[]).find(x=>x.id===id);
+  if(m&&$("#modelPickerLabel"))$("#modelPickerLabel").textContent=m.label;
+  const menu=$("#modelPickerMenu");
+  if(menu)menu.querySelectorAll(".model-option").forEach(o=>o.classList.toggle("active",o.dataset.modelId===id));
+  __model=id;
+}
+function selectModel(id){
+  const m=(__config?.models||[]).find(x=>x.id===id);if(!m)return;
+  const rank={free:0,pro:1,ultimate:2};
+  if((rank[m.tier]||0)>(rank[__tier]||0)&&m.tier!=="ultimate"){$("#modelPickerMenu")?.classList.remove("open");openModal("plansModal");loadPlans();return;}
+  updateModelPickerLabel(id);$("#modelPickerMenu")?.classList.remove("open");
+}
+function refreshModelLocks(){
+  const menu=$("#modelPickerMenu");if(!menu)return;
+  const rank={free:0,pro:1,ultimate:2},u=rank[__tier]||0;
+  menu.querySelectorAll(".model-option").forEach(o=>{const t=o.dataset.tier;let locked;if(!__user)locked=(rank[t]||0)>0&&t!=="ultimate";else if(__tier==="free"&&t==="ultimate")locked=false;else locked=(rank[t]||0)>u;o.classList.toggle("locked",locked);});
 }
 
-const memBox = e => (MEMORY[e] ||= []);
-const keysBox = e => (KEYS[e] ||= []);
-const ticketsBox = e => (TICKETS[e] ||= []);
+const root=document.documentElement;
+function applyAppearance({mode,theme,corner,font}){
+  if(mode)root.setAttribute("data-mode",mode);
+  if(theme)root.setAttribute("data-theme",theme);
+  if(corner)root.setAttribute("data-corner",corner);
+  if(font)root.setAttribute("data-font",font);
+  $$("#modeOptions .option-btn").forEach(b=>b.classList.toggle("active",b.dataset.mode===(mode||root.getAttribute("data-mode"))));
+  $$("#themeSwatches .swatch").forEach(s=>s.classList.toggle("active",s.dataset.theme===(theme||root.getAttribute("data-theme"))));
+  $$("#cornerOptions .option-btn").forEach(b=>b.classList.toggle("active",b.dataset.corner===(corner||root.getAttribute("data-corner"))));
+  $$("#fontOptions .option-btn").forEach(b=>b.classList.toggle("active",b.dataset.font===(font||root.getAttribute("data-font"))));
+}
+function loadAppearance(){let s={};try{s=JSON.parse(localStorage.getItem("miroxai_appearance")||"{}");}catch{}applyAppearance({mode:s.mode||"light",theme:s.theme||"warm",corner:s.corner||"soft",font:s.font||"system"});}
+function saveAppearance(patch){let c={};try{c=JSON.parse(localStorage.getItem("miroxai_appearance")||"{}");}catch{}const m={...c,...patch};try{localStorage.setItem("miroxai_appearance",JSON.stringify(m));}catch{}applyAppearance(m);}
 
-/* ============================================================
-   HF STREAM — uses the direct hf-inference path so it doesn't
-   need provider selection on the account.
-   ============================================================ */
-async function hfStreamWithFallback(chain, messages, maxTokens) {
-  if (!HF_API_KEY) throw new Error('HF_API_KEY not configured');
-  const errors = [];
-  for (const modelId of chain) {
-    try {
-      const url = `${HF_CHAT_BASE}/${modelId}/v1/chat/completions`;
-      const r = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${HF_API_KEY}`,
-          'Content-Type': 'application/json',
-          'Accept': 'text/event-stream',
-        },
-        body: JSON.stringify({
-          messages, max_tokens: maxTokens,
-          temperature: 0.7, top_p: 0.95, stream: true,
-        }),
-      });
-      if (!r.ok) {
-        let body = '';
-        try { body = (await r.text()).slice(0, 200); } catch {}
-        errors.push(`${modelId}: HTTP ${r.status}`);
-        continue;
-      }
-      return { stream: r.body, model: modelId };
-    } catch (e) {
-      errors.push(`${modelId}: ${e.message.slice(0, 100)}`);
-    }
-  }
-  throw new Error(`All models failed → ${errors.slice(0, 3).join(' | ')}`);
+function loadBackground(){
+  try{const s=JSON.parse(localStorage.getItem("miroxai_bg")||"{}");bgState={url:s.url||null,dim:s.dim??45,blur:s.blur??0};}catch{}
+  applyBackground();populateBackgroundUI();
+}
+function applyBackground(){
+  const el=$("#userBackground");if(!el)return;
+  if(!bgState.url){el.classList.remove("active");el.style.backgroundImage="";root.style.setProperty("--bg-dim","0");root.style.setProperty("--bg-blur","0px");return;}
+  el.classList.remove("active");
+  requestAnimationFrame(()=>{
+    el.style.backgroundImage=`url("${bgState.url}")`;
+    root.style.setProperty("--bg-dim",(bgState.dim/100).toFixed(2));
+    root.style.setProperty("--bg-blur",bgState.blur+"px");
+    el.classList.add("active");
+  });
+}
+function saveBgPrefs(){try{localStorage.setItem("miroxai_bg",JSON.stringify(bgState));}catch{}}
+function populateBackgroundUI(){
+  if($("#bgDimInput"))$("#bgDimInput").value=bgState.dim;
+  if($("#bgBlurInput"))$("#bgBlurInput").value=bgState.blur;
+  if($("#bgDimLabel"))$("#bgDimLabel").textContent=bgState.dim+"%";
+  if($("#bgBlurLabel"))$("#bgBlurLabel").textContent=bgState.blur+"px";
+  const u=$("#bgUrlInput");if(u)u.value=bgState.url&&!bgState.url.startsWith("data:")?bgState.url:"";
 }
 
-function buildMessages(systemPrompt, history, userText, persona = '', mem = []) {
-  const msgs = [{ role: 'system', content: systemPrompt }];
-  if (persona) msgs.push({ role: 'system', content: `User preference: ${String(persona).slice(0, 1500)}` });
-  if (mem.length) msgs.push({ role: 'system', content: 'Remember: ' + mem.slice(-8).map(m => m.text).join(' | ') });
-  for (const h of (history || []).slice(-12)) {
-    const role = h.role, txt = String(h.content || '').trim().slice(0, 3000);
-    if ((role === 'user' || role === 'assistant') && txt) msgs.push({ role, content: txt });
-  }
-  msgs.push({ role: 'user', content: String(userText || '').slice(0, 8000) });
-  return msgs;
+async function genImage(){
+  const prompt=$("#imagePromptInput")?.value.trim();if(!prompt)return;
+  const btn=$("#generateImageBtn"),status=$("#imageStudioStatus");
+  if(btn)btn.disabled=true;if(status)status.textContent="Generating…";
+  const card=document.createElement("div");card.className="gallery-card";card.innerHTML=`<div class="gallery-skeleton"></div>`;
+  $("#imageGallery")?.prepend(card);
+  try{const r=await authFetch("/api/image/generate",{method:"POST",body:JSON.stringify({prompt})});const d=await r.json();if(!d.ok)throw new Error(d.error||"Failed");card.innerHTML=`<img src="${d.image}" alt="">`;if(status)status.textContent="";}
+  catch(e){card.innerHTML=`<div class="gallery-error"><i class="ri-error-warning-line"></i><span>${escapeHtml(e.message)}</span></div>`;if(status)status.textContent=e.message;}
+  finally{if(btn)btn.disabled=false;}
 }
 
-/* ---------- ROUTES ---------- */
-app.get(['/api/config','/config','/config.json'], (req, res) => {
-  const u = currentUser(req);
-  res.json({
-    app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v6' },
-    models: Object.entries(MODELS).map(([id, m]) => ({
-      id, label: m.label, tagline: m.tagline, tier: m.tier,
-      default: !!m.default, fallback: !!m.fallback,
-    })),
-    plans: PLANS,
-    payments: { hesabpay: { enabled: false }, robux: { enabled: true }, afg_cash: { enabled: true } },
-    email: { enabled: true, free_daily_limit: 5, paid_daily_limit: 100, signature: 'made by mirox ai', from_name: 'MiroxAI' },
-    announcement: ANNOUNCEMENT,
-    user_tier: u ? u.tier : 'free',
-    guest: !u,
-    hf_ready: !!HF_API_KEY,
-  });
-});
-
-app.get(['/api/health','/health','/api/ping','/ping'], (req, res) => {
-  res.json({ ok: true, app: 'MiroxAI', hf: !!HF_API_KEY, t: now() });
-});
-
-/* ---------- AUTH ---------- */
-app.post(['/api/auth/simple-login','/auth/simple-login'], async (req, res) => {
-  const { name, email } = req.body || {};
-  const n = String(name || '').trim().slice(0, 60);
-  const e = String(email || '').trim().toLowerCase().slice(0, 120);
-  if (!n || !e || !e.includes('@') || !e.split('@')[1].includes('.')) {
-    return res.status(400).json({ ok: false, error: 'Valid name and email required' });
-  }
-  const existing = !!USERS[e];
-  if (!existing) USERS[e] = { email: e, name: n, tier: 'free', created_at: now(), gmail: '' };
-  else USERS[e].name = n;
-  const token = setSession(res, { uid: e, name: n, tier: USERS[e].tier });
-  logDiscord('signin', existing ? '👤 Sign in' : '👤 New user', '', [
-    ['Name', n], ['Email', e], ['Tier', USERS[e].tier], ['Time', new Date().toISOString()],
-  ]);
-  res.json({
-    ok: true,
-    token,                                    // <-- returned to client
-    user: { id: e, email: e, name: n, tier: USERS[e].tier, tier_label: PLANS[USERS[e].tier].label },
-  });
-});
-
-app.post(['/api/logout','/logout'], (req, res) => { clearSession(res); res.json({ ok: true }); });
-
-app.get(['/api/me','/me'], (req, res) => {
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-  const u = currentUser(req);
-  if (!u) return res.json({ user: null });
-  res.json({ user: { id: u.email, email: u.email, name: u.name, tier: u.tier, tier_label: PLANS[u.tier].label } });
-});
-
-/* ---------- SUBSCRIPTION ---------- */
-app.get(['/api/subscription/me','/subscription/me'], (req, res) => {
-  const u = currentUser(req);
-  if (!u) return res.json({ ok: false, error: 'Sign in first' });
-  const p = PLANS[u.tier]; const ks = keysBox(u.email);
-  res.json({
-    ok: true, tier: u.tier, tier_label: p.label,
-    daily_limit: p.daily_limit, daily_remaining: p.daily_limit,
-    trial_limit: p.ultimate_trial_limit, trial_remaining: p.ultimate_trial_limit,
-    images_allowed: true, video_allowed: false,
-    email_connected: !!u.gmail,
-    keys_remaining: Math.max(0, 3 - ks.length),
-    keys_per_period: 3, refill_days: 30, daily_reset_seconds: 86400, lite_mode: false,
-  });
-});
-
-app.get(['/api/subscription/plans','/subscription/plans'], (req, res) => {
-  const perks = {
-    free: ['Luna & Gen — free models', '10 Eclipse chats/day', 'Image generation', 'Memory & persona'],
-    pro: ['Pro & Ultra models', '500 msgs/day', 'Image generation', 'Priority speed'],
-    ultimate: ['Eclipse — best model', '5000 msgs/day', 'Everything in Pro', 'Ultimate badge'],
-  };
-  const out = Object.entries(PLANS).map(([id, p]) => ({
-    id, label: p.label,
-    tagline: { free: 'Free forever', pro: 'Most popular', ultimate: 'For power users' }[id],
-    daily_limit: p.daily_limit, price_robux: p.price_robux, price_afg: p.price_afg,
-    price_hesab: p.price_hesab, gamepass_id: p.gamepass_id, perks: perks[id],
-  }));
-  res.json({ ok: true, plans: out, admin_email: 'admin@example.com', admin_phone: '' });
-});
-
-/* ---------- CHAT ---------- */
-app.post(['/api/chat/stream','/chat/stream'], async (req, res) => {
-  const { message, history, model: modelKey } = req.body || {};
-  const msg = String(message || '').trim();
-  if (!msg) return res.status(400).json({ ok: false, error: 'Empty message' });
-
-  const u = currentUser(req);
-  const tier = u ? u.tier : 'free';
-  let cfg = MODELS[modelKey] || MODELS['mirox-luna-1.2'];
-  if (TIER_RANK[cfg.tier] > TIER_RANK[tier]) {
-    if (!(tier === 'free' && cfg.tier === 'ultimate')) cfg = MODELS['mirox-luna-1.2'];
-  }
-  const mem = u ? memBox(u.email) : [];
-  const persona = u ? (PERSONAS[u.email] || '') : '';
-  const msgs = buildMessages(cfg.prompt, history, msg, persona, mem);
-
-  logDiscord('chat', u ? '💬 Chat message' : '💬 Guest message', '', [
-    ['User', u ? u.email : 'guest'], ['Model', cfg.label], ['Message', msg.slice(0, 500)],
-  ]);
-
-  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-cache, no-transform');
-  res.setHeader('X-Accel-Buffering', 'no');
-  res.setHeader('Connection', 'keep-alive');
-  if (res.flushHeaders) res.flushHeaders();
-
-  const t0 = Date.now();
-  let usedModel = cfg.chain[0];
-  try {
-    const { stream, model } = await hfStreamWithFallback(cfg.chain, msgs, cfg.tokens);
-    usedModel = model;
-    const reader = stream.getReader();
-    const decoder = new TextDecoder();
-    let buf = '';
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      let idx;
-      while ((idx = buf.indexOf('\n')) !== -1) {
-        const line = buf.slice(0, idx).trim();
-        buf = buf.slice(idx + 1);
-        if (!line.startsWith('data:')) continue;
-        const payload = line.slice(5).trim();
-        if (!payload || payload === '[DONE]') continue;
-        try {
-          const obj = JSON.parse(payload);
-          const ch = obj.choices || [];
-          const delta = ch[0]?.delta?.content;
-          if (delta) res.write(`data: ${JSON.stringify({ d: delta })}\n\n`);
-        } catch {}
-      }
-    }
-  } catch (e) {
-    res.write(`data: ${JSON.stringify({ error: String(e.message).slice(0, 240) })}\n\n`);
-    logDiscord('error', '❌ Chat failed', String(e.message).slice(0, 400), [['User', u ? u.email : 'guest']]);
-  }
-  res.write(`data: ${JSON.stringify({ done: true, model: cfg.label, used: usedModel, ms: Date.now() - t0 })}\n\n`);
-  res.end();
-});
-
-app.post(['/api/chat','/chat'], async (req, res) => {
-  const { message, history, model: modelKey } = req.body || {};
-  const msg = String(message || '').trim();
-  if (!msg) return res.status(400).json({ ok: false, error: 'Empty message' });
-  const u = currentUser(req);
-  const tier = u ? u.tier : 'free';
-  let cfg = MODELS[modelKey] || MODELS['mirox-luna-1.2'];
-  if (TIER_RANK[cfg.tier] > TIER_RANK[tier]) cfg = MODELS['mirox-luna-1.2'];
-  const mem = u ? memBox(u.email) : [];
-  const persona = u ? (PERSONAS[u.email] || '') : '';
-  const msgs = buildMessages(cfg.prompt, history, msg, persona, mem);
-  try {
-    const { stream, model } = await hfStreamWithFallback(cfg.chain, msgs, cfg.tokens);
-    const reader = stream.getReader();
-    const decoder = new TextDecoder();
-    let buf = '', out = '';
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      let idx;
-      while ((idx = buf.indexOf('\n')) !== -1) {
-        const line = buf.slice(0, idx).trim();
-        buf = buf.slice(idx + 1);
-        if (!line.startsWith('data:')) continue;
-        const payload = line.slice(5).trim();
-        if (!payload || payload === '[DONE]') continue;
-        try {
-          const obj = JSON.parse(payload);
-          const delta = obj.choices?.[0]?.delta?.content;
-          if (delta) out += delta;
-        } catch {}
-      }
-    }
-    res.json({ ok: true, reply: out, model: cfg.label, used: model });
-  } catch (e) {
-    res.status(502).json({ ok: false, error: String(e.message).slice(0, 200) });
-  }
-});
-
-/* ---------- MEMORY / PERSONA ---------- */
-app.get(['/api/memory','/memory'], (req, res) => {
-  const u = currentUser(req);
-  if (!u) return res.json({ ok: true, facts: [] });
-  res.json({ ok: true, facts: memBox(u.email) });
-});
-app.post(['/api/memory','/memory'], (req, res) => {
-  const u = currentUser(req);
-  if (!u) return res.status(401).json({ ok: false, error: 'Sign in first' });
-  const fact = String(req.body?.fact || '').trim().slice(0, 500);
-  if (!fact) return res.status(400).json({ ok: false, error: 'Fact required' });
-  const item = { id: Math.random().toString(36).slice(2, 10), text: fact };
-  memBox(u.email).push(item);
-  res.json({ ok: true, fact: item });
-});
-app.delete(['/api/memory/:id','/memory/:id'], (req, res) => {
-  const u = currentUser(req);
-  if (!u) return res.status(401).json({ ok: false, error: 'Sign in first' });
-  const list = memBox(u.email);
-  const i = list.findIndex(m => m.id === req.params.id);
-  if (i >= 0) list.splice(i, 1);
-  res.json({ ok: true });
-});
-app.get(['/api/settings/persona','/settings/persona'], (req, res) => {
-  const u = currentUser(req);
-  if (!u) return res.json({ ok: true, persona: '' });
-  res.json({ ok: true, persona: PERSONAS[u.email] || '' });
-});
-app.post(['/api/settings/persona','/settings/persona'], (req, res) => {
-  const u = currentUser(req);
-  if (!u) return res.status(401).json({ ok: false, error: 'Sign in first' });
-  PERSONAS[u.email] = String(req.body?.persona || '').slice(0, 2000);
-  res.json({ ok: true });
-});
-
-/* ---------- SUPPORT ---------- */
-app.post(['/api/report','/report'], (req, res) => {
-  const u = currentUser(req);
-  if (!u) return res.status(401).json({ ok: false, error: 'Sign in first' });
-  const { subject, category, message } = req.body || {};
-  const tid = 't_' + Math.random().toString(36).slice(2, 12);
-  ticketsBox(u.email).unshift({
-    id: tid, subject: String(subject || '(no subject)').slice(0, 120),
-    category: String(category || 'general').slice(0, 40),
-    status: 'open', unread_user: 0, created_at: now(),
-    messages: [{ from: 'user', text: String(message || '').slice(0, 4000), ts: now() }],
-  });
-  res.json({ ok: true, ticket_id: tid });
-});
-app.get(['/api/report/mine','/report/mine'], (req, res) => {
-  const u = currentUser(req);
-  if (!u) return res.json({ ok: true, reports: [] });
-  res.json({ ok: true, reports: ticketsBox(u.email) });
-});
-
-/* ---------- API KEYS ---------- */
-app.get(['/api/keys','/keys'], (req, res) => {
-  const u = currentUser(req);
-  if (!u) return res.json({ ok: true, keys: [] });
-  res.json({ ok: true, keys: keysBox(u.email) });
-});
-app.post(['/api/keys/generate','/keys/generate'], (req, res) => {
-  const u = currentUser(req);
-  if (!u) return res.status(401).json({ ok: false, error: 'Sign in first' });
-  const name = String(req.body?.name || 'My key').slice(0, 60);
-  const raw = 'mx_' + crypto.randomBytes(24).toString('base64url');
-  const k = {
-    id: 'k_' + Math.random().toString(36).slice(2, 10),
-    name, key: raw, preview: raw.slice(0, 8) + '…' + raw.slice(-4),
-    revoked: false, created_at: now(), tier: u.tier,
-  };
-  keysBox(u.email).push(k);
-  res.json({ ok: true, id: k.id, key: raw });
-});
-
-/* ---------- EMAIL stubs ---------- */
-app.get(['/api/email/status','/email/status'], (req, res) => {
-  const u = currentUser(req);
-  res.json({ ok: true, connected: !!(u?.gmail), address: u?.gmail || '', used_today: 0, daily_limit: 5 });
-});
-app.post(['/api/email/connect','/email/connect'], (req, res) => res.json({ ok: true }));
-app.post(['/api/email/disconnect','/email/disconnect'], (req, res) => res.json({ ok: true }));
-app.post(['/api/email/test','/email/test'], (req, res) => res.status(501).json({ ok: false, error: 'Email not enabled' }));
-app.post(['/api/email/send','/email/send'], (req, res) => res.status(501).json({ ok: false, error: 'Email not enabled' }));
-
-/* ---------- IMAGE ---------- */
-app.post(['/api/image/generate','/image/generate'], async (req, res) => {
-  const prompt = String(req.body?.prompt || '').trim().slice(0, 1000);
-  if (!prompt) return res.status(400).json({ ok: false, error: 'Prompt required' });
-  if (!HF_API_KEY) return res.status(500).json({ ok: false, error: 'HF_API_KEY missing' });
-
-  const u = currentUser(req);
-  logDiscord('image', '🎨 Image request', '', [['User', u ? u.email : 'guest'], ['Prompt', prompt.slice(0, 500)]]);
-
-  const imageModels = ['black-forest-labs/FLUX.1-schnell', 'stabilityai/stable-diffusion-xl-base-1.0'];
-  let lastErr = '';
-  for (const model of imageModels) {
-    try {
-      const r = await fetch(HF_IMAGES, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${HF_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, prompt, n: 1, size: '1024x1024', response_format: 'url' }),
-      });
-      if (!r.ok) { lastErr = `${model}: HTTP ${r.status}`; continue; }
-      const j = await r.json();
-      const item = (j.data || [{}])[0];
-      const url = item.url || (item.b64_json ? ('data:image/png;base64,' + item.b64_json) : null);
-      if (!url) { lastErr = `${model}: no url`; continue; }
-      logDiscord('image', '✅ Image generated', '', [['User', u ? u.email : 'guest'], ['Model', model]]);
-      return res.json({ ok: true, image: url, url, model, provider: 'Hugging Face' });
-    } catch (e) { lastErr = `${model}: ${e.message.slice(0, 100)}`; }
-  }
-  logDiscord('error', '❌ Image failed', lastErr.slice(0, 300), []);
-  res.status(502).json({ ok: false, error: lastErr.slice(0, 200) });
-});
-
-/* ---------- VIDEO stub ---------- */
-app.post(['/api/video/generate','/video/generate'], (req, res) => {
-  const u = currentUser(req);
-  logDiscord('video', '🎬 Video request', 'Not enabled', [['User', u ? u.email : 'guest']]);
-  res.status(501).json({ ok: false, error: "Video generation isn't available on this deployment." });
-});
-
-/* ---------- ADMIN ---------- */
-app.get(['/api/admin/status','/admin/status'], (req, res) => {
-  const s = getSession(req);
-  res.json({ ok: true, is_admin: !!s.is_admin });
-});
-app.post(['/api/admin/login','/admin/login'], async (req, res) => {
-  const pw = String(req.body?.password || '').trim();
-  if (pw && pw === ADMIN_PASSWORD) {
-    const s = getSession(req);
-    setSession(res, { ...s, is_admin: true });
-    logDiscord('signin', '🔐 Admin login', '', [['Time', new Date().toISOString()]]);
-    return res.json({ ok: true });
-  }
-  res.status(401).json({ ok: false, error: 'Wrong password' });
-});
-app.post(['/api/admin/logout','/admin/logout'], (req, res) => {
-  const s = getSession(req); delete s.is_admin; setSession(res, s);
-  res.json({ ok: true });
-});
-function requireAdmin(req, res, next) {
-  const s = getSession(req);
-  if (!s.is_admin) return res.status(403).json({ ok: false, error: 'Admin only' });
-  next();
+async function requestMic(){
+  try{micStream=await navigator.mediaDevices.getUserMedia({audio:true});if($("#micStatus"))$("#micStatus").textContent="Microphone granted ✅";return true;}
+  catch(e){if($("#micStatus"))$("#micStatus").textContent="Denied: "+e.message;return false;}
 }
-app.get(['/api/admin/users','/admin/users'], requireAdmin, (req, res) => {
-  const arr = Object.values(USERS).sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
-  res.json({ ok: true, users: arr });
-});
-app.post(['/api/admin/set-tier','/admin/set-tier'], requireAdmin, async (req, res) => {
-  const { email, tier } = req.body || {};
-  const e = String(email || '').trim().toLowerCase();
-  const t = String(tier || 'free').trim().toLowerCase();
-  if (!PLANS[t]) return res.status(400).json({ ok: false, error: 'Invalid tier' });
-  if (!e) return res.status(400).json({ ok: false, error: 'Email required' });
-  if (!USERS[e]) USERS[e] = { email: e, name: '', tier: t, created_at: now(), gmail: '' };
-  else USERS[e].tier = t;
-  logDiscord('subscription', '👑 Subscription changed', '', [['User', e], ['New tier', t]]);
-  res.json({ ok: true, user: USERS[e] });
-});
-app.get(['/api/admin/stats','/admin/stats'], requireAdmin, (req, res) => {
-  const arr = Object.values(USERS);
-  res.json({
-    ok: true, total: arr.length,
-    free: arr.filter(x => x.tier === 'free').length,
-    pro: arr.filter(x => x.tier === 'pro').length,
-    ultimate: arr.filter(x => x.tier === 'ultimate').length,
-  });
-});
+function loadVoices(){
+  if(!synth||!$("#voiceSelect"))return;
+  const voices=synth.getVoices();if(!voices.length)return;
+  $("#voiceSelect").innerHTML=voices.map(v=>`<option value="${v.name}"${v.name===userSettings.voiceName?" selected":""}>${v.name} (${v.lang})</option>`).join("");
+}
+function speak(text,onEnd){
+  if(!synth){onEnd&&onEnd();return;}
+  synth.cancel();
+  const u=new SpeechSynthesisUtterance(text);
+  const v=synth.getVoices().find(x=>x.name===userSettings.voiceName);
+  if(v)u.voice=v;u.rate=userSettings.voiceRate||1;
+  u.onend=()=>onEnd&&onEnd();u.onerror=()=>onEnd&&onEnd();
+  synth.speak(u);
+}
+function startMic(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){alert("Voice input not supported.");return;}
+  if(!recognition){
+    recognition=new SR();recognition.continuous=false;recognition.interimResults=true;
+    recognition.onresult=e=>{let t="";for(let i=0;i<e.results.length;i++)t+=e.results[i][0].transcript;$("#messageInput").value=t;const sb=$("#sendBtn");if(sb)sb.disabled=false;};
+    recognition.onend=()=>$("#micBtn")?.classList.remove("recording");
+  }
+  try{recognition.start();$("#micBtn")?.classList.add("recording");}catch{}
+}
 
-/* ---------- CATCH-ALL ---------- */
-app.use((req, res) => {
-  if (req.path.startsWith('/api/')) return res.status(404).json({ ok: false, error: 'Not found' });
-  res.status(404).send('Not found');
-});
+async function startCall(){
+  if(!__user){openModal("loginModal");return;}
+  callActive=true;callMuted=false;
+  $("#callOverlay").classList.add("open");
+  $("#callStatus").textContent="Requesting mic…";
+  const ok=await requestMic();
+  if(!ok){$("#callStatus").textContent="Mic denied";return;}
+  $("#callStatus").textContent="Listening…";
+  $("#callOrb")?.classList.add("listening");
+  startCallListening();
+}
+function startCallListening(){
+  if(!callActive||callMuted)return;
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){$("#callStatus").textContent="Voice not supported";return;}
+  callRecognition=new SR();
+  callRecognition.continuous=false;callRecognition.interimResults=true;
+  callRecognition.onresult=e=>{let t="";for(let i=0;i<e.results.length;i++)t+=e.results[i][0].transcript;$("#callTranscript").textContent=t;};
+  callRecognition.onend=()=>{if(!callActive)return;const s=$("#callTranscript").textContent.trim();if(s&&!callMuted)sendCallMessage(s);else if(!callMuted)startCallListening();};
+  callRecognition.onerror=()=>{if(callActive&&!callMuted)setTimeout(startCallListening,500);};
+  try{callRecognition.start();}catch{}
+}
+async function sendCallMessage(text){
+  $("#callStatus").textContent="Thinking…";
+  $("#callOrb")?.classList.remove("listening");
+  try{
+    const r=await authFetch("/api/chat",{method:"POST",body:JSON.stringify({message:text,history:[],model:__model||getDefaultModel()})});
+    const d=await r.json();
+    if(!callActive)return;
+    if(!d.ok){$("#callStatus").textContent="Error";return;}
+    $("#callTranscript").textContent=d.reply||"(no reply)";
+    $("#callStatus").textContent="Speaking…";
+    $("#callOrb")?.classList.add("speaking");
+    speak(d.reply,()=>{
+      if(!callActive)return;
+      $("#callOrb")?.classList.remove("speaking");
+      $("#callStatus").textContent="Listening…";
+      $("#callOrb")?.classList.add("listening");
+      startCallListening();
+    });
+  }catch{if(callActive){$("#callStatus").textContent="Error";setTimeout(startCallListening,1500);}}
+}
+function toggleMute(){
+  callMuted=!callMuted;
+  $("#callMuteBtn")?.classList.toggle("muted",callMuted);
+  if(callMuted){try{callRecognition?.stop();}catch{};$("#callStatus").textContent="Muted";}
+  else{startCallListening();$("#callStatus").textContent="Listening…";}
+}
+function endCall(){
+  callActive=false;
+  try{callRecognition?.stop();}catch{}
+  if(synth)synth.cancel();
+  $("#callOverlay").classList.remove("open");
+  $("#callOrb")?.classList.remove("listening","speaking");
+}
 
-module.exports = app;
+function updateRailToggleIcon(){const i=$("#railToggleIcon");if(!i)return;i.className=document.body.classList.contains("rail-collapsed")?"ri-side-bar-line":"ri-contract-left-line";}
+
+async function autoConnect(){
+  const dot=$("#serverDot"),txt=$("#serverText"),inline=$("#serverStatusInline");
+  try{const r=await fetch("/api/health",{cache:"no-store"});const d=await r.json();
+    if(dot)dot.classList.add("online");
+    if(txt)txt.textContent=d.hf?"Online":"No HF key";
+    if(inline)inline.textContent=d.hf?"Online ✅":"Online (no HF key)";
+  }catch{if(dot)dot.classList.add("offline");if(txt)txt.textContent="Offline";if(inline)inline.textContent="Offline";}
+}
+setInterval(autoConnect,60000);
+
+async function boot(){
+  killLoader();loadAppearance();loadBackground();loadUserSettings();
+  await loadConfig();await loadMe();
+  loadChatsFromLS();renderHistory();
+  updateRailToggleIcon();renderSettings();
+  autoConnect();loadVoices();
+  if(synth)synth.addEventListener?.("voiceschanged",loadVoices);
+  killLoader();
+}
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot);
+else boot();
+setTimeout(()=>{try{renderHistory();}catch{}},1200);
