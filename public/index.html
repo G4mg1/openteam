@@ -7,8 +7,6 @@
 <title>MiroxAI — by OpenSurr</title>
 <link rel="icon" type="image/png" href="/logo.png">
 <link href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css" rel="stylesheet">
-<link id="hljs-dark" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/atom-one-dark.min.css" disabled>
-<link id="hljs-light" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/atom-one-light.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -47,10 +45,10 @@
     <div class="tier-chip" id="tierChip">
       <div class="tier-chip-icon"><i class="ri-vip-crown-2-line"></i></div>
       <div class="tier-chip-info">
-        <div class="tier-chip-label" id="tierLabel">Free plan</div>
-        <div class="tier-chip-meta" id="tierMeta">Sign in to continue</div>
+        <div class="tier-chip-label" id="tierLabel">Guest mode</div>
+        <div class="tier-chip-meta" id="tierMeta">Sign in to save chats</div>
       </div>
-      <button class="tier-chip-btn" id="upgradeBtn">Upgrade</button>
+      <button class="tier-chip-btn" id="upgradeBtn">Sign in</button>
     </div>
     <div class="sidebar-footer">
       <div class="user-chip" id="userChip"><i class="ri-user-3-line"></i><span id="userChipLabel">Sign in</span></div>
@@ -79,7 +77,7 @@
     <div class="chat" id="chat">
       <div class="message ai">
         <div class="avatar ai-avatar"><img src="/logo.png" alt="" class="theme-logo"></div>
-        <div class="bubble-wrap"><div class="bubble">Hi, I'm Mirox — built by the OpenSurr team. Ask me anything.</div></div>
+        <div class="bubble-wrap"><div class="bubble">Hi, I'm Mirox — built by the OpenSurr team. You can chat right away as a guest. Sign in only if you want your chats saved.</div></div>
       </div>
     </div>
 
@@ -111,7 +109,7 @@
       <input type="text" id="messageInput" placeholder="Message Mirox…" autocomplete="off" spellcheck="true">
       <button type="submit" class="send-btn" id="sendBtn"><i class="ri-arrow-up-line"></i></button>
     </form>
-    <p class="disclaimer" id="disclaimer">Sign in to start chatting. Made by the <b>OpenSurr</b> team.</p>
+    <p class="disclaimer" id="disclaimer">Mirox can make mistakes. Made by the <b>OpenSurr</b> team.</p>
   </main>
 
   <aside class="tool-rail" id="toolRail">
@@ -142,7 +140,7 @@
 <div class="modal-overlay" id="loginModal"><div class="modal">
   <button class="modal-close" data-close="loginModal"><i class="ri-close-line"></i></button>
   <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt=""><h2 id="loginTitle">Sign in</h2></div>
-  <p class="modal-sub">Enter your name and email to begin.</p>
+  <p class="modal-sub">Sign in to save your chats across visits. Guests can still chat.</p>
   <form id="simpleLoginForm">
     <label class="field-label">Name</label>
     <input type="text" id="simpleLoginName" placeholder="Alex" required autocomplete="name">
