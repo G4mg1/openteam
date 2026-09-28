@@ -7,9 +7,6 @@
 <title>MiroxAI — by OpenSurr</title>
 <link rel="icon" type="image/png" href="/logo.png">
 
-<!-- === GLOBAL IMAGE ERROR HANDLER ===
-     Catches every failed <img> on the page — static and dynamically
-     added — and hides it gracefully so nothing renders as a broken icon. -->
 <script>
 (function () {
   function hideBrokenImage(img) {
@@ -17,48 +14,29 @@
     img.style.visibility = 'hidden';
     img.style.display = 'none';
     img.setAttribute('data-broken', '1');
-    // If it's inside an avatar, show a fallback letter
     var parent = img.parentElement;
     if (parent && parent.classList.contains('ai-avatar') && !parent.querySelector('.avatar-fallback')) {
       var fb = document.createElement('span');
       fb.className = 'avatar-fallback';
       fb.textContent = 'M';
-      fb.style.fontWeight = '800';
-      fb.style.fontSize = '12px';
-      fb.style.color = 'currentColor';
       parent.appendChild(fb);
     }
     if (parent && parent.classList.contains('call-orb-wrap') && !parent.querySelector('.orb-fallback')) {
       var ofb = document.createElement('div');
       ofb.className = 'orb-fallback';
-      ofb.style.width = '96px';
-      ofb.style.height = '96px';
-      ofb.style.borderRadius = '50%';
-      ofb.style.background = 'linear-gradient(135deg,var(--accent),var(--accent-hover))';
-      ofb.style.zIndex = '2';
-      ofb.style.boxShadow = '0 0 40px var(--accent-glow)';
       parent.appendChild(ofb);
     }
   }
-
-  // Capture-phase listener: fires for every <img> error, including new ones
   document.addEventListener('error', function (e) {
-    if (e.target && e.target.tagName === 'IMG') {
-      hideBrokenImage(e.target);
-    }
+    if (e.target && e.target.tagName === 'IMG') hideBrokenImage(e.target);
   }, true);
-
-  // Also sweep already-broken images at DOMContentLoaded
   document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('img').forEach(function (img) {
-      if (img.complete && img.naturalWidth === 0 && img.src) {
-        hideBrokenImage(img);
-      }
+      if (img.complete && img.naturalWidth === 0 && img.src) hideBrokenImage(img);
     });
   });
 })();
 </script>
-<!-- ================================= -->
 
 <link href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css" rel="stylesheet">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -72,13 +50,23 @@
     pointer-events: none !important;
     display: none !important;
   }
-  /* Fallback avatar letter, shown when the AI logo can't load */
   .avatar-fallback {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 100%;
     height: 100%;
+    font-weight: 800;
+    font-size: 12px;
+    color: currentColor;
+  }
+  .orb-fallback {
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+    z-index: 2;
+    box-shadow: 0 0 40px var(--accent-glow);
   }
 </style>
 </head>
@@ -93,7 +81,6 @@
   <div class="load-bar"><span></span></div>
 </div>
 
-<!-- Bulletproof loader failsafe — runs even if script.js fails -->
 <script>
 (function () {
   function killLoader() {
