@@ -1,5 +1,5 @@
 /* ============================================================
-   MiroxAI — bulletproof frontend
+   MiroxAI — frontend (bulletproof, session-persistent)
    ============================================================ */
 
 const $  = s => document.querySelector(s);
@@ -14,11 +14,31 @@ let bgState = { url: null, dim: 45, blur: 0 };
 let recognition = null;
 
 const LS_KEY = "miroxai_conversations_v1";
+const TOKEN_KEY = "mirox_token";
+
+/* ============================================================
+   AUTH HELPERS — token in localStorage + cookie fallback
+   ============================================================ */
+function getToken() {
+  try { return localStorage.getItem(TOKEN_KEY) || ""; } catch { return ""; }
+}
+function setToken(t) {
+  try {
+    if (t) localStorage.setItem(TOKEN_KEY, t);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch {}
+}
+function authFetch(url, opts = {}) {
+  const headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
+  const t = getToken();
+  if (t) headers["Authorization"] = "Bearer " + t;
+  return fetch(url, { ...opts, headers, credentials: "same-origin", cache: "no-store" });
+}
 
 /* ---------- LOADER KILLER ---------- */
 function killLoader() {
   const l = document.getElementById("loadingScreen");
-  if (l) { l.classList.add("hidden","force-hidden"); l.style.display = "none"; }
+  if (l) { l.classList.add("hidden", "force-hidden"); l.style.display = "none"; }
 }
 killLoader();
 setTimeout(killLoader, 400);
@@ -46,38 +66,28 @@ document.addEventListener("click", function (e) {
   const t = e.target;
   const closest = s => t.closest(s);
 
-  // data-close buttons
   const closer = closest("[data-close]");
   if (closer) { closeModal(closer.dataset.close); return; }
 
-  // click outside a modal closes it
   if (t.classList.contains("modal-overlay")) { t.classList.remove("open"); return; }
 
-  // Sidebar
   if (closest("#hamburgerBtn")) { openSidebar(); return; }
   if (closest("#sidebarCloseBtn")) { closeSidebar(); return; }
   if (t.id === "sidebarScrim") { closeSidebar(); return; }
   if (closest("#brandLogo")) { startNewChat(); if (window.innerWidth <= 860) closeSidebar(); return; }
 
-  // New chat
   if (closest("#newChatBtn")) { startNewChat(); if (window.innerWidth <= 860) closeSidebar(); return; }
 
-  // User chip
   if (closest("#userChip")) { if (!__user) openModal("loginModal"); return; }
 
-  // Upgrade / Plans
   if (closest("#upgradeBtn")) {
     if (!__user) openModal("loginModal");
     else { openModal("plansModal"); loadPlans(); loadUserKeys(); }
     return;
   }
 
-  // Settings
-  if (closest("#settingsBtn")) {
-    openModal("settingsModal"); loadPersona(); loadMemory(); return;
-  }
+  if (closest("#settingsBtn")) { openModal("settingsModal"); loadPersona(); loadMemory(); return; }
 
-  // Rail buttons
   if (closest("#imageModeBtn")) { openModal("imageModal"); return; }
   if (closest("#videoModeBtn")) { openModal("videoModal"); return; }
   if (closest("#backgroundModeBtn")) { openModal("backgroundModal"); populateBackgroundUI(); return; }
@@ -92,21 +102,15 @@ document.addEventListener("click", function (e) {
   if (closest("#callEndBtn")) { $("#callOverlay")?.classList.remove("open"); return; }
   if (closest("#callMuteBtn")) { $("#callMuteBtn")?.classList.toggle("muted"); return; }
 
-  // Model picker
   if (closest("#modelPickerBtn")) {
     e.stopPropagation();
     $("#modelPickerMenu")?.classList.toggle("open");
     return;
   }
   const modelOpt = closest(".model-option");
-  if (modelOpt) {
-    selectModel(modelOpt.dataset.modelId);
-    return;
-  }
-  // Close model menu on outside click
+  if (modelOpt) { selectModel(modelOpt.dataset.modelId); return; }
   if (!closest("#modelPicker")) $("#modelPickerMenu")?.classList.remove("open");
 
-  // Settings tabs
   const tab = closest(".settings-tab");
   if (tab) {
     document.querySelectorAll(".settings-tab").forEach(x => x.classList.remove("active"));
@@ -116,13 +120,11 @@ document.addEventListener("click", function (e) {
     return;
   }
 
-  // Appearance options
   const modeBtn = closest("[data-mode]"); if (modeBtn && modeBtn.closest("#modeOptions")) return saveAppearance({ mode: modeBtn.dataset.mode });
   const swatch = closest(".swatch"); if (swatch && swatch.dataset.theme) return saveAppearance({ theme: swatch.dataset.theme });
   const cornerBtn = closest("[data-corner]"); if (cornerBtn && cornerBtn.closest("#cornerOptions")) return saveAppearance({ corner: cornerBtn.dataset.corner });
   const fontBtn = closest("[data-font]"); if (fontBtn && fontBtn.closest("#fontOptions")) return saveAppearance({ font: fontBtn.dataset.font });
 
-  // Rail toggle
   if (closest("#railToggleBtn")) {
     document.body.classList.toggle("rail-collapsed");
     try { localStorage.setItem("miroxai_rail_collapsed", document.body.classList.contains("rail-collapsed") ? "1" : "0"); } catch {}
@@ -130,20 +132,17 @@ document.addEventListener("click", function (e) {
     return;
   }
 
-  // Attach
   if (closest("#attachBtn")) { $("#fileInput")?.click(); return; }
   if (closest("#removeAttachmentBtn")) {
     const p = $("#attachmentPreview"); if (p) p.style.display = "none"; return;
   }
 
-  // Mic
   if (closest("#micBtn")) {
     if (!recognition) { alert("Voice input isn't supported in this browser."); return; }
     try { recognition.start(); $("#micBtn")?.classList.add("recording"); } catch {}
     return;
   }
 
-  // Rename
   if (closest("#editTitleBtn")) {
     const cur = $("#chatTitle")?.textContent || "";
     const nxt = prompt("Rename this chat", cur);
@@ -155,10 +154,8 @@ document.addEventListener("click", function (e) {
     return;
   }
 
-  // Logout
   if (closest("#logoutBtn")) { doLogout(); return; }
 
-  // Server check
   if (closest("#connectServerBtn")) {
     const s = $("#serverStatus"); if (s) s.textContent = "Checking…";
     fetch("/api/health", { cache: "no-store" }).then(r => r.json()).then(d => {
@@ -167,31 +164,28 @@ document.addEventListener("click", function (e) {
     return;
   }
 
-  // Persona save
   if (closest("#savePersonaBtn")) {
     if (!__user) { $("#personaStatus").textContent = "Sign in first."; return; }
     const p = $("#personaInput")?.value || "";
     const s = $("#personaStatus"); if (s) s.textContent = "Saving…";
-    fetch("/api/settings/persona", {
-      method: "POST", headers: { "Content-Type": "application/json" },
+    authFetch("/api/settings/persona", {
+      method: "POST",
       body: JSON.stringify({ persona: p }),
     }).then(r => r.json()).then(d => { if (s) s.textContent = d.ok ? "Saved." : "Failed."; })
       .catch(() => { if (s) s.textContent = "Failed."; });
     return;
   }
 
-  // Add memory
   if (closest("#addMemoryBtn")) {
     if (!__user) return;
     const v = $("#memoryInput")?.value.trim(); if (!v) return;
-    fetch("/api/memory", {
-      method: "POST", headers: { "Content-Type": "application/json" },
+    authFetch("/api/memory", {
+      method: "POST",
       body: JSON.stringify({ fact: v }),
     }).then(() => { if ($("#memoryInput")) $("#memoryInput").value = ""; loadMemory(); });
     return;
   }
 
-  // Submit report
   if (closest("#submitReportBtn")) {
     if (!__user) { $("#reportStatus").textContent = "Sign in to send a ticket."; return; }
     const sub = $("#reportSubject")?.value.trim() || "";
@@ -199,8 +193,8 @@ document.addEventListener("click", function (e) {
     const s = $("#reportStatus");
     if (!msg) { if (s) s.textContent = "Please describe your issue."; return; }
     if (s) s.textContent = "Sending…";
-    fetch("/api/report", {
-      method: "POST", headers: { "Content-Type": "application/json" },
+    authFetch("/api/report", {
+      method: "POST",
       body: JSON.stringify({ subject: sub, message: msg, category: "general" }),
     }).then(r => r.json()).then(d => {
       if (d.ok) { if (s) s.textContent = "Ticket sent ✅"; if ($("#reportSubject")) $("#reportSubject").value = ""; if ($("#reportMessage")) $("#reportMessage").value = ""; loadMyReports(); }
@@ -209,13 +203,12 @@ document.addEventListener("click", function (e) {
     return;
   }
 
-  // API key
   if (closest("#generateKeyBtn")) {
     if (!__user) { $("#keyGenStatus").textContent = "Sign in first."; return; }
     const n = $("#newKeyNameInput")?.value.trim() || "My key";
     const s = $("#keyGenStatus"); if (s) s.textContent = "Generating…";
-    fetch("/api/keys/generate", {
-      method: "POST", headers: { "Content-Type": "application/json" },
+    authFetch("/api/keys/generate", {
+      method: "POST",
       body: JSON.stringify({ name: n }),
     }).then(r => r.json()).then(d => {
       if (d.ok) { if (s) s.innerHTML = `Created ✅ — <code>${escapeHtml(d.key)}</code>`; if ($("#newKeyNameInput")) $("#newKeyNameInput").value = ""; loadUserKeys(); }
@@ -224,7 +217,6 @@ document.addEventListener("click", function (e) {
     return;
   }
 
-  // Image generate
   if (closest("#generateImageBtn")) {
     const prompt = $("#imagePromptInput")?.value.trim(); if (!prompt) return;
     const btn = $("#generateImageBtn"); if (btn) btn.disabled = true;
@@ -233,8 +225,8 @@ document.addEventListener("click", function (e) {
     card.className = "gallery-card";
     card.innerHTML = `<div class="gallery-skeleton"></div>`;
     $("#imageGallery")?.prepend(card);
-    fetch("/api/image/generate", {
-      method: "POST", headers: { "Content-Type": "application/json" },
+    authFetch("/api/image/generate", {
+      method: "POST",
       body: JSON.stringify({ prompt }),
     }).then(r => r.json()).then(d => {
       if (!d.ok) throw new Error(d.error || "Failed");
@@ -247,13 +239,11 @@ document.addEventListener("click", function (e) {
     return;
   }
 
-  // Video (stub)
   if (closest("#generateVideoBtn")) {
     const s = $("#videoStudioStatus"); if (s) s.textContent = "Video generation isn't enabled on this deployment.";
     return;
   }
 
-  // Background
   if (closest("#bgUploadZone")) { $("#bgFileInput")?.click(); return; }
   if (closest("#bgUrlApplyBtn")) {
     const u = $("#bgUrlInput")?.value.trim(); if (!u) return;
@@ -266,7 +256,6 @@ document.addEventListener("click", function (e) {
     return;
   }
 
-  // History item
   const hist = closest(".history-item");
   if (hist) {
     if (t.closest(".history-delete")) {
@@ -283,7 +272,7 @@ document.addEventListener("click", function (e) {
   }
 });
 
-/* ---------- Enter key on message input ---------- */
+/* ---------- Enter key ---------- */
 document.addEventListener("keydown", function (e) {
   if (e.key === "Escape") {
     document.querySelectorAll(".modal-overlay.open").forEach(o => o.classList.remove("open"));
@@ -296,7 +285,7 @@ document.addEventListener("keydown", function (e) {
   }
 });
 
-/* ---------- Form submits (block native reload) ---------- */
+/* ---------- Form submits ---------- */
 document.addEventListener("submit", function (e) {
   e.preventDefault();
   const f = e.target;
@@ -313,7 +302,7 @@ document.addEventListener("click", function (e) {
   }
 });
 
-/* ---------- Input on message ---------- */
+/* ---------- Input ---------- */
 document.addEventListener("input", function (e) {
   if (e.target && e.target.id === "messageInput") {
     const sb = $("#sendBtn"); if (sb) sb.disabled = isReplying || !e.target.value.trim();
@@ -340,7 +329,6 @@ async function sendMessage(userText) {
 
   $("#mainEl")?.classList.remove("new-chat");
 
-  // Guest mode: transient convo, never stored
   let convo;
   if (__user) {
     convo = currentConvo();
@@ -371,9 +359,8 @@ async function sendMessage(userText) {
       content: m.text || m.content,
     }));
 
-    const r = await fetch("/api/chat/stream", {
+    const r = await authFetch("/api/chat/stream", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: userText, history, model: __model || getDefaultModel() }),
     });
 
@@ -525,14 +512,13 @@ async function doLogin() {
   if (!name || !email) { if (s) s.textContent = "Name and email required."; return; }
   if (s) s.textContent = "Signing in…";
   try {
-    const r = await fetch("/api/auth/simple-login", {
+    const r = await authFetch("/api/auth/simple-login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
       body: JSON.stringify({ name, email }),
     });
     const d = await r.json();
     if (!d.ok) throw new Error(d.error || "Failed");
+    if (d.token) setToken(d.token);
     if (s) s.textContent = "Signed in ✅";
     closeModal("loginModal");
     await loadMe();
@@ -542,7 +528,8 @@ async function doLogin() {
 }
 
 async function doLogout() {
-  try { await fetch("/api/logout", { method: "POST" }); } catch {}
+  try { await authFetch("/api/logout", { method: "POST" }); } catch {}
+  setToken(null);
   __user = null; __tier = "free"; __conversations = [];
   const cl = $("#userChipLabel"); if (cl) cl.textContent = "Sign in";
   const n = $("#simpleLoginName"); if (n) n.value = "";
@@ -577,9 +564,10 @@ async function loadConfig() {
 
 async function loadMe() {
   try {
-    const r = await fetch("/api/me", { credentials: "same-origin" });
+    const r = await authFetch("/api/me");
     const d = await r.json();
     __user = d.user || null;
+    if (!__user) setToken(null);
   } catch { __user = null; }
   const cl = $("#userChipLabel"); if (cl) cl.textContent = __user ? __user.name : "Sign in";
   const lt = $("#loginTitle"); if (lt) lt.textContent = __user ? "Update profile" : "Sign in";
@@ -589,6 +577,7 @@ async function loadMe() {
     __tier = __user.tier || "free";
     const tl = $("#tierLabel"); if (tl) tl.textContent = (__user.tier_label || "Free") + " plan";
     const ub = $("#upgradeBtn"); if (ub) ub.textContent = __tier === "free" ? "Upgrade" : "Manage";
+    loadSubscriptionInfo();
   } else {
     __tier = "free";
     const tl = $("#tierLabel"); if (tl) tl.textContent = "Guest mode";
@@ -598,10 +587,26 @@ async function loadMe() {
   refreshModelLocks();
 }
 
+async function loadSubscriptionInfo() {
+  if (!__user) return;
+  try {
+    const r = await authFetch("/api/subscription/me");
+    const d = await r.json();
+    if (!d.ok) return;
+    __tier = d.tier || "free";
+    const parts = [];
+    if (__tier === "free") parts.push(`${d.trial_remaining}/${d.trial_limit} Ultimate`);
+    parts.push(`${d.daily_remaining}/${d.daily_limit} msgs`);
+    const meta = $("#tierMeta"); if (meta) meta.textContent = parts.join(" · ");
+    const ku = $("#keysUsage");
+    if (ku) ku.textContent = `${d.keys_remaining}/${d.keys_per_period} keys · refill every ${d.refill_days}d`;
+  } catch {}
+}
+
 async function loadPersona() {
   if (!__user) { if ($("#personaInput")) $("#personaInput").value = ""; return; }
   try {
-    const r = await fetch("/api/settings/persona");
+    const r = await authFetch("/api/settings/persona");
     const d = await r.json();
     if ($("#personaInput")) $("#personaInput").value = d.persona || "";
   } catch {}
@@ -612,7 +617,7 @@ async function loadMemory() {
   list.innerHTML = "";
   if (!__user) { list.innerHTML = '<li class="memory-empty">Sign in to use memory.</li>'; return; }
   try {
-    const r = await fetch("/api/memory");
+    const r = await authFetch("/api/memory");
     const d = await r.json();
     const facts = d.facts || [];
     if (!facts.length) { list.innerHTML = '<li class="memory-empty">Nothing remembered yet.</li>'; return; }
@@ -620,7 +625,7 @@ async function loadMemory() {
       const li = document.createElement("li");
       li.innerHTML = `<span>${escapeHtml(f.text)}</span><button class="memory-delete" data-id="${f.id}"><i class="ri-delete-bin-line"></i></button>`;
       li.querySelector(".memory-delete").addEventListener("click", async () => {
-        await fetch("/api/memory/" + f.id, { method: "DELETE" });
+        await authFetch("/api/memory/" + f.id, { method: "DELETE" });
         loadMemory();
       });
       list.appendChild(li);
@@ -630,7 +635,7 @@ async function loadMemory() {
 
 async function loadPlans() {
   try {
-    const r = await fetch("/api/subscription/plans");
+    const r = await fetch("/api/subscription/plans", { cache: "no-store" });
     const d = await r.json();
     const plans = d.plans || [];
     const grid = $("#plansGrid"); if (!grid) return;
@@ -659,7 +664,7 @@ async function loadUserKeys() {
   const list = $("#keysList"); if (!list) return;
   if (!__user) { list.innerHTML = '<li class="key-empty">Sign in to manage API keys.</li>'; return; }
   try {
-    const r = await fetch("/api/keys");
+    const r = await authFetch("/api/keys");
     const d = await r.json();
     const keys = d.keys || [];
     if (!keys.length) { list.innerHTML = '<li class="key-empty">No keys yet.</li>'; return; }
@@ -672,7 +677,7 @@ async function loadMyReports() {
   const box = $("#supportMine"); if (!box) return;
   if (!__user) { box.innerHTML = ""; return; }
   try {
-    const r = await fetch("/api/report/mine");
+    const r = await authFetch("/api/report/mine");
     const d = await r.json();
     const reports = d.reports || [];
     if (!reports.length) { box.innerHTML = ""; return; }
@@ -706,6 +711,7 @@ function buildModelPickerMenu() {
   __model = def;
   updateModelPickerLabel(def);
 }
+
 function updateModelPickerLabel(id) {
   const model = (__config?.models || []).find(m => m.id === id);
   if (model && $("#modelPickerLabel")) $("#modelPickerLabel").textContent = model.label;
@@ -713,6 +719,7 @@ function updateModelPickerLabel(id) {
   if (menu) menu.querySelectorAll(".model-option").forEach(o => o.classList.toggle("active", o.dataset.modelId === id));
   __model = id;
 }
+
 function selectModel(id) {
   const model = (__config?.models || []).find(m => m.id === id);
   if (!model) return;
@@ -725,6 +732,7 @@ function selectModel(id) {
   updateModelPickerLabel(id);
   $("#modelPickerMenu")?.classList.remove("open");
 }
+
 function refreshModelLocks() {
   const menu = $("#modelPickerMenu"); if (!menu) return;
   const rank = { free: 0, pro: 1, ultimate: 2 };
@@ -801,10 +809,12 @@ function populateBackgroundUI() {
   const urlEl = $("#bgUrlInput");
   if (urlEl) urlEl.value = bgState.url && !bgState.url.startsWith("data:") ? bgState.url : "";
 }
+
 document.addEventListener("input", function (e) {
   if (e.target?.id === "bgDimInput") { bgState.dim = parseInt(e.target.value); if ($("#bgDimLabel")) $("#bgDimLabel").textContent = bgState.dim + "%"; applyBackground(); saveBackgroundPrefs(); }
   if (e.target?.id === "bgBlurInput") { bgState.blur = parseInt(e.target.value); if ($("#bgBlurLabel")) $("#bgBlurLabel").textContent = bgState.blur + "px"; applyBackground(); saveBackgroundPrefs(); }
 });
+
 document.addEventListener("change", function (e) {
   if (e.target?.id === "bgFileInput") {
     const f = e.target.files[0]; if (!f) return;
@@ -896,5 +906,4 @@ if (document.readyState === "loading") {
   boot();
 }
 
-// Safety net — re-render history after 1s in case loadMe was slow
 setTimeout(() => { try { renderHistory(); } catch {} }, 1200);
