@@ -4,6 +4,7 @@ const crypto  = require('crypto');
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 
+/* ---------- CONFIG ---------- */
 const HF_API_KEY      = (process.env.HF_API_KEY || '').trim();
 const DISCORD_WEBHOOK = (process.env.DISCORD_WEBHOOK || '').trim();
 const ADMIN_PASSWORD  = process.env.ADMIN_PASSWORD || '2010';
@@ -68,16 +69,18 @@ async function logDiscord(kind, title, description = '', fields = []) {
 }
 
 /* ============================================================
-   MODELS — chains that work on the free HF router.
-   First model that succeeds wins; if it errors, next is tried.
+   MODELS — chains with `:hf-inference` suffix to force the
+   free serverless provider. Works after enabling hf-inference
+   at https://huggingface.co/settings/inference-providers
    ============================================================ */
 const MODELS = {
   'mirox-luna-1.2': {
     label: 'Luna', tagline: 'Warm & friendly', tier: 'free', default: true,
     chain: [
-      'Qwen/Qwen2.5-7B-Instruct',
-      'mistralai/Mistral-7B-Instruct-v0.3',
-      'HuggingFaceH4/zephyr-7b-beta',
+      'meta-llama/Meta-Llama-3.1-8B-Instruct:hf-inference',
+      'Qwen/Qwen2.5-7B-Instruct:hf-inference',
+      'mistralai/Mistral-7B-Instruct-v0.3:hf-inference',
+      'HuggingFaceH4/zephyr-7b-beta:hf-inference',
     ],
     tokens: 700,
     prompt: 'You are Luna, a warm and friendly assistant created by the OpenSurr team. Speak naturally, with a personal, encouraging tone. Be brief but caring. Never mention any other company or AI model. If asked who made you, answer: OpenSurr. If asked your model name, answer: Luna.'
@@ -85,9 +88,9 @@ const MODELS = {
   'mirox-gen-1': {
     label: 'Gen', tagline: 'Quick & concise', tier: 'free', fallback: true,
     chain: [
-      'Qwen/Qwen2.5-1.5B-Instruct',
-      'HuggingFaceH4/zephyr-7b-beta',
-      'Qwen/Qwen2.5-7B-Instruct',
+      'Qwen/Qwen2.5-1.5B-Instruct:hf-inference',
+      'HuggingFaceH4/zephyr-7b-beta:hf-inference',
+      'Qwen/Qwen2.5-7B-Instruct:hf-inference',
     ],
     tokens: 512,
     prompt: 'You are Gen, an ultra-concise assistant from the OpenSurr team. Give the shortest clear answer possible. Skip filler. Never mention any other company or AI model. If asked who made you, answer: OpenSurr.'
@@ -95,9 +98,9 @@ const MODELS = {
   'mirox-pro-5': {
     label: 'Pro', tagline: 'Balanced & thorough', tier: 'pro',
     chain: [
-      'Qwen/Qwen2.5-7B-Instruct',
-      'mistralai/Mistral-7B-Instruct-v0.3',
-      'HuggingFaceH4/zephyr-7b-beta',
+      'Qwen/Qwen2.5-7B-Instruct:hf-inference',
+      'mistralai/Mistral-7B-Instruct-v0.3:hf-inference',
+      'meta-llama/Meta-Llama-3.1-8B-Instruct:hf-inference',
     ],
     tokens: 900,
     prompt: 'You are Pro, a professional assistant from the OpenSurr team. Give balanced, well-structured answers with clear reasoning. Use headings or lists when helpful. Never mention any other company or AI model. If asked who made you, answer: OpenSurr. If asked your model name, answer: Pro.'
@@ -105,9 +108,10 @@ const MODELS = {
   'mirox-ultra-10': {
     label: 'Ultra', tagline: 'Deep reasoning', tier: 'pro',
     chain: [
-      'Qwen/Qwen2.5-14B-Instruct',
-      'Qwen/Qwen2.5-7B-Instruct',
-      'mistralai/Mistral-7B-Instruct-v0.3',
+      'Qwen/Qwen2.5-14B-Instruct:hf-inference',
+      'Qwen/Qwen2.5-7B-Instruct:hf-inference',
+      'meta-llama/Meta-Llama-3.1-8B-Instruct:hf-inference',
+      'mistralai/Mistral-7B-Instruct-v0.3:hf-inference',
     ],
     tokens: 1200,
     prompt: 'You are Ultra, an analytical assistant from the OpenSurr team. Think step by step. Break complex problems into clear logical parts. Show your reasoning when it helps the user. Never mention any other company or AI model. If asked who made you, answer: OpenSurr. If asked your model name, answer: Ultra.'
@@ -115,9 +119,9 @@ const MODELS = {
   'mirox-eclipse-2.0': {
     label: 'Eclipse', tagline: 'Advanced & creative', tier: 'ultimate',
     chain: [
-      'Qwen/Qwen2.5-14B-Instruct',
-      'Qwen/Qwen2.5-7B-Instruct',
-      'mistralai/Mistral-7B-Instruct-v0.3',
+      'Qwen/Qwen2.5-14B-Instruct:hf-inference',
+      'Qwen/Qwen2.5-7B-Instruct:hf-inference',
+      'mistralai/Mistral-7B-Instruct-v0.3:hf-inference',
     ],
     tokens: 1400,
     prompt: 'You are Eclipse, the most advanced assistant from the OpenSurr team. Blend deep reasoning with creativity. Explore ideas from multiple angles. Offer novel insights, but stay accurate. Never mention any other company or AI model. If asked who made you, answer: OpenSurr. If asked your model name, answer: Eclipse.'
@@ -171,7 +175,7 @@ async function hfStreamWithFallback(chain, messages, maxTokens) {
       if (!r.ok) {
         let body = '';
         try { body = (await r.text()).slice(0, 200); } catch {}
-        errors.push(`${modelId}: HTTP ${r.status}`);
+        errors.push(`${modelId}: HTTP ${r.status} ${body.slice(0, 80)}`);
         continue;
       }
       return { stream: r.body, model: modelId };
@@ -198,7 +202,7 @@ function buildMessages(systemPrompt, history, userText, persona = '', mem = []) 
 app.get(['/api/config','/config','/config.json'], (req, res) => {
   const u = currentUser(req);
   res.json({
-    app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v4' },
+    app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v5' },
     models: Object.entries(MODELS).map(([id, m]) => ({
       id, label: m.label, tagline: m.tagline, tier: m.tier,
       default: !!m.default, fallback: !!m.fallback,
@@ -469,7 +473,10 @@ app.post(['/api/image/generate','/image/generate'], async (req, res) => {
   const u = currentUser(req);
   logDiscord('image', '🎨 Image request', '', [['User', u ? u.email : 'guest'], ['Prompt', prompt.slice(0, 500)]]);
 
-  const imageModels = ['black-forest-labs/FLUX.1-schnell', 'stabilityai/stable-diffusion-xl-base-1.0'];
+  const imageModels = [
+    'black-forest-labs/FLUX.1-schnell:hf-inference',
+    'stabilityai/stable-diffusion-xl-base-1.0:hf-inference',
+  ];
   let lastErr = '';
   for (const model of imageModels) {
     try {
