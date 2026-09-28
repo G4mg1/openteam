@@ -27,12 +27,12 @@ body{font-family:Inter,-apple-system,sans-serif;background:#08080c;color:#f4f4f8
 .login-card input:focus{border-color:#6366f1}
 .login-card button{width:100%;margin-top:16px;padding:12px;background:linear-gradient(135deg,#4f46e5,#6366f1);color:#fff;border-radius:11px;font-weight:600;font-size:14px}
 .login-card button:disabled{opacity:.5;cursor:not-allowed}
-.err{color:#f87171;font-size:12.5px;margin-top:10px;text-align:center;min-height:16px}
+.err{color:#f87171;font-size:12.5px;margin-top:10px;text-align:center;min-height:16px;word-break:break-word}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:24px}
 .stat{background:#13131a;border:1px solid #1e1e28;border-radius:14px;padding:16px 18px}
 .stat-n{font-size:26px;font-weight:700;font-family:'JetBrains Mono',monospace}
 .stat-l{font-size:11px;color:#8f8f9d;text-transform:uppercase;font-weight:700;margin-top:2px}
-.card{background:#13131a;border:1px solid #1e1e28;border-radius:16px;overflow:hidden;margin-bottom:16px}
+.card{background:#13131a;border:1px solid #1e1e28;border-radius:16px;overflow:hidden}
 .card-head{padding:16px 20px;border-bottom:1px solid #1e1e28;display:flex;align-items:center;justify-content:space-between}
 .card-head h2{font-size:15px;font-weight:700}
 .refresh{background:#1e1e28;border:1px solid #2a2a36;padding:6px 12px;border-radius:8px;font-size:12.5px;font-weight:600}
@@ -44,6 +44,7 @@ tr:hover td{background:#17171f}
 .email{font-family:'JetBrains Mono',monospace;font-size:12.5px;color:#c8c8d2;word-break:break-all}
 .when{font-family:'JetBrains Mono',monospace;font-size:12px;color:#66667a}
 .empty{padding:40px;text-align:center;color:#66667a;font-style:italic}
+.empty.err{padding:40px 20px;color:#f87171}
 .tier-select{background:#0e0e14;border:1px solid #2a2a36;color:#f4f4f8;padding:7px 10px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer}
 .tier-select:focus{border-color:#6366f1}
 .pill{display:inline-block;padding:3px 9px;border-radius:12px;font-size:11px;font-weight:700;text-transform:uppercase}
@@ -75,25 +76,71 @@ function esc(s) {
   d.textContent = s == null ? '' : String(s);
   return d.innerHTML;
 }
-async function api(path, opts={}) {
+
+/* ---- SAFE JSON: never throws "unexpected character" ---- */
+async function readJson(r) {
+  const ct = (r.headers.get('content-type') || '').toLowerCase();
+  if (!ct.includes('application/json')) {
+    let body = '';
+    try { body = (await r.text()).slice(0, 200); } catch {}
+    throw new Error(`HTTP ${r.status} (not JSON). Backend likely not running. Response: ${body}`);
+  }
+  return r.json();
+}
+
+async function api(path, opts = {}) {
   return fetch(path, {
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     ...opts,
   });
 }
+
+async function safeApi(path, opts) {
+  const r = await api(path, opts);
+  const d = await readJson(r);
+  return { ok: r.ok, status: r.status, data: d };
+}
+
 async function isAdmin() {
   try {
-    const r = await api('/api/admin/status');
-    const d = await r.json();
-    return !!d.is_admin;
-  } catch { return false; }
+    const { data } = await safeApi('/api/admin/status');
+    return !!data.is_admin;
+  } catch (e) {
+    console.error('admin/status failed:', e);
+    return { error: e.message };
+  }
 }
 
 async function render() {
   const a = await isAdmin();
+  if (a && typeof a === 'object' && a.error) return renderBackendError(a.error);
   if (!a) return renderLogin();
   renderDash();
+}
+
+function renderBackendError(msg) {
+  root.innerHTML = `
+    <div class="top">
+      <div class="brand">
+        <img src="/logo.png" alt="" onerror="this.style.display='none'">
+        <div class="brand-name">Mirox</div>
+        <span class="badge">Admin</span>
+      </div>
+    </div>
+    <div class="login-card">
+      <h1>Backend not reachable</h1>
+      <p>The Python serverless function isn't responding.</p>
+      <div class="err" style="text-align:left;font-size:13px;line-height:1.6">${esc(msg)}</div>
+      <p style="margin-top:16px;color:#8f8f9d;font-size:12.5px;line-height:1.6">
+        <b>Checklist:</b><br>
+        1. Delete <code>pyproject.toml</code> from the repo root<br>
+        2. Make sure <code>requirements.txt</code> exists at the root<br>
+        3. Redeploy with "Use existing build cache" <b>unchecked</b><br>
+        4. Check Vercel → Deployments → Functions tab for logs
+      </p>
+      <button onclick="location.reload()" style="margin-top:16px">Retry</button>
+    </div>`;
 }
 
 function renderLogin() {
@@ -122,12 +169,11 @@ function renderLogin() {
     btn.disabled = true;
     err.textContent = '';
     try {
-      const r = await api('/api/admin/login', {
+      const { data } = await safeApi('/api/admin/login', {
         method: 'POST',
         body: JSON.stringify({ password: p }),
       });
-      const d = await r.json();
-      if (!d.ok) throw new Error(d.error || 'Failed');
+      if (!data.ok) throw new Error(data.error || 'Failed');
       render();
     } catch (e) {
       err.textContent = e.message;
@@ -158,7 +204,7 @@ async function renderDash() {
       <div id="tbl"><div class="empty">Loading…</div></div>
     </div>`;
   document.getElementById('lo').addEventListener('click', async () => {
-    await api('/api/admin/logout', { method: 'POST' });
+    try { await safeApi('/api/admin/logout', { method: 'POST' }); } catch {}
     render();
   });
   document.getElementById('rf').addEventListener('click', loadUsers);
@@ -169,9 +215,8 @@ async function loadUsers() {
   const box = document.getElementById('tbl');
   const sb = document.getElementById('stats');
   try {
-    const r = await api('/api/admin/users');
-    const d = await r.json();
-    const us = d.users || [];
+    const { data } = await safeApi('/api/admin/users');
+    const us = data.users || [];
     const c = { free: 0, pro: 0, ultimate: 0 };
     us.forEach(u => c[u.tier || 'free']++);
     sb.innerHTML = `
@@ -211,19 +256,18 @@ async function loadUsers() {
         const email = s.dataset.email;
         const tier = s.value;
         try {
-          const r = await api('/api/admin/set-tier', {
+          const { data } = await safeApi('/api/admin/set-tier', {
             method: 'POST',
             body: JSON.stringify({ email, tier }),
           });
-          const d = await r.json();
-          if (!d.ok) throw new Error(d.error || 'Failed');
+          if (!data.ok) throw new Error(data.error || 'Failed');
           toast(`Set ${email} → ${tier}`);
           loadUsers();
         } catch (e) { toast(e.message); }
       });
     });
-  } catch {
-    box.innerHTML = '<div class="empty">Failed to load.</div>';
+  } catch (e) {
+    box.innerHTML = `<div class="empty err">Failed to load users.<br>${esc(e.message)}</div>`;
   }
 }
 
