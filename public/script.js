@@ -6,7 +6,6 @@ let currentConversationId = null, isReplying = false;
 let __user = null, __tier = "free";
 let __imagesAllowed = true, __dailyRemaining = 50, __dailyLimit = 50;
 let __trialRemaining = 10, __trialLimit = 10;
-let __emailConnected = false;
 let expandedTickets = new Set();
 
 window.addEventListener("load", async () => {
@@ -20,7 +19,6 @@ window.addEventListener("load", async () => {
   setTimeout(showLunaAnnouncementOnce, 900);
 });
 
-// ---------- CONFIG ----------
 async function loadConfig() {
   try {
     const r = await fetch("/config.json", { cache: "no-store" });
@@ -33,8 +31,6 @@ async function loadConfig() {
         { id: "mirox-gen-1", label: "Gen", tagline: "Quick and light", tier: "free", fallback: true }
       ],
       plans: { free: { label: "Free", daily_limit: 50, ultimate_trial_limit: 10 } },
-      payments: { hesabpay: { enabled: false }, robux: { enabled: true }, afg_cash: { enabled: true } },
-      email: { enabled: true, free_daily_limit: 5 },
       announcement: { enabled: false },
     };
   }
@@ -52,7 +48,6 @@ function updateDisclaimer() {
   el.innerHTML = `Mirox can make mistakes. Made by the <b>${brand}</b> team.`;
 }
 
-// ---------- MODALS ----------
 const openModal = id => { const el = document.getElementById(id); if (el) el.classList.add("open"); };
 const closeModal = id => { const el = document.getElementById(id); if (el) el.classList.remove("open"); };
 document.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", () => closeModal(b.dataset.close)));
@@ -63,7 +58,6 @@ document.addEventListener("keydown", e => {
   $("#modelPickerMenu")?.classList.remove("open");
 });
 
-// ---------- ANNOUNCEMENT ----------
 function showLunaAnnouncementOnce() {
   const a = __config?.announcement;
   if (!a || !a.enabled) return;
@@ -72,7 +66,7 @@ function showLunaAnnouncementOnce() {
   $("#announceTitle").textContent = a.title || "Announcement";
   $("#announceBody").textContent = a.body || "";
   const imgEl = document.querySelector(".announce-img");
-  if (imgEl && a.image) imgEl.src = a.image;
+  if (imgEl && a.image) imgEl.src = "/" + a.image.replace(/^\//, "");
   const pointsEl = $("#announcePoints");
   pointsEl.innerHTML = (a.highlights || []).map(h => `<div class="announce-point"><i class="ri-check-line"></i><span>${escapeHtml(h)}</span></div>`).join("");
   openModal("lunaAnnounceModal");
@@ -81,7 +75,6 @@ function showLunaAnnouncementOnce() {
   document.querySelector('#lunaAnnounceModal [data-close]')?.addEventListener("click", dismiss);
 }
 
-// ---------- RAIL ----------
 const railToggleBtn = $("#railToggleBtn");
 const railToggleIcon = $("#railToggleIcon");
 function syncRailDefault() {
@@ -90,8 +83,7 @@ function syncRailDefault() {
 }
 function updateRailToggleIcon() {
   if (!railToggleIcon) return;
-  const collapsed = document.body.classList.contains("rail-collapsed");
-  railToggleIcon.className = collapsed ? "ri-side-bar-line" : "ri-contract-left-line";
+  railToggleIcon.className = document.body.classList.contains("rail-collapsed") ? "ri-side-bar-line" : "ri-contract-left-line";
 }
 railToggleBtn?.addEventListener("click", () => {
   document.body.classList.toggle("rail-collapsed");
@@ -99,7 +91,6 @@ railToggleBtn?.addEventListener("click", () => {
   updateRailToggleIcon();
 });
 
-// ---------- SIDEBAR ----------
 const sidebar = $("#sidebar"), sidebarScrim = $("#sidebarScrim");
 const openSidebar = () => { sidebar?.classList.add("open"); sidebarScrim?.classList.add("open"); };
 const closeSidebar = () => { sidebar?.classList.remove("open"); sidebarScrim?.classList.remove("open"); };
@@ -108,7 +99,6 @@ $("#sidebarCloseBtn")?.addEventListener("click", closeSidebar);
 sidebarScrim?.addEventListener("click", closeSidebar);
 $("#brandLogo")?.addEventListener("click", () => { startNewChat(); if (window.innerWidth <= 860) closeSidebar(); });
 
-// ---------- APPEARANCE ----------
 const root = document.documentElement;
 function applyAppearance({ mode, theme, corner, font }) {
   if (mode) root.setAttribute("data-mode", mode);
@@ -119,8 +109,6 @@ function applyAppearance({ mode, theme, corner, font }) {
   $$("#themeSwatches .swatch").forEach(s => s.classList.toggle("active", s.dataset.theme === (theme || root.getAttribute("data-theme"))));
   $$("#cornerOptions .option-btn").forEach(b => b.classList.toggle("active", b.dataset.corner === (corner || root.getAttribute("data-corner"))));
   $$("#fontOptions .option-btn").forEach(b => b.classList.toggle("active", b.dataset.font === (font || root.getAttribute("data-font"))));
-  const d = document.getElementById("hljs-dark"), l = document.getElementById("hljs-light");
-  if (d && l) { const dark = root.getAttribute("data-mode") === "dark"; d.disabled = !dark; l.disabled = dark; }
 }
 function loadAppearance() {
   const s = JSON.parse(localStorage.getItem("miroxai_appearance") || "{}");
@@ -143,26 +131,20 @@ document.addEventListener("click", e => {
   if (f && f.closest("#fontOptions")) saveAppearance({ font: f.dataset.font });
 });
 
-// ---------- OPENERS ----------
-const settingsBtn = $("#settingsBtn");
-if (settingsBtn) settingsBtn.addEventListener("click", () => { openModal("settingsModal"); refreshAdminPanel(); loadPersona(); loadMemory(); });
-const userChip = $("#userChip");
-if (userChip) userChip.addEventListener("click", () => { if (!window.__user) openModal("loginModal"); });
-const imageModeBtn = $("#imageModeBtn");
-if (imageModeBtn) imageModeBtn.addEventListener("click", () => openModal("imageModal"));
-const videoModeBtn = $("#videoModeBtn");
-if (videoModeBtn) videoModeBtn.addEventListener("click", () => openModal("videoModal"));
-const bgModeBtn = $("#backgroundModeBtn");
-if (bgModeBtn) bgModeBtn.addEventListener("click", () => { openModal("backgroundModal"); populateBackgroundUI(); });
-const plansModeBtn = $("#plansModeBtn");
-if (plansModeBtn) plansModeBtn.addEventListener("click", () => { openModal("plansModal"); loadPlans(); loadUserKeys(); });
-const supportModeBtn = $("#supportModeBtn");
-if (supportModeBtn) supportModeBtn.addEventListener("click", () => { openModal("supportModal"); loadMyReports(); });
-const upgradeBtn = $("#upgradeBtn");
-if (upgradeBtn) upgradeBtn.addEventListener("click", () => { openModal("plansModal"); loadPlans(); loadUserKeys(); });
-const talkModeBtn = $("#talkModeBtn");
-if (talkModeBtn) talkModeBtn.addEventListener("click", () => { openModal("callOverlay"); $("#callStatus").textContent = "Voice calling unavailable"; $("#callTranscript").textContent = "Use the chat instead."; });
-$("#callEndBtn")?.addEventListener("click", () => closeModal("callOverlay"));
+$("#settingsBtn")?.addEventListener("click", () => { openModal("settingsModal"); loadPersona(); loadMemory(); });
+$("#userChip")?.addEventListener("click", () => { if (!window.__user) openModal("loginModal"); });
+$("#imageModeBtn")?.addEventListener("click", () => openModal("imageModal"));
+$("#videoModeBtn")?.addEventListener("click", () => openModal("videoModal"));
+$("#backgroundModeBtn")?.addEventListener("click", () => { openModal("backgroundModal"); populateBackgroundUI(); });
+$("#plansModeBtn")?.addEventListener("click", () => { openModal("plansModal"); loadPlans(); loadUserKeys(); });
+$("#supportModeBtn")?.addEventListener("click", () => { openModal("supportModal"); loadMyReports(); });
+$("#upgradeBtn")?.addEventListener("click", () => { openModal("plansModal"); loadPlans(); loadUserKeys(); });
+$("#talkModeBtn")?.addEventListener("click", () => {
+  $("#callOverlay").classList.add("open");
+  $("#callStatus").textContent = "Voice calling unavailable";
+  $("#callTranscript").textContent = "Use the chat instead.";
+});
+$("#callEndBtn")?.addEventListener("click", () => $("#callOverlay").classList.remove("open"));
 $("#callMuteBtn")?.addEventListener("click", () => $("#callMuteBtn")?.classList.toggle("muted"));
 
 document.querySelectorAll(".settings-tab").forEach(t => t.addEventListener("click", () => {
@@ -172,18 +154,16 @@ document.querySelectorAll(".settings-tab").forEach(t => t.addEventListener("clic
   document.querySelector(`.settings-pane[data-pane="${t.dataset.tab}"]`)?.classList.add("active");
 }));
 
-const editTitleBtnEl = $("#editTitleBtn");
-if (editTitleBtnEl) editTitleBtnEl.addEventListener("click", async () => {
+$("#editTitleBtn")?.addEventListener("click", async () => {
   const current = $("#chatTitle").textContent;
   const next = prompt("Rename this chat", current);
   if (next === null) return;
   const trimmed = next.trim(); if (!trimmed) return;
   $("#chatTitle").textContent = trimmed;
   const convo = currentConvo();
-  if (convo) { convo.title = trimmed; saveChatsToLS(); renderHistoryFromLS(); }
+  if (convo) { convo.title = trimmed; saveChatsToLS(__conversations); renderHistoryFromLS(); }
 });
 
-// ---------- MODEL PICKER ----------
 let __currentModel = null;
 function buildModelPickerMenu() {
   const menu = $("#modelPickerMenu"); if (!menu) return;
@@ -206,8 +186,7 @@ function buildModelPickerMenu() {
 }
 function updateModelPickerLabel(id) {
   const model = (__config?.models || []).find(m => m.id === id);
-  const labelEl = $("#modelPickerLabel");
-  if (labelEl && model) labelEl.textContent = model.label;
+  if (model) $("#modelPickerLabel").textContent = model.label;
   const menu = $("#modelPickerMenu");
   if (menu) menu.querySelectorAll(".model-option").forEach(o => o.classList.toggle("active", o.dataset.modelId === id));
   window.__model = id;
@@ -216,25 +195,17 @@ function selectModel(id) {
   const model = (__config?.models || []).find(m => m.id === id);
   if (!model) return;
   const rank = { free: 0, pro: 1, ultimate: 2 };
-  if ((rank[model.tier] || 0) > (rank[__tier] || 0)) {
-    if (model.tier !== "ultimate") {
-      $("#modelPickerMenu")?.classList.remove("open");
-      openModal("plansModal"); loadPlans();
-      return;
-    }
+  if ((rank[model.tier] || 0) > (rank[__tier] || 0) && model.tier !== "ultimate") {
+    $("#modelPickerMenu")?.classList.remove("open");
+    openModal("plansModal"); loadPlans();
+    return;
   }
   updateModelPickerLabel(id);
   $("#modelPickerMenu")?.classList.remove("open");
 }
-$("#modelPickerBtn")?.addEventListener("click", e => {
-  e.stopPropagation();
-  $("#modelPickerMenu")?.classList.toggle("open");
-});
-document.addEventListener("click", e => {
-  if (!e.target.closest("#modelPicker")) $("#modelPickerMenu")?.classList.remove("open");
-});
+$("#modelPickerBtn")?.addEventListener("click", e => { e.stopPropagation(); $("#modelPickerMenu")?.classList.toggle("open"); });
+document.addEventListener("click", e => { if (!e.target.closest("#modelPicker")) $("#modelPickerMenu")?.classList.remove("open"); });
 
-// ---------- USER ----------
 async function loadMe() {
   try {
     const r = await fetch("/api/me");
@@ -246,24 +217,21 @@ async function loadMe() {
   const titleEl = $("#loginTitle");
   if (titleEl) titleEl.textContent = __user ? "Update profile" : "Sign in";
   if (__user) {
-    const nameIn = $("#simpleLoginName"), emailIn = $("#simpleLoginEmail");
-    if (nameIn) nameIn.value = __user.name || "";
-    if (emailIn) emailIn.value = __user.email || "";
+    $("#simpleLoginName").value = __user.name || "";
+    $("#simpleLoginEmail").value = __user.email || "";
     updateTierUI(__user.tier || "free", __user.tier_label || "Free");
-    loadSubscriptionInfo(); renderHistoryFromLS(); setComposerEnabled(true);
+    loadSubscriptionInfo(); setComposerEnabled(true);
   } else {
     updateTierUI("free", "Free");
-    const meta = $("#tierMeta"); if (meta) meta.textContent = "Sign in to continue";
+    $("#tierMeta").textContent = "Sign in to continue";
     setComposerEnabled(false);
   }
 }
-
 function setComposerEnabled(on) {
-  const input = $("#messageInput"), sb = $("#sendBtn"), mb = $("#micBtn");
-  if (input) input.disabled = !on;
-  if (sb) sb.disabled = !on;
-  if (mb) mb.disabled = !on;
-  const disc = $("#disclaimer"); if (!disc) return;
+  $("#messageInput").disabled = !on;
+  $("#sendBtn").disabled = !on;
+  $("#micBtn").disabled = !on;
+  const disc = $("#disclaimer");
   const brand = __config?.app?.made_by || "OpenSurr";
   disc.innerHTML = on
     ? `Mirox can make mistakes. Made by the <b>${brand}</b> team.`
@@ -271,44 +239,36 @@ function setComposerEnabled(on) {
   const link = $("#loginLink");
   if (link) link.addEventListener("click", e => { e.preventDefault(); openModal("loginModal"); });
 }
-
 function updateTierUI(tier, label) {
   __tier = tier || "free";
-  const labelEl = $("#tierLabel"); if (labelEl) labelEl.textContent = (label || "Free") + " plan";
+  $("#tierLabel").textContent = (label || "Free") + " plan";
   const icon = document.querySelector(".tier-chip-icon");
   if (icon) {
     if (__tier === "ultimate") icon.style.background = "linear-gradient(135deg,#8b5cf6,#6d28d9)";
     else if (__tier === "pro") icon.style.background = "linear-gradient(135deg,#3b82f6,#1d4ed8)";
     else icon.style.background = "linear-gradient(135deg,var(--accent),var(--accent-hover))";
   }
-  const ub = $("#upgradeBtn"); if (ub) ub.textContent = __tier === "free" ? "Upgrade" : "Manage";
+  $("#upgradeBtn").textContent = __tier === "free" ? "Upgrade" : "Manage";
   refreshModelLocks();
 }
-
 async function loadSubscriptionInfo() {
   if (!__user) return;
   try {
     const r = await fetch("/api/subscription/me");
     const d = await r.json(); if (!d.ok) return;
     __imagesAllowed = !!d.images_allowed;
-    __dailyRemaining = typeof d.daily_remaining === "number" ? d.daily_remaining : 5;
+    __dailyRemaining = d.daily_remaining || 0;
     __dailyLimit = d.daily_limit || 50;
-    __trialRemaining = typeof d.trial_remaining === "number" ? d.trial_remaining : 10;
+    __trialRemaining = d.trial_remaining || 0;
     __trialLimit = d.trial_limit || 10;
-    __emailConnected = !!d.email_connected;
     updateTierUI(d.tier, d.tier_label);
-    const meta = $("#tierMeta");
-    if (meta) {
-      const parts = [];
-      if (__tier === "free") parts.push(`${__trialRemaining}/${__trialLimit} Ultimate`);
-      parts.push(`${__dailyRemaining}/${__dailyLimit} msgs`);
-      meta.textContent = parts.join(" · ");
-    }
-    const ku = $("#keysUsage");
-    if (ku) ku.textContent = `${d.keys_remaining}/${d.keys_per_period} keys · refill every ${d.refill_days}d`;
+    const parts = [];
+    if (__tier === "free") parts.push(`${__trialRemaining}/${__trialLimit} Ultimate`);
+    parts.push(`${__dailyRemaining}/${__dailyLimit} msgs`);
+    $("#tierMeta").textContent = parts.join(" · ");
+    const ku = $("#keysUsage"); if (ku) ku.textContent = `${d.keys_remaining}/${d.keys_per_period} keys`;
   } catch {}
 }
-
 function refreshModelLocks() {
   const menu = $("#modelPickerMenu"); if (!menu) return;
   const rank = { free: 0, pro: 1, ultimate: 2 };
@@ -322,9 +282,7 @@ function refreshModelLocks() {
   });
 }
 
-// ---------- LOGIN ----------
-const simpleLoginForm = $("#simpleLoginForm");
-if (simpleLoginForm) simpleLoginForm.addEventListener("submit", async e => {
+$("#simpleLoginForm")?.addEventListener("submit", async e => {
   e.preventDefault();
   const status = $("#loginStatus");
   const name = $("#simpleLoginName").value.trim();
@@ -333,8 +291,7 @@ if (simpleLoginForm) simpleLoginForm.addEventListener("submit", async e => {
   status.textContent = "Signing in…";
   try {
     const r = await fetch("/api/auth/simple-login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, email }),
     });
     const d = await r.json();
@@ -348,8 +305,7 @@ if (simpleLoginForm) simpleLoginForm.addEventListener("submit", async e => {
   } catch { status.textContent = "Could not reach the server."; }
 });
 
-const logoutBtnEl = $("#logoutBtn");
-if (logoutBtnEl) logoutBtnEl.addEventListener("click", async () => {
+$("#logoutBtn")?.addEventListener("click", async () => {
   await fetch("/api/logout", { method: "POST" });
   window.__user = null; __user = null;
   $("#userChipLabel").textContent = "Sign in";
@@ -359,19 +315,10 @@ if (logoutBtnEl) logoutBtnEl.addEventListener("click", async () => {
   startNewChat();
 });
 
-// ---------- LOCAL CHATS ----------
 const LS_KEY = "miroxai_conversations_v1";
-function loadChatsFromLS() {
-  try { return JSON.parse(localStorage.getItem(LS_KEY)) || []; } catch { return []; }
-}
-function saveChatsToLS(list) {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(list.slice(0, 100))); } catch {}
-}
-let __conversations = loadChatsFromLS();
-
-function currentConvo() {
-  return __conversations.find(c => c.id === currentConversationId) || null;
-}
+let __conversations = (() => { try { return JSON.parse(localStorage.getItem(LS_KEY)) || []; } catch { return []; } })();
+function saveChatsToLS(list) { try { localStorage.setItem(LS_KEY, JSON.stringify(list.slice(0, 100))); } catch {} }
+function currentConvo() { return __conversations.find(c => c.id === currentConversationId) || null; }
 
 function renderHistoryFromLS() {
   const list = $("#historyList"); if (!list) return;
@@ -398,7 +345,6 @@ function renderHistoryFromLS() {
     list.appendChild(li);
   });
 }
-
 function openConversationLS(id) {
   const c = __conversations.find(x => x.id === id);
   if (!c) return;
@@ -409,7 +355,6 @@ function openConversationLS(id) {
   (c.messages || []).forEach(m => addMessage(m.text || m.content || "", m.role === "ai" ? "ai" : "user", { instant: true }));
   renderHistoryFromLS();
 }
-
 function startNewChat() {
   currentConversationId = null;
   $("#chat").innerHTML = "";
@@ -418,16 +363,13 @@ function startNewChat() {
   $("#mainEl")?.classList.add("new-chat");
   renderHistoryFromLS();
 }
-
 $("#newChatBtn")?.addEventListener("click", () => { startNewChat(); if (window.innerWidth <= 860) closeSidebar(); });
 
-// ---------- SEARCH ----------
 const chatSearchInput = $("#chatSearchInput"), clearSearchBtn = $("#clearSearchBtn");
 chatSearchInput?.addEventListener("input", () => {
   const q = chatSearchInput.value.trim();
   clearSearchBtn?.classList.toggle("visible", !!q);
-  const list = $("#historyList");
-  if (!list) return;
+  const list = $("#historyList"); if (!list) return;
   list.innerHTML = "";
   const items = __conversations.filter(c => !q || (c.title || "").toLowerCase().includes(q.toLowerCase()));
   if (!items.length) { list.innerHTML = '<li class="history-empty">No matches</li>'; return; }
@@ -440,25 +382,20 @@ chatSearchInput?.addEventListener("input", () => {
   });
 });
 clearSearchBtn?.addEventListener("click", () => {
-  chatSearchInput.value = "";
-  clearSearchBtn.classList.remove("visible");
-  renderHistoryFromLS();
+  chatSearchInput.value = ""; clearSearchBtn.classList.remove("visible"); renderHistoryFromLS();
 });
 
-// ---------- MESSAGES ----------
 function escapeHtml(s) {
   const d = document.createElement("div");
   d.textContent = s == null ? "" : String(s);
   return d.innerHTML;
 }
-
 function addMessage(text, sender, opts = {}) {
-  const chat = $("#chat");
-  if (!chat) return null;
+  const chat = $("#chat"); if (!chat) return null;
   const m = document.createElement("div");
   m.className = `message ${sender}`;
   const avatarHtml = sender === "ai"
-    ? `<div class="avatar ai-avatar"><img src="logo.png" alt="" onerror="this.style.display='none'"></div>`
+    ? `<div class="avatar ai-avatar"><img src="/logo.png" alt="" onerror="this.style.display='none'"></div>`
     : `<div class="avatar"><i class="ri-user-3-line"></i></div>`;
   m.innerHTML = `${avatarHtml}<div class="bubble-wrap"><div class="bubble"></div></div>`;
   const bubble = m.querySelector(".bubble");
@@ -474,29 +411,6 @@ function addMessage(text, sender, opts = {}) {
   return { message: m, bubble, wrap: m.querySelector(".bubble-wrap") };
 }
 
-function addSystem(text) {
-  const chat = $("#chat");
-  const m = document.createElement("div");
-  m.className = "message error";
-  m.innerHTML = `<div class="avatar"><i class="ri-error-warning-line"></i></div><div class="bubble-wrap"><div class="bubble">${escapeHtml(text)}</div></div>`;
-  chat.appendChild(m);
-}
-
-function addUserMessageWithImage(text, imageDataUrl) {
-  const { bubble } = addMessage(text || "", "user");
-  if (imageDataUrl) {
-    const img = document.createElement("img");
-    img.src = imageDataUrl;
-    img.className = "chat-image";
-    img.style.maxWidth = "260px";
-    img.style.borderRadius = "12px";
-    img.style.display = "block";
-    img.style.marginTop = "8px";
-    bubble.appendChild(img);
-  }
-}
-
-// ---------- SEND ----------
 async function sendMessage(userText) {
   if (isReplying) return;
   if (!__user) { openModal("loginModal"); return; }
@@ -510,31 +424,26 @@ async function sendMessage(userText) {
     convo = {
       id: "c_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4),
       title: userText.slice(0, 48) || "New chat",
-      messages: [],
-      updatedAt: Date.now(),
+      messages: [], updatedAt: Date.now(),
     };
     __conversations.unshift(convo);
     currentConversationId = convo.id;
     $("#chatTitle").textContent = convo.title;
     renderHistoryFromLS();
   }
-
   convo.messages.push({ role: "user", text: userText });
   convo.updatedAt = Date.now();
   saveChatsToLS(__conversations);
   addMessage(userText, "user");
-  $("#chat").scrollTop = $("#chat").scrollHeight;
 
   const { bubble } = addMessage("", "ai", { thinking: true });
   isReplying = true;
   $("#sendBtn").disabled = true;
-  $("#composerForm").classList.add("thinking");
 
   try {
     const history = convo.messages.slice(0, -1).map(m => ({ role: m.role === "ai" ? "assistant" : "user", content: m.text || m.content }));
     const r = await fetch("/api/chat/stream", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: userText, history, model: window.__model || getDefaultModel() }),
     });
     if (!r.ok || !r.body) {
@@ -563,9 +472,9 @@ async function sendMessage(userText) {
             if (first) { bubble.innerHTML = ""; first = false; }
             full += evt.d;
             bubble.textContent = full;
-            const cursor = document.createElement("span");
-            cursor.className = "stream-cursor";
-            bubble.appendChild(cursor);
+            const cur = document.createElement("span");
+            cur.className = "stream-cursor";
+            bubble.appendChild(cur);
             const chat = $("#chat");
             if (chat.scrollHeight - chat.scrollTop - chat.clientHeight < 200) chat.scrollTop = chat.scrollHeight;
           } else if (evt.done) {
@@ -585,8 +494,7 @@ async function sendMessage(userText) {
     bubble.textContent = err.message || "Something went wrong.";
   } finally {
     isReplying = false;
-    $("#sendBtn").disabled = false;
-    $("#composerForm").classList.remove("thinking");
+    $("#sendBtn").disabled = !$("#messageInput").value.trim();
   }
 }
 
@@ -598,42 +506,28 @@ $("#composerForm")?.addEventListener("submit", e => {
   $("#messageInput").value = "";
   sendMessage(t);
 });
-
 $("#messageInput")?.addEventListener("input", () => {
   $("#sendBtn").disabled = isReplying || !$("#messageInput").value.trim();
 });
 
-// ---------- ATTACHMENTS ----------
-const fileInput = $("#fileInput"), attachBtn = $("#attachBtn");
-const attachmentPreview = $("#attachmentPreview"), attachmentName = $("#attachmentName");
-const removeAttachmentBtn = $("#removeAttachmentBtn");
-let pendingAttachment = null;
-attachBtn?.addEventListener("click", () => fileInput.click());
-fileInput?.addEventListener("change", () => {
-  const f = fileInput.files[0];
-  if (!f) return;
+$("#attachBtn")?.addEventListener("click", () => $("#fileInput").click());
+$("#fileInput")?.addEventListener("change", () => {
+  const f = $("#fileInput").files[0]; if (!f) return;
   const reader = new FileReader();
   reader.onload = () => {
-    pendingAttachment = { name: f.name, content: String(reader.result).slice(0, 100000) };
-    if (attachmentPreview) attachmentPreview.style.display = "flex";
-    if (attachmentName) attachmentName.textContent = f.name;
+    $("#attachmentPreview").style.display = "flex";
+    $("#attachmentName").textContent = f.name;
   };
   reader.readAsText(f);
 });
-removeAttachmentBtn?.addEventListener("click", clearAttachment);
-function clearAttachment() {
-  pendingAttachment = null;
-  if (attachmentPreview) attachmentPreview.style.display = "none";
-}
+$("#removeAttachmentBtn")?.addEventListener("click", () => { $("#attachmentPreview").style.display = "none"; });
 
-// ---------- MIC ----------
 const micBtn = $("#micBtn");
 let recognition = null;
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 if (SR) {
   recognition = new SR();
-  recognition.continuous = false;
-  recognition.interimResults = true;
+  recognition.continuous = false; recognition.interimResults = true;
   recognition.onresult = e => {
     let t = "";
     for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
@@ -647,22 +541,13 @@ micBtn?.addEventListener("click", () => {
   try { recognition.start(); micBtn.classList.add("recording"); } catch {}
 });
 
-// ---------- SEARCH TOGGLE ----------
-let webSearchEnabled = false;
-$("#searchToggleBtn")?.addEventListener("click", () => {
-  webSearchEnabled = !webSearchEnabled;
-  $("#searchToggleBtn").classList.toggle("active", webSearchEnabled);
-});
-
-// ---------- BACKGROUND ----------
-let bgState = { url: null, dim: 45, blur: 0, fit: "cover" };
+let bgState = { url: null, dim: 45, blur: 0 };
 function loadBackground() {
   try {
     const saved = JSON.parse(localStorage.getItem("miroxai_bg") || "{}");
-    bgState = { url: saved.url || null, dim: saved.dim ?? 45, blur: saved.blur ?? 0, fit: saved.fit || "cover" };
+    bgState = { url: saved.url || null, dim: saved.dim ?? 45, blur: saved.blur ?? 0 };
   } catch {}
-  applyBackground();
-  populateBackgroundUI();
+  applyBackground(); populateBackgroundUI();
 }
 function applyBackground() {
   const el = $("#userBackground"); if (!el) return;
@@ -673,28 +558,22 @@ function applyBackground() {
     return;
   }
   el.style.backgroundImage = `url('${bgState.url}')`;
-  el.style.backgroundSize = bgState.fit === "repeat" ? "auto" : bgState.fit;
-  el.style.backgroundRepeat = bgState.fit === "repeat" ? "repeat" : "no-repeat";
   el.style.setProperty("--bg-dim", (bgState.dim / 100).toFixed(2));
   el.style.setProperty("--bg-blur", bgState.blur + "px");
   el.classList.add("active");
 }
-function saveBackgroundPrefs() {
-  try { localStorage.setItem("miroxai_bg", JSON.stringify(bgState)); } catch {}
-}
+function saveBackgroundPrefs() { try { localStorage.setItem("miroxai_bg", JSON.stringify(bgState)); } catch {} }
 function populateBackgroundUI() {
-  const d = $("#bgDimInput"), b = $("#bgBlurInput");
-  if (d) d.value = bgState.dim;
-  if (b) b.value = bgState.blur;
-  const dl = $("#bgDimLabel"); if (dl) dl.textContent = bgState.dim + "%";
-  const bl = $("#bgBlurLabel"); if (bl) bl.textContent = bgState.blur + "px";
+  $("#bgDimInput").value = bgState.dim;
+  $("#bgBlurInput").value = bgState.blur;
+  $("#bgDimLabel").textContent = bgState.dim + "%";
+  $("#bgBlurLabel").textContent = bgState.blur + "px";
   const urlEl = $("#bgUrlInput");
   if (urlEl) urlEl.value = bgState.url && !bgState.url.startsWith("data:") ? bgState.url : "";
 }
-const bgUploadZone = $("#bgUploadZone"), bgFileInput = $("#bgFileInput");
-bgUploadZone?.addEventListener("click", () => bgFileInput.click());
-bgFileInput?.addEventListener("change", () => {
-  const f = bgFileInput.files[0]; if (!f) return;
+$("#bgUploadZone")?.addEventListener("click", () => $("#bgFileInput").click());
+$("#bgFileInput")?.addEventListener("change", () => {
+  const f = $("#bgFileInput").files[0]; if (!f) return;
   const reader = new FileReader();
   reader.onload = () => { bgState.url = reader.result; saveBackgroundPrefs(); applyBackground(); populateBackgroundUI(); };
   reader.readAsDataURL(f);
@@ -703,20 +582,10 @@ $("#bgUrlApplyBtn")?.addEventListener("click", () => {
   const u = $("#bgUrlInput").value.trim(); if (!u) return;
   bgState.url = u; saveBackgroundPrefs(); applyBackground();
 });
-$("#bgDimInput")?.addEventListener("input", e => {
-  bgState.dim = parseInt(e.target.value); $("#bgDimLabel").textContent = bgState.dim + "%";
-  applyBackground(); saveBackgroundPrefs();
-});
-$("#bgBlurInput")?.addEventListener("input", e => {
-  bgState.blur = parseInt(e.target.value); $("#bgBlurLabel").textContent = bgState.blur + "px";
-  applyBackground(); saveBackgroundPrefs();
-});
-$("#bgRemoveBtn")?.addEventListener("click", () => {
-  bgState.url = null; saveBackgroundPrefs(); applyBackground();
-  $("#bgUrlInput").value = "";
-});
+$("#bgDimInput")?.addEventListener("input", e => { bgState.dim = parseInt(e.target.value); $("#bgDimLabel").textContent = bgState.dim + "%"; applyBackground(); saveBackgroundPrefs(); });
+$("#bgBlurInput")?.addEventListener("input", e => { bgState.blur = parseInt(e.target.value); $("#bgBlurLabel").textContent = bgState.blur + "px"; applyBackground(); saveBackgroundPrefs(); });
+$("#bgRemoveBtn")?.addEventListener("click", () => { bgState.url = null; saveBackgroundPrefs(); applyBackground(); $("#bgUrlInput").value = ""; });
 
-// ---------- PERSONA ----------
 async function loadPersona() {
   if (!__user) return;
   try {
@@ -727,35 +596,24 @@ async function loadPersona() {
 }
 $("#savePersonaBtn")?.addEventListener("click", async () => {
   const p = $("#personaInput").value;
-  const s = $("#personaStatus");
-  s.textContent = "Saving…";
+  const s = $("#personaStatus"); s.textContent = "Saving…";
   try {
-    const r = await fetch("/api/settings/persona", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ persona: p }) });
-    const d = await r.json();
-    s.textContent = d.ok ? "Saved." : "Failed.";
+    await fetch("/api/settings/persona", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ persona: p }) });
+    s.textContent = "Saved.";
   } catch { s.textContent = "Failed."; }
 });
-
-// ---------- MEMORY ----------
 async function loadMemory() {
   if (!__user) return;
-  const list = $("#memoryList");
-  list.innerHTML = "";
+  const list = $("#memoryList"); list.innerHTML = "";
   try {
     const r = await fetch("/api/memory");
     const d = await r.json();
     const facts = d.facts || [];
-    if (!facts.length) {
-      list.innerHTML = '<li class="memory-empty">Nothing remembered yet.</li>';
-      return;
-    }
+    if (!facts.length) { list.innerHTML = '<li class="memory-empty">Nothing remembered yet.</li>'; return; }
     facts.forEach(f => {
       const li = document.createElement("li");
       li.innerHTML = `<span>${escapeHtml(f.text)}</span><button class="memory-delete"><i class="ri-delete-bin-line"></i></button>`;
-      li.querySelector(".memory-delete").addEventListener("click", async () => {
-        await fetch("/api/memory/" + f.id, { method: "DELETE" });
-        loadMemory();
-      });
+      li.querySelector(".memory-delete").addEventListener("click", async () => { await fetch("/api/memory/" + f.id, { method: "DELETE" }); loadMemory(); });
       list.appendChild(li);
     });
   } catch {}
@@ -763,14 +621,10 @@ async function loadMemory() {
 $("#addMemoryBtn")?.addEventListener("click", async () => {
   const v = $("#memoryInput").value.trim(); if (!v) return;
   await fetch("/api/memory", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fact: v }) });
-  $("#memoryInput").value = "";
-  loadMemory();
+  $("#memoryInput").value = ""; loadMemory();
 });
-
-// ---------- SERVER CHECK ----------
 $("#connectServerBtn")?.addEventListener("click", async () => {
-  const s = $("#serverStatus");
-  s.textContent = "Checking…";
+  const s = $("#serverStatus"); s.textContent = "Checking…";
   try {
     const r = await fetch("/api/health", { cache: "no-store" });
     const d = await r.json();
@@ -778,122 +632,17 @@ $("#connectServerBtn")?.addEventListener("click", async () => {
   } catch { s.textContent = "Server unreachable."; }
 });
 
-// ---------- ADMIN ----------
-async function refreshAdminPanel() {
-  try {
-    const r = await fetch("/api/admin/status");
-    const d = await r.json();
-    window.__isAdmin = !!d.is_admin;
-    const pill = $("#adminPill"); if (pill) pill.style.display = window.__isAdmin ? "flex" : "none";
-    const st = $("#adminStatus"); if (st) st.textContent = window.__isAdmin ? "Unlocked ✅" : "";
-    const row = $("#adminLoginRow"); if (row) row.style.display = window.__isAdmin ? "none" : "flex";
-    document.querySelectorAll(".settings-tab.admin-only").forEach(t => t.style.display = window.__isAdmin ? "" : "none");
-  } catch {}
-}
-$("#adminLoginBtn")?.addEventListener("click", async () => {
-  const pw = $("#adminPasswordInput").value.trim();
-  const s = $("#adminStatus");
-  if (!pw) { s.textContent = "Enter the password."; return; }
-  s.textContent = "Checking…";
-  try {
-    const r = await fetch("/api/admin/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: pw }) });
-    const d = await r.json();
-    if (d.ok) { s.textContent = "Unlocked ✅"; $("#adminPasswordInput").value = ""; refreshAdminPanel(); }
-    else s.textContent = d.error || "Wrong password.";
-  } catch { s.textContent = "Failed."; }
-});
-$("#aqOpenConsole")?.addEventListener("click", () => window.open("/admin/console", "_blank"));
-$("#grantTierBtn")?.addEventListener("click", async () => {
-  const email = $("#grantEmailInput").value.trim();
-  const tier = $("#grantTierInput").value;
-  const s = $("#grantStatus");
-  if (!email) { s.textContent = "Email required."; return; }
-  s.textContent = "Granting…";
-  try {
-    const r = await fetch("/api/admin/set-tier", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, tier }) });
-    const d = await r.json();
-    s.textContent = d.ok ? `Granted ${tier} ✅` : (d.error || "Failed.");
-  } catch { s.textContent = "Failed."; }
-});
-
-// ---------- PLANS ----------
-let plansCache = [];
-async function loadPlans() {
-  try {
-    const r = await fetch("/api/subscription/plans");
-    const d = await r.json();
-    plansCache = d.plans || [];
-    renderPlans(plansCache);
-  } catch {}
-}
-function renderPlans(plans) {
-  const grid = $("#plansGrid"); if (!grid) return;
-  grid.innerHTML = plans.map(p => {
-    const isCurrent = __tier === p.id;
-    const featured = p.id === "pro";
-    let priceHtml = '<span style="color:var(--text-muted);font-weight:700">Free</span>';
-    if (p.price_robux > 0) priceHtml = `R$ ${p.price_robux}<span style="font-size:11px;color:var(--text-muted);display:block">or ${p.price_afg} AFG</span>`;
-    let buyBtn;
-    if (p.id === "free") buyBtn = `<div class="plan-buy disabled">Free forever</div>`;
-    else if (isCurrent) buyBtn = `<div class="plan-buy disabled">Current plan</div>`;
-    else buyBtn = `<div class="plan-buy" data-buy="${p.id}">Contact admin</div>`;
-    return `<div class="plan-card${featured ? " featured" : ""}${isCurrent ? " current" : ""}">
-      ${isCurrent ? '<span class="plan-badge current">Current</span>' : (featured ? '<span class="plan-badge">Popular</span>' : "")}
-      <div class="plan-name">${escapeHtml(p.label)}</div>
-      <div class="plan-tagline">${escapeHtml(p.tagline)}</div>
-      <div class="plan-price">${priceHtml}</div>
-      <ul class="plan-perks">${p.perks.map(x => `<li><i class="ri-check-line"></i><span>${escapeHtml(x)}</span></li>`).join("")}</ul>
-      ${buyBtn}
-    </div>`;
-  }).join("");
-  grid.querySelectorAll("[data-buy]").forEach(b => b.addEventListener("click", () => {
-    alert("Contact the admin to activate your plan.");
-  }));
-}
-
-// ---------- API KEYS ----------
-async function loadUserKeys() {
-  if (!__user) { $("#keysList").innerHTML = '<li class="key-empty">Sign in to manage API keys.</li>'; return; }
-  try {
-    const r = await fetch("/api/keys");
-    const d = await r.json();
-    const keys = d.keys || [];
-    const list = $("#keysList");
-    if (!keys.length) { list.innerHTML = '<li class="key-empty">No keys yet.</li>'; return; }
-    list.innerHTML = keys.map(k => `<li class="key-item">
-      <div class="key-info"><div class="key-name">${escapeHtml(k.name)}</div>
-      <div class="key-value">${escapeHtml(k.preview || "")}</div></div></li>`).join("");
-  } catch {}
-}
-$("#generateKeyBtn")?.addEventListener("click", async () => {
-  const status = $("#keyGenStatus");
-  if (!__user) { status.textContent = "Sign in first."; return; }
-  const name = $("#newKeyNameInput").value.trim() || "My key";
-  status.textContent = "Generating…";
-  try {
-    const r = await fetch("/api/keys/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
-    const d = await r.json();
-    if (d.ok) { status.innerHTML = `Created ✅ — <code>${escapeHtml(d.key)}</code>`; $("#newKeyNameInput").value = ""; loadUserKeys(); }
-    else status.textContent = d.error || "Failed.";
-  } catch { status.textContent = "Failed."; }
-});
-
-// ---------- SUPPORT ----------
 $("#submitReportBtn")?.addEventListener("click", async () => {
   const status = $("#reportStatus");
   const subject = $("#reportSubject").value.trim();
   const message = $("#reportMessage").value.trim();
-  const category = $("#reportCategory").value;
   if (!message) { status.textContent = "Please describe your issue."; return; }
   status.textContent = "Sending…";
   try {
-    const r = await fetch("/api/report", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subject, message, category }) });
+    const r = await fetch("/api/report", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subject, message, category: "general" }) });
     const d = await r.json();
-    if (d.ok) {
-      status.textContent = "Ticket sent ✅";
-      $("#reportSubject").value = ""; $("#reportMessage").value = "";
-      loadMyReports();
-    } else status.textContent = d.error || "Failed.";
+    if (d.ok) { status.textContent = "Ticket sent ✅"; $("#reportSubject").value = ""; $("#reportMessage").value = ""; loadMyReports(); }
+    else status.textContent = d.error || "Failed.";
   } catch { status.textContent = "Failed."; }
 });
 async function loadMyReports() {
@@ -912,14 +661,64 @@ async function loadMyReports() {
   } catch {}
 }
 
-// ---------- IMAGE ----------
+let plansCache = [];
+async function loadPlans() {
+  try {
+    const r = await fetch("/api/subscription/plans");
+    const d = await r.json();
+    plansCache = d.plans || [];
+    const grid = $("#plansGrid");
+    grid.innerHTML = plansCache.map(p => {
+      const isCurrent = __tier === p.id;
+      const featured = p.id === "pro";
+      let priceHtml = '<span style="color:var(--text-muted);font-weight:700">Free</span>';
+      if (p.price_robux > 0) priceHtml = `R$ ${p.price_robux}<span style="font-size:11px;color:var(--text-muted);display:block">or ${p.price_afg} AFG</span>`;
+      let buyBtn;
+      if (p.id === "free") buyBtn = `<div class="plan-buy disabled">Free forever</div>`;
+      else if (isCurrent) buyBtn = `<div class="plan-buy disabled">Current plan</div>`;
+      else buyBtn = `<div class="plan-buy" data-buy="${p.id}">Contact admin</div>`;
+      return `<div class="plan-card${featured ? " featured" : ""}${isCurrent ? " current" : ""}">
+        ${isCurrent ? '<span class="plan-badge current">Current</span>' : (featured ? '<span class="plan-badge">Popular</span>' : "")}
+        <div class="plan-name">${escapeHtml(p.label)}</div>
+        <div class="plan-tagline">${escapeHtml(p.tagline)}</div>
+        <div class="plan-price">${priceHtml}</div>
+        <ul class="plan-perks">${p.perks.map(x => `<li><i class="ri-check-line"></i><span>${escapeHtml(x)}</span></li>`).join("")}</ul>
+        ${buyBtn}
+      </div>`;
+    }).join("");
+    grid.querySelectorAll("[data-buy]").forEach(b => b.addEventListener("click", () => alert("Contact the admin to activate your plan.")));
+  } catch {}
+}
+async function loadUserKeys() {
+  const list = $("#keysList"); if (!list) return;
+  if (!__user) { list.innerHTML = '<li class="key-empty">Sign in to manage API keys.</li>'; return; }
+  try {
+    const r = await fetch("/api/keys");
+    const d = await r.json();
+    const keys = d.keys || [];
+    if (!keys.length) { list.innerHTML = '<li class="key-empty">No keys yet.</li>'; return; }
+    list.innerHTML = keys.map(k => `<li class="key-item"><div class="key-info"><div class="key-name">${escapeHtml(k.name)}</div>
+      <div class="key-value">${escapeHtml(k.preview || "")}</div></div></li>`).join("");
+  } catch {}
+}
+$("#generateKeyBtn")?.addEventListener("click", async () => {
+  const status = $("#keyGenStatus");
+  if (!__user) { status.textContent = "Sign in first."; return; }
+  const name = $("#newKeyNameInput").value.trim() || "My key";
+  status.textContent = "Generating…";
+  try {
+    const r = await fetch("/api/keys/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+    const d = await r.json();
+    if (d.ok) { status.innerHTML = `Created ✅ — <code>${escapeHtml(d.key)}</code>`; $("#newKeyNameInput").value = ""; loadUserKeys(); }
+    else status.textContent = d.error || "Failed.";
+  } catch { status.textContent = "Failed."; }
+});
+
 $("#generateImageBtn")?.addEventListener("click", async () => {
-  const prompt = $("#imagePromptInput").value.trim();
-  if (!prompt) return;
+  const prompt = $("#imagePromptInput").value.trim(); if (!prompt) return;
   const btn = $("#generateImageBtn");
   const status = $("#imageStudioStatus");
-  btn.disabled = true;
-  status.textContent = "Generating… this can take 15–30 seconds.";
+  btn.disabled = true; status.textContent = "Generating… this can take 15–30 seconds.";
   const card = document.createElement("div");
   card.className = "gallery-card";
   card.innerHTML = `<div class="gallery-skeleton"></div>`;
@@ -935,14 +734,7 @@ $("#generateImageBtn")?.addEventListener("click", async () => {
     status.textContent = e.message;
   } finally { btn.disabled = false; }
 });
-document.querySelectorAll("#styleChips .chip").forEach(c => c.addEventListener("click", () => {
-  document.querySelectorAll("#styleChips .chip").forEach(x => x.classList.remove("active"));
-  c.classList.add("active");
-}));
 
-// ---------- VIDEO (disabled) ----------
 $("#generateVideoBtn")?.addEventListener("click", () => {
   $("#videoStudioStatus").textContent = "Video generation isn't enabled on this deployment.";
 });
-
-// ---------- call button (overlay only) ----------
