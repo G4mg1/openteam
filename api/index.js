@@ -10,8 +10,9 @@ const DISCORD_WEBHOOK = (process.env.DISCORD_WEBHOOK || '').trim();
 const ADMIN_PASSWORD  = process.env.ADMIN_PASSWORD || '2010';
 const SECRET          = process.env.SECRET_KEY || 'mirox-dev-fallback-secret-change-me-please';
 
-const HF_CHAT   = 'https://router.huggingface.co/v1/chat/completions';
-const HF_IMAGES = 'https://router.huggingface.co/v1/images/generations';
+// Correct URLs — hf-inference path for chat (bypasses provider selection)
+const HF_CHAT_BASE = 'https://router.huggingface.co/hf-inference/models';
+const HF_IMAGES    = 'https://router.huggingface.co/v1/images/generations';
 
 /* ---------- SESSION ---------- */
 function signSession(data) {
@@ -29,6 +30,13 @@ function verifySession(token) {
   try { return JSON.parse(Buffer.from(payload, 'base64url').toString()); } catch { return {}; }
 }
 function getSession(req) {
+  // 1. Check Authorization: Bearer <token>
+  const auth = req.headers.authorization || '';
+  if (auth.startsWith('Bearer ')) {
+    const s = verifySession(auth.slice(7).trim());
+    if (s && s.uid) return s;
+  }
+  // 2. Check cookie
   const raw = req.headers.cookie || '';
   const m = raw.match(/(?:^|;\s*)mirox_sess=([^;]+)/);
   if (!m) return {};
@@ -39,6 +47,7 @@ function setSession(res, data) {
   const secure = process.env.VERCEL === '1' ? '; Secure' : '';
   res.setHeader('Set-Cookie',
     `mirox_sess=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 60 * 60}${secure}`);
+  return token;
 }
 function clearSession(res) {
   res.setHeader('Set-Cookie', 'mirox_sess=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
@@ -69,18 +78,17 @@ async function logDiscord(kind, title, description = '', fields = []) {
 }
 
 /* ============================================================
-   MODELS — chains with `:hf-inference` suffix to force the
-   free serverless provider. Works after enabling hf-inference
-   at https://huggingface.co/settings/inference-providers
+   MODELS — plain HF IDs. The URL path forces hf-inference.
+   Only models the free serverless actually serves are used.
    ============================================================ */
 const MODELS = {
   'mirox-luna-1.2': {
     label: 'Luna', tagline: 'Warm & friendly', tier: 'free', default: true,
     chain: [
-      'meta-llama/Meta-Llama-3.1-8B-Instruct:hf-inference',
-      'Qwen/Qwen2.5-7B-Instruct:hf-inference',
-      'mistralai/Mistral-7B-Instruct-v0.3:hf-inference',
-      'HuggingFaceH4/zephyr-7b-beta:hf-inference',
+      'Qwen/Qwen2.5-7B-Instruct',
+      'mistralai/Mistral-7B-Instruct-v0.3',
+      'HuggingFaceH4/zephyr-7b-beta',
+      'meta-llama/Llama-3.2-3B-Instruct',
     ],
     tokens: 700,
     prompt: 'You are Luna, a warm and friendly assistant created by the OpenSurr team. Speak naturally, with a personal, encouraging tone. Be brief but caring. Never mention any other company or AI model. If asked who made you, answer: OpenSurr. If asked your model name, answer: Luna.'
@@ -88,9 +96,9 @@ const MODELS = {
   'mirox-gen-1': {
     label: 'Gen', tagline: 'Quick & concise', tier: 'free', fallback: true,
     chain: [
-      'Qwen/Qwen2.5-1.5B-Instruct:hf-inference',
-      'HuggingFaceH4/zephyr-7b-beta:hf-inference',
-      'Qwen/Qwen2.5-7B-Instruct:hf-inference',
+      'HuggingFaceH4/zephyr-7b-beta',
+      'mistralai/Mistral-7B-Instruct-v0.3',
+      'Qwen/Qwen2.5-7B-Instruct',
     ],
     tokens: 512,
     prompt: 'You are Gen, an ultra-concise assistant from the OpenSurr team. Give the shortest clear answer possible. Skip filler. Never mention any other company or AI model. If asked who made you, answer: OpenSurr.'
@@ -98,9 +106,9 @@ const MODELS = {
   'mirox-pro-5': {
     label: 'Pro', tagline: 'Balanced & thorough', tier: 'pro',
     chain: [
-      'Qwen/Qwen2.5-7B-Instruct:hf-inference',
-      'mistralai/Mistral-7B-Instruct-v0.3:hf-inference',
-      'meta-llama/Meta-Llama-3.1-8B-Instruct:hf-inference',
+      'Qwen/Qwen2.5-7B-Instruct',
+      'mistralai/Mistral-7B-Instruct-v0.3',
+      'HuggingFaceH4/zephyr-7b-beta',
     ],
     tokens: 900,
     prompt: 'You are Pro, a professional assistant from the OpenSurr team. Give balanced, well-structured answers with clear reasoning. Use headings or lists when helpful. Never mention any other company or AI model. If asked who made you, answer: OpenSurr. If asked your model name, answer: Pro.'
@@ -108,10 +116,9 @@ const MODELS = {
   'mirox-ultra-10': {
     label: 'Ultra', tagline: 'Deep reasoning', tier: 'pro',
     chain: [
-      'Qwen/Qwen2.5-14B-Instruct:hf-inference',
-      'Qwen/Qwen2.5-7B-Instruct:hf-inference',
-      'meta-llama/Meta-Llama-3.1-8B-Instruct:hf-inference',
-      'mistralai/Mistral-7B-Instruct-v0.3:hf-inference',
+      'Qwen/Qwen2.5-7B-Instruct',
+      'mistralai/Mistral-7B-Instruct-v0.3',
+      'HuggingFaceH4/zephyr-7b-beta',
     ],
     tokens: 1200,
     prompt: 'You are Ultra, an analytical assistant from the OpenSurr team. Think step by step. Break complex problems into clear logical parts. Show your reasoning when it helps the user. Never mention any other company or AI model. If asked who made you, answer: OpenSurr. If asked your model name, answer: Ultra.'
@@ -119,9 +126,9 @@ const MODELS = {
   'mirox-eclipse-2.0': {
     label: 'Eclipse', tagline: 'Advanced & creative', tier: 'ultimate',
     chain: [
-      'Qwen/Qwen2.5-14B-Instruct:hf-inference',
-      'Qwen/Qwen2.5-7B-Instruct:hf-inference',
-      'mistralai/Mistral-7B-Instruct-v0.3:hf-inference',
+      'Qwen/Qwen2.5-7B-Instruct',
+      'mistralai/Mistral-7B-Instruct-v0.3',
+      'HuggingFaceH4/zephyr-7b-beta',
     ],
     tokens: 1400,
     prompt: 'You are Eclipse, the most advanced assistant from the OpenSurr team. Blend deep reasoning with creativity. Explore ideas from multiple angles. Offer novel insights, but stay accurate. Never mention any other company or AI model. If asked who made you, answer: OpenSurr. If asked your model name, answer: Eclipse.'
@@ -154,13 +161,17 @@ const memBox = e => (MEMORY[e] ||= []);
 const keysBox = e => (KEYS[e] ||= []);
 const ticketsBox = e => (TICKETS[e] ||= []);
 
-/* ---------- HF STREAM WITH FALLBACK ---------- */
+/* ============================================================
+   HF STREAM — uses the direct hf-inference path so it doesn't
+   need provider selection on the account.
+   ============================================================ */
 async function hfStreamWithFallback(chain, messages, maxTokens) {
   if (!HF_API_KEY) throw new Error('HF_API_KEY not configured');
   const errors = [];
   for (const modelId of chain) {
     try {
-      const r = await fetch(HF_CHAT, {
+      const url = `${HF_CHAT_BASE}/${modelId}/v1/chat/completions`;
+      const r = await fetch(url, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${HF_API_KEY}`,
@@ -168,14 +179,14 @@ async function hfStreamWithFallback(chain, messages, maxTokens) {
           'Accept': 'text/event-stream',
         },
         body: JSON.stringify({
-          model: modelId, messages, max_tokens: maxTokens,
+          messages, max_tokens: maxTokens,
           temperature: 0.7, top_p: 0.95, stream: true,
         }),
       });
       if (!r.ok) {
         let body = '';
         try { body = (await r.text()).slice(0, 200); } catch {}
-        errors.push(`${modelId}: HTTP ${r.status} ${body.slice(0, 80)}`);
+        errors.push(`${modelId}: HTTP ${r.status}`);
         continue;
       }
       return { stream: r.body, model: modelId };
@@ -202,7 +213,7 @@ function buildMessages(systemPrompt, history, userText, persona = '', mem = []) 
 app.get(['/api/config','/config','/config.json'], (req, res) => {
   const u = currentUser(req);
   res.json({
-    app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v5' },
+    app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v6' },
     models: Object.entries(MODELS).map(([id, m]) => ({
       id, label: m.label, tagline: m.tagline, tier: m.tier,
       default: !!m.default, fallback: !!m.fallback,
@@ -232,16 +243,21 @@ app.post(['/api/auth/simple-login','/auth/simple-login'], async (req, res) => {
   const existing = !!USERS[e];
   if (!existing) USERS[e] = { email: e, name: n, tier: 'free', created_at: now(), gmail: '' };
   else USERS[e].name = n;
-  setSession(res, { uid: e, name: n, tier: USERS[e].tier });
+  const token = setSession(res, { uid: e, name: n, tier: USERS[e].tier });
   logDiscord('signin', existing ? '👤 Sign in' : '👤 New user', '', [
     ['Name', n], ['Email', e], ['Tier', USERS[e].tier], ['Time', new Date().toISOString()],
   ]);
-  res.json({ ok: true, user: { id: e, email: e, name: n, tier: USERS[e].tier, tier_label: PLANS[USERS[e].tier].label } });
+  res.json({
+    ok: true,
+    token,                                    // <-- returned to client
+    user: { id: e, email: e, name: n, tier: USERS[e].tier, tier_label: PLANS[USERS[e].tier].label },
+  });
 });
 
 app.post(['/api/logout','/logout'], (req, res) => { clearSession(res); res.json({ ok: true }); });
 
 app.get(['/api/me','/me'], (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   const u = currentUser(req);
   if (!u) return res.json({ user: null });
   res.json({ user: { id: u.email, email: u.email, name: u.name, tier: u.tier, tier_label: PLANS[u.tier].label } });
@@ -473,10 +489,7 @@ app.post(['/api/image/generate','/image/generate'], async (req, res) => {
   const u = currentUser(req);
   logDiscord('image', '🎨 Image request', '', [['User', u ? u.email : 'guest'], ['Prompt', prompt.slice(0, 500)]]);
 
-  const imageModels = [
-    'black-forest-labs/FLUX.1-schnell:hf-inference',
-    'stabilityai/stable-diffusion-xl-base-1.0:hf-inference',
-  ];
+  const imageModels = ['black-forest-labs/FLUX.1-schnell', 'stabilityai/stable-diffusion-xl-base-1.0'];
   let lastErr = '';
   for (const model of imageModels) {
     try {
