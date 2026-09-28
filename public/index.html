@@ -6,69 +6,20 @@
 <meta name="theme-color" content="#fafafb">
 <title>MiroxAI — by OpenSurr</title>
 <link rel="icon" type="image/png" href="/logo.png">
-
 <script>
-(function () {
-  function hideBrokenImage(img) {
-    if (!img || img.tagName !== 'IMG') return;
-    img.style.visibility = 'hidden';
-    img.style.display = 'none';
-    img.setAttribute('data-broken', '1');
-    var parent = img.parentElement;
-    if (parent && parent.classList.contains('ai-avatar') && !parent.querySelector('.avatar-fallback')) {
-      var fb = document.createElement('span');
-      fb.className = 'avatar-fallback';
-      fb.textContent = 'M';
-      parent.appendChild(fb);
-    }
-    if (parent && parent.classList.contains('call-orb-wrap') && !parent.querySelector('.orb-fallback')) {
-      var ofb = document.createElement('div');
-      ofb.className = 'orb-fallback';
-      parent.appendChild(ofb);
-    }
-  }
-  document.addEventListener('error', function (e) {
-    if (e.target && e.target.tagName === 'IMG') hideBrokenImage(e.target);
-  }, true);
-  document.addEventListener('DOMContentLoaded', function () {
-    document.querySelectorAll('img').forEach(function (img) {
-      if (img.complete && img.naturalWidth === 0 && img.src) hideBrokenImage(img);
-    });
-  });
+(function(){
+  function hide(i){if(!i||i.tagName!=='IMG')return;i.style.display='none';i.setAttribute('data-broken','1');
+    const p=i.parentElement;
+    if(p&&p.classList.contains('ai-avatar')&&!p.querySelector('.avatar-fallback')){const f=document.createElement('span');f.className='avatar-fallback';f.textContent='M';p.appendChild(f);}}
+  document.addEventListener('error',e=>{if(e.target?.tagName==='IMG')hide(e.target);},true);
+  document.addEventListener('DOMContentLoaded',()=>{document.querySelectorAll('img').forEach(i=>{if(i.complete&&i.naturalWidth===0&&i.src)hide(i);});});
 })();
 </script>
-
 <link href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css" rel="stylesheet">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
-<style>
-  #loadingScreen.force-hidden {
-    opacity: 0 !important;
-    visibility: hidden !important;
-    pointer-events: none !important;
-    display: none !important;
-  }
-  .avatar-fallback {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    height: 100%;
-    font-weight: 800;
-    font-size: 12px;
-    color: currentColor;
-  }
-  .orb-fallback {
-    width: 96px;
-    height: 96px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, var(--accent), var(--accent-hover));
-    z-index: 2;
-    box-shadow: 0 0 40px var(--accent-glow);
-  }
-</style>
 </head>
 <body>
 
@@ -80,28 +31,10 @@
   <span class="load-sub">by OpenSurr</span>
   <div class="load-bar"><span></span></div>
 </div>
-
-<script>
-(function () {
-  function killLoader() {
-    var l = document.getElementById('loadingScreen');
-    if (!l) return;
-    l.classList.add('hidden');
-    l.classList.add('force-hidden');
-    l.style.display = 'none';
-  }
-  setTimeout(killLoader, 700);
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function () { setTimeout(killLoader, 50); });
-  } else {
-    setTimeout(killLoader, 50);
-  }
-})();
-</script>
+<script>(function(){function k(){const l=document.getElementById('loadingScreen');if(l){l.classList.add('hidden','force-hidden');l.style.display='none';}}setTimeout(k,600);if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(k,40));else setTimeout(k,40);})();</script>
 
 <div class="app">
   <div class="sidebar-scrim" id="sidebarScrim"></div>
-
   <aside class="sidebar" id="sidebar">
     <div class="brand">
       <img src="/logo.png" alt="" class="theme-logo" id="brandLogo" title="Home">
@@ -125,6 +58,10 @@
         <div class="tier-chip-meta" id="tierMeta">Sign in to save chats</div>
       </div>
       <button class="tier-chip-btn" id="upgradeBtn">Sign in</button>
+    </div>
+    <div class="server-status">
+      <span class="status-dot" id="serverDot"></span>
+      <span id="serverText">Connecting…</span>
     </div>
     <div class="sidebar-footer">
       <div class="user-chip" id="userChip"><i class="ri-user-3-line"></i><span id="userChipLabel">Sign in</span></div>
@@ -152,8 +89,8 @@
 
     <div class="chat" id="chat">
       <div class="message ai">
-        <div class="avatar ai-avatar"><img src="/logo.png" alt="" class="theme-logo"></div>
-        <div class="bubble-wrap"><div class="bubble">Hi, I'm Mirox — built by the OpenSurr team. You can chat right away as a guest. Sign in only if you want your chats saved.</div></div>
+        <div class="avatar ai-avatar"><img src="/logo.png" alt=""></div>
+        <div class="bubble-wrap"><div class="bubble">Hi, I'm Mirox — built by the OpenSurr team. Ask anything, attach files, use web search, or start a voice call.</div></div>
       </div>
     </div>
 
@@ -163,14 +100,15 @@
     </div>
 
     <div class="attachment-preview" id="attachmentPreview" style="display:none;">
-      <span class="att-icon" id="attIcon"><i class="ri-file-text-line"></i></span>
-      <span id="attachmentName">File</span>
+      <span class="att-icon"><i class="ri-file-text-line"></i></span>
+      <span id="attachmentList">Files</span>
       <button type="button" id="removeAttachmentBtn"><i class="ri-close-line"></i></button>
     </div>
 
     <form class="composer" id="composerForm" onsubmit="return false;">
-      <button type="button" class="icon-btn" id="attachBtn" title="Attach"><i class="ri-attachment-2"></i></button>
-      <input type="file" id="fileInput" hidden>
+      <button type="button" class="icon-btn" id="attachBtn" title="Attach files"><i class="ri-attachment-2"></i></button>
+      <input type="file" id="fileInput" multiple hidden>
+      <button type="button" class="icon-btn" id="searchToggleBtn" title="Web search"><i class="ri-global-line"></i></button>
       <button type="button" class="icon-btn" id="micBtn" title="Voice"><i class="ri-mic-line"></i></button>
 
       <div class="model-picker" id="modelPicker">
@@ -193,7 +131,6 @@
     <div class="rail-items">
       <button class="rail-btn" id="talkModeBtn"><span class="rail-icon"><i class="ri-phone-line"></i></span><span class="rail-label">Talk</span></button>
       <button class="rail-btn" id="imageModeBtn"><span class="rail-icon"><i class="ri-image-line"></i></span><span class="rail-label">Image</span></button>
-      <button class="rail-btn" id="videoModeBtn"><span class="rail-icon"><i class="ri-movie-line"></i></span><span class="rail-label">Video</span></button>
       <button class="rail-btn" id="backgroundModeBtn"><span class="rail-icon"><i class="ri-image-2-line"></i></span><span class="rail-label">BG</span></button>
       <button class="rail-btn" id="plansModeBtn"><span class="rail-icon"><i class="ri-vip-crown-2-line"></i></span><span class="rail-label">Plans</span></button>
       <button class="rail-btn" id="supportModeBtn"><span class="rail-icon"><i class="ri-customer-service-2-line"></i></span><span class="rail-label">Help</span></button>
@@ -204,24 +141,15 @@
   <button class="rail-toggle" id="railToggleBtn" title="Minimize tools"><i class="ri-contract-left-line" id="railToggleIcon"></i></button>
 </div>
 
-<div class="modal-overlay" id="lunaAnnounceModal"><div class="modal announce-modal">
-  <button class="modal-close" data-close="lunaAnnounceModal"><i class="ri-close-line"></i></button>
-  <div class="announce-hero"><img src="/Luna.png" alt="Luna" class="announce-img"></div>
-  <div class="modal-brand" style="justify-content:center;text-align:center;padding-right:0;"><h2 id="announceTitle">Meet Luna</h2></div>
-  <p class="modal-sub" style="text-align:center;" id="announceBody">Loading…</p>
-  <div class="announce-points" id="announcePoints"></div>
-  <button class="save-btn full" id="announceOkBtn"><i class="ri-check-line"></i> Let's go</button>
-</div></div>
-
 <div class="modal-overlay" id="loginModal"><div class="modal">
   <button class="modal-close" data-close="loginModal"><i class="ri-close-line"></i></button>
   <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt=""><h2 id="loginTitle">Sign in</h2></div>
-  <p class="modal-sub">Sign in to save your chats across visits. Guests can still chat.</p>
+  <p class="modal-sub">Sign in to save your chats. Guests can still chat.</p>
   <form id="simpleLoginForm" onsubmit="return false;">
     <label class="field-label">Name</label>
-    <input type="text" id="simpleLoginName" placeholder="Alex" required autocomplete="name">
+    <input type="text" id="simpleLoginName" placeholder="Alex" required>
     <label class="field-label">Email</label>
-    <input type="email" id="simpleLoginEmail" placeholder="alex@example.com" required autocomplete="email">
+    <input type="email" id="simpleLoginEmail" placeholder="alex@example.com" required>
     <button type="submit" class="save-btn full"><i class="ri-login-box-line"></i> Continue</button>
   </form>
   <p class="field-hint" id="loginStatus"></p>
@@ -233,14 +161,21 @@
   <div class="settings-tabs">
     <button class="settings-tab active" data-tab="general">General</button>
     <button class="settings-tab" data-tab="appearance">Appearance</button>
+    <button class="settings-tab" data-tab="chat">Chat</button>
+    <button class="settings-tab" data-tab="voice">Voice</button>
     <button class="settings-tab" data-tab="personal">Personal</button>
     <button class="settings-tab" data-tab="memory">Memory</button>
   </div>
 
   <div class="settings-pane active" data-pane="general">
     <div class="settings-section"><h4><i class="ri-server-line"></i> Server</h4>
-      <button class="save-btn" id="connectServerBtn"><i class="ri-wifi-line"></i> Check server</button>
-      <p class="field-hint" id="serverStatus">Not checked yet</p>
+      <p class="field-hint">Auto-connected. Status: <span id="serverStatusInline">checking…</span></p>
+    </div>
+    <div class="settings-section"><h4><i class="ri-notification-line"></i> Notifications</h4>
+      <div class="option-row">
+        <button class="option-btn" data-toggle="soundOn" id="toggleSound">Sound: ON</button>
+        <button class="option-btn" data-toggle="notifOn" id="toggleNotif">Notifications: ON</button>
+      </div>
     </div>
     <div class="settings-section"><h4><i class="ri-logout-box-line"></i> Session</h4>
       <button class="save-btn outline" id="logoutBtn"><i class="ri-logout-box-line"></i> Sign out</button>
@@ -281,6 +216,46 @@
     </div>
   </div>
 
+  <div class="settings-pane" data-pane="chat">
+    <div class="settings-section"><h4><i class="ri-temperature-line"></i> Response creativity</h4>
+      <input type="range" id="tempInput" min="0" max="10" step="1" value="7">
+      <p class="field-hint">Temperature: <span id="tempLabel">0.7</span></p>
+    </div>
+    <div class="settings-section"><h4><i class="ri-text-wrap"></i> Response length</h4>
+      <div class="option-row" id="lengthOptions">
+        <button class="option-btn" data-length="short">Short</button>
+        <button class="option-btn active" data-length="medium">Medium</button>
+        <button class="option-btn" data-length="long">Long</button>
+      </div>
+    </div>
+    <div class="settings-section"><h4><i class="ri-language"></i> Language</h4>
+      <select id="langSelect">
+        <option value="en">English</option><option value="es">Spanish</option>
+        <option value="fr">French</option><option value="de">German</option>
+        <option value="ar">Arabic</option><option value="ps">Pashto</option>
+        <option value="fa">Dari</option><option value="hi">Hindi</option>
+        <option value="zh">Chinese</option><option value="ja">Japanese</option>
+      </select>
+    </div>
+    <div class="settings-section"><h4><i class="ri-scroll-to-bottom-line"></i> Auto-scroll</h4>
+      <div class="option-row"><button class="option-btn active" id="toggleScroll" data-toggle="autoscroll">Auto-scroll: ON</button></div>
+    </div>
+  </div>
+
+  <div class="settings-pane" data-pane="voice">
+    <div class="settings-section"><h4><i class="ri-mic-line"></i> Microphone</h4>
+      <p class="field-hint" id="micStatus">Click below to grant microphone access.</p>
+      <button class="save-btn" id="requestMicBtn"><i class="ri-mic-line"></i> Grant mic access</button>
+    </div>
+    <div class="settings-section"><h4><i class="ri-volume-up-line"></i> Voice output</h4>
+      <label class="field-label">Voice</label>
+      <select id="voiceSelect"></select>
+      <label class="field-label">Speed: <span id="voiceRateLabel">1.0×</span></label>
+      <input type="range" id="voiceRateInput" min="0.5" max="2" step="0.1" value="1">
+      <button class="save-btn" id="testVoiceBtn"><i class="ri-play-line"></i> Test voice</button>
+    </div>
+  </div>
+
   <div class="settings-pane" data-pane="personal">
     <div class="settings-section"><h4><i class="ri-user-star-line"></i> Custom character</h4>
       <textarea id="personaInput" class="image-prompt" rows="4" placeholder="e.g. Talk like a witty pirate."></textarea>
@@ -316,14 +291,8 @@
   <p class="modal-sub">Free users get 10 Eclipse (Ultimate) chats per day, then fall back to Luna.</p>
   <div class="plans-grid" id="plansGrid"></div>
   <div class="keys-section">
-    <div class="keys-head">
-      <h3><i class="ri-key-2-line"></i> Your API keys</h3>
-      <div class="keys-usage" id="keysUsage"></div>
-    </div>
-    <div class="keys-add">
-      <input type="text" id="newKeyNameInput" placeholder="Key name">
-      <button class="save-btn" id="generateKeyBtn"><i class="ri-add-line"></i> Generate</button>
-    </div>
+    <div class="keys-head"><h3><i class="ri-key-2-line"></i> Your API keys</h3><div class="keys-usage" id="keysUsage"></div></div>
+    <div class="keys-add"><input type="text" id="newKeyNameInput" placeholder="Key name"><button class="save-btn" id="generateKeyBtn"><i class="ri-add-line"></i> Generate</button></div>
     <p class="field-hint" id="keyGenStatus"></p>
     <ul class="keys-list" id="keysList"></ul>
   </div>
@@ -334,8 +303,7 @@
   <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt=""><h2>Background</h2></div>
   <p class="modal-sub">Pick an image — it saves instantly.</p>
   <div class="ext-upload-zone" id="bgUploadZone">
-    <i class="ri-upload-cloud-2-line"></i>
-    <span>Click or drag an image here</span>
+    <i class="ri-upload-cloud-2-line"></i><span>Click or drag an image here</span>
     <input type="file" id="bgFileInput" accept="image/*" hidden>
   </div>
   <label class="field-label">Or paste a URL</label>
@@ -358,22 +326,13 @@
   <div class="gallery" id="imageGallery"></div>
 </div></div>
 
-<div class="modal-overlay" id="videoModal"><div class="modal wide">
-  <button class="modal-close" data-close="videoModal"><i class="ri-close-line"></i></button>
-  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt=""><h2>Video Studio</h2></div>
-  <p class="modal-sub">Video generation is coming soon.</p>
-  <textarea id="videoPromptInput" class="image-prompt" placeholder="A fox running through falling snow..." rows="3"></textarea>
-  <button class="generate-btn" id="generateVideoBtn" disabled><i class="ri-movie-2-line"></i> Generate video</button>
-  <p class="field-hint" id="videoStudioStatus">Not available on this deployment.</p>
-</div></div>
-
 <div class="call-overlay" id="callOverlay">
-  <div class="call-status" id="callStatus">Connecting…</div>
+  <div class="call-status" id="callStatus">Tap the mic to start</div>
   <div class="call-orb-wrap">
     <div class="call-orb-ring"></div><div class="call-orb-ring delay"></div>
-    <img src="/logo.png" alt="" class="call-orb theme-logo">
+    <img src="/logo.png" alt="" class="call-orb theme-logo" id="callOrb">
   </div>
-  <p class="call-transcript" id="callTranscript"></p>
+  <p class="call-transcript" id="callTranscript">Say something…</p>
   <div class="call-controls">
     <button class="call-btn" id="callMuteBtn"><i class="ri-mic-line"></i></button>
     <button class="call-btn end" id="callEndBtn"><i class="ri-phone-line"></i></button>
