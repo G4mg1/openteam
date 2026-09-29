@@ -55,10 +55,9 @@ tr:hover td{background:#17171f}
 .pill.free{background:#1e1e28;color:#8f8f9d}
 .pill.pro{background:rgba(99,102,241,.15);color:#a5b4fc}
 .pill.ultimate{background:rgba(139,92,246,.15);color:#c4b5fd}
-.pill.signin{background:rgba(22,163,74,.15);color:#86efac}
-.pill.signup{background:rgba(59,130,246,.15);color:#93c5fd}
-.pill.logout{background:#1e1e28;color:#8f8f9d}
-.pill.deleted{background:rgba(220,38,38,.2);color:#fca5a5}
+.pill.open{background:rgba(217,119,6,.15);color:#fbbf24}
+.pill.replied{background:rgba(22,163,74,.15);color:#86efac}
+.pill.closed{background:#1e1e28;color:#8f8f9d}
 .tier-select{background:#0e0e14;border:1px solid #2a2a36;color:#f4f4f8;padding:6px 9px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer}
 .thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;padding:14px}
 .thumb{position:relative;aspect-ratio:1/1;border-radius:10px;overflow:hidden;background:#0e0e14;border:1px solid #1e1e28}
@@ -77,6 +76,21 @@ tr:hover td{background:#17171f}
 .toast{position:fixed;bottom:20px;right:20px;background:#13131a;border:1px solid #2a2a36;color:#f4f4f8;padding:12px 18px;border-radius:11px;font-size:13px;font-weight:600;opacity:0;transform:translateY(6px);transition:.2s;pointer-events:none}
 .toast.show{opacity:1;transform:none}
 .maintenance-banner{background:rgba(220,38,38,.12);border:1px solid rgba(220,38,38,.3);color:#fca5a5;padding:10px 16px;border-radius:10px;font-size:13px;font-weight:600;margin-bottom:14px}
+
+/* Support chat view */
+.ticket-view{display:flex;flex-direction:column;gap:12px;padding:16px 20px}
+.ticket-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-bottom:10px;border-bottom:1px solid #1e1e28}
+.ticket-meta .email{font-family:'JetBrains Mono',monospace;font-size:12.5px;color:#c8c8d2}
+.ticket-meta .subject{font-weight:700;flex:1;min-width:0;word-break:break-word}
+.thread{display:flex;flex-direction:column;gap:10px;max-height:480px;overflow-y:auto;padding:14px;background:#0e0e14;border:1px solid #1e1e28;border-radius:12px}
+.thread .tmsg{max-width:78%;padding:10px 14px;border-radius:14px;font-size:13.5px;line-height:1.55;word-wrap:break-word}
+.thread .tmsg.user{background:#13131a;border:1px solid #1e1e28;align-self:flex-start;border-bottom-left-radius:4px}
+.thread .tmsg.admin{background:linear-gradient(135deg,#4f46e5,#6366f1);color:#fff;align-self:flex-end;border-bottom-right-radius:4px}
+.thread .tmsg .meta{font-size:10.5px;opacity:.7;margin-top:5px;font-weight:600}
+.reply-row{display:flex;gap:8px}
+.reply-row input{flex:1;padding:11px 14px;background:#08080c;border:1px solid #1e1e28;color:#f4f4f8;border-radius:10px;font-size:14px;outline:none}
+.reply-row input:focus{border-color:#6366f1}
+.reply-row .btn{padding:11px 16px}
 </style>
 </head>
 <body>
@@ -90,10 +104,12 @@ const toastEl=document.getElementById('toast');
 let toastTimer=null;
 function toast(m){toastEl.textContent=m;toastEl.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>toastEl.classList.remove('show'),1800);}
 function esc(s){const d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
-async function readJson(r){const ct=(r.headers.get('content-type')||'').toLowerCase();if(!ct.includes('application/json')){let b='';try{b=(await r.text()).slice(0,200);}catch{}throw new Error(`HTTP ${r.status} not JSON: ${b}`);}return r.json();}
+async function readJson(r){const ct=(r.headers.get('content-type')||'').toLowerCase();if(!ct.includes('application/json')){let b='';try{b=(await r.text()).slice(0,200);}catch{}throw new Error(`HTTP ${r.status}: ${b}`);}return r.json();}
 async function api(p,o={}){return fetch(p,{credentials:'same-origin',headers:{'Content-Type':'application/json'},...o});}
 async function safeApi(p,o){const r=await api(p,o);const d=await readJson(r);return {ok:r.ok,status:r.status,data:d};}
 async function isAdmin(){try{const {data}=await safeApi('/api/admin/status');return !!data.is_admin;}catch{return false;}}
+
+let currentTicketId=null,ticketPollTimer=null;
 
 async function render(){
   const a=await isAdmin();
@@ -102,10 +118,15 @@ async function render(){
 }
 
 function renderLogin(){
-  root.innerHTML=`<div class="top"><div class="brand"><img src="/logo.png" onerror="this.style.display='none'"><div class="brand-name">Mirox Admin</div><span class="badge">Console</span></div></div>
-    <div class="login-card"><h1>Admin access</h1><p>Enter the admin password.</p>
-    <label>Password</label><input id="pw" type="password" placeholder="••••" autofocus maxlength="32">
-    <button id="loginBtn">Unlock</button><div class="err" id="err"></div></div>`;
+  root.innerHTML=`
+    <div class="top"><div class="brand"><img src="/logo.png" onerror="this.style.display='none'"><div class="brand-name">Mirox Admin</div><span class="badge">Console</span></div></div>
+    <div class="login-card">
+      <h1>Admin access</h1><p>Enter the admin password.</p>
+      <label>Password</label>
+      <input id="pw" type="password" placeholder="••••" autofocus maxlength="32">
+      <button id="loginBtn">Unlock</button>
+      <div class="err" id="err"></div>
+    </div>`;
   const pw=document.getElementById('pw'),btn=document.getElementById('loginBtn'),err=document.getElementById('err');
   async function go(){const p=pw.value.trim();if(!p)return;btn.disabled=true;err.textContent='';
     try{const {data}=await safeApi('/api/admin/login',{method:'POST',body:JSON.stringify({password:p})});if(!data.ok)throw new Error(data.error||'Failed');render();}
@@ -115,12 +136,15 @@ function renderLogin(){
 
 async function renderDash(){
   root.innerHTML=`
-    <div class="top"><div class="brand"><img src="/logo.png" onerror="this.style.display='none'"><div class="brand-name">Mirox Admin</div><span class="badge">Console</span></div>
-    <button class="logout-btn" id="lo">Sign out</button></div>
+    <div class="top">
+      <div class="brand"><img src="/logo.png" onerror="this.style.display='none'"><div class="brand-name">Mirox Admin</div><span class="badge">Console</span></div>
+      <button class="logout-btn" id="lo">Sign out</button>
+    </div>
     <div id="maintBanner"></div>
     <div class="stats" id="stats"></div>
     <div class="tabs">
       <button class="tab active" data-tab="users">Users</button>
+      <button class="tab" data-tab="support">Support</button>
       <button class="tab" data-tab="chats">Chat logs</button>
       <button class="tab" data-tab="images">Image logs</button>
       <button class="tab" data-tab="logs">Account logs</button>
@@ -128,30 +152,37 @@ async function renderDash(){
       <button class="tab" data-tab="tools">Tools</button>
     </div>
     <div class="pane active" data-pane="users"><div class="card"><div class="card-head"><h2>Users</h2><button class="btn" id="rfUsers">Refresh</button></div><div id="usersBox"><div class="empty">Loading…</div></div></div></div>
+    <div class="pane" data-pane="support"><div class="card"><div class="card-head"><h2>Support tickets</h2><button class="btn" id="rfSupport">Refresh</button></div><div id="supportBox"><div class="empty">Loading…</div></div></div></div>
     <div class="pane" data-pane="chats"><div class="card"><div class="card-head"><h2>Chat logs</h2><button class="btn" id="rfChats">Refresh</button></div><div id="chatsBox"><div class="empty">Loading…</div></div></div></div>
     <div class="pane" data-pane="images"><div class="card"><div class="card-head"><h2>Image logs</h2><button class="btn" id="rfImages">Refresh</button></div><div id="imagesBox"><div class="empty">Loading…</div></div></div></div>
     <div class="pane" data-pane="logs"><div class="card"><div class="card-head"><h2>Account logs</h2><button class="btn" id="rfLogs">Refresh</button></div><div id="logsBox"><div class="empty">Loading…</div></div></div></div>
     <div class="pane" data-pane="kb"><div class="card"><div class="card-head"><h2>AI Knowledge Base</h2><button class="btn" id="rfKb">Refresh</button></div>
-      <div class="kb-row"><input id="kbQ" placeholder="Question (optional)"><textarea id="kbA" placeholder="Answer / fact to always remember"></textarea><button class="btn primary" id="kbAdd">Add</button></div>
+      <div class="kb-row"><input id="kbQ" placeholder="Question (optional)"><textarea id="kbA" placeholder="Answer / fact"></textarea><button class="btn primary" id="kbAdd">Add</button></div>
       <div id="kbBox" class="kb-list"><div class="empty">Loading…</div></div>
     </div></div>
     <div class="pane" data-pane="tools">
       <div class="card"><div class="card-head"><h2>Maintenance mode</h2></div><div style="padding:14px 18px"><p class="small" style="margin-bottom:10px">When enabled, chat is blocked for all users.</p><button class="btn" id="maintToggle">Toggle maintenance</button><span id="maintState" style="margin-left:12px" class="small"></span></div></div>
-      <div class="card"><div class="card-head"><h2>Broadcast</h2></div><div style="padding:14px 18px"><div class="kb-row" style="padding:0"><input id="bcMsg" placeholder="Message shown to all users"><button class="btn primary" id="bcSend">Send</button></div><p class="small" style="margin-top:8px">Current: <span id="bcCurrent">none</span></p></div></div>
+      <div class="card"><div class="card-head"><h2>Broadcast</h2></div><div style="padding:14px 18px"><div class="kb-row" style="padding:0"><input id="bcMsg" placeholder="Message shown to all users"><button class="btn primary" id="bcSend">Send</button></div></div></div>
+      <div class="card"><div class="card-head"><h2>Storage</h2></div><div style="padding:14px 18px" id="storageInfo">Checking…</div></div>
     </div>`;
+
   document.getElementById('lo').addEventListener('click',async()=>{try{await safeApi('/api/admin/logout',{method:'POST'});}catch{}render();});
+
   document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
     document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
     document.querySelectorAll('.pane').forEach(x=>x.classList.remove('active'));
     t.classList.add('active');document.querySelector(`.pane[data-pane="${t.dataset.tab}"]`)?.classList.add('active');
     if(t.dataset.tab==='users')loadUsers();
+    if(t.dataset.tab==='support')loadSupport();
     if(t.dataset.tab==='chats')loadChats();
     if(t.dataset.tab==='images')loadImages();
     if(t.dataset.tab==='logs')loadLogs();
     if(t.dataset.tab==='kb')loadKb();
     if(t.dataset.tab==='tools')loadTools();
   }));
+
   document.getElementById('rfUsers').addEventListener('click',loadUsers);
+  document.getElementById('rfSupport').addEventListener('click',loadSupport);
   document.getElementById('rfChats').addEventListener('click',loadChats);
   document.getElementById('rfImages').addEventListener('click',loadImages);
   document.getElementById('rfLogs').addEventListener('click',loadLogs);
@@ -159,6 +190,7 @@ async function renderDash(){
   document.getElementById('kbAdd').addEventListener('click',addKb);
   document.getElementById('maintToggle').addEventListener('click',toggleMaint);
   document.getElementById('bcSend').addEventListener('click',sendBc);
+
   loadStats();loadUsers();loadTools();
 }
 
@@ -171,7 +203,7 @@ async function loadStats(){
       <div class="stat"><div class="stat-n">${data.ultimate||0}</div><div class="stat-l">Ultimate</div></div>
       <div class="stat"><div class="stat-n">${data.chats||0}</div><div class="stat-l">Chats</div></div>
       <div class="stat"><div class="stat-n">${data.images||0}</div><div class="stat-l">Images</div></div>
-      <div class="stat"><div class="stat-n">${data.logs||0}</div><div class="stat-l">Events</div></div>`;
+      <div class="stat"><div class="stat-n">${data.tickets||0}</div><div class="stat-l">Open tickets</div></div>`;
   }catch{}
 }
 
@@ -179,20 +211,100 @@ async function loadUsers(){
   const box=document.getElementById('usersBox');
   try{const {data}=await safeApi('/api/admin/users');const us=data.users||[];
     if(!us.length){box.innerHTML='<div class="empty">No users yet.</div>';return;}
-    box.innerHTML=`<table><thead><tr><th>Email</th><th>Name</th><th>Tier</th><th>Joined</th><th>Change</th><th></th></tr></thead><tbody>${us.map(u=>{
-      const t=u.tier||'free';const dt=u.created_at?new Date(u.created_at*1000).toLocaleString():'—';
-      return `<tr><td class="mono">${esc(u.email)}</td><td>${esc(u.name||'—')}</td><td><span class="pill ${t}">${t}</span></td><td class="small">${dt}</td>
-        <td><select class="tier-select" data-email="${esc(u.email)}"><option value="free" ${t==='free'?'selected':''}>Free</option><option value="pro" ${t==='pro'?'selected':''}>Pro</option><option value="ultimate" ${t==='ultimate'?'selected':''}>Ultimate</option></select></td>
+    box.innerHTML=`<table><thead><tr><th>Email</th><th>Name</th><th>Tier</th><th>Used</th><th>Expires</th><th>Change</th><th></th></tr></thead><tbody>${us.map(u=>{
+      const t=u.tier||'free';
+      const used=`${u.daily_used||0}/${u.trial_used||0}`;
+      const exp=u.tier_expires?new Date(u.tier_expires*1000).toLocaleDateString():'—';
+      return `<tr><td class="mono">${esc(u.email)}</td><td>${esc(u.name||'—')}</td>
+        <td><span class="pill ${t}">${t}</span></td>
+        <td class="small">${used}</td>
+        <td class="small">${exp}</td>
+        <td><select class="tier-select" data-email="${esc(u.email)}">
+          <option value="free" ${t==='free'?'selected':''}>Free</option>
+          <option value="pro" ${t==='pro'?'selected':''}>Pro</option>
+          <option value="ultimate" ${t==='ultimate'?'selected':''}>Ultimate</option>
+        </select></td>
         <td><button class="btn danger" data-del="${esc(u.email)}">Delete</button></td></tr>`;}).join('')}</tbody></table>`;
     box.querySelectorAll('.tier-select').forEach(s=>s.addEventListener('change',async()=>{
       const email=s.dataset.email,tier=s.value;
-      try{const {data}=await safeApi('/api/admin/set-tier',{method:'POST',body:JSON.stringify({email,tier})});if(!data.ok)throw new Error(data.error||'Failed');toast(`Set ${email} → ${tier}`);loadStats();}catch(e){toast(e.message);}
+      try{const {data}=await safeApi('/api/admin/set-tier',{method:'POST',body:JSON.stringify({email,tier})});if(!data.ok)throw new Error(data.error||'Failed');toast(`Set ${email} → ${tier}`);loadUsers();loadStats();}catch(e){toast(e.message);}
     }));
     box.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',async()=>{
       if(!confirm('Delete this user?'))return;
       try{await safeApi('/api/admin/delete-user',{method:'POST',body:JSON.stringify({email:b.dataset.del})});toast('Deleted');loadUsers();loadStats();}catch(e){toast(e.message);}
     }));
   }catch{box.innerHTML='<div class="empty">Failed to load.</div>';}
+}
+
+async function loadSupport(){
+  const box=document.getElementById('supportBox');
+  try{const {data}=await safeApi('/api/admin/tickets');const ts=data.tickets||[];
+    if(!ts.length){box.innerHTML='<div class="empty">No tickets yet.</div>';return;}
+    box.innerHTML=`<table><thead><tr><th>Status</th><th>Subject</th><th>User</th><th>Updated</th><th></th></tr></thead><tbody>${ts.map(t=>`
+      <tr><td><span class="pill ${t.status}">${esc(t.status)}</span>${t.unread_admin?' <span class="pill open">NEW</span>':''}</td>
+        <td>${esc(t.subject||'(no subject)')}</td>
+        <td class="mono">${esc(t.email)}</td>
+        <td class="small">${new Date((t.updated_at||t.created_at)*1000).toLocaleString()}</td>
+        <td><button class="btn primary" data-open="${t.id}">Open</button></td></tr>`).join('')}</tbody></table>`;
+    box.querySelectorAll('[data-open]').forEach(b=>b.addEventListener('click',()=>openTicket(b.dataset.open)));
+  }catch{box.innerHTML='<div class="empty">Failed.</div>';}
+}
+
+async function openTicket(tid){
+  currentTicketId=tid;
+  const box=document.getElementById('supportBox');
+  box.innerHTML=`<div class="ticket-view"><div class="empty">Loading ticket…</div></div>`;
+  await refreshTicket();
+  if(ticketPollTimer)clearInterval(ticketPollTimer);
+  ticketPollTimer=setInterval(refreshTicket,4000);
+}
+
+async function refreshTicket(){
+  if(!currentTicketId)return;
+  const box=document.getElementById('supportBox');
+  try{const {data}=await safeApi('/api/admin/tickets/'+currentTicketId);
+    if(!data.ok)throw new Error(data.error||'Failed');
+    const t=data.ticket;
+    box.innerHTML=`<div class="ticket-view">
+      <div class="ticket-meta">
+        <span class="pill ${t.status}">${esc(t.status)}</span>
+        <span class="subject">${esc(t.subject||'(no subject)')}</span>
+        <span class="email">${esc(data.email)}</span>
+        <button class="btn" id="closeTicket">Close ticket</button>
+        <button class="btn" id="backList">Back to list</button>
+      </div>
+      <div class="thread">${t.messages.map(m=>{
+        const cls=m.from==='admin'?'admin':'user';
+        const who=m.from==='admin'?'You (Admin)':'User';
+        return `<div class="tmsg ${cls}"><div>${esc(m.text)}</div><div class="meta">${who} · ${new Date(m.ts*1000).toLocaleString()}</div></div>`;
+      }).join('')}</div>
+      <div class="reply-row">
+        <input type="text" id="adminReplyInput" placeholder="Type your reply…">
+        <button class="btn primary" id="adminReplyBtn">Send</button>
+      </div>
+    </div>`;
+    const inp=document.getElementById('adminReplyInput');
+    const btn=document.getElementById('adminReplyBtn');
+    const send=async()=>{
+      const text=inp.value.trim();if(!text)return;
+      inp.value='';btn.disabled=true;
+      try{await safeApi('/api/admin/tickets/'+currentTicketId+'/reply',{method:'POST',body:JSON.stringify({text})});
+        await refreshTicket();
+      }catch(e){toast(e.message);}
+      finally{btn.disabled=false;}
+    };
+    btn.addEventListener('click',send);
+    inp.addEventListener('keydown',e=>{if(e.key==='Enter')send();});
+    document.getElementById('closeTicket').addEventListener('click',async()=>{
+      await safeApi('/api/admin/tickets/'+currentTicketId+'/close',{method:'POST'});
+      toast('Ticket closed');loadSupport();
+      currentTicketId=null;if(ticketPollTimer){clearInterval(ticketPollTimer);ticketPollTimer=null;}
+    });
+    document.getElementById('backList').addEventListener('click',()=>{
+      currentTicketId=null;if(ticketPollTimer){clearInterval(ticketPollTimer);ticketPollTimer=null;}
+      loadSupport();
+    });
+  }catch{box.innerHTML='<div class="empty">Failed to load ticket.</div>';}
 }
 
 async function loadChats(){
@@ -219,9 +331,10 @@ async function loadLogs(){
   const box=document.getElementById('logsBox');
   try{const {data}=await safeApi('/api/admin/logs');const ls=data.logs||[];
     if(!ls.length){box.innerHTML='<div class="empty">No logs yet.</div>';return;}
-    box.innerHTML=`<table><thead><tr><th>Time</th><th>Email</th><th>Event</th><th>User Agent</th></tr></thead><tbody>${ls.map(l=>{
-      const ev=l.event||'';const cls=ev.includes('sign')?'signin':ev==='logout'?'logout':ev==='deleted'?'deleted':'';
-      return `<tr><td class="small">${new Date(l.ts*1000).toLocaleString()}</td><td class="mono">${esc(l.email)}</td><td><span class="pill ${cls}">${esc(ev)}</span></td><td class="small">${esc((l.ua||'').slice(0,60))}</td></tr>`;}).join('')}</tbody></table>`;
+    box.innerHTML=`<table><thead><tr><th>Time</th><th>Email</th><th>Event</th><th>User Agent</th></tr></thead><tbody>${ls.map(l=>`<tr>
+      <td class="small">${new Date(l.ts*1000).toLocaleString()}</td>
+      <td class="mono">${esc(l.email)}</td><td>${esc(l.event||'')}</td>
+      <td class="small">${esc((l.ua||'').slice(0,60))}</td></tr>`).join('')}</tbody></table>`;
   }catch{box.innerHTML='<div class="empty">Failed.</div>';}
 }
 
@@ -237,8 +350,10 @@ async function addKb(){
   const q=document.getElementById('kbQ').value.trim();
   const a=document.getElementById('kbA').value.trim();
   if(!a){toast('Answer required');return;}
-  try{const {data}=await safeApi('/api/admin/kb',{method:'POST',body:JSON.stringify({q,a})});if(!data.ok)throw new Error(data.error||'Failed');
-    document.getElementById('kbQ').value='';document.getElementById('kbA').value='';toast('Added');loadKb();
+  try{const {data}=await safeApi('/api/admin/kb',{method:'POST',body:JSON.stringify({q,a})});
+    if(!data.ok)throw new Error(data.error||'Failed');
+    document.getElementById('kbQ').value='';document.getElementById('kbA').value='';
+    toast('Added');loadKb();
   }catch(e){toast(e.message);}
 }
 
@@ -246,8 +361,9 @@ async function loadTools(){
   try{const r=await fetch('/api/health');const d=await r.json();
     document.getElementById('maintState').textContent=d.maintenance?'ON':'OFF';
     document.getElementById('maintBanner').innerHTML=d.maintenance?'<div class="maintenance-banner">⚠️ Maintenance mode is ON — chat is blocked.</div>':'';
-    const b=await fetch('/api/admin/broadcast');const bd=await b.json();
-    document.getElementById('bcCurrent').textContent=bd.message||'none';
+    document.getElementById('storageInfo').innerHTML=d.kv
+      ? '✅ <b>Upstash Redis</b> connected — plans and data persist across cold starts.'
+      : '⚠️ <strong>In-memory only</strong> — plans and data reset on server restart. Add <code>UPSTASH_REDIS_REST_URL</code> and <code>UPSTASH_REDIS_REST_TOKEN</code> in Vercel to enable persistence.';
   }catch{}
 }
 async function toggleMaint(){
@@ -258,7 +374,7 @@ async function toggleMaint(){
 }
 async function sendBc(){
   const m=document.getElementById('bcMsg').value.trim();if(!m)return;
-  try{await safeApi('/api/admin/broadcast',{method:'POST',body:JSON.stringify({message:m})});document.getElementById('bcMsg').value='';toast('Broadcast sent');loadTools();}catch(e){toast(e.message);}
+  try{await safeApi('/api/admin/broadcast',{method:'POST',body:JSON.stringify({message:m})});document.getElementById('bcMsg').value='';toast('Broadcast sent');}catch(e){toast(e.message);}
 }
 
 render();
