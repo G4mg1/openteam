@@ -9,8 +9,7 @@
 <script>
 (function(){
   function hide(i){if(!i||i.tagName!=='IMG')return;i.style.display='none';i.setAttribute('data-broken','1');
-    const p=i.parentElement;
-    if(p&&p.classList.contains('ai-avatar')&&!p.querySelector('.avatar-fallback')){const f=document.createElement('span');f.className='avatar-fallback';f.textContent='M';p.appendChild(f);}}
+    const p=i.parentElement;if(p&&p.classList.contains('ai-avatar')&&!p.querySelector('.avatar-fallback')){const f=document.createElement('span');f.className='avatar-fallback';f.textContent='M';p.appendChild(f);}}
   document.addEventListener('error',e=>{if(e.target?.tagName==='IMG')hide(e.target);},true);
   document.addEventListener('DOMContentLoaded',()=>{document.querySelectorAll('img').forEach(i=>{if(i.complete&&i.naturalWidth===0&&i.src)hide(i);});});
 })();
@@ -22,7 +21,6 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
-<style>#loadingScreen.force-hidden{opacity:0!important;visibility:hidden!important;pointer-events:none!important;display:none!important}.avatar-fallback{display:inline-flex;align-items:center;justify-content:center;width:100%;height:100%;font-weight:800;font-size:12px}</style>
 </head>
 <body>
 
@@ -82,14 +80,14 @@
         </div>
       </div>
       <div class="topbar-actions">
-        <div class="admin-pill" id="adminPill" style="display:none;"><i class="ri-shield-star-line"></i> ADMIN</div>
+        <button class="icon-only-btn" id="stopBtn" title="Stop" style="display:none;color:#dc2626;"><i class="ri-stop-circle-line"></i></button>
       </div>
     </header>
 
     <div class="chat" id="chat">
       <div class="message ai">
         <div class="avatar ai-avatar"><img src="/logo.png" alt=""></div>
-        <div class="bubble-wrap"><div class="bubble">Hi, I'm Mirox — built by the OpenSurr team. Ask anything, attach files, use web search, or start a voice call.</div></div>
+        <div class="bubble-wrap"><div class="bubble">Hi, I'm Mirox — built by the OpenSurr team. Ask anything, attach images or files, use web search, or start a voice call.</div></div>
       </div>
     </div>
 
@@ -104,7 +102,7 @@
     </div>
 
     <form class="composer" id="composerForm" onsubmit="return false;">
-      <button type="button" class="icon-btn" id="attachBtn" title="Attach files"><i class="ri-attachment-2"></i></button>
+      <button type="button" class="icon-btn" id="attachBtn" title="Attach images or files"><i class="ri-attachment-2"></i></button>
       <input type="file" id="fileInput" multiple hidden>
       <button type="button" class="icon-btn" id="searchToggleBtn" title="Web search"><i class="ri-global-line"></i></button>
       <button type="button" class="icon-btn" id="micBtn" title="Voice"><i class="ri-mic-line"></i></button>
@@ -132,7 +130,6 @@
       <button class="rail-btn" id="backgroundModeBtn"><span class="rail-icon"><i class="ri-image-2-line"></i></span><span class="rail-label">BG</span></button>
       <button class="rail-btn" id="plansModeBtn"><span class="rail-icon"><i class="ri-vip-crown-2-line"></i></span><span class="rail-label">Plans</span></button>
       <button class="rail-btn" id="supportModeBtn"><span class="rail-icon"><i class="ri-customer-service-2-line"></i></span><span class="rail-label">Help</span></button>
-      <a class="rail-btn" href="/admin/console" target="_blank"><span class="rail-icon"><i class="ri-shield-star-line"></i></span><span class="rail-label">Admin</span></a>
     </div>
   </aside>
 
@@ -212,18 +209,7 @@
   </div>
 
   <div class="settings-pane" data-pane="chat">
-    <div class="settings-section"><h4><i class="ri-temperature-line"></i> Response creativity</h4>
-      <input type="range" id="tempInput" min="0" max="10" step="1" value="7">
-      <p class="field-hint">Temperature: <span id="tempLabel">0.7</span></p>
-    </div>
-    <div class="settings-section"><h4><i class="ri-text-wrap"></i> Response length</h4>
-      <div class="option-row" id="lengthOptions">
-        <button class="option-btn" data-length="short">Short</button>
-        <button class="option-btn active" data-length="medium">Medium</button>
-        <button class="option-btn" data-length="long">Long</button>
-      </div>
-    </div>
-    <div class="settings-section"><h4><i class="ri-language"></i> Language</h4>
+    <div class="settings-section"><h4><i class="ri-language"></i> Voice language</h4>
       <select id="langSelect">
         <option value="en-US">English</option><option value="es-ES">Spanish</option>
         <option value="fr-FR">French</option><option value="de-DE">German</option>
@@ -232,10 +218,7 @@
         <option value="zh-CN">Chinese</option><option value="ja-JP">Japanese</option>
       </select>
     </div>
-    <div class="settings-section"><h4><i class="ri-scroll-to-bottom-line"></i> Auto-scroll</h4>
-      <div class="option-row"><button class="option-btn active" id="toggleScroll" data-toggle="autoscroll">Auto-scroll: ON</button></div>
-    </div>
-    <div class="settings-section"><h4><i class="ri-code-s-slash-line"></i> Code highlighting</h4>
+    <div class="settings-section"><h4><i class="ri-code-s-slash-line"></i> Code rendering</h4>
       <div class="option-row">
         <button class="option-btn active" id="toggleHighlight" data-toggle="highlightOn">Syntax highlight: ON</button>
         <button class="option-btn" id="toggleLineNumbers" data-toggle="lineNumbers">Line numbers: OFF</button>
@@ -249,8 +232,7 @@
       <button class="save-btn" id="requestMicBtn"><i class="ri-mic-line"></i> Grant mic access</button>
     </div>
     <div class="settings-section"><h4><i class="ri-volume-up-line"></i> Voice output</h4>
-      <label class="field-label">Voice</label>
-      <select id="voiceSelect"></select>
+      <label class="field-label">Voice</label><select id="voiceSelect"></select>
       <label class="field-label">Speed: <span id="voiceRateLabel">1.0×</span></label>
       <input type="range" id="voiceRateInput" min="0.5" max="2" step="0.1" value="1">
       <button class="save-btn" id="testVoiceBtn"><i class="ri-play-line"></i> Test voice</button>
@@ -276,13 +258,33 @@
 <div class="modal-overlay" id="supportModal"><div class="modal wide">
   <button class="modal-close" data-close="supportModal"><i class="ri-close-line"></i></button>
   <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt=""><h2>Contact Support</h2></div>
-  <p class="modal-sub">A support agent will reply in 15 to 30 minutes.</p>
-  <label class="field-label">Subject</label>
-  <input type="text" id="reportSubject" placeholder="Short summary (optional)">
-  <label class="field-label">Message</label>
-  <textarea id="reportMessage" class="image-prompt" rows="5" placeholder="Explain what happened..."></textarea>
-  <button class="save-btn full" id="submitReportBtn"><i class="ri-send-plane-fill"></i> Send to support</button>
-  <p class="field-hint" id="reportStatus"></p>
+  <p class="modal-sub">A real person will reply in 15–30 minutes. Chat live below.</p>
+
+  <div id="newTicketForm">
+    <label class="field-label">Category</label>
+    <select id="reportCategory">
+      <option value="general">General question</option>
+      <option value="bug">Bug report</option>
+      <option value="billing">Billing</option>
+      <option value="feature">Feature request</option>
+    </select>
+    <label class="field-label">Subject</label>
+    <input type="text" id="reportSubject" placeholder="Short summary (optional)">
+    <label class="field-label">Message</label>
+    <textarea id="reportMessage" class="image-prompt" rows="4" placeholder="Explain what happened..."></textarea>
+    <button class="save-btn full" id="submitReportBtn"><i class="ri-send-plane-fill"></i> Start chat</button>
+    <p class="field-hint" id="reportStatus"></p>
+  </div>
+
+  <div id="ticketChat" style="display:none;">
+    <div class="support-thread" id="supportThread"></div>
+    <div class="support-reply-row">
+      <input type="text" id="supportReplyInput" placeholder="Type your reply…">
+      <button class="save-btn" id="supportReplyBtn"><i class="ri-send-plane-fill"></i></button>
+    </div>
+    <button class="save-btn outline" id="supportBackBtn" style="margin-top:12px;"><i class="ri-arrow-left-line"></i> Back to tickets</button>
+  </div>
+
   <div class="support-mine" id="supportMine"></div>
 </div></div>
 
@@ -320,7 +322,7 @@
 
 <div class="modal-overlay" id="imageModal"><div class="modal wide">
   <button class="modal-close" data-close="imageModal"><i class="ri-close-line"></i></button>
-  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt=""><h2>Image Studio</h2></div>
+  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt=""><h2>Image Studio <span style="font-size:11px;font-weight:700;color:var(--accent);margin-left:6px;">DALL·E 3</span></h2></div>
   <textarea id="imagePromptInput" class="image-prompt" placeholder="A fox curled up in fresh snow..." rows="3"></textarea>
   <button class="generate-btn" id="generateImageBtn"><i class="ri-magic-line"></i> Generate</button>
   <p class="field-hint" id="imageStudioStatus"></p>
