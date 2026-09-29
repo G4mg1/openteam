@@ -33,12 +33,13 @@ killLoader();setTimeout(killLoader,400);setTimeout(killLoader,1500);
 function escapeHtml(s){const d=document.createElement("div");d.textContent=s==null?"":String(s);return d.innerHTML;}
 const getDefaultModel=()=>(__config?.models||[]).find(m=>m.default)?.id||"mirox-luna-1.2";
 function uid(){return "c_"+Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);}
-function fmtSize(bytes){if(!bytes)return"";if(bytes<1024)return bytes+" B";if(bytes<1024*1024)return (bytes/1024).toFixed(1)+" KB";return (bytes/1024/1024).toFixed(1)+" MB";}
+function fmtSize(b){if(!b)return"";if(b<1024)return b+" B";if(b<1024*1024)return (b/1024).toFixed(1)+" KB";return (b/1024/1024).toFixed(1)+" MB";}
 
 function openModal(id){const el=document.getElementById(id);if(el)el.classList.add("open");}
 function closeModal(id){const el=document.getElementById(id);if(el)el.classList.remove("open");}
 function openSidebar(){$("#sidebar")?.classList.add("open");$("#sidebarScrim")?.classList.add("open");}
 function closeSidebar(){$("#sidebar")?.classList.remove("open");$("#sidebarScrim")?.classList.remove("open");}
+function showLightbox(src){const lb=$("#lightbox");if(!lb)return;lb.querySelector("img").src=src;lb.classList.add("open");}
 
 let userSettings={temperature:0.7,length:"medium",language:"en",autoscroll:true,soundOn:true,notifOn:true,voiceRate:1,voiceName:""};
 function loadUserSettings(){try{const s=JSON.parse(localStorage.getItem(USER_SETTINGS_KEY)||"{}");userSettings={...userSettings,...s};}catch{}}
@@ -50,7 +51,8 @@ document.addEventListener("click",function(e){
   const closer=closest("[data-close]");if(closer){closeModal(closer.dataset.close);return;}
   if(t.classList.contains("modal-overlay")){t.classList.remove("open");return;}
   if(t.classList.contains("lightbox")){t.classList.remove("open");return;}
-  if(closest(".chat-file-img")){const src=closest(".chat-file-img").dataset.src;if(src){let lb=$("#lightbox");if(!lb){lb=document.createElement("div");lb.id="lightbox";lb.className="lightbox";lb.innerHTML='<img alt="">';document.body.appendChild(lb);}lb.querySelector("img").src=src;lb.classList.add("open");}return;}
+  if(closest(".chat-file-img")){showLightbox(closest(".chat-file-img").src);return;}
+  if(closest(".gallery-card img")){showLightbox(closest(".gallery-card img").src);return;}
   if(closest("#hamburgerBtn")){openSidebar();return;}
   if(closest("#sidebarCloseBtn")){closeSidebar();return;}
   if(t.id==="sidebarScrim"){closeSidebar();return;}
@@ -124,26 +126,27 @@ document.addEventListener("change",function(e){
 function handleFiles(files){
   if(!files?.length)return;
   const newFiles=[];
-  let done=0;const total=files.length;
-  Array.from(files).forEach((f,idx)=>{
+  const fileArr=Array.from(files);
+  let done=0;
+  fileArr.forEach((f,idx)=>{
     const isImg=(f.type||"").startsWith("image/")||/\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(f.name);
     if(isImg){
-      if(f.size>6*1024*1024){done++;if(done===total)finish();return;}
+      if(f.size>6*1024*1024){done++;if(done===fileArr.length)finish();return;}
       const r=new FileReader();
       r.onload=()=>{
         newFiles.push({name:f.name,size:f.size,type:"image",content:"[Image] "+f.name,dataUrl:String(r.result),order:idx});
-        done++;if(done===total)finish();
+        done++;if(done===fileArr.length)finish();
       };
-      r.onerror=()=>{done++;if(done===total)finish();};
+      r.onerror=()=>{done++;if(done===fileArr.length)finish();};
       r.readAsDataURL(f);
     }else{
-      if(f.size>2*1024*1024){done++;if(done===total)finish();return;}
+      if(f.size>2*1024*1024){done++;if(done===fileArr.length)finish();return;}
       const r=new FileReader();
       r.onload=()=>{
         newFiles.push({name:f.name,size:f.size,type:"text",content:String(r.result).slice(0,50000),order:idx});
-        done++;if(done===total)finish();
+        done++;if(done===fileArr.length)finish();
       };
-      r.onerror=()=>{done++;if(done===total)finish();};
+      r.onerror=()=>{done++;if(done===fileArr.length)finish();};
       r.readAsText(f);
     }
   });
@@ -153,16 +156,18 @@ function handleFiles(files){
     updatePreview();
   }
 }
+
 function updatePreview(){
   const p=$("#attachmentPreview"),list=$("#attachmentList");
   if(!p||!list)return;
-  if(pendingFiles.length){
-    p.style.display="flex";
-    list.innerHTML=pendingFiles.map((f,i)=>{
-      if(f.type==="image")return `<span class="att-chip"><img src="${f.dataUrl}" alt=""><span>${escapeHtml(f.name)}</span></span>`;
-      return `<span class="att-chip"><i class="ri-file-text-line"></i><span>${escapeHtml(f.name)}</span></span>`;
-    }).join("");
-  }else p.style.display="none";
+  if(!pendingFiles.length){p.style.display="none";list.innerHTML="";return;}
+  p.style.display="flex";
+  list.innerHTML=pendingFiles.map(f=>{
+    if(f.type==="image"&&f.dataUrl){
+      return `<span class="att-chip"><img src="${f.dataUrl}" alt=""><span>${escapeHtml(f.name)}</span><span class="size">${fmtSize(f.size)}</span></span>`;
+    }
+    return `<span class="att-chip"><i class="ri-file-text-line"></i><span>${escapeHtml(f.name)}</span><span class="size">${fmtSize(f.size)}</span></span>`;
+  }).join("");
 }
 
 /* ---------- SEND ---------- */
@@ -240,8 +245,7 @@ async function sendMessage(userText){
 function addUserMessage(text,files){
   const chat=$("#chat");if(!chat)return null;
   const m=document.createElement("div");m.className="message user";
-  const avatarHtml=`<div class="avatar"><i class="ri-user-3-line"></i></div>`;
-  m.innerHTML=`${avatarHtml}<div class="bubble-wrap"><div class="bubble has-files"></div></div>`;
+  m.innerHTML=`<div class="avatar"><i class="ri-user-3-line"></i></div><div class="bubble-wrap"><div class="bubble has-files"></div></div>`;
   const bubble=m.querySelector(".bubble");
   if(text){const p=document.createElement("div");p.textContent=text;bubble.appendChild(p);}
   if(files&&files.length){
@@ -249,7 +253,7 @@ function addUserMessage(text,files){
     files.forEach(f=>{
       if(f.type==="image"&&f.dataUrl){
         const img=document.createElement("img");
-        img.className="chat-file-img";img.src=f.dataUrl;img.alt=f.name;img.dataset.src=f.dataUrl;
+        img.className="chat-file-img";img.src=f.dataUrl;img.alt=f.name;img.loading="lazy";
         wrap.appendChild(img);
       }else{
         const chip=document.createElement("div");chip.className="chat-file-chip";
@@ -263,8 +267,7 @@ function addUserMessage(text,files){
   return {message:m,bubble};
 }
 
-function addMessage(text,sender,files){
-  if(sender==="user"&&files)return addUserMessage(text,files);
+function addMessage(text,sender){
   const chat=$("#chat");if(!chat)return null;
   const m=document.createElement("div");m.className=`message ${sender}`;
   const avatarHtml=sender==="ai"?`<div class="avatar ai-avatar"><img src="/logo.png" alt=""></div>`:`<div class="avatar"><i class="ri-user-3-line"></i></div>`;
@@ -272,22 +275,6 @@ function addMessage(text,sender,files){
   const bubble=m.querySelector(".bubble");bubble.textContent=text||"";
   chat.appendChild(m);chat.scrollTop=chat.scrollHeight;
   return {message:m,bubble};
-}
-
-function renderFilesInBubble(bubble,files){
-  if(!files||!files.length)return;
-  const wrap=document.createElement("div");wrap.className="chat-files";
-  files.forEach(f=>{
-    if(f.type==="image"&&f.dataUrl){
-      const img=document.createElement("img");img.className="chat-file-img";img.src=f.dataUrl;img.alt=f.name;img.dataset.src=f.dataUrl;
-      wrap.appendChild(img);
-    }else{
-      const chip=document.createElement("div");chip.className="chat-file-chip";
-      chip.innerHTML=`<i class="ri-file-text-line"></i><span>${escapeHtml(f.name)}</span><span class="size">${fmtSize(f.size)}</span>`;
-      wrap.appendChild(chip);
-    }
-  });
-  bubble.appendChild(wrap);
 }
 
 function addThinking(){
@@ -554,13 +541,21 @@ function populateBackgroundUI(){
 /* ---------- IMAGE STUDIO ---------- */
 async function genImage(){
   const prompt=$("#imagePromptInput")?.value.trim();if(!prompt)return;
-  const btn=$("#generateImageBtn"),status=$("#imageStudioStatus");
-  if(btn)btn.disabled=true;if(status)status.textContent="Generating…";
-  const card=document.createElement("div");card.className="gallery-card";card.innerHTML=`<div class="gallery-skeleton"></div>`;
-  $("#imageGallery")?.prepend(card);
+  const btn=$("#generateImageBtn"),status=$("#imageStudioStatus"),gallery=$("#imageGallery");
+  if(btn)btn.disabled=true;
+  if(status)status.textContent="Generating… this can take 10–30 seconds.";
+  const card=document.createElement("div");card.className="gallery-card";
+  card.innerHTML=`<div class="gallery-skeleton">Generating…</div>`;
+  gallery?.prepend(card);
   const d=await authJson("/api/image/generate",{method:"POST",body:JSON.stringify({prompt})},null);
-  if(d&&d.ok){card.innerHTML=`<img src="${d.image}" alt="">`;if(status)status.textContent="";}
-  else{const msg=(d&&d.error)||"Failed";card.innerHTML=`<div class="gallery-error"><i class="ri-error-warning-line"></i><span>${escapeHtml(msg)}</span></div>`;if(status)status.textContent=msg;}
+  if(d&&d.ok&&d.image){
+    card.innerHTML=`<img src="${d.image}" alt="${escapeHtml(prompt)}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=gallery-error><i class=ri-error-warning-line></i><span>Image failed to load</span></div>'">`;
+    if(status)status.textContent="";
+  }else{
+    const msg=(d&&d.error)||"Image generation failed. Check that your HuggingFace token has inference permissions.";
+    card.innerHTML=`<div class="gallery-error"><i class="ri-error-warning-line"></i><span>${escapeHtml(msg)}</span></div>`;
+    if(status)status.textContent=msg;
+  }
   if(btn)btn.disabled=false;
 }
 
