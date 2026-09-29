@@ -9,31 +9,22 @@ const LS_KEY="miroxai_conversations_v1",TOKEN_KEY="mirox_token",USER_SETTINGS_KE
 async function readJson(r, fallback=null){
   if(!r) return fallback;
   const ct=(r.headers.get("content-type")||"").toLowerCase();
-  if(!ct.includes("application/json")){
-    try{ await r.text(); }catch{}
-    return fallback;
-  }
-  try{ return await r.json(); }
-  catch{ return fallback; }
+  if(!ct.includes("application/json")){ try{ await r.text(); }catch{} return fallback; }
+  try{ return await r.json(); } catch{ return fallback; }
 }
 async function safeFetch(url, opts={}){
   try{
     const r=await fetch(url,opts);
     const data=await readJson(r,null);
     return { ok:r.ok, status:r.status, data };
-  }catch{
-    return { ok:false, status:0, data:null };
-  }
+  }catch{ return { ok:false, status:0, data:null }; }
 }
 
 function getToken(){try{return localStorage.getItem(TOKEN_KEY)||"";}catch{return"";}}
 function setToken(t){try{t?localStorage.setItem(TOKEN_KEY,t):localStorage.removeItem(TOKEN_KEY);}catch{}}
 function authFetch(u,o={}){const h={"Content-Type":"application/json",...(o.headers||{})};const t=getToken();if(t)h.Authorization="Bearer "+t;return fetch(u,{...o,headers:h,credentials:"same-origin",cache:"no-store"});}
 async function authJson(u,o={},fallback=null){
-  try{
-    const r=await authFetch(u,o);
-    return await readJson(r,fallback);
-  }catch{ return fallback; }
+  try{ const r=await authFetch(u,o); return await readJson(r,fallback); }catch{ return fallback; }
 }
 
 function killLoader(){const l=document.getElementById("loadingScreen");if(l){l.classList.add("hidden","force-hidden");l.style.display="none";}}
@@ -42,6 +33,7 @@ killLoader();setTimeout(killLoader,400);setTimeout(killLoader,1500);
 function escapeHtml(s){const d=document.createElement("div");d.textContent=s==null?"":String(s);return d.innerHTML;}
 const getDefaultModel=()=>(__config?.models||[]).find(m=>m.default)?.id||"mirox-luna-1.2";
 function uid(){return "c_"+Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);}
+function fmtSize(bytes){if(!bytes)return"";if(bytes<1024)return bytes+" B";if(bytes<1024*1024)return (bytes/1024).toFixed(1)+" KB";return (bytes/1024/1024).toFixed(1)+" MB";}
 
 function openModal(id){const el=document.getElementById(id);if(el)el.classList.add("open");}
 function closeModal(id){const el=document.getElementById(id);if(el)el.classList.remove("open");}
@@ -52,10 +44,13 @@ let userSettings={temperature:0.7,length:"medium",language:"en",autoscroll:true,
 function loadUserSettings(){try{const s=JSON.parse(localStorage.getItem(USER_SETTINGS_KEY)||"{}");userSettings={...userSettings,...s};}catch{}}
 function saveUserSettings(){try{localStorage.setItem(USER_SETTINGS_KEY,JSON.stringify(userSettings));}catch{}if(__user){authJson("/api/settings/user",{method:"POST",body:JSON.stringify({settings:userSettings})}).catch(()=>{});}}
 
+/* ---------- GLOBAL CLICK ---------- */
 document.addEventListener("click",function(e){
   const t=e.target,closest=s=>t.closest(s);
   const closer=closest("[data-close]");if(closer){closeModal(closer.dataset.close);return;}
   if(t.classList.contains("modal-overlay")){t.classList.remove("open");return;}
+  if(t.classList.contains("lightbox")){t.classList.remove("open");return;}
+  if(closest(".chat-file-img")){const src=closest(".chat-file-img").dataset.src;if(src){let lb=$("#lightbox");if(!lb){lb=document.createElement("div");lb.id="lightbox";lb.className="lightbox";lb.innerHTML='<img alt="">';document.body.appendChild(lb);}lb.querySelector("img").src=src;lb.classList.add("open");}return;}
   if(closest("#hamburgerBtn")){openSidebar();return;}
   if(closest("#sidebarCloseBtn")){closeSidebar();return;}
   if(t.id==="sidebarScrim"){closeSidebar();return;}
@@ -86,7 +81,7 @@ document.addEventListener("click",function(e){
   if(tg){const k=tg.dataset.toggle;userSettings[k]=!userSettings[k];tg.textContent=tg.textContent.replace(/ON|OFF/,userSettings[k]?"ON":"OFF");tg.classList.toggle("active",userSettings[k]);saveUserSettings();return;}
   if(closest("#railToggleBtn")){document.body.classList.toggle("rail-collapsed");try{localStorage.setItem("miroxai_rail_collapsed",document.body.classList.contains("rail-collapsed")?"1":"0");}catch{}updateRailToggleIcon();return;}
   if(closest("#attachBtn")){$("#fileInput")?.click();return;}
-  if(closest("#removeAttachmentBtn")){pendingFiles=[];const p=$("#attachmentPreview");if(p)p.style.display="none";return;}
+  if(closest("#removeAttachmentBtn")){pendingFiles=[];updatePreview();return;}
   if(closest("#searchToggleBtn")){$("#searchToggleBtn").classList.toggle("active");return;}
   if(closest("#micBtn")){startMic();return;}
   if(closest("#editTitleBtn")){const cur=$("#chatTitle")?.textContent||"";const nxt=prompt("Rename this chat",cur);if(nxt===null)return;const tr=nxt.trim();if(!tr)return;if($("#chatTitle"))$("#chatTitle").textContent=tr;const c=currentConvo();if(c){c.title=tr;saveChatsToLS();renderHistory();}return;}
@@ -106,7 +101,7 @@ document.addEventListener("click",function(e){
 });
 
 document.addEventListener("keydown",function(e){
-  if(e.key==="Escape"){document.querySelectorAll(".modal-overlay.open").forEach(o=>o.classList.remove("open"));$("#modelPickerMenu")?.classList.remove("open");return;}
+  if(e.key==="Escape"){document.querySelectorAll(".modal-overlay.open").forEach(o=>o.classList.remove("open"));$("#modelPickerMenu")?.classList.remove("open");$("#lightbox")?.classList.remove("open");return;}
   if(e.key==="Enter"&&e.target?.id==="messageInput"&&!e.shiftKey){e.preventDefault();handleSend();}
 });
 document.addEventListener("submit",function(e){e.preventDefault();if(e.target?.id==="composerForm")handleSend();if(e.target?.id==="simpleLoginForm")doLogin();},true);
@@ -125,25 +120,52 @@ document.addEventListener("change",function(e){
   if(e.target?.id==="voiceSelect"){userSettings.voiceName=e.target.value;saveUserSettings();}
 });
 
+/* ---------- FILE HANDLING ---------- */
 function handleFiles(files){
   if(!files?.length)return;
-  pendingFiles=[];
-  let loaded=0;const total=files.length;
-  Array.from(files).forEach(f=>{
-    if(f.size>2*1024*1024){loaded++;if(loaded===total)updatePreview();return;}
-    if(f.type.startsWith("image/")){pendingFiles.push({name:f.name,content:"[Image: "+f.name+"]",type:"image"});loaded++;if(loaded===total)updatePreview();return;}
-    const r=new FileReader();
-    r.onload=()=>{pendingFiles.push({name:f.name,content:String(r.result).slice(0,50000)});loaded++;if(loaded===total)updatePreview();};
-    r.onerror=()=>{loaded++;if(loaded===total)updatePreview();};
-    r.readAsText(f);
+  const newFiles=[];
+  let done=0;const total=files.length;
+  Array.from(files).forEach((f,idx)=>{
+    const isImg=(f.type||"").startsWith("image/")||/\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(f.name);
+    if(isImg){
+      if(f.size>6*1024*1024){done++;if(done===total)finish();return;}
+      const r=new FileReader();
+      r.onload=()=>{
+        newFiles.push({name:f.name,size:f.size,type:"image",content:"[Image] "+f.name,dataUrl:String(r.result),order:idx});
+        done++;if(done===total)finish();
+      };
+      r.onerror=()=>{done++;if(done===total)finish();};
+      r.readAsDataURL(f);
+    }else{
+      if(f.size>2*1024*1024){done++;if(done===total)finish();return;}
+      const r=new FileReader();
+      r.onload=()=>{
+        newFiles.push({name:f.name,size:f.size,type:"text",content:String(r.result).slice(0,50000),order:idx});
+        done++;if(done===total)finish();
+      };
+      r.onerror=()=>{done++;if(done===total)finish();};
+      r.readAsText(f);
+    }
   });
+  function finish(){
+    newFiles.sort((a,b)=>(a.order||0)-(b.order||0));
+    pendingFiles=pendingFiles.concat(newFiles);
+    updatePreview();
+  }
 }
 function updatePreview(){
-  const p=$("#attachmentPreview");
-  if(pendingFiles.length){p.style.display="flex";$("#attachmentList").textContent=pendingFiles.map(f=>f.name).join(", ");}
-  else p.style.display="none";
+  const p=$("#attachmentPreview"),list=$("#attachmentList");
+  if(!p||!list)return;
+  if(pendingFiles.length){
+    p.style.display="flex";
+    list.innerHTML=pendingFiles.map((f,i)=>{
+      if(f.type==="image")return `<span class="att-chip"><img src="${f.dataUrl}" alt=""><span>${escapeHtml(f.name)}</span></span>`;
+      return `<span class="att-chip"><i class="ri-file-text-line"></i><span>${escapeHtml(f.name)}</span></span>`;
+    }).join("");
+  }else p.style.display="none";
 }
 
+/* ---------- SEND ---------- */
 function handleSend(){
   if(isReplying)return;
   const inp=$("#messageInput");if(!inp)return;
@@ -165,17 +187,18 @@ async function sendMessage(userText){
   }else{convo={id:"guest",title:(userText||"New chat").slice(0,48),messages:[],updatedAt:Date.now()};}
   const filesForSend=pendingFiles.slice();
   pendingFiles=[];updatePreview();
-  convo.messages.push({role:"user",text:userText});
+  convo.messages.push({role:"user",text:userText,files:filesForSend.map(f=>({name:f.name,type:f.type,size:f.size,dataUrl:f.dataUrl}))});
   convo.updatedAt=Date.now();
   if(__user)saveChatsToLS();
-  addMessage(userText||"[attached files]","user");
+  addUserMessage(userText,filesForSend);
   const bubble=addThinking();
   isReplying=true;
   const sb=$("#sendBtn");if(sb)sb.disabled=true;
   const useSearch=$("#searchToggleBtn")?.classList.contains("active");
   try{
     const history=convo.messages.slice(0,-1).map(m=>({role:m.role==="ai"?"assistant":"user",content:m.text||m.content}));
-    const r=await authFetch("/api/chat/stream",{method:"POST",body:JSON.stringify({message:userText,history,model:__model||getDefaultModel(),web_search:!!useSearch,files:filesForSend})});
+    const sendFiles=filesForSend.map(f=>({name:f.name,type:f.type,content:f.content||""}));
+    const r=await authFetch("/api/chat/stream",{method:"POST",body:JSON.stringify({message:userText,history,model:__model||getDefaultModel(),web_search:!!useSearch,files:sendFiles})});
     const ct=(r.headers.get("content-type")||"").toLowerCase();
     if(!r.ok||!ct.includes("text/event-stream")||!r.body){
       let m="Request failed";
@@ -213,7 +236,35 @@ async function sendMessage(userText){
   finally{isReplying=false;if(sb)sb.disabled=!($("#messageInput")?.value.trim());}
 }
 
-function addMessage(text,sender){
+/* ---------- MESSAGES ---------- */
+function addUserMessage(text,files){
+  const chat=$("#chat");if(!chat)return null;
+  const m=document.createElement("div");m.className="message user";
+  const avatarHtml=`<div class="avatar"><i class="ri-user-3-line"></i></div>`;
+  m.innerHTML=`${avatarHtml}<div class="bubble-wrap"><div class="bubble has-files"></div></div>`;
+  const bubble=m.querySelector(".bubble");
+  if(text){const p=document.createElement("div");p.textContent=text;bubble.appendChild(p);}
+  if(files&&files.length){
+    const wrap=document.createElement("div");wrap.className="chat-files";
+    files.forEach(f=>{
+      if(f.type==="image"&&f.dataUrl){
+        const img=document.createElement("img");
+        img.className="chat-file-img";img.src=f.dataUrl;img.alt=f.name;img.dataset.src=f.dataUrl;
+        wrap.appendChild(img);
+      }else{
+        const chip=document.createElement("div");chip.className="chat-file-chip";
+        chip.innerHTML=`<i class="ri-file-text-line"></i><span>${escapeHtml(f.name)}</span><span class="size">${fmtSize(f.size)}</span>`;
+        wrap.appendChild(chip);
+      }
+    });
+    bubble.appendChild(wrap);
+  }
+  chat.appendChild(m);chat.scrollTop=chat.scrollHeight;
+  return {message:m,bubble};
+}
+
+function addMessage(text,sender,files){
+  if(sender==="user"&&files)return addUserMessage(text,files);
   const chat=$("#chat");if(!chat)return null;
   const m=document.createElement("div");m.className=`message ${sender}`;
   const avatarHtml=sender==="ai"?`<div class="avatar ai-avatar"><img src="/logo.png" alt=""></div>`:`<div class="avatar"><i class="ri-user-3-line"></i></div>`;
@@ -222,6 +273,23 @@ function addMessage(text,sender){
   chat.appendChild(m);chat.scrollTop=chat.scrollHeight;
   return {message:m,bubble};
 }
+
+function renderFilesInBubble(bubble,files){
+  if(!files||!files.length)return;
+  const wrap=document.createElement("div");wrap.className="chat-files";
+  files.forEach(f=>{
+    if(f.type==="image"&&f.dataUrl){
+      const img=document.createElement("img");img.className="chat-file-img";img.src=f.dataUrl;img.alt=f.name;img.dataset.src=f.dataUrl;
+      wrap.appendChild(img);
+    }else{
+      const chip=document.createElement("div");chip.className="chat-file-chip";
+      chip.innerHTML=`<i class="ri-file-text-line"></i><span>${escapeHtml(f.name)}</span><span class="size">${fmtSize(f.size)}</span>`;
+      wrap.appendChild(chip);
+    }
+  });
+  bubble.appendChild(wrap);
+}
+
 function addThinking(){
   const chat=$("#chat");if(!chat)return null;
   const m=document.createElement("div");m.className="message ai";
@@ -230,6 +298,7 @@ function addThinking(){
   return m.querySelector(".bubble");
 }
 
+/* ---------- CHATS ---------- */
 function loadChatsFromLS(){if(!__user){__conversations=[];return;}try{__conversations=JSON.parse(localStorage.getItem(LS_KEY))||[];}catch{__conversations=[];}}
 function saveChatsToLS(){if(!__user)return;try{localStorage.setItem(LS_KEY,JSON.stringify(__conversations.slice(0,100)));}catch{}}
 function currentConvo(){return __conversations.find(c=>c.id===currentConversationId)||null;}
@@ -252,7 +321,10 @@ function openConversationLS(id){
   const t=$("#chatTitle");if(t)t.textContent=c.title||"Chat";
   $("#mainEl")?.classList.remove("new-chat");
   const chat=$("#chat");if(chat)chat.innerHTML="";
-  (c.messages||[]).forEach(m=>addMessage(m.text||m.content||"",m.role==="ai"?"ai":"user"));
+  (c.messages||[]).forEach(m=>{
+    if(m.role==="ai")addMessage(m.text||m.content||"","ai");
+    else addUserMessage(m.text||m.content||"",m.files||[]);
+  });
   renderHistory();
 }
 function startNewChat(){
@@ -260,10 +332,12 @@ function startNewChat(){
   const chat=$("#chat");if(chat)chat.innerHTML="";
   const t=$("#chatTitle");if(t)t.textContent="New chat";
   const s=$("#chatSubtitle");if(s)s.textContent="";
+  pendingFiles=[];updatePreview();
   $("#mainEl")?.classList.add("new-chat");
   renderHistory();
 }
 
+/* ---------- AUTH ---------- */
 async function doLogin(){
   const s=$("#loginStatus");
   const name=$("#simpleLoginName")?.value.trim()||"";
@@ -292,9 +366,10 @@ async function doLogout(){
   startNewChat();
 }
 
+/* ---------- LOADERS ---------- */
 async function loadConfig(){
   const {data}=await safeFetch("/api/config",{cache:"no-store"});
-  if(data&&data.models) __config=data;
+  if(data&&data.models)__config=data;
   else __config={app:{name:"MiroxAI",made_by:"OpenSurr"},models:[{id:"mirox-luna-1.2",label:"Luna",tagline:"Warm & friendly",tier:"free",default:true}],announcement:{enabled:false}};
   window.__config=__config;buildModelPickerMenu();
 }
@@ -332,11 +407,7 @@ function renderSettings(){
   if($("#voiceRateLabel"))$("#voiceRateLabel").textContent=userSettings.voiceRate.toFixed(1)+"×";
   loadVoices();
 }
-async function loadPersona(){
-  if(!__user){if($("#personaInput"))$("#personaInput").value="";return;}
-  const d=await authJson("/api/settings/persona",{},null);
-  if($("#personaInput"))$("#personaInput").value=(d&&d.persona)||"";
-}
+async function loadPersona(){if(!__user){if($("#personaInput"))$("#personaInput").value="";return;}const d=await authJson("/api/settings/persona",{},null);if($("#personaInput"))$("#personaInput").value=(d&&d.persona)||"";}
 async function savePersona(){
   if(!__user){$("#personaStatus").textContent="Sign in first.";return;}
   const p=$("#personaInput")?.value||"";
@@ -414,6 +485,7 @@ async function loadMyReports(){
   box.innerHTML=`<h4 style="font-size:12px;color:var(--text-muted);margin-bottom:10px">YOUR TICKETS</h4>`+reports.map(t=>`<div style="background:var(--panel-2);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px;font-size:13px"><b>${escapeHtml(t.subject)}</b><span style="color:var(--text-muted);font-size:11.5px"> · ${escapeHtml(t.status)}</span><div style="color:var(--text-muted);font-size:12px;margin-top:4px">${escapeHtml((t.messages[0]||{}).text||"")}</div></div>`).join("");
 }
 
+/* ---------- MODEL PICKER ---------- */
 function buildModelPickerMenu(){
   const menu=$("#modelPickerMenu");if(!menu)return;
   const models=__config?.models||[];
@@ -439,6 +511,7 @@ function refreshModelLocks(){
   menu.querySelectorAll(".model-option").forEach(o=>{const t=o.dataset.tier;let locked;if(!__user)locked=(rank[t]||0)>0&&t!=="ultimate";else if(__tier==="free"&&t==="ultimate")locked=false;else locked=(rank[t]||0)>u;o.classList.toggle("locked",locked);});
 }
 
+/* ---------- APPEARANCE ---------- */
 const root=document.documentElement;
 function applyAppearance({mode,theme,corner,font}){
   if(mode)root.setAttribute("data-mode",mode);
@@ -453,6 +526,7 @@ function applyAppearance({mode,theme,corner,font}){
 function loadAppearance(){let s={};try{s=JSON.parse(localStorage.getItem("miroxai_appearance")||"{}");}catch{}applyAppearance({mode:s.mode||"light",theme:s.theme||"warm",corner:s.corner||"soft",font:s.font||"system"});}
 function saveAppearance(patch){let c={};try{c=JSON.parse(localStorage.getItem("miroxai_appearance")||"{}");}catch{}const m={...c,...patch};try{localStorage.setItem("miroxai_appearance",JSON.stringify(m));}catch{}applyAppearance(m);}
 
+/* ---------- BACKGROUND ---------- */
 function loadBackground(){
   try{const s=JSON.parse(localStorage.getItem("miroxai_bg")||"{}");bgState={url:s.url||null,dim:s.dim??45,blur:s.blur??0};}catch{}
   applyBackground();populateBackgroundUI();
@@ -477,6 +551,7 @@ function populateBackgroundUI(){
   const u=$("#bgUrlInput");if(u)u.value=bgState.url&&!bgState.url.startsWith("data:")?bgState.url:"";
 }
 
+/* ---------- IMAGE STUDIO ---------- */
 async function genImage(){
   const prompt=$("#imagePromptInput")?.value.trim();if(!prompt)return;
   const btn=$("#generateImageBtn"),status=$("#imageStudioStatus");
@@ -489,6 +564,7 @@ async function genImage(){
   if(btn)btn.disabled=false;
 }
 
+/* ---------- VOICE ---------- */
 async function requestMic(){
   try{micStream=await navigator.mediaDevices.getUserMedia({audio:true});if($("#micStatus"))$("#micStatus").textContent="Microphone granted ✅";return true;}
   catch(e){if($("#micStatus"))$("#micStatus").textContent="Denied: "+e.message;return false;}
@@ -518,6 +594,7 @@ function startMic(){
   try{recognition.start();$("#micBtn")?.classList.add("recording");}catch{}
 }
 
+/* ---------- CALL ---------- */
 async function startCall(){
   if(!__user){openModal("loginModal");return;}
   callActive=true;callMuted=false;
@@ -573,13 +650,14 @@ function endCall(){
 
 function updateRailToggleIcon(){const i=$("#railToggleIcon");if(!i)return;i.className=document.body.classList.contains("rail-collapsed")?"ri-side-bar-line":"ri-contract-left-line";}
 
+/* ---------- BOOT ---------- */
 async function boot(){
-  try{ killLoader();loadAppearance();loadBackground();loadUserSettings(); }catch(e){}
-  try{ await loadConfig(); }catch(e){}
-  try{ await loadMe(); }catch(e){}
-  try{ loadChatsFromLS();renderHistory(); }catch(e){}
-  try{ updateRailToggleIcon();renderSettings(); }catch(e){}
-  try{ loadVoices(); if(synth)synth.addEventListener?.("voiceschanged",loadVoices); }catch(e){}
+  try{killLoader();loadAppearance();loadBackground();loadUserSettings();}catch(e){}
+  try{await loadConfig();}catch(e){}
+  try{await loadMe();}catch(e){}
+  try{loadChatsFromLS();renderHistory();}catch(e){}
+  try{updateRailToggleIcon();renderSettings();}catch(e){}
+  try{loadVoices();if(synth)synth.addEventListener?.("voiceschanged",loadVoices);}catch(e){}
   killLoader();
 }
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot);
