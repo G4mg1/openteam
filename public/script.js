@@ -5,9 +5,36 @@ let bgState={url:null,dim:45,blur:0},recognition=null,callRecognition=null;
 let synth=window.speechSynthesis,callActive=false,callMuted=false,micStream=null;
 const LS_KEY="miroxai_conversations_v1",TOKEN_KEY="mirox_token",USER_SETTINGS_KEY="miroxai_user_settings";
 
+/* ---------- SAFE JSON ---------- */
+async function readJson(r, fallback=null){
+  if(!r) return fallback;
+  const ct=(r.headers.get("content-type")||"").toLowerCase();
+  if(!ct.includes("application/json")){
+    try{ await r.text(); }catch{}
+    return fallback;
+  }
+  try{ return await r.json(); }
+  catch{ return fallback; }
+}
+async function safeFetch(url, opts={}){
+  try{
+    const r=await fetch(url,opts);
+    const data=await readJson(r,null);
+    return { ok:r.ok, status:r.status, data };
+  }catch{
+    return { ok:false, status:0, data:null };
+  }
+}
+
 function getToken(){try{return localStorage.getItem(TOKEN_KEY)||"";}catch{return"";}}
 function setToken(t){try{t?localStorage.setItem(TOKEN_KEY,t):localStorage.removeItem(TOKEN_KEY);}catch{}}
 function authFetch(u,o={}){const h={"Content-Type":"application/json",...(o.headers||{})};const t=getToken();if(t)h.Authorization="Bearer "+t;return fetch(u,{...o,headers:h,credentials:"same-origin",cache:"no-store"});}
+async function authJson(u,o={},fallback=null){
+  try{
+    const r=await authFetch(u,o);
+    return await readJson(r,fallback);
+  }catch{ return fallback; }
+}
 
 function killLoader(){const l=document.getElementById("loadingScreen");if(l){l.classList.add("hidden","force-hidden");l.style.display="none";}}
 killLoader();setTimeout(killLoader,400);setTimeout(killLoader,1500);
@@ -23,7 +50,7 @@ function closeSidebar(){$("#sidebar")?.classList.remove("open");$("#sidebarScrim
 
 let userSettings={temperature:0.7,length:"medium",language:"en",autoscroll:true,soundOn:true,notifOn:true,voiceRate:1,voiceName:""};
 function loadUserSettings(){try{const s=JSON.parse(localStorage.getItem(USER_SETTINGS_KEY)||"{}");userSettings={...userSettings,...s};}catch{}}
-function saveUserSettings(){try{localStorage.setItem(USER_SETTINGS_KEY,JSON.stringify(userSettings));}catch{}if(__user){authFetch("/api/settings/user",{method:"POST",body:JSON.stringify({settings:userSettings})}).catch(()=>{});}}
+function saveUserSettings(){try{localStorage.setItem(USER_SETTINGS_KEY,JSON.stringify(userSettings));}catch{}if(__user){authJson("/api/settings/user",{method:"POST",body:JSON.stringify({settings:userSettings})}).catch(()=>{});}}
 
 document.addEventListener("click",function(e){
   const t=e.target,closest=s=>t.closest(s);
@@ -149,7 +176,12 @@ async function sendMessage(userText){
   try{
     const history=convo.messages.slice(0,-1).map(m=>({role:m.role==="ai"?"assistant":"user",content:m.text||m.content}));
     const r=await authFetch("/api/chat/stream",{method:"POST",body:JSON.stringify({message:userText,history,model:__model||getDefaultModel(),web_search:!!useSearch,files:filesForSend})});
-    if(!r.ok||!r.body){let m="Request failed";try{const e=await r.json();m=e.error||m;}catch{}throw new Error(m);}
+    const ct=(r.headers.get("content-type")||"").toLowerCase();
+    if(!r.ok||!ct.includes("text/event-stream")||!r.body){
+      let m="Request failed";
+      try{const e=await r.json();m=e.error||m;}catch{}
+      throw new Error(m);
+    }
     const reader=r.body.getReader(),dec=new TextDecoder();
     let buf="",full="",first=true;
     while(true){
@@ -239,9 +271,8 @@ async function doLogin(){
   if(!name||!email){if(s)s.textContent="Name and email required.";return;}
   if(s)s.textContent="Signing in…";
   try{
-    const r=await authFetch("/api/auth/simple-login",{method:"POST",body:JSON.stringify({name,email})});
-    const d=await r.json();
-    if(!d.ok)throw new Error(d.error||"Failed");
+    const d=await authJson("/api/auth/simple-login",{method:"POST",body:JSON.stringify({name,email})},null);
+    if(!d||!d.ok)throw new Error((d&&d.error)||"Failed to sign in");
     if(d.token)setToken(d.token);
     if(s)s.textContent="Signed in ✅";
     closeModal("loginModal");
@@ -249,7 +280,7 @@ async function doLogin(){
   }catch(err){if(s)s.textContent=err.message;}
 }
 async function doLogout(){
-  try{await authFetch("/api/logout",{method:"POST"});}catch{}
+  await authJson("/api/logout",{method:"POST"});
   setToken(null);
   __user=null;__tier="free";__conversations=[];
   const cl=$("#userChipLabel");if(cl)cl.textContent="Sign in";
@@ -262,13 +293,15 @@ async function doLogout(){
 }
 
 async function loadConfig(){
-  try{const r=await fetch("/api/config",{cache:"no-store"});if(!r.ok)throw new Error();__config=await r.json();}
-  catch{__config={app:{name:"MiroxAI",made_by:"OpenSurr"},models:[{id:"mirox-luna-1.2",label:"Luna",tagline:"Warm & friendly",tier:"free",default:true}],announcement:{enabled:false}};}
+  const {data}=await safeFetch("/api/config",{cache:"no-store"});
+  if(data&&data.models) __config=data;
+  else __config={app:{name:"MiroxAI",made_by:"OpenSurr"},models:[{id:"mirox-luna-1.2",label:"Luna",tagline:"Warm & friendly",tier:"free",default:true}],announcement:{enabled:false}};
   window.__config=__config;buildModelPickerMenu();
 }
 async function loadMe(){
-  try{const r=await authFetch("/api/me");const d=await r.json();__user=d.user||null;if(!__user)setToken(null);}
-  catch{__user=null;}
+  const d=await authJson("/api/me",{},null);
+  __user=(d&&d.user)||null;
+  if(!__user)setToken(null);
   const cl=$("#userChipLabel");if(cl)cl.textContent=__user?__user.name:"Sign in";
   const lt=$("#loginTitle");if(lt)lt.textContent=__user?"Update profile":"Sign in";
   if(__user){
@@ -277,7 +310,8 @@ async function loadMe(){
     __tier=__user.tier||"free";
     const tl=$("#tierLabel");if(tl)tl.textContent=(__user.tier_label||"Free")+" plan";
     const ub=$("#upgradeBtn");if(ub)ub.textContent=__tier==="free"?"Upgrade":"Manage";
-    try{const r=await authFetch("/api/settings/user");const d=await r.json();if(d.ok&&d.settings){userSettings={...userSettings,...d.settings};saveUserSettings();}}catch{}
+    const sd=await authJson("/api/settings/user",{},null);
+    if(sd&&sd.ok&&sd.settings){userSettings={...userSettings,...sd.settings};saveUserSettings();}
   }else{
     __tier="free";
     const tl=$("#tierLabel");if(tl)tl.textContent="Guest mode";
@@ -298,61 +332,67 @@ function renderSettings(){
   if($("#voiceRateLabel"))$("#voiceRateLabel").textContent=userSettings.voiceRate.toFixed(1)+"×";
   loadVoices();
 }
-async function loadPersona(){if(!__user){if($("#personaInput"))$("#personaInput").value="";return;}try{const r=await authFetch("/api/settings/persona");const d=await r.json();if($("#personaInput"))$("#personaInput").value=d.persona||"";}catch{}}
+async function loadPersona(){
+  if(!__user){if($("#personaInput"))$("#personaInput").value="";return;}
+  const d=await authJson("/api/settings/persona",{},null);
+  if($("#personaInput"))$("#personaInput").value=(d&&d.persona)||"";
+}
 async function savePersona(){
   if(!__user){$("#personaStatus").textContent="Sign in first.";return;}
   const p=$("#personaInput")?.value||"";
   const s=$("#personaStatus");if(s)s.textContent="Saving…";
-  try{const r=await authFetch("/api/settings/persona",{method:"POST",body:JSON.stringify({persona:p})});const d=await r.json();if(s)s.textContent=d.ok?"Saved.":"Failed.";}
-  catch{if(s)s.textContent="Failed.";}
+  const d=await authJson("/api/settings/persona",{method:"POST",body:JSON.stringify({persona:p})},null);
+  if(s)s.textContent=(d&&d.ok)?"Saved.":"Failed.";
 }
 async function loadMemory(){
   const list=$("#memoryList");if(!list)return;list.innerHTML="";
   if(!__user){list.innerHTML='<li class="memory-empty">Sign in to use memory.</li>';return;}
-  try{
-    const r=await authFetch("/api/memory");const d=await r.json();
-    const facts=d.facts||[];
-    if(!facts.length){list.innerHTML='<li class="memory-empty">Nothing remembered yet.</li>';return;}
-    facts.forEach(f=>{
-      const li=document.createElement("li");
-      li.innerHTML=`<span>${escapeHtml(f.text)}</span><button class="memory-delete" data-id="${f.id}"><i class="ri-delete-bin-line"></i></button>`;
-      li.querySelector(".memory-delete").addEventListener("click",async()=>{await authFetch("/api/memory/"+f.id,{method:"DELETE"});loadMemory();});
-      list.appendChild(li);
-    });
-  }catch{}
+  const d=await authJson("/api/memory",{},null);
+  const facts=(d&&d.facts)||[];
+  if(!facts.length){list.innerHTML='<li class="memory-empty">Nothing remembered yet.</li>';return;}
+  facts.forEach(f=>{
+    const li=document.createElement("li");
+    li.innerHTML=`<span>${escapeHtml(f.text)}</span><button class="memory-delete" data-id="${f.id}"><i class="ri-delete-bin-line"></i></button>`;
+    li.querySelector(".memory-delete").addEventListener("click",async()=>{await authJson("/api/memory/"+f.id,{method:"DELETE"});loadMemory();});
+    list.appendChild(li);
+  });
 }
 async function addMemory(){
   if(!__user)return;
   const v=$("#memoryInput")?.value.trim();if(!v)return;
-  await authFetch("/api/memory",{method:"POST",body:JSON.stringify({fact:v})});
+  await authJson("/api/memory",{method:"POST",body:JSON.stringify({fact:v})});
   $("#memoryInput").value="";loadMemory();
 }
 async function loadPlans(){
-  try{
-    const r=await fetch("/api/subscription/plans",{cache:"no-store"});const d=await r.json();
-    const plans=d.plans||[],grid=$("#plansGrid");if(!grid)return;
-    grid.innerHTML=plans.map(p=>{
-      const isCur=__user&&__tier===p.id,feat=p.id==="pro";
-      let price='<span style="color:var(--text-muted);font-weight:700">Free</span>';
-      if(p.price_robux>0)price=`R$ ${p.price_robux}<span style="font-size:11px;color:var(--text-muted);display:block">or ${p.price_afg} AFG</span>`;
-      let buyBtn;
-      if(p.id==="free")buyBtn=`<div class="plan-buy disabled">Free forever</div>`;
-      else if(isCur)buyBtn=`<div class="plan-buy disabled">Current plan</div>`;
-      else buyBtn=`<div class="plan-buy">Contact admin</div>`;
-      return `<div class="plan-card${feat?" featured":""}${isCur?" current":""}">${isCur?'<span class="plan-badge current">Current</span>':(feat?'<span class="plan-badge">Popular</span>':"")}<div class="plan-name">${escapeHtml(p.label)}</div><div class="plan-tagline">${escapeHtml(p.tagline)}</div><div class="plan-price">${price}</div><ul class="plan-perks">${p.perks.map(x=>`<li><i class="ri-check-line"></i><span>${escapeHtml(x)}</span></li>`).join("")}</ul>${buyBtn}</div>`;
-    }).join("");
-  }catch{}
+  const {data}=await safeFetch("/api/subscription/plans",{cache:"no-store"});
+  const plans=(data&&data.plans)||[];
+  const grid=$("#plansGrid");if(!grid)return;
+  grid.innerHTML=plans.map(p=>{
+    const isCur=__user&&__tier===p.id,feat=p.id==="pro";
+    let price='<span style="color:var(--text-muted);font-weight:700">Free</span>';
+    if(p.price_robux>0)price=`R$ ${p.price_robux}<span style="font-size:11px;color:var(--text-muted);display:block">or ${p.price_afg} AFG</span>`;
+    let buyBtn;
+    if(p.id==="free")buyBtn=`<div class="plan-buy disabled">Free forever</div>`;
+    else if(isCur)buyBtn=`<div class="plan-buy disabled">Current plan</div>`;
+    else buyBtn=`<div class="plan-buy">Contact admin</div>`;
+    return `<div class="plan-card${feat?" featured":""}${isCur?" current":""}">${isCur?'<span class="plan-badge current">Current</span>':(feat?'<span class="plan-badge">Popular</span>':"")}<div class="plan-name">${escapeHtml(p.label)}</div><div class="plan-tagline">${escapeHtml(p.tagline)}</div><div class="plan-price">${price}</div><ul class="plan-perks">${p.perks.map(x=>`<li><i class="ri-check-line"></i><span>${escapeHtml(x)}</span></li>`).join("")}</ul>${buyBtn}</div>`;
+  }).join("");
 }
 async function loadUserKeys(){
   const list=$("#keysList");if(!list)return;
   if(!__user){list.innerHTML='<li class="key-empty">Sign in to manage API keys.</li>';return;}
-  try{const r=await authFetch("/api/keys");const d=await r.json();const keys=d.keys||[];if(!keys.length){list.innerHTML='<li class="key-empty">No keys yet.</li>';return;}list.innerHTML=keys.map(k=>`<li class="key-item"><div class="key-info"><div class="key-name">${escapeHtml(k.name)}</div><div class="key-value">${escapeHtml(k.preview||"")}</div></div></li>`).join("");}catch{}
+  const d=await authJson("/api/keys",{},null);
+  const keys=(d&&d.keys)||[];
+  if(!keys.length){list.innerHTML='<li class="key-empty">No keys yet.</li>';return;}
+  list.innerHTML=keys.map(k=>`<li class="key-item"><div class="key-info"><div class="key-name">${escapeHtml(k.name)}</div><div class="key-value">${escapeHtml(k.preview||"")}</div></div></li>`).join("");
 }
 async function genKey(){
   if(!__user){$("#keyGenStatus").textContent="Sign in first.";return;}
   const n=$("#newKeyNameInput")?.value.trim()||"My key";
   const s=$("#keyGenStatus");if(s)s.textContent="Generating…";
-  try{const r=await authFetch("/api/keys/generate",{method:"POST",body:JSON.stringify({name:n})});const d=await r.json();if(d.ok){if(s)s.innerHTML=`Created ✅ — <code>${escapeHtml(d.key)}</code>`;if($("#newKeyNameInput"))$("#newKeyNameInput").value="";loadUserKeys();}else if(s)s.textContent=d.error||"Failed.";}catch{if(s)s.textContent="Failed.";}
+  const d=await authJson("/api/keys/generate",{method:"POST",body:JSON.stringify({name:n})},null);
+  if(d&&d.ok){if(s)s.innerHTML=`Created ✅ — <code>${escapeHtml(d.key)}</code>`;if($("#newKeyNameInput"))$("#newKeyNameInput").value="";loadUserKeys();}
+  else if(s)s.textContent=(d&&d.error)||"Failed.";
 }
 async function submitReport(){
   const s=$("#reportStatus");
@@ -361,12 +401,17 @@ async function submitReport(){
   const msg=$("#reportMessage")?.value.trim()||"";
   if(!msg){if(s)s.textContent="Please describe your issue.";return;}
   if(s)s.textContent="Sending…";
-  try{const r=await authFetch("/api/report",{method:"POST",body:JSON.stringify({subject:sub,message:msg,category:"general"})});const d=await r.json();if(d.ok){if(s)s.textContent="Ticket sent ✅";if($("#reportSubject"))$("#reportSubject").value="";if($("#reportMessage"))$("#reportMessage").value="";loadMyReports();}else if(s)s.textContent=d.error||"Failed.";}catch{if(s)s.textContent="Failed.";}
+  const d=await authJson("/api/report",{method:"POST",body:JSON.stringify({subject:sub,message:msg,category:"general"})},null);
+  if(d&&d.ok){if(s)s.textContent="Ticket sent ✅";if($("#reportSubject"))$("#reportSubject").value="";if($("#reportMessage"))$("#reportMessage").value="";loadMyReports();}
+  else if(s)s.textContent=(d&&d.error)||"Failed.";
 }
 async function loadMyReports(){
   const box=$("#supportMine");if(!box)return;
   if(!__user){box.innerHTML="";return;}
-  try{const r=await authFetch("/api/report/mine");const d=await r.json();const reports=d.reports||[];if(!reports.length){box.innerHTML="";return;}box.innerHTML=`<h4 style="font-size:12px;color:var(--text-muted);margin-bottom:10px">YOUR TICKETS</h4>`+reports.map(t=>`<div style="background:var(--panel-2);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px;font-size:13px"><b>${escapeHtml(t.subject)}</b><span style="color:var(--text-muted);font-size:11.5px"> · ${escapeHtml(t.status)}</span><div style="color:var(--text-muted);font-size:12px;margin-top:4px">${escapeHtml((t.messages[0]||{}).text||"")}</div></div>`).join("");}catch{}
+  const d=await authJson("/api/report/mine",{},null);
+  const reports=(d&&d.reports)||[];
+  if(!reports.length){box.innerHTML="";return;}
+  box.innerHTML=`<h4 style="font-size:12px;color:var(--text-muted);margin-bottom:10px">YOUR TICKETS</h4>`+reports.map(t=>`<div style="background:var(--panel-2);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px;font-size:13px"><b>${escapeHtml(t.subject)}</b><span style="color:var(--text-muted);font-size:11.5px"> · ${escapeHtml(t.status)}</span><div style="color:var(--text-muted);font-size:12px;margin-top:4px">${escapeHtml((t.messages[0]||{}).text||"")}</div></div>`).join("");
 }
 
 function buildModelPickerMenu(){
@@ -438,9 +483,10 @@ async function genImage(){
   if(btn)btn.disabled=true;if(status)status.textContent="Generating…";
   const card=document.createElement("div");card.className="gallery-card";card.innerHTML=`<div class="gallery-skeleton"></div>`;
   $("#imageGallery")?.prepend(card);
-  try{const r=await authFetch("/api/image/generate",{method:"POST",body:JSON.stringify({prompt})});const d=await r.json();if(!d.ok)throw new Error(d.error||"Failed");card.innerHTML=`<img src="${d.image}" alt="">`;if(status)status.textContent="";}
-  catch(e){card.innerHTML=`<div class="gallery-error"><i class="ri-error-warning-line"></i><span>${escapeHtml(e.message)}</span></div>`;if(status)status.textContent=e.message;}
-  finally{if(btn)btn.disabled=false;}
+  const d=await authJson("/api/image/generate",{method:"POST",body:JSON.stringify({prompt})},null);
+  if(d&&d.ok){card.innerHTML=`<img src="${d.image}" alt="">`;if(status)status.textContent="";}
+  else{const msg=(d&&d.error)||"Failed";card.innerHTML=`<div class="gallery-error"><i class="ri-error-warning-line"></i><span>${escapeHtml(msg)}</span></div>`;if(status)status.textContent=msg;}
+  if(btn)btn.disabled=false;
 }
 
 async function requestMic(){
@@ -497,22 +543,19 @@ function startCallListening(){
 async function sendCallMessage(text){
   $("#callStatus").textContent="Thinking…";
   $("#callOrb")?.classList.remove("listening");
-  try{
-    const r=await authFetch("/api/chat",{method:"POST",body:JSON.stringify({message:text,history:[],model:__model||getDefaultModel()})});
-    const d=await r.json();
+  const d=await authJson("/api/chat",{method:"POST",body:JSON.stringify({message:text,history:[],model:__model||getDefaultModel()})},null);
+  if(!callActive)return;
+  if(!d||!d.ok){$("#callStatus").textContent="Error";return;}
+  $("#callTranscript").textContent=d.reply||"(no reply)";
+  $("#callStatus").textContent="Speaking…";
+  $("#callOrb")?.classList.add("speaking");
+  speak(d.reply,()=>{
     if(!callActive)return;
-    if(!d.ok){$("#callStatus").textContent="Error";return;}
-    $("#callTranscript").textContent=d.reply||"(no reply)";
-    $("#callStatus").textContent="Speaking…";
-    $("#callOrb")?.classList.add("speaking");
-    speak(d.reply,()=>{
-      if(!callActive)return;
-      $("#callOrb")?.classList.remove("speaking");
-      $("#callStatus").textContent="Listening…";
-      $("#callOrb")?.classList.add("listening");
-      startCallListening();
-    });
-  }catch{if(callActive){$("#callStatus").textContent="Error";setTimeout(startCallListening,1500);}}
+    $("#callOrb")?.classList.remove("speaking");
+    $("#callStatus").textContent="Listening…";
+    $("#callOrb")?.classList.add("listening");
+    startCallListening();
+  });
 }
 function toggleMute(){
   callMuted=!callMuted;
@@ -531,12 +574,12 @@ function endCall(){
 function updateRailToggleIcon(){const i=$("#railToggleIcon");if(!i)return;i.className=document.body.classList.contains("rail-collapsed")?"ri-side-bar-line":"ri-contract-left-line";}
 
 async function boot(){
-  killLoader();loadAppearance();loadBackground();loadUserSettings();
-  await loadConfig();await loadMe();
-  loadChatsFromLS();renderHistory();
-  updateRailToggleIcon();renderSettings();
-  loadVoices();
-  if(synth)synth.addEventListener?.("voiceschanged",loadVoices);
+  try{ killLoader();loadAppearance();loadBackground();loadUserSettings(); }catch(e){}
+  try{ await loadConfig(); }catch(e){}
+  try{ await loadMe(); }catch(e){}
+  try{ loadChatsFromLS();renderHistory(); }catch(e){}
+  try{ updateRailToggleIcon();renderSettings(); }catch(e){}
+  try{ loadVoices(); if(synth)synth.addEventListener?.("voiceschanged",loadVoices); }catch(e){}
   killLoader();
 }
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot);
