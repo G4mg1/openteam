@@ -20,6 +20,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
+<style>#loadingScreen.force-hidden{opacity:0!important;visibility:hidden!important;pointer-events:none!important;display:none!important}.avatar-fallback{display:inline-flex;align-items:center;justify-content:center;width:100%;height:100%;font-weight:800;font-size:12px}</style>
 </head>
 <body>
 
@@ -96,8 +97,8 @@
     </div>
 
     <div class="attachment-preview" id="attachmentPreview" style="display:none;">
-      <span class="att-icon"><i class="ri-file-text-line"></i></span>
-      <span id="attachmentList">Files</span>
+      <span class="att-icon"><i class="ri-attachment-2"></i></span>
+      <span id="attachmentList" class="att-list">Files</span>
       <button type="button" id="removeAttachmentBtn"><i class="ri-close-line"></i></button>
     </div>
 
