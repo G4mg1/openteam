@@ -530,22 +530,12 @@ function endCall(){
 
 function updateRailToggleIcon(){const i=$("#railToggleIcon");if(!i)return;i.className=document.body.classList.contains("rail-collapsed")?"ri-side-bar-line":"ri-contract-left-line";}
 
-async function autoConnect(){
-  const dot=$("#serverDot"),txt=$("#serverText"),inline=$("#serverStatusInline");
-  try{const r=await fetch("/api/health",{cache:"no-store"});const d=await r.json();
-    if(dot)dot.classList.add("online");
-    if(txt)txt.textContent=d.hf?"Online":"No HF key";
-    if(inline)inline.textContent=d.hf?"Online ✅":"Online (no HF key)";
-  }catch{if(dot)dot.classList.add("offline");if(txt)txt.textContent="Offline";if(inline)inline.textContent="Offline";}
-}
-setInterval(autoConnect,60000);
-
 async function boot(){
   killLoader();loadAppearance();loadBackground();loadUserSettings();
   await loadConfig();await loadMe();
   loadChatsFromLS();renderHistory();
   updateRailToggleIcon();renderSettings();
-  autoConnect();loadVoices();
+  loadVoices();
   if(synth)synth.addEventListener?.("voiceschanged",loadVoices);
   killLoader();
 }
