@@ -96,15 +96,15 @@
         <button id="supportModeBtn2" class="tool-btn"><i class="ri-question-line"></i><span>Help</span></button>
       </div>
 
-      <form id="composerForm" class="composer" onsubmit="return false;">
+      <div class="composer">
         <button type="button" id="attachBtn" class="icon-btn"><i class="ri-attachment-2"></i></button>
         <input type="file" id="fileInput" multiple hidden>
         <button type="button" id="searchToggleBtn" class="icon-btn"><i class="ri-global-line"></i></button>
         <textarea id="messageInput" class="message-input" placeholder="How can I help you today?" rows="1" enterkeyhint="send"></textarea>
         <button type="button" id="micBtn" class="icon-btn mic-btn"><i class="ri-mic-line"></i></button>
         <button type="button" id="stopBtn" class="icon-btn stop-btn" style="display:none;"><i class="ri-stop-circle-line"></i></button>
-        <button type="button" id="sendBtn" class="send-btn" disabled><i class="ri-arrow-up-line"></i></button>
-      </form>
+        <button type="button" id="sendBtn" class="send-btn is-disabled" aria-disabled="true" aria-label="Send"><i class="ri-arrow-up-line"></i></button>
+      </div>
     </div>
   </main>
 
