@@ -1,7 +1,7 @@
 /* ============================================================
-   MiroxAI — Frontend Script v17
-   FIXED: model picker (wrapper div + clean handlers)
-   Default model = FIRST model in config (Luna)
+   MiroxAI — Frontend Script v18
+   FIXED: Enter sends, model picker works, image gen works,
+   streaming cursor, safe area handling
    ============================================================ */
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
@@ -16,7 +16,7 @@ const db = getDatabase(firebaseApp);
 const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
 
-/* Fallback — matches backend MODELS order, Luna FIRST */
+/* Luna is FIRST — used as default */
 const FALLBACK_MODELS = [
   { id: 'mirox-luna-1.2', label: 'Luna', tagline: 'Fast · warm · free', default: true },
   { id: 'mirox-gen-1', label: 'Gen', tagline: 'Ultra concise' },
@@ -39,15 +39,14 @@ let synth = window.speechSynthesis;
 let callActive = false, callMuted = false, micStream = null;
 let activeStreamController = null;
 
-const LS_KEY = 'miroxai_conversations_v5';
+const LS_KEY = 'miroxai_conversations_v6';
 const TOKEN_KEY = 'mirox_token';
-const USER_SETTINGS_KEY = 'miroxai_user_settings_v5';
+const USER_SETTINGS_KEY = 'miroxai_user_settings_v6';
 const DEVICE_ID_KEY = 'mirox_device_id';
-const APPEARANCE_KEY = 'miroxai_appearance_v5';
-const BG_KEY = 'miroxai_bg_v5';
-const MCP_KEY = 'miroxai_mcp_v5';
+const APPEARANCE_KEY = 'miroxai_appearance_v6';
+const BG_KEY = 'miroxai_bg_v6';
+const MCP_KEY = 'miroxai_mcp_v6';
 
-/* ---------- Utilities ---------- */
 function killLoader() {
   const l = document.getElementById('loadingScreen');
   if (l) { l.classList.add('hidden'); setTimeout(() => l.style.display = 'none', 400); }
@@ -115,12 +114,17 @@ function applyAppearance(prefs) {
 /* ---------- Background ---------- */
 function loadBgPrefs() { try { bgState = { ...bgState, ...JSON.parse(localStorage.getItem(BG_KEY) || '{}') }; } catch {}; applyBackground(); }
 function applyBackground() {
-  document.body.style.backgroundImage = bgState.url
-    ? `linear-gradient(rgba(20,15,10,${bgState.dim / 100}), rgba(20,15,10,${bgState.dim / 100})), url("${bgState.url}"), radial-gradient(ellipse 80% 60% at 50% -20%, var(--accent-soft), transparent 70%)`
-    : '';
-  document.body.style.backgroundSize = bgState.url ? 'cover' : '';
-  document.body.style.backgroundPosition = bgState.url ? 'center' : '';
-  document.body.style.backgroundAttachment = bgState.url ? 'fixed' : '';
+  if (bgState.url) {
+    document.body.style.backgroundImage = `linear-gradient(rgba(20,15,10,${bgState.dim / 100}), rgba(20,15,10,${bgState.dim / 100})), url("${bgState.url}")`;
+    document.body.style.backgroundSize = 'cover';
+    document.body.style.backgroundPosition = 'center';
+    document.body.style.backgroundAttachment = 'fixed';
+  } else {
+    document.body.style.backgroundImage = '';
+    document.body.style.backgroundSize = '';
+    document.body.style.backgroundPosition = '';
+    document.body.style.backgroundAttachment = '';
+  }
 }
 function saveBgPrefs() { try { localStorage.setItem(BG_KEY, JSON.stringify(bgState)); } catch {} }
 
@@ -206,10 +210,13 @@ function inlineFmt(t) {
   t = t.replace(/\u0001(\d+)\u0001/g, (_, i) => `<code>${escapeHtml(codes[+i])}</code>`);
   return t;
 }
-function renderBubble(bubble, text) {
+function renderBubble(bubble, text, streaming = false) {
   if (!bubble) return;
   bubble.classList.remove('thinking');
-  if (!userSettings.highlightOn) { bubble.textContent = text || ''; return; }
+  if (!userSettings.highlightOn) {
+    bubble.textContent = text || '';
+    return;
+  }
   bubble.innerHTML = renderMarkdown(text || '');
   highlightCode(bubble);
   wireCodeButtons(bubble);
@@ -315,8 +322,10 @@ function renderHistory() {
       <button class="history-delete icon-btn"><i class="ri-delete-bin-line"></i></button>
     </li>`).join('');
 }
-function scrollToBottom() { const c = $('#chatMessages'); if (c) c.scrollTop = c.scrollHeight; }
-
+function scrollToBottom() {
+  const c = $('#chatMessages');
+  if (c) c.scrollTop = c.scrollHeight;
+}
 function addMessageToDOM(role, content, ts, animate = true) {
   const container = $('#chatMessages');
   if (!container) return null;
@@ -338,7 +347,6 @@ function addMessageToDOM(role, content, ts, animate = true) {
   if (animate) scrollToBottom();
   return msgEl;
 }
-
 function addThinkingBubble() {
   const container = $('#chatMessages');
   if (!container) return null;
@@ -373,7 +381,8 @@ function handleSend() {
   if (convo) { convo.messages.push({ role: 'user', content: text, ts: Date.now() }); convo.updated = Date.now(); }
 
   addMessageToDOM('user', text, Date.now());
-  inp.value = ''; inp.style.height = 'auto';
+  inp.value = '';
+  inp.style.height = 'auto';
   $('#sendBtn').disabled = true;
 
   saveChatsToLS();
@@ -443,28 +452,39 @@ async function sendToAPI(text) {
           const o = JSON.parse(pl);
           if (o.d) {
             full += o.d;
-            if (firstChunk) { bubble.classList.remove('thinking'); bubble.innerHTML = ''; firstChunk = false; }
+            if (firstChunk) {
+              bubble.classList.remove('thinking');
+              bubble.classList.add('streaming');
+              bubble.innerHTML = '';
+              firstChunk = false;
+            }
             renderBubble(bubble, full);
+            // Re-add streaming class since renderBubble overwrites innerHTML but not class
+            if (!bubble.classList.contains('streaming')) bubble.classList.add('streaming');
             scrollToBottom();
           }
           if (o.error) throw new Error(o.error);
-          if (o.done && __user) {
-            __user.daily_used = o.daily_used;
-            if (model === 'mirox-eclipse-2.0') {
-              __user.eclipse_credits = (__user.eclipse_credits ?? 10) - 1;
-              if (__user.eclipse_credits <= 0) __user.eclipse_reset = Date.now() + 24 * 60 * 60 * 1000;
-              updateFirebase(`users/${__user.email}`, { eclipse_credits: __user.eclipse_credits });
+          if (o.done) {
+            bubble.classList.remove('streaming');
+            if (__user) {
+              __user.daily_used = o.daily_used;
+              if (model === 'mirox-eclipse-2.0') {
+                __user.eclipse_credits = (__user.eclipse_credits ?? 10) - 1;
+                updateFirebase(`users/${__user.email}`, { eclipse_credits: __user.eclipse_credits });
+              }
             }
           }
         } catch {}
       }
     }
 
+    bubble.classList.remove('streaming');
     if (convo) { convo.messages.push({ role: 'assistant', content: full, ts: Date.now() }); convo.updated = Date.now(); }
     saveChatsToLS();
     if (__user) pushToFirebase(`logs/chat/${__user.email}`, { model, message: text.slice(0, 500), reply: full.slice(0, 1000), ts: Date.now(), device: getDeviceId() });
     if (timeEl) timeEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   } catch (e) {
+    bubble.classList.remove('streaming');
     if (e.name !== 'AbortError') {
       bubble.classList.remove('thinking');
       bubble.textContent = `Sorry, something went wrong: ${e.message}`;
@@ -526,29 +546,22 @@ function updatePreview() {
 }
 
 /* ============================================================
-   MODEL PICKER — FIXED
-   - Uses wrapper #modelPicker for outside-click detection
-   - Direct onclick handlers on each option
-   - Default = models[0] (Luna)
+   MODEL PICKER — FIXED with pointerdown
    ============================================================ */
 function getModelsList() {
   if (__config?.models?.length) return __config.models;
   return FALLBACK_MODELS;
 }
-
 function renderModelPicker() {
   const menu = $('#modelPickerMenu');
   if (!menu) return;
-
   const models = getModelsList();
   const currentId = __model || models[0].id;
-
   menu.innerHTML = models.map(m => `
     <div class="model-option${m.id === currentId ? ' active' : ''}" data-model-id="${m.id}">
       <span class="model-option-label"><span class="dot"></span>${escapeHtml(m.label)}</span>
       <span class="model-option-tag">${escapeHtml(m.tagline || '')}</span>
     </div>`).join('');
-
   menu.querySelectorAll('.model-option').forEach(opt => {
     opt.onclick = (e) => {
       e.preventDefault();
@@ -556,11 +569,9 @@ function renderModelPicker() {
       selectModel(opt.dataset.modelId);
     };
   });
-
   const current = models.find(m => m.id === currentId) || models[0];
   if (current && $('#currentModelLabel')) $('#currentModelLabel').textContent = current.label;
 }
-
 function selectModel(id) {
   if (!id) return;
   __model = id;
@@ -570,44 +581,32 @@ function selectModel(id) {
   renderModelPicker();
   closeModelPicker();
 }
-
 function openModelPicker() {
-  const wrap = $('#modelPicker');
-  const menu = $('#modelPickerMenu');
-  if (!wrap || !menu) return;
-  wrap.classList.add('open');
-  menu.classList.add('open');
+  $('#modelPicker')?.classList.add('open');
+  $('#modelPickerMenu')?.classList.add('open');
 }
-
 function closeModelPicker() {
-  const wrap = $('#modelPicker');
-  const menu = $('#modelPickerMenu');
-  if (!wrap || !menu) return;
-  wrap.classList.remove('open');
-  menu.classList.remove('open');
+  $('#modelPicker')?.classList.remove('open');
+  $('#modelPickerMenu')?.classList.remove('open');
 }
-
 function wireModelPicker() {
   const btn = $('#modelPickerBtn');
-  const wrap = $('#modelPicker');
-  const menu = $('#modelPickerMenu');
-  if (!btn || !wrap || !menu) return;
+  if (!btn) return;
 
-  btn.onclick = (e) => {
+  /* Use pointerdown so it works on touch + mouse and fires in the right order */
+  btn.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     e.stopPropagation();
-    if (menu.classList.contains('open')) closeModelPicker();
+    const isOpen = $('#modelPickerMenu')?.classList.contains('open');
+    if (isOpen) closeModelPicker();
     else openModelPicker();
-  };
+  });
 
-  /* Close when clicking anywhere outside the wrapper */
-  document.addEventListener('click', (e) => {
-    if (!e.target.closest('#modelPicker')) {
-      closeModelPicker();
-    }
+  /* Close when pointer goes down anywhere outside the wrapper */
+  document.addEventListener('pointerdown', (e) => {
+    if (!e.target.closest('#modelPicker')) closeModelPicker();
   }, true);
 
-  /* Close on escape */
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeModelPicker();
   });
@@ -667,7 +666,7 @@ async function loadUser() {
   }
 }
 
-/* ---------- Config — DEFAULT = FIRST MODEL ---------- */
+/* ---------- Config ---------- */
 async function loadConfig() {
   try {
     const res = await fetch('/api/config', { cache: 'no-store' });
@@ -677,14 +676,11 @@ async function loadConfig() {
   } catch {
     __config = { models: FALLBACK_MODELS };
   }
-
   const models = getModelsList();
-  /* FIRST model is the default */
-  const def = models[0];
-  __model = def.id;
-
+  /* Default = first model (Luna) */
+  __model = models[0].id;
   renderModelPicker();
-  if ($('#currentModelLabel')) $('#currentModelLabel').textContent = def.label;
+  if ($('#currentModelLabel')) $('#currentModelLabel').textContent = models[0].label;
 }
 
 /* ---------- Plans ---------- */
@@ -713,21 +709,44 @@ async function genKey() {
   else alert(res?.error || 'Failed');
 }
 
-/* ---------- Image ---------- */
+/* ============================================================
+   IMAGE GENERATION — robust error handling
+   ============================================================ */
 async function genImage() {
   const prompt = $('#imagePrompt')?.value.trim();
   if (!prompt) return alert('Please describe the image.');
   const btn = $('#generateImageBtn'), result = $('#imageResult');
   if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line"></i> Generating…'; }
-  if (result) result.innerHTML = '<div style="text-align:center;padding:20px;"><div class="bubble thinking" style="display:inline-flex;background:var(--panel);border:1px solid var(--border);padding:12px 16px;border-radius:16px;"><span></span><span></span><span></span></div></div>';
+  if (result) result.innerHTML = '<div style="text-align:center;padding:20px;"><div class="bubble thinking" style="display:inline-flex;background:var(--panel);border:1px solid var(--border);padding:12px 16px;border-radius:16px;"><span></span><span></span><span></span></div><p style="margin-top:12px;font-size:12px;color:var(--text-faint);">Generating with FLUX.1-schnell…</p></div>';
+
   try {
-    const res = await authJson('/v1/images/generations', { method: 'POST', body: JSON.stringify({ prompt, aspect_ratio: $('#imageAspect')?.value || '1:1' }) }, null);
-    if (res?.ok && res.image) {
-      if (result) result.innerHTML = `<img src="${res.image}" alt="${escapeHtml(prompt)}">`;
+    const res = await fetch('/v1/images/generations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, aspect_ratio: $('#imageAspect')?.value || '1:1' }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (res.ok && data.ok && data.image) {
+      if (result) result.innerHTML = `<img src="${data.image}" alt="${escapeHtml(prompt)}" loading="lazy">`;
       if (__user) pushToFirebase(`logs/image/${__user.email}`, { prompt: prompt.slice(0, 300), model: 'FLUX.1-schnell', ts: Date.now() });
-    } else if (result) result.innerHTML = `<p style="color:#dc2626;font-size:13px;">Failed: ${escapeHtml(res?.error || 'Unknown')}</p>`;
-  } catch (e) { if (result) result.innerHTML = `<p style="color:#dc2626;font-size:13px;">Failed: ${escapeHtml(e.message)}</p>`; }
-  finally { if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-image-add-line"></i> Generate'; } }
+    } else {
+      const errMsg = data.error || `HTTP ${res.status}`;
+      if (result) result.innerHTML = `
+        <div style="padding:16px;border-radius:12px;background:rgba(220,38,38,0.08);border:1px solid rgba(220,38,38,0.2);">
+          <p style="color:#dc2626;font-size:13px;margin:0;"><strong>Failed:</strong> ${escapeHtml(errMsg)}</p>
+          <p style="color:var(--text-faint);font-size:11.5px;margin-top:6px;margin-bottom:0;">Check that HF_API_KEY is set in Vercel environment variables.</p>
+        </div>`;
+    }
+  } catch (e) {
+    if (result) result.innerHTML = `
+      <div style="padding:16px;border-radius:12px;background:rgba(220,38,38,0.08);border:1px solid rgba(220,38,38,0.2);">
+        <p style="color:#dc2626;font-size:13px;margin:0;"><strong>Network error:</strong> ${escapeHtml(e.message)}</p>
+      </div>`;
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-image-add-line"></i> Generate'; }
+  }
 }
 
 /* ---------- Voice ---------- */
@@ -800,6 +819,34 @@ async function submitReport() {
 }
 
 /* ============================================================
+   ENTER KEY HANDLER — this is the fix for "enter doesn't send"
+   ============================================================ */
+function wireEnterToSend() {
+  const inp = $('#messageInput');
+  if (!inp) return;
+
+  inp.addEventListener('keydown', (e) => {
+    /* Enter alone (no shift) → send */
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      e.stopPropagation();
+      handleSend();
+      return false;
+    }
+    /* Shift+Enter → newline (default behavior, do nothing) */
+  });
+
+  /* Also handle mobile keyboards that fire keyCode 13 */
+  inp.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    }
+  });
+}
+
+/* ============================================================
    EVENT DELEGATION
    ============================================================ */
 document.addEventListener('click', function(e) {
@@ -832,6 +879,7 @@ document.addEventListener('click', function(e) {
   if (closest('#callEndBtn')) { endCall(); return; }
   if (closest('#callMuteBtn')) { toggleMute(); return; }
   if (closest('#stopBtn')) { stopStreaming(); return; }
+  if (closest('#sendBtn')) { e.preventDefault(); handleSend(); return; }
 
   const tab = closest('.settings-tab');
   if (tab) {
@@ -930,7 +978,6 @@ document.addEventListener('click', function(e) {
 
 document.addEventListener('submit', function(e) {
   e.preventDefault();
-  if (e.target?.id === 'composerForm') handleSend();
   if (e.target?.id === 'simpleLoginForm') doLogin();
 }, true);
 
@@ -961,8 +1008,8 @@ async function init() {
   loadAppearance();
   loadBgPrefs();
 
-  /* Wire picker FIRST — works even before config loads */
   wireModelPicker();
+  wireEnterToSend();
   renderModelPicker();
 
   await loadConfig();
@@ -974,8 +1021,12 @@ async function init() {
   updateUserUI();
   loadMcp();
 
+  /* Keyboard shortcut: Ctrl/Cmd+K focuses input */
   document.addEventListener('keydown', e => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); $('#messageInput')?.focus(); }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      e.preventDefault();
+      $('#messageInput')?.focus();
+    }
   });
 }
 
