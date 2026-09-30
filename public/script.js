@@ -1,7 +1,7 @@
 /* ============================================================
-   MiroxAI — Frontend Script v16
-   FIXED: model picker (direct onclick), fallback models,
-   thinking inside bubble, server health check
+   MiroxAI — Frontend Script v17
+   FIXED: model picker (wrapper div + clean handlers)
+   Default model = FIRST model in config (Luna)
    ============================================================ */
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
@@ -16,13 +16,13 @@ const db = getDatabase(firebaseApp);
 const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
 
-/* Fallback models — used when /api/config fails so the picker still works */
+/* Fallback — matches backend MODELS order, Luna FIRST */
 const FALLBACK_MODELS = [
-  { id: 'mirox-luna-1.2', label: 'Luna', tagline: 'Fast · warm', default: true },
+  { id: 'mirox-luna-1.2', label: 'Luna', tagline: 'Fast · warm · free', default: true },
   { id: 'mirox-gen-1', label: 'Gen', tagline: 'Ultra concise' },
-  { id: 'mirox-pro-5', label: 'Pro', tagline: 'Balanced' },
-  { id: 'mirox-ultra-10', label: 'Ultra', tagline: 'Deep' },
-  { id: 'mirox-eclipse-2.0', label: 'Eclipse', tagline: 'Best' },
+  { id: 'mirox-pro-5', label: 'Pro', tagline: 'Balanced · deeper' },
+  { id: 'mirox-ultra-10', label: 'Ultra', tagline: 'Deep reasoning' },
+  { id: 'mirox-eclipse-2.0', label: 'Eclipse', tagline: 'Best quality' },
 ];
 
 let __config = null;
@@ -33,19 +33,19 @@ let currentConversationId = null;
 let isReplying = false;
 let __conversations = [];
 let pendingFiles = [];
-let bgState = { url: null, dim: 45, blur: 0 };
+let bgState = { url: null, dim: 45 };
 let recognition = null, callRecognition = null;
 let synth = window.speechSynthesis;
 let callActive = false, callMuted = false, micStream = null;
 let activeStreamController = null;
 
-const LS_KEY = 'miroxai_conversations_v4';
+const LS_KEY = 'miroxai_conversations_v5';
 const TOKEN_KEY = 'mirox_token';
-const USER_SETTINGS_KEY = 'miroxai_user_settings_v4';
+const USER_SETTINGS_KEY = 'miroxai_user_settings_v5';
 const DEVICE_ID_KEY = 'mirox_device_id';
-const APPEARANCE_KEY = 'miroxai_appearance_v4';
-const BG_KEY = 'miroxai_bg_v4';
-const MCP_KEY = 'miroxai_mcp_v4';
+const APPEARANCE_KEY = 'miroxai_appearance_v5';
+const BG_KEY = 'miroxai_bg_v5';
+const MCP_KEY = 'miroxai_mcp_v5';
 
 /* ---------- Utilities ---------- */
 function killLoader() {
@@ -62,7 +62,6 @@ function getDeviceId() {
   if (!id) { id = 'dev_' + uid(); localStorage.setItem(DEVICE_ID_KEY, id); }
   return id;
 }
-
 function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
 function setToken(t) { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch {} }
 
@@ -77,7 +76,6 @@ async function authJson(url, opts = {}, fallback = null) {
     return await r.json();
   } catch { return fallback; }
 }
-
 async function saveToFirebase(path, data) { try { await set(ref(db, path), data); } catch {} }
 async function updateFirebase(path, data) { try { await update(ref(db, path), data); } catch {} }
 async function readFromFirebase(path) { try { const s = await get(ref(db, path)); return s.exists() ? s.val() : null; } catch { return null; } }
@@ -105,12 +103,10 @@ function applyAppearance(prefs) {
   const mode = prefs.mode || root.getAttribute('data-mode') || 'light';
   const theme = prefs.theme || root.getAttribute('data-theme') || 'default';
   const corner = prefs.corner || root.getAttribute('data-corner') || 'soft';
-  const font = prefs.font || root.getAttribute('data-font') || 'inter';
   root.setAttribute('data-mode', mode);
   root.setAttribute('data-theme', theme);
   root.setAttribute('data-corner', corner);
-  root.setAttribute('data-font', font);
-  try { localStorage.setItem(APPEARANCE_KEY, JSON.stringify({ mode, theme, corner, font })); } catch {}
+  try { localStorage.setItem(APPEARANCE_KEY, JSON.stringify({ mode, theme, corner })); } catch {}
   $$('[data-mode]').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
   $$('.swatch').forEach(b => b.classList.toggle('active', b.dataset.theme === theme));
   $$('[data-corner]').forEach(b => b.classList.toggle('active', b.dataset.corner === corner));
@@ -120,7 +116,7 @@ function applyAppearance(prefs) {
 function loadBgPrefs() { try { bgState = { ...bgState, ...JSON.parse(localStorage.getItem(BG_KEY) || '{}') }; } catch {}; applyBackground(); }
 function applyBackground() {
   document.body.style.backgroundImage = bgState.url
-    ? `linear-gradient(rgba(0,0,0,${bgState.dim / 100}), rgba(0,0,0,${bgState.dim / 100})), url("${bgState.url}")`
+    ? `linear-gradient(rgba(20,15,10,${bgState.dim / 100}), rgba(20,15,10,${bgState.dim / 100})), url("${bgState.url}"), radial-gradient(ellipse 80% 60% at 50% -20%, var(--accent-soft), transparent 70%)`
     : '';
   document.body.style.backgroundSize = bgState.url ? 'cover' : '';
   document.body.style.backgroundPosition = bgState.url ? 'center' : '';
@@ -134,16 +130,13 @@ function loadMcp() {
   try { servers = JSON.parse(localStorage.getItem(MCP_KEY) || '[]'); } catch {}
   renderMcp(servers);
 }
-function saveMcp(servers) {
-  try { localStorage.setItem(MCP_KEY, JSON.stringify(servers)); } catch {}
-  renderMcp(servers);
-}
+function saveMcp(servers) { try { localStorage.setItem(MCP_KEY, JSON.stringify(servers)); } catch {}; renderMcp(servers); }
 function renderMcp(servers) {
   const list = $('#mcpList');
   if (!list) return;
   if (!servers.length) { list.innerHTML = '<div style="font-size:12.5px;color:var(--text-faint);padding:4px 0;">No MCP servers configured.</div>'; return; }
   list.innerHTML = servers.map((s, i) => `
-    <div class="mcp-item" data-idx="${i}">
+    <div class="mcp-item">
       <div class="mcp-item-status ${s.enabled ? 'on' : ''}"></div>
       <div class="mcp-item-info">
         <div class="mcp-item-name">${escapeHtml(s.name || 'Unnamed')}</div>
@@ -331,7 +324,7 @@ function addMessageToDOM(role, content, ts, animate = true) {
   if (welcome) welcome.remove();
   const msgEl = document.createElement('div');
   msgEl.className = `message ${role === 'user' ? 'user' : 'ai'}`;
-  const avatar = role === 'user' ? '<i class="ri-user-line"></i>' : '<i class="ri-robot-line"></i>';
+  const avatar = role === 'user' ? '<i class="ri-user-line"></i>' : '<i class="ri-sparkling-2-fill"></i>';
   msgEl.innerHTML = `
     <div class="message-avatar">${avatar}</div>
     <div class="message-content">
@@ -346,7 +339,6 @@ function addMessageToDOM(role, content, ts, animate = true) {
   return msgEl;
 }
 
-/* Creates an AI message with the thinking animation INSIDE the bubble */
 function addThinkingBubble() {
   const container = $('#chatMessages');
   if (!container) return null;
@@ -355,7 +347,7 @@ function addThinkingBubble() {
   const msgEl = document.createElement('div');
   msgEl.className = 'message ai';
   msgEl.innerHTML = `
-    <div class="message-avatar"><i class="ri-robot-line"></i></div>
+    <div class="message-avatar"><i class="ri-sparkling-2-fill"></i></div>
     <div class="message-content">
       <div class="bubble thinking"><span></span><span></span><span></span></div>
       <div class="message-time"></div>
@@ -391,7 +383,6 @@ function handleSend() {
 
 async function sendToAPI(text) {
   isReplying = true;
-
   const sendBtn = $('#sendBtn'), stopBtn = $('#stopBtn');
   if (sendBtn) sendBtn.disabled = true;
   if (stopBtn) stopBtn.style.display = 'grid';
@@ -400,7 +391,6 @@ async function sendToAPI(text) {
   const history = convo ? convo.messages.slice(-14) : [];
   const model = __model || 'mirox-luna-1.2';
 
-  /* Thinking bubble appears immediately inside the chat */
   const msgEl = addThinkingBubble();
   const bubble = msgEl.querySelector('.bubble');
   const timeEl = msgEl.querySelector('.message-time');
@@ -472,7 +462,6 @@ async function sendToAPI(text) {
 
     if (convo) { convo.messages.push({ role: 'assistant', content: full, ts: Date.now() }); convo.updated = Date.now(); }
     saveChatsToLS();
-
     if (__user) pushToFirebase(`logs/chat/${__user.email}`, { model, message: text.slice(0, 500), reply: full.slice(0, 1000), ts: Date.now(), device: getDeviceId() });
     if (timeEl) timeEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   } catch (e) {
@@ -537,8 +526,10 @@ function updatePreview() {
 }
 
 /* ============================================================
-   MODEL PICKER — simplified, direct handlers, works even if
-   backend is unavailable thanks to FALLBACK_MODELS
+   MODEL PICKER — FIXED
+   - Uses wrapper #modelPicker for outside-click detection
+   - Direct onclick handlers on each option
+   - Default = models[0] (Luna)
    ============================================================ */
 function getModelsList() {
   if (__config?.models?.length) return __config.models;
@@ -550,15 +541,14 @@ function renderModelPicker() {
   if (!menu) return;
 
   const models = getModelsList();
-  const currentId = __model || 'mirox-luna-1.2';
+  const currentId = __model || models[0].id;
 
   menu.innerHTML = models.map(m => `
     <div class="model-option${m.id === currentId ? ' active' : ''}" data-model-id="${m.id}">
-      <span class="model-option-label">${escapeHtml(m.label)}</span>
+      <span class="model-option-label"><span class="dot"></span>${escapeHtml(m.label)}</span>
       <span class="model-option-tag">${escapeHtml(m.tagline || '')}</span>
     </div>`).join('');
 
-  /* Attach directly with .onclick so re-renders don't stack listeners */
   menu.querySelectorAll('.model-option').forEach(opt => {
     opt.onclick = (e) => {
       e.preventDefault();
@@ -578,28 +568,49 @@ function selectModel(id) {
   const m = models.find(x => x.id === id);
   if (m && $('#currentModelLabel')) $('#currentModelLabel').textContent = m.label;
   renderModelPicker();
-  const menu = $('#modelPickerMenu');
-  if (menu) menu.classList.remove('open');
+  closeModelPicker();
 }
 
-/* Wire the button directly on DOM ready */
-function wireModelPickerButton() {
-  const btn = $('#modelPickerBtn');
+function openModelPicker() {
+  const wrap = $('#modelPicker');
   const menu = $('#modelPickerMenu');
-  if (!btn || !menu) return;
+  if (!wrap || !menu) return;
+  wrap.classList.add('open');
+  menu.classList.add('open');
+}
+
+function closeModelPicker() {
+  const wrap = $('#modelPicker');
+  const menu = $('#modelPickerMenu');
+  if (!wrap || !menu) return;
+  wrap.classList.remove('open');
+  menu.classList.remove('open');
+}
+
+function wireModelPicker() {
+  const btn = $('#modelPickerBtn');
+  const wrap = $('#modelPicker');
+  const menu = $('#modelPickerMenu');
+  if (!btn || !wrap || !menu) return;
 
   btn.onclick = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    menu.classList.toggle('open');
+    if (menu.classList.contains('open')) closeModelPicker();
+    else openModelPicker();
   };
 
-  /* Close on outside click using capture-phase so it runs before other handlers */
+  /* Close when clicking anywhere outside the wrapper */
   document.addEventListener('click', (e) => {
-    if (!e.target.closest('#modelPickerBtn') && !e.target.closest('#modelPickerMenu')) {
-      menu.classList.remove('open');
+    if (!e.target.closest('#modelPicker')) {
+      closeModelPicker();
     }
   }, true);
+
+  /* Close on escape */
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeModelPicker();
+  });
 }
 
 /* ---------- Auth ---------- */
@@ -656,40 +667,24 @@ async function loadUser() {
   }
 }
 
-/* ---------- Config (uses fallbacks on failure) ---------- */
+/* ---------- Config — DEFAULT = FIRST MODEL ---------- */
 async function loadConfig() {
   try {
     const res = await fetch('/api/config', { cache: 'no-store' });
     const data = await res.json();
-    if (data?.models?.length) {
-      __config = data;
-    } else {
-      __config = { models: FALLBACK_MODELS };
-    }
+    if (data?.models?.length) __config = data;
+    else __config = { models: FALLBACK_MODELS };
   } catch {
     __config = { models: FALLBACK_MODELS };
   }
 
   const models = getModelsList();
-  const def = models.find(m => m.default) || models[0];
+  /* FIRST model is the default */
+  const def = models[0];
   __model = def.id;
 
   renderModelPicker();
   if ($('#currentModelLabel')) $('#currentModelLabel').textContent = def.label;
-}
-
-/* Health check — shows a toast if server is down so user knows why */
-async function checkHealth() {
-  try {
-    const res = await fetch('/api/health', { cache: 'no-store' });
-    const data = await res.json();
-    console.log('[Mirox] health', data);
-    if (!data?.hf_key) {
-      console.warn('[Mirox] HF_API_KEY is missing on the server — AI calls will fail.');
-    }
-  } catch (e) {
-    console.warn('[Mirox] Server unreachable:', e.message);
-  }
 }
 
 /* ---------- Plans ---------- */
@@ -724,7 +719,7 @@ async function genImage() {
   if (!prompt) return alert('Please describe the image.');
   const btn = $('#generateImageBtn'), result = $('#imageResult');
   if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line"></i> Generating…'; }
-  if (result) result.innerHTML = '<div style="text-align:center;padding:20px;"><div class="thinking-dots" style="justify-content:center;display:flex;gap:5px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--accent);animation:thinkPulse 1.4s ease-in-out infinite"></span><span style="width:7px;height:7px;border-radius:50%;background:var(--accent);animation:thinkPulse 1.4s ease-in-out infinite .18s"></span><span style="width:7px;height:7px;border-radius:50%;background:var(--accent);animation:thinkPulse 1.4s ease-in-out infinite .36s"></span></div></div>';
+  if (result) result.innerHTML = '<div style="text-align:center;padding:20px;"><div class="bubble thinking" style="display:inline-flex;background:var(--panel);border:1px solid var(--border);padding:12px 16px;border-radius:16px;"><span></span><span></span><span></span></div></div>';
   try {
     const res = await authJson('/v1/images/generations', { method: 'POST', body: JSON.stringify({ prompt, aspect_ratio: $('#imageAspect')?.value || '1:1' }) }, null);
     if (res?.ok && res.image) {
@@ -933,14 +928,6 @@ document.addEventListener('click', function(e) {
   }
 });
 
-document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') {
-    document.querySelectorAll('.modal-overlay.open').forEach(o => o.classList.remove('open'));
-    $('#modelPickerMenu')?.classList.remove('open');
-  }
-  if (e.key === 'Enter' && e.target?.id === 'messageInput' && !e.shiftKey) { e.preventDefault(); handleSend(); }
-});
-
 document.addEventListener('submit', function(e) {
   e.preventDefault();
   if (e.target?.id === 'composerForm') handleSend();
@@ -952,7 +939,7 @@ document.addEventListener('input', function(e) {
     const sb = $('#sendBtn');
     if (sb) sb.disabled = isReplying || !e.target.value.trim();
     e.target.style.height = 'auto';
-    e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px';
+    e.target.style.height = Math.min(e.target.scrollHeight, 180) + 'px';
   }
   if (e.target?.id === 'bgDimInput') { bgState.dim = parseInt(e.target.value); const l = $('#bgDimLabel'); if (l) l.textContent = bgState.dim + '%'; applyBackground(); saveBgPrefs(); }
 });
@@ -974,11 +961,10 @@ async function init() {
   loadAppearance();
   loadBgPrefs();
 
-  /* Wire model picker FIRST so it works even before /api/config responds */
-  wireModelPickerButton();
+  /* Wire picker FIRST — works even before config loads */
+  wireModelPicker();
   renderModelPicker();
 
-  checkHealth();
   await loadConfig();
   await loadUser();
 
