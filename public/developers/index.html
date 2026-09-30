@@ -1,0 +1,1334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#fafafb">
+  <meta name="description" content="MiroxAI Developer Platform — Build with Luna and Gen models via OpenAI-compatible API.">
+  <title>MiroxAI — Developer Docs</title>
+  <link rel="icon" href="../logo.png" type="image/png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/remixicon@4.9.0/fonts/remixicon.css" rel="stylesheet">
+  <style>
+    /* ============================================================
+       MiroxAI Developer Portal — Full Styles
+       ============================================================ */
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #fafafb;
+      --bg-soft: #f4f4f7;
+      --panel: #ffffff;
+      --panel-2: #f7f7fa;
+      --panel-3: #eeeef3;
+      --border: #e8e8ef;
+      --border-strong: #d5d5dd;
+      --text: #0a0a0c;
+      --text-muted: #64646f;
+      --text-faint: #9494a0;
+      --accent: #c4694b;
+      --accent-hover: #a8503a;
+      --accent-soft: rgba(196, 105, 75, 0.10);
+      --code-bg: #f6f8fa;
+      --code-border: #e4e7ec;
+      --code-header: #eef0f4;
+      --code-text: #24292f;
+      --radius: 10px;
+      --radius-lg: 14px;
+      --radius-xl: 20px;
+      --font: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', Consolas, monospace;
+      --shadow-sm: 0 1px 2px rgba(20, 20, 40, 0.04), 0 2px 6px rgba(20, 20, 40, 0.03);
+      --shadow-lg: 0 8px 28px rgba(20, 20, 40, 0.09);
+      --sidebar-w: 260px;
+    }
+
+    :root[data-mode="dark"] {
+      --bg: #0a0a0d;
+      --bg-soft: #0f0f14;
+      --panel: #15151b;
+      --panel-2: #1d1d24;
+      --panel-3: #26262f;
+      --border: #26262f;
+      --border-strong: #3a3a47;
+      --text: #f4f4f8;
+      --text-muted: #a0a0ab;
+      --text-faint: #6a6a75;
+      --code-bg: #1a1a22;
+      --code-border: #26262f;
+      --code-header: #13131a;
+      --code-text: #e4e4ec;
+    }
+
+    html { scroll-behavior: smooth; scroll-padding-top: 24px; }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 15px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    button { font: inherit; cursor: pointer; background: none; border: none; color: inherit; }
+    input, textarea, select { font: inherit; color: inherit; }
+    img { max-width: 100%; display: block; }
+
+    /* ============ LAYOUT ============ */
+    .dev-layout {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* ============ SIDEBAR ============ */
+    .dev-sidebar {
+      width: var(--sidebar-w);
+      flex-shrink: 0;
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      padding: 24px 16px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .dev-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 6px;
+      padding: 0 8px;
+    }
+    .dev-logo img {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+    }
+    .dev-logo-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.2;
+    }
+    .dev-logo-text strong {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .dev-logo-text span {
+      font-size: 11px;
+      color: var(--text-faint);
+      font-weight: 500;
+    }
+
+    .dev-nav-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-faint);
+      padding: 20px 12px 6px;
+    }
+
+    .dev-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .dev-nav a {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: var(--radius);
+      font-size: 13.5px;
+      font-weight: 500;
+      color: var(--text-muted);
+      text-decoration: none;
+      transition: background 0.15s, color 0.15s;
+    }
+    .dev-nav a:hover {
+      background: var(--panel-2);
+      color: var(--text);
+      text-decoration: none;
+    }
+    .dev-nav a.active {
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+    .dev-nav a i { font-size: 16px; flex-shrink: 0; }
+
+    .dev-sidebar-footer {
+      margin-top: auto;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .dev-sidebar-footer a {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      color: var(--text-muted);
+      text-decoration: none;
+    }
+    .dev-sidebar-footer a:hover {
+      background: var(--panel-2);
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    /* ============ MAIN ============ */
+    .dev-main {
+      flex: 1;
+      min-width: 0;
+      padding: 48px 56px 80px;
+      max-width: 1000px;
+    }
+
+    .dev-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 32px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .dev-topbar-title {
+      font-size: 13px;
+      color: var(--text-faint);
+      font-weight: 500;
+    }
+    .dev-topbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .icon-btn {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border-radius: var(--radius);
+      color: var(--text-muted);
+      font-size: 17px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+      text-decoration: none;
+    }
+    .icon-btn:hover {
+      background: var(--panel-2);
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    /* ============ CONTENT ============ */
+    section { margin-bottom: 56px; }
+
+    h1 {
+      font-size: 34px;
+      font-weight: 700;
+      letter-spacing: -0.025em;
+      margin-bottom: 12px;
+      line-height: 1.15;
+    }
+    h2 {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 14px;
+      padding-top: 8px;
+    }
+    h3 {
+      font-size: 16px;
+      font-weight: 600;
+      margin: 22px 0 10px;
+      letter-spacing: -0.01em;
+    }
+    p {
+      color: var(--text-muted);
+      margin-bottom: 14px;
+      line-height: 1.7;
+    }
+    ul, ol {
+      margin: 10px 0 16px 22px;
+      color: var(--text-muted);
+    }
+    li { line-height: 1.7; margin-bottom: 4px; }
+
+    .lead {
+      font-size: 16px;
+      color: var(--text-muted);
+      margin-bottom: 20px;
+      line-height: 1.7;
+    }
+
+    code {
+      background: var(--code-bg);
+      color: var(--text);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: var(--mono);
+      font-size: 0.88em;
+      border: 1px solid var(--code-border);
+    }
+
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--code-border);
+      border-radius: var(--radius-lg);
+      padding: 16px 18px;
+      overflow-x: auto;
+      margin: 12px 0 20px;
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.65;
+      color: var(--code-text);
+      position: relative;
+    }
+    pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      font-size: 13px;
+      color: inherit;
+    }
+
+    /* Code copy button */
+    .code-copy-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-faint);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      opacity: 0;
+      transition: opacity 0.15s;
+      font-family: var(--font);
+    }
+    pre:hover .code-copy-btn { opacity: 1; }
+    .code-copy-btn:hover { background: var(--panel-2); color: var(--text); }
+    .code-copy-btn.copied { color: var(--accent); }
+
+    /* ============ BADGES ============ */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 10px;
+      border-radius: 99px;
+      font-size: 11.5px;
+      font-weight: 600;
+      background: var(--accent-soft);
+      color: var(--accent);
+      letter-spacing: 0.01em;
+    }
+    .badge.neutral {
+      background: var(--panel-3);
+      color: var(--text-muted);
+    }
+    .badge.green {
+      background: rgba(78, 168, 46, 0.12);
+      color: #4ea82e;
+    }
+    .badge-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+    }
+
+    /* ============ METHOD TAGS ============ */
+    .endpoint {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      border-radius: var(--radius);
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      font-family: var(--mono);
+      font-size: 13.5px;
+      margin: 12px 0 16px;
+    }
+    .method {
+      font-weight: 700;
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 5px;
+      letter-spacing: 0.03em;
+    }
+    .method.post { background: rgba(196, 105, 75, 0.14); color: var(--accent); }
+    .method.get { background: rgba(37, 99, 235, 0.12); color: #2563eb; }
+    .method.del { background: rgba(220, 38, 38, 0.12); color: #dc2626; }
+
+    /* ============ CARDS ============ */
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      margin: 16px 0 24px;
+    }
+    .card {
+      padding: 16px 18px;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border);
+      background: var(--panel);
+      transition: border-color 0.15s, transform 0.15s;
+    }
+    .card:hover {
+      border-color: var(--border-strong);
+    }
+    .card-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 9px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      display: grid;
+      place-items: center;
+      font-size: 18px;
+      margin-bottom: 12px;
+    }
+    .card h4 {
+      font-size: 14.5px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .card p {
+      font-size: 13px;
+      margin: 0;
+      line-height: 1.55;
+    }
+
+    /* ============ PLAYGROUND ============ */
+    .playground {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      background: var(--panel);
+      overflow: hidden;
+      margin: 20px 0;
+    }
+    .playground-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel-2);
+    }
+    .playground-header h3 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .playground-header h3 i { color: var(--accent); }
+    .playground-body {
+      padding: 20px;
+    }
+
+    .field {
+      margin-bottom: 14px;
+    }
+    .field:last-of-type { margin-bottom: 18px; }
+    .field label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      letter-spacing: 0.01em;
+    }
+    .field input,
+    .field select,
+    .field textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--panel-2);
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      font-family: var(--font);
+    }
+    .field textarea {
+      resize: vertical;
+      min-height: 80px;
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .field input:focus,
+    .field select:focus,
+    .field textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+
+    .field-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .playground-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 9px 18px;
+      border-radius: var(--radius);
+      font-size: 13.5px;
+      font-weight: 500;
+      transition: background 0.15s, opacity 0.15s;
+      border: 1px solid transparent;
+      font-family: var(--font);
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-secondary {
+      background: var(--panel-2);
+      color: var(--text);
+      border-color: var(--border);
+    }
+    .btn-secondary:hover { background: var(--panel-3); }
+
+    .playground-result {
+      margin-top: 18px;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--code-border);
+      background: var(--code-bg);
+      overflow: hidden;
+    }
+    .playground-result-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--code-border);
+      background: var(--code-header);
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: none;
+    }
+    .status-pill.ok { background: rgba(78, 168, 46, 0.14); color: #4ea82e; }
+    .status-pill.err { background: rgba(220, 38, 38, 0.12); color: #dc2626; }
+    .status-pill.pending { background: var(--panel-3); color: var(--text-muted); }
+
+    .playground-output {
+      padding: 14px 16px;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      line-height: 1.65;
+      color: var(--code-text);
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 380px;
+      overflow-y: auto;
+      margin: 0;
+      background: transparent;
+      border: none;
+      border-radius: 0;
+    }
+
+    /* thinking dots */
+    .dots {
+      display: inline-flex;
+      gap: 3px;
+      align-items: center;
+    }
+    .dots span {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: currentColor;
+      animation: bounce 1.4s ease-in-out infinite;
+    }
+    .dots span:nth-child(2) { animation-delay: 0.15s; }
+    .dots span:nth-child(3) { animation-delay: 0.3s; }
+    @keyframes bounce {
+      0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+      30% { transform: translateY(-4px); opacity: 1; }
+    }
+
+    /* ============ TABLE ============ */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13.5px;
+      margin: 12px 0 20px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+    }
+    th {
+      text-align: left;
+      padding: 10px 14px;
+      font-size: 11.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-faint);
+      background: var(--panel-2);
+      border-bottom: 1px solid var(--border);
+    }
+    td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-muted);
+      vertical-align: top;
+    }
+    tr:last-child td { border-bottom: none; }
+    td code { font-size: 12px; }
+
+    /* ============ MOBILE ============ */
+    .mobile-nav-toggle {
+      display: none;
+    }
+
+    @media (max-width: 900px) {
+      .dev-sidebar {
+        position: fixed;
+        z-index: 100;
+        transform: translateX(-100%);
+        transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: var(--shadow-lg);
+      }
+      .dev-sidebar.open { transform: translateX(0); }
+      .dev-main { padding: 24px 20px 60px; }
+      h1 { font-size: 26px; }
+      h2 { font-size: 19px; }
+      .mobile-nav-toggle {
+        display: grid;
+        position: fixed;
+        top: 14px;
+        left: 14px;
+        z-index: 200;
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        place-items: center;
+        font-size: 19px;
+        color: var(--text);
+        box-shadow: var(--shadow-sm);
+      }
+      .dev-topbar { padding-left: 48px; }
+      .field-row { grid-template-columns: 1fr; }
+    }
+
+    .scrim {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 90;
+      background: rgba(0, 0, 0, 0.35);
+    }
+    .scrim.open { display: block; }
+  </style>
+</head>
+<body>
+
+  <!-- Mobile nav toggle -->
+  <button class="mobile-nav-toggle" id="mobileNavToggle" aria-label="Open navigation">
+    <i class="ri-menu-line"></i>
+  </button>
+
+  <!-- Scrim for mobile -->
+  <div class="scrim" id="scrim"></div>
+
+  <div class="dev-layout">
+
+    <!-- ============ SIDEBAR ============ -->
+    <aside class="dev-sidebar" id="devSidebar">
+      <div class="dev-logo">
+        <img src="../logo.png" alt="MiroxAI" onerror="this.style.display='none'">
+        <div class="dev-logo-text">
+          <strong>MiroxAI</strong>
+          <span>Developer Platform</span>
+        </div>
+      </div>
+
+      <div class="dev-nav-label">Getting Started</div>
+      <nav class="dev-nav">
+        <a href="#intro" class="active"><i class="ri-book-open-line"></i> Introduction</a>
+        <a href="#quickstart"><i class="ri-rocket-line"></i> Quick Start</a>
+        <a href="#auth"><i class="ri-key-2-line"></i> Authentication</a>
+      </nav>
+
+      <div class="dev-nav-label">API Reference</div>
+      <nav class="dev-nav">
+        <a href="#chat"><i class="ri-chat-3-line"></i> Chat Completions</a>
+        <a href="#models"><i class="ri-cpu-line"></i> Models</a>
+        <a href="#images"><i class="ri-image-line"></i> Image Generation</a>
+        <a href="#errors"><i class="ri-error-warning-line"></i> Errors</a>
+      </nav>
+
+      <div class="dev-nav-label">Tools</div>
+      <nav class="dev-nav">
+        <a href="#playground"><i class="ri-terminal-box-line"></i> Playground</a>
+        <a href="#limits"><i class="ri-speed-up-line"></i> Rate Limits</a>
+      </nav>
+
+      <div class="dev-sidebar-footer">
+        <a href="/"><i class="ri-arrow-left-line"></i> Back to Mirox</a>
+        <a href="#playground"><i class="ri-play-circle-line"></i> Try API</a>
+      </div>
+    </aside>
+
+    <!-- ============ MAIN ============ -->
+    <main class="dev-main">
+
+      <!-- Topbar -->
+      <div class="dev-topbar">
+        <div class="dev-topbar-title">
+          <i class="ri-book-2-line"></i> Documentation
+        </div>
+        <div class="dev-topbar-actions">
+          <button class="icon-btn" id="themeToggle" title="Toggle theme">
+            <i class="ri-moon-line"></i>
+          </button>
+          <a href="/" class="icon-btn" title="Back to app">
+            <i class="ri-home-line"></i>
+          </a>
+        </div>
+      </div>
+
+      <!-- ============ INTRO ============ -->
+      <section id="intro">
+        <h1>MiroxAI API</h1>
+        <p class="lead">
+          Build intelligent apps with <strong>Luna</strong> and <strong>Gen</strong> — our
+          fast, free AI models. OpenAI-compatible endpoints. Streaming, vision, and
+          image generation included.
+        </p>
+        <div class="badge-row">
+          <span class="badge"><i class="ri-checkbox-circle-line"></i> v1</span>
+          <span class="badge neutral">OpenAI-compatible</span>
+          <span class="badge green"><i class="ri-flashlight-line"></i> Free tier</span>
+          <span class="badge neutral">by OpenSurr</span>
+        </div>
+
+        <div class="card-grid">
+          <div class="card">
+            <div class="card-icon"><i class="ri-chat-3-line"></i></div>
+            <h4>Chat Completions</h4>
+            <p>Streaming text generation with Luna and Gen.</p>
+          </div>
+          <div class="card">
+            <div class="card-icon"><i class="ri-image-line"></i></div>
+            <h4>Image Generation</h4>
+            <p>FLUX.1-schnell via Hugging Face.</p>
+          </div>
+          <div class="card">
+            <div class="card-icon"><i class="ri-eye-line"></i></div>
+            <h4>Vision</h4>
+            <p>Send images alongside text prompts.</p>
+          </div>
+          <div class="card">
+            <div class="card-icon"><i class="ri-shield-check-line"></i></div>
+            <h4>Secure</h4>
+            <p>API key auth with SHA-256 hashing.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ QUICK START ============ -->
+      <section id="quickstart">
+        <h2>Quick Start</h2>
+        <p>Make your first API call in under a minute:</p>
+
+        <pre><code>curl -X POST https://your-domain.com/v1/chat/completions \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "mirox-luna-1.2",
+    "messages": [
+      {"role": "user", "content": "Hello!"}
+    ]
+  }'<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
+
+        <h3>Node.js example</h3>
+        <pre><code>const res = await fetch('https://your-domain.com/v1/chat/completions', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer YOUR_API_KEY',
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    model: 'mirox-luna-1.2',
+    messages: [{ role: 'user', content: 'Hello!' }],
+    stream: false,
+  }),
+});
+const data = await res.json();
+console.log(data.reply);<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
+      </section>
+
+      <!-- ============ AUTH ============ -->
+      <section id="auth">
+        <h2>Authentication</h2>
+        <p>
+          Every request must include your API key in the <code>Authorization</code> header.
+          Generate keys from <strong>Plans &rarr; API keys</strong> inside the app.
+        </p>
+
+        <pre><code>Authorization: Bearer mxk_live_xxxxxxxxxxxxxxxxxxxxxxxx<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
+
+        <h3>Key rules</h3>
+        <ul>
+          <li>Keys are prefixed with <code>mxk_</code> and hashed with SHA-256 in the database.</li>
+          <li>Never expose keys in client-side code — call the API from your server.</li>
+          <li>Free plan: max 2 keys. Pro: 5. Ultimate: 20.</li>
+        </ul>
+      </section>
+
+      <!-- ============ CHAT ============ -->
+      <section id="chat">
+        <h2>Chat Completions</h2>
+
+        <div class="endpoint">
+          <span class="method post">POST</span>
+          <span>/v1/chat/completions</span>
+        </div>
+
+        <h3>Request body</h3>
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>model</code></td><td>string</td><td><code>mirox-luna-1.2</code> or <code>mirox-gen-1</code></td></tr>
+            <tr><td><code>messages</code></td><td>array</td><td>Array of <code>{role, content}</code> objects</td></tr>
+            <tr><td><code>stream</code></td><td>boolean</td><td>Enable SSE streaming (default <code>false</code>)</td></tr>
+            <tr><td><code>temperature</code></td><td>number</td><td>0–2, default <code>0.7</code></td></tr>
+          </tbody>
+        </table>
+
+        <h3>Example request</h3>
+        <pre><code>{
+  "model": "mirox-luna-1.2",
+  "messages": [
+    {"role": "system", "content": "You are helpful."},
+    {"role": "user", "content": "What is 2+2?"}
+  ],
+  "stream": false,
+  "temperature": 0.7
+}<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
+
+        <h3>Example response</h3>
+        <pre><code>{
+  "ok": true,
+  "reply": "2 + 2 equals 4.",
+  "model": "Luna",
+  "daily_used": 1,
+  "daily_remaining": 49
+}<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
+
+        <h3>Streaming</h3>
+        <p>Set <code>stream: true</code> to receive Server-Sent Events:</p>
+        <pre><code>data: {"d":"Hello"}
+data: {"d":" there"}
+data: {"d":"!"}
+data: {"done":true,"model":"Luna"}<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
+      </section>
+
+      <!-- ============ MODELS ============ -->
+      <section id="models">
+        <h2>Models</h2>
+        <p>Only two models are available via the public API. Others are reserved for the in-app experience.</p>
+
+        <table>
+          <thead>
+            <tr><th>Model ID</th><th>Label</th><th>Context</th><th>Best for</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>mirox-luna-1.2</code></td>
+              <td>Luna</td>
+              <td>~900 tokens</td>
+              <td>Friendly conversation, general tasks</td>
+            </tr>
+            <tr>
+              <td><code>mirox-gen-1</code></td>
+              <td>Gen</td>
+              <td>~600 tokens</td>
+              <td>Code-only output, ultra-concise</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- ============ IMAGES ============ -->
+      <section id="images">
+        <h2>Image Generation</h2>
+
+        <div class="endpoint">
+          <span class="method post">POST</span>
+          <span>/v1/images/generations</span>
+        </div>
+
+        <p>Powered by <strong>FLUX.1-schnell</strong> on Hugging Face.</p>
+
+        <h3>Request body</h3>
+        <table>
+          <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>prompt</code></td><td>string</td><td>Description of the image</td></tr>
+            <tr><td><code>aspect_ratio</code></td><td>string</td><td><code>1:1</code>, <code>16:9</code>, <code>9:16</code>, <code>4:3</code></td></tr>
+          </tbody>
+        </table>
+
+        <pre><code>{
+  "prompt": "A serene mountain landscape at sunset",
+  "aspect_ratio": "16:9"
+}<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
+
+        <h3>Response</h3>
+        <pre><code>{
+  "ok": true,
+  "image": "https://.../generated.png"
+}<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
+      </section>
+
+      <!-- ============ ERRORS ============ -->
+      <section id="errors">
+        <h2>Errors</h2>
+        <table>
+          <thead><tr><th>Status</th><th>Meaning</th><th>Fix</th></tr></thead>
+          <tbody>
+            <tr><td><code>400</code></td><td>Invalid request body</td><td>Check required fields</td></tr>
+            <tr><td><code>401</code></td><td>Missing or invalid API key</td><td>Re-generate key in Plans</td></tr>
+            <tr><td><code>403</code></td><td>Model not allowed via API</td><td>Use Luna or Gen</td></tr>
+            <tr><td><code>429</code></td><td>Daily limit reached</td><td>Wait 24h or upgrade</td></tr>
+            <tr><td><code>502</code></td><td>Upstream error</td><td>Retry request</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Error response shape</h3>
+        <pre><code>{
+  "ok": false,
+  "error": "Daily message limit reached (50/day). Refills in 24 hours.",
+  "limit_reached": true
+}<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
+      </section>
+
+      <!-- ============ PLAYGROUND ============ -->
+      <section id="playground">
+        <h2>API Playground</h2>
+        <p>Test the chat completions endpoint directly from your browser. No key needed for the in-app playground — it uses your session.</p>
+
+        <div class="playground">
+          <div class="playground-header">
+            <h3><i class="ri-terminal-box-line"></i> POST /v1/chat/completions</h3>
+            <button class="btn btn-secondary" id="pgResetBtn">
+              <i class="ri-refresh-line"></i> Reset
+            </button>
+          </div>
+          <div class="playground-body">
+            <div class="field-row">
+              <div class="field">
+                <label for="pgModel">Model</label>
+                <select id="pgModel">
+                  <option value="mirox-luna-1.2">Luna (mirox-luna-1.2)</option>
+                  <option value="mirox-gen-1">Gen (mirox-gen-1)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="pgTemp">Temperature</label>
+                <input type="number" id="pgTemp" value="0.7" min="0" max="2" step="0.1">
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="pgSystem">System prompt <span style="color:var(--text-faint);font-weight:400;">(optional)</span></label>
+              <input type="text" id="pgSystem" placeholder="You are a helpful assistant." value="">
+            </div>
+
+            <div class="field">
+              <label for="pgMessage">User message</label>
+              <textarea id="pgMessage" placeholder="Ask anything…">Hello! What can you do?</textarea>
+            </div>
+
+            <div class="field">
+              <label>
+                <input type="checkbox" id="pgStream" style="width:auto;margin-right:6px;vertical-align:middle;">
+                Stream response (SSE)
+              </label>
+            </div>
+
+            <div class="playground-actions">
+              <button class="btn btn-primary" id="pgSendBtn">
+                <i class="ri-send-plane-fill"></i> Send Request
+              </button>
+            </div>
+
+            <div class="playground-result" id="pgResult" style="display:none;">
+              <div class="playground-result-header">
+                <span>Response</span>
+                <span class="status-pill pending" id="pgStatus">
+                  <span class="dots"><span></span><span></span><span></span></span>
+                </span>
+              </div>
+              <pre class="playground-output" id="pgOutput"></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ LIMITS ============ -->
+      <section id="limits">
+        <h2>Rate Limits</h2>
+        <table>
+          <thead><tr><th>Plan</th><th>Daily messages</th><th>API keys</th><th>Eclipse credits</th></tr></thead>
+          <tbody>
+            <tr><td>Free</td><td>50</td><td>2</td><td>10 / day</td></tr>
+            <tr><td>Pro</td><td>500</td><td>5</td><td>—</td></tr>
+            <tr><td>Ultimate</td><td>5000</td><td>20</td><td>—</td></tr>
+          </tbody>
+        </table>
+        <p>Limits reset every 24 hours. Eclipse credits refill 24 hours after depletion.</p>
+      </section>
+
+      <!-- Footer -->
+      <footer style="margin-top:60px;padding-top:20px;border-top:1px solid var(--border);color:var(--text-faint);font-size:12.5px;text-align:center;">
+        Made by OpenSurr · MiroxAI Developer Platform · v1
+      </footer>
+
+    </main>
+  </div>
+
+  <script>
+    /* ============================================================
+       MiroxAI Developer Portal — Scripts
+       ============================================================ */
+
+    /* ---------- Smooth nav + active highlight ---------- */
+    const navLinks = document.querySelectorAll('.dev-nav a');
+    const sections = Array.from(navLinks).map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+
+    navLinks.forEach(a => {
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        navLinks.forEach(x => x.classList.remove('active'));
+        a.classList.add('active');
+        const target = document.querySelector(a.getAttribute('href'));
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        // close mobile sidebar
+        closeMobileNav();
+      });
+    });
+
+    // Update active nav on scroll
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const id = entry.target.id;
+          navLinks.forEach(a => {
+            a.classList.toggle('active', a.getAttribute('href') === '#' + id);
+          });
+        }
+      });
+    }, { rootMargin: '-30% 0px -60% 0px', threshold: 0 });
+
+    sections.forEach(s => observer.observe(s));
+
+    /* ---------- Mobile nav ---------- */
+    const mobileToggle = document.getElementById('mobileNavToggle');
+    const sidebar = document.getElementById('devSidebar');
+    const scrim = document.getElementById('scrim');
+
+    function closeMobileNav() {
+      sidebar.classList.remove('open');
+      scrim.classList.remove('open');
+    }
+
+    mobileToggle?.addEventListener('click', () => {
+      sidebar.classList.toggle('open');
+      scrim.classList.toggle('open');
+    });
+
+    scrim?.addEventListener('click', closeMobileNav);
+
+    /* ---------- Theme toggle ---------- */
+    const themeToggle = document.getElementById('themeToggle');
+    const root = document.documentElement;
+
+    function applyTheme(mode) {
+      root.setAttribute('data-mode', mode);
+      themeToggle.innerHTML = mode === 'dark'
+        ? '<i class="ri-sun-line"></i>'
+        : '<i class="ri-moon-line"></i>';
+      try { localStorage.setItem('mirox_dev_theme', mode); } catch {}
+    }
+
+    function loadTheme() {
+      let mode = 'light';
+      try {
+        const saved = localStorage.getItem('mirox_dev_theme');
+        if (saved) mode = saved;
+        else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) mode = 'dark';
+      } catch {}
+      applyTheme(mode);
+    }
+
+    themeToggle?.addEventListener('click', () => {
+      const cur = root.getAttribute('data-mode') || 'light';
+      applyTheme(cur === 'dark' ? 'light' : 'dark');
+    });
+
+    loadTheme();
+
+    /* ---------- Code copy buttons ---------- */
+    document.querySelectorAll('[data-copy]').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const pre = btn.closest('pre');
+        const codeEl = pre?.querySelector('code');
+        if (!codeEl) return;
+        const text = codeEl.textContent;
+        try {
+          if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+          } else {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.top = '-1000px';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+          }
+          btn.classList.add('copied');
+          btn.innerHTML = '<i class="ri-check-line"></i> Copied';
+          setTimeout(() => {
+            btn.classList.remove('copied');
+            btn.innerHTML = '<i class="ri-file-copy-line"></i> Copy';
+          }, 1500);
+        } catch (err) {
+          btn.innerHTML = '<i class="ri-close-line"></i> Failed';
+          setTimeout(() => {
+            btn.innerHTML = '<i class="ri-file-copy-line"></i> Copy';
+          }, 1500);
+        }
+      });
+    });
+
+    /* ---------- Playground ---------- */
+    const pgModel = document.getElementById('pgModel');
+    const pgTemp = document.getElementById('pgTemp');
+    const pgSystem = document.getElementById('pgSystem');
+    const pgMessage = document.getElementById('pgMessage');
+    const pgStream = document.getElementById('pgStream');
+    const pgSendBtn = document.getElementById('pgSendBtn');
+    const pgResetBtn = document.getElementById('pgResetBtn');
+    const pgResult = document.getElementById('pgResult');
+    const pgOutput = document.getElementById('pgOutput');
+    const pgStatus = document.getElementById('pgStatus');
+
+    function setStatus(kind, text) {
+      if (kind === 'pending') {
+        pgStatus.className = 'status-pill pending';
+        pgStatus.innerHTML = '<span class="dots"><span></span><span></span><span></span></span> ' + (text || 'Streaming');
+      } else if (kind === 'ok') {
+        pgStatus.className = 'status-pill ok';
+        pgStatus.innerHTML = '<i class="ri-check-line"></i> ' + (text || 'OK');
+      } else if (kind === 'err') {
+        pgStatus.className = 'status-pill err';
+        pgStatus.innerHTML = '<i class="ri-close-line"></i> ' + (text || 'Error');
+      }
+    }
+
+    function resetPlayground() {
+      pgModel.value = 'mirox-luna-1.2';
+      pgTemp.value = '0.7';
+      pgSystem.value = '';
+      pgMessage.value = 'Hello! What can you do?';
+      pgStream.checked = false;
+      pgResult.style.display = 'none';
+      pgOutput.textContent = '';
+      setStatus('pending', '');
+    }
+
+    pgResetBtn?.addEventListener('click', resetPlayground);
+
+    pgSendBtn?.addEventListener('click', async () => {
+      const message = pgMessage.value.trim();
+      if (!message) {
+        alert('Please enter a message.');
+        return;
+      }
+
+      const model = pgModel.value;
+      const temperature = parseFloat(pgTemp.value) || 0.7;
+      const system = pgSystem.value.trim();
+      const stream = pgStream.checked;
+
+      const messages = [];
+      if (system) messages.push({ role: 'system', content: system });
+      messages.push({ role: 'user', content: message });
+
+      pgResult.style.display = 'block';
+      pgOutput.textContent = '';
+      pgSendBtn.disabled = true;
+      setStatus('pending', stream ? 'Streaming' : 'Waiting');
+
+      const t0 = performance.now();
+
+      try {
+        if (stream) {
+          // --- SSE streaming ---
+          const res = await fetch('/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model, messages, stream: true, temperature }),
+          });
+
+          if (!res.ok || !res.body) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.error || ('HTTP ' + res.status));
+          }
+
+          const reader = res.body.getReader();
+          const dec = new TextDecoder();
+          let buf = '';
+          let full = '';
+
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buf += dec.decode(value, { stream: true });
+            let idx;
+            while ((idx = buf.indexOf('\n')) !== -1) {
+              const line = buf.slice(0, idx).trim();
+              buf = buf.slice(idx + 1);
+              if (!line.startsWith('data:')) continue;
+              const pl = line.slice(5).trim();
+              if (!pl || pl === '[DONE]') continue;
+              try {
+                const o = JSON.parse(pl);
+                if (o.d) {
+                  full += o.d;
+                  pgOutput.textContent = full;
+                  pgOutput.scrollTop = pgOutput.scrollHeight;
+                }
+                if (o.error) {
+                  throw new Error(o.error);
+                }
+                if (o.done) {
+                  const ms = Math.round(performance.now() - t0);
+                  pgOutput.textContent += '\n\n— done in ' + ms + 'ms · model: ' + (o.model || 'Luna');
+                  setStatus('ok', 'OK');
+                }
+              } catch {}
+            }
+          }
+        } else {
+          // --- Non-streaming ---
+          const res = await fetch('/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model, messages, stream: false, temperature }),
+          });
+          const data = await res.json();
+          const ms = Math.round(performance.now() - t0);
+
+          if (res.ok && data.ok !== false) {
+            const reply = data.reply || '(empty)';
+            const meta = {
+              model: data.model,
+              daily_used: data.daily_used,
+              daily_remaining: data.daily_remaining,
+              eclipse_credits: data.eclipse_credits,
+              ms,
+            };
+            pgOutput.textContent = reply + '\n\n— metadata —\n' + JSON.stringify(meta, null, 2);
+            setStatus('ok', 'OK');
+          } else {
+            pgOutput.textContent = JSON.stringify(data, null, 2);
+            setStatus('err', data.error || ('HTTP ' + res.status));
+          }
+        }
+      } catch (e) {
+        pgOutput.textContent = 'Error: ' + (e.message || String(e));
+        setStatus('err', 'Error');
+      } finally {
+        pgSendBtn.disabled = false;
+      }
+    });
+
+    // Cmd/Ctrl+Enter to send in playground
+    pgMessage?.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        pgSendBtn.click();
+      }
+    });
+
+    /* ---------- Deep-link hash ---------- */
+    if (window.location.hash) {
+      setTimeout(() => {
+        const target = document.querySelector(window.location.hash);
+        if (target) target.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    }
+  </script>
+</body>
+</html>
