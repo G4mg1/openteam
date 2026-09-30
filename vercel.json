@@ -1,7 +1,6 @@
 {
   "version": 2,
   "name": "mirox-ai",
-  "public": false,
   "cleanUrls": true,
   "trailingSlash": false,
 
@@ -147,12 +146,7 @@
   "functions": {
     "api/index.js": {
       "memory": 1024,
-      "maxDuration": 60,
-      "runtime": "nodejs20.x"
+      "maxDuration": 60
     }
-  },
-
-  "env": {
-    "NODE_ENV": "production"
   }
 }
