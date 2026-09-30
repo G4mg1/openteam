@@ -1,7 +1,6 @@
 /* ============================================================
-   MiroxAI — Frontend Script v18
-   FIXED: Enter sends, model picker works, image gen works,
-   streaming cursor, safe area handling
+   MiroxAI — Frontend Script v20
+   Send button + Enter key = bulletproof
    ============================================================ */
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
@@ -16,7 +15,6 @@ const db = getDatabase(firebaseApp);
 const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
 
-/* Luna is FIRST — used as default */
 const FALLBACK_MODELS = [
   { id: 'mirox-luna-1.2', label: 'Luna', tagline: 'Fast · warm · free', default: true },
   { id: 'mirox-gen-1', label: 'Gen', tagline: 'Ultra concise' },
@@ -39,13 +37,13 @@ let synth = window.speechSynthesis;
 let callActive = false, callMuted = false, micStream = null;
 let activeStreamController = null;
 
-const LS_KEY = 'miroxai_conversations_v6';
+const LS_KEY = 'miroxai_conversations_v8';
 const TOKEN_KEY = 'mirox_token';
-const USER_SETTINGS_KEY = 'miroxai_user_settings_v6';
+const USER_SETTINGS_KEY = 'miroxai_user_settings_v8';
 const DEVICE_ID_KEY = 'mirox_device_id';
-const APPEARANCE_KEY = 'miroxai_appearance_v6';
-const BG_KEY = 'miroxai_bg_v6';
-const MCP_KEY = 'miroxai_mcp_v6';
+const APPEARANCE_KEY = 'miroxai_appearance_v8';
+const BG_KEY = 'miroxai_bg_v8';
+const MCP_KEY = 'miroxai_mcp_v8';
 
 function killLoader() {
   const l = document.getElementById('loadingScreen');
@@ -210,13 +208,10 @@ function inlineFmt(t) {
   t = t.replace(/\u0001(\d+)\u0001/g, (_, i) => `<code>${escapeHtml(codes[+i])}</code>`);
   return t;
 }
-function renderBubble(bubble, text, streaming = false) {
+function renderBubble(bubble, text) {
   if (!bubble) return;
   bubble.classList.remove('thinking');
-  if (!userSettings.highlightOn) {
-    bubble.textContent = text || '';
-    return;
-  }
+  if (!userSettings.highlightOn) { bubble.textContent = text || ''; return; }
   bubble.innerHTML = renderMarkdown(text || '');
   highlightCode(bubble);
   wireCodeButtons(bubble);
@@ -294,7 +289,7 @@ function bindSuggestionClicks() {
       const prompt = card.dataset.prompt;
       if (prompt && $('#messageInput')) {
         $('#messageInput').value = prompt;
-        $('#messageInput').dispatchEvent(new Event('input'));
+        updateSendButtonState();
         handleSend();
       }
     };
@@ -365,7 +360,27 @@ function addThinkingBubble() {
   return msgEl;
 }
 
-/* ---------- Send ---------- */
+/* ============================================================
+   SEND BUTTON STATE
+   ============================================================ */
+function updateSendButtonState() {
+  const btn = $('#sendBtn');
+  const inp = $('#messageInput');
+  if (!btn || !inp) return;
+  const hasContent = inp.value.trim().length > 0 || pendingFiles.length > 0;
+  const shouldBeEnabled = hasContent && !isReplying;
+  if (shouldBeEnabled) {
+    btn.classList.remove('is-disabled');
+    btn.setAttribute('aria-disabled', 'false');
+  } else {
+    btn.classList.add('is-disabled');
+    btn.setAttribute('aria-disabled', 'true');
+  }
+}
+
+/* ============================================================
+   SEND
+   ============================================================ */
 function handleSend() {
   if (isReplying) return;
   const inp = $('#messageInput');
@@ -383,7 +398,7 @@ function handleSend() {
   addMessageToDOM('user', text, Date.now());
   inp.value = '';
   inp.style.height = 'auto';
-  $('#sendBtn').disabled = true;
+  updateSendButtonState();
 
   saveChatsToLS();
   renderHistory();
@@ -392,8 +407,8 @@ function handleSend() {
 
 async function sendToAPI(text) {
   isReplying = true;
-  const sendBtn = $('#sendBtn'), stopBtn = $('#stopBtn');
-  if (sendBtn) sendBtn.disabled = true;
+  updateSendButtonState();
+  const stopBtn = $('#stopBtn');
   if (stopBtn) stopBtn.style.display = 'grid';
 
   const convo = currentConvo();
@@ -459,7 +474,6 @@ async function sendToAPI(text) {
               firstChunk = false;
             }
             renderBubble(bubble, full);
-            // Re-add streaming class since renderBubble overwrites innerHTML but not class
             if (!bubble.classList.contains('streaming')) bubble.classList.add('streaming');
             scrollToBottom();
           }
@@ -496,18 +510,18 @@ async function sendToAPI(text) {
   } finally {
     isReplying = false;
     activeStreamController = null;
-    if (sendBtn) sendBtn.disabled = !$('#messageInput')?.value.trim();
-    if (stopBtn) stopBtn.style.display = 'none';
+    const st = $('#stopBtn'); if (st) st.style.display = 'none';
     pendingFiles = [];
     updatePreview();
+    updateSendButtonState();
   }
 }
 
 function stopStreaming() {
   if (activeStreamController) { try { activeStreamController.abort(); } catch {} activeStreamController = null; }
   isReplying = false;
-  const sb = $('#sendBtn'); if (sb) sb.disabled = !($('#messageInput')?.value.trim());
   const st = $('#stopBtn'); if (st) st.style.display = 'none';
+  updateSendButtonState();
 }
 
 /* ---------- Files ---------- */
@@ -533,6 +547,7 @@ function handleFiles(files) {
     newFiles.sort((a, b) => (a.order || 0) - (b.order || 0));
     pendingFiles = pendingFiles.concat(newFiles);
     updatePreview();
+    updateSendButtonState();
   }
 }
 function updatePreview() {
@@ -546,7 +561,7 @@ function updatePreview() {
 }
 
 /* ============================================================
-   MODEL PICKER — FIXED with pointerdown
+   MODEL PICKER
    ============================================================ */
 function getModelsList() {
   if (__config?.models?.length) return __config.models;
@@ -592,8 +607,6 @@ function closeModelPicker() {
 function wireModelPicker() {
   const btn = $('#modelPickerBtn');
   if (!btn) return;
-
-  /* Use pointerdown so it works on touch + mouse and fires in the right order */
   btn.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -601,15 +614,46 @@ function wireModelPicker() {
     if (isOpen) closeModelPicker();
     else openModelPicker();
   });
-
-  /* Close when pointer goes down anywhere outside the wrapper */
   document.addEventListener('pointerdown', (e) => {
     if (!e.target.closest('#modelPicker')) closeModelPicker();
   }, true);
-
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeModelPicker();
   });
+}
+
+/* ============================================================
+   SEND BUTTON + ENTER KEY WIRING
+   ============================================================ */
+function wireSendButton() {
+  const btn = $('#sendBtn');
+  const inp = $('#messageInput');
+  if (!btn || !inp) return;
+
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    handleSend();
+  });
+
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      e.stopPropagation();
+      handleSend();
+      return false;
+    }
+  });
+
+  inp.addEventListener('input', () => {
+    updateSendButtonState();
+    inp.style.height = 'auto';
+    inp.style.height = Math.min(inp.scrollHeight, 180) + 'px';
+  });
+
+  inp.addEventListener('paste', () => setTimeout(updateSendButtonState, 10));
+
+  updateSendButtonState();
 }
 
 /* ---------- Auth ---------- */
@@ -677,7 +721,6 @@ async function loadConfig() {
     __config = { models: FALLBACK_MODELS };
   }
   const models = getModelsList();
-  /* Default = first model (Luna) */
   __model = models[0].id;
   renderModelPicker();
   if ($('#currentModelLabel')) $('#currentModelLabel').textContent = models[0].label;
@@ -709,41 +752,29 @@ async function genKey() {
   else alert(res?.error || 'Failed');
 }
 
-/* ============================================================
-   IMAGE GENERATION — robust error handling
-   ============================================================ */
+/* ---------- Image ---------- */
 async function genImage() {
   const prompt = $('#imagePrompt')?.value.trim();
   if (!prompt) return alert('Please describe the image.');
   const btn = $('#generateImageBtn'), result = $('#imageResult');
   if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line"></i> Generating…'; }
   if (result) result.innerHTML = '<div style="text-align:center;padding:20px;"><div class="bubble thinking" style="display:inline-flex;background:var(--panel);border:1px solid var(--border);padding:12px 16px;border-radius:16px;"><span></span><span></span><span></span></div><p style="margin-top:12px;font-size:12px;color:var(--text-faint);">Generating with FLUX.1-schnell…</p></div>';
-
   try {
     const res = await fetch('/v1/images/generations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt, aspect_ratio: $('#imageAspect')?.value || '1:1' }),
     });
-
     const data = await res.json().catch(() => ({}));
-
     if (res.ok && data.ok && data.image) {
       if (result) result.innerHTML = `<img src="${data.image}" alt="${escapeHtml(prompt)}" loading="lazy">`;
       if (__user) pushToFirebase(`logs/image/${__user.email}`, { prompt: prompt.slice(0, 300), model: 'FLUX.1-schnell', ts: Date.now() });
     } else {
       const errMsg = data.error || `HTTP ${res.status}`;
-      if (result) result.innerHTML = `
-        <div style="padding:16px;border-radius:12px;background:rgba(220,38,38,0.08);border:1px solid rgba(220,38,38,0.2);">
-          <p style="color:#dc2626;font-size:13px;margin:0;"><strong>Failed:</strong> ${escapeHtml(errMsg)}</p>
-          <p style="color:var(--text-faint);font-size:11.5px;margin-top:6px;margin-bottom:0;">Check that HF_API_KEY is set in Vercel environment variables.</p>
-        </div>`;
+      if (result) result.innerHTML = `<div style="padding:16px;border-radius:12px;background:rgba(220,38,38,0.08);border:1px solid rgba(220,38,38,0.2);"><p style="color:#dc2626;font-size:13px;margin:0;"><strong>Failed:</strong> ${escapeHtml(errMsg)}</p><p style="color:var(--text-faint);font-size:11.5px;margin-top:6px;margin-bottom:0;">Check that HF_API_KEY is set in Vercel.</p></div>`;
     }
   } catch (e) {
-    if (result) result.innerHTML = `
-      <div style="padding:16px;border-radius:12px;background:rgba(220,38,38,0.08);border:1px solid rgba(220,38,38,0.2);">
-        <p style="color:#dc2626;font-size:13px;margin:0;"><strong>Network error:</strong> ${escapeHtml(e.message)}</p>
-      </div>`;
+    if (result) result.innerHTML = `<div style="padding:16px;border-radius:12px;background:rgba(220,38,38,0.08);"><p style="color:#dc2626;font-size:13px;margin:0;"><strong>Network error:</strong> ${escapeHtml(e.message)}</p></div>`;
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-image-add-line"></i> Generate'; }
   }
@@ -760,7 +791,7 @@ function startMic() {
   micBtn?.classList.add('active');
   recognition.onresult = e => {
     const text = e.results[0][0].transcript;
-    if ($('#messageInput')) { $('#messageInput').value = text; $('#messageInput').dispatchEvent(new Event('input')); }
+    if ($('#messageInput')) { $('#messageInput').value = text; updateSendButtonState(); }
     micBtn?.classList.remove('active');
     handleSend();
   };
@@ -819,34 +850,6 @@ async function submitReport() {
 }
 
 /* ============================================================
-   ENTER KEY HANDLER — this is the fix for "enter doesn't send"
-   ============================================================ */
-function wireEnterToSend() {
-  const inp = $('#messageInput');
-  if (!inp) return;
-
-  inp.addEventListener('keydown', (e) => {
-    /* Enter alone (no shift) → send */
-    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-      e.preventDefault();
-      e.stopPropagation();
-      handleSend();
-      return false;
-    }
-    /* Shift+Enter → newline (default behavior, do nothing) */
-  });
-
-  /* Also handle mobile keyboards that fire keyCode 13 */
-  inp.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-      e.preventDefault();
-      e.stopPropagation();
-      return false;
-    }
-  });
-}
-
-/* ============================================================
    EVENT DELEGATION
    ============================================================ */
 document.addEventListener('click', function(e) {
@@ -879,7 +882,6 @@ document.addEventListener('click', function(e) {
   if (closest('#callEndBtn')) { endCall(); return; }
   if (closest('#callMuteBtn')) { toggleMute(); return; }
   if (closest('#stopBtn')) { stopStreaming(); return; }
-  if (closest('#sendBtn')) { e.preventDefault(); handleSend(); return; }
 
   const tab = closest('.settings-tab');
   if (tab) {
@@ -906,7 +908,7 @@ document.addEventListener('click', function(e) {
   }
 
   if (closest('#attachBtn')) { $('#fileInput')?.click(); return; }
-  if (closest('#removeAttachmentBtn')) { pendingFiles = []; updatePreview(); return; }
+  if (closest('#removeAttachmentBtn')) { pendingFiles = []; updatePreview(); updateSendButtonState(); return; }
   if (closest('#searchToggleBtn')) { $('#searchToggleBtn').classList.toggle('active'); return; }
   if (closest('#micBtn')) { startMic(); return; }
 
@@ -982,12 +984,6 @@ document.addEventListener('submit', function(e) {
 }, true);
 
 document.addEventListener('input', function(e) {
-  if (e.target?.id === 'messageInput') {
-    const sb = $('#sendBtn');
-    if (sb) sb.disabled = isReplying || !e.target.value.trim();
-    e.target.style.height = 'auto';
-    e.target.style.height = Math.min(e.target.scrollHeight, 180) + 'px';
-  }
   if (e.target?.id === 'bgDimInput') { bgState.dim = parseInt(e.target.value); const l = $('#bgDimLabel'); if (l) l.textContent = bgState.dim + '%'; applyBackground(); saveBgPrefs(); }
 });
 
@@ -1009,7 +1005,7 @@ async function init() {
   loadBgPrefs();
 
   wireModelPicker();
-  wireEnterToSend();
+  wireSendButton();
   renderModelPicker();
 
   await loadConfig();
@@ -1021,7 +1017,6 @@ async function init() {
   updateUserUI();
   loadMcp();
 
-  /* Keyboard shortcut: Ctrl/Cmd+K focuses input */
   document.addEventListener('keydown', e => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
       e.preventDefault();
