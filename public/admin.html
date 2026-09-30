@@ -23,16 +23,67 @@
     .admin-input { padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--panel-2); font-size: 14px; width: 100%; max-width: 300px; }
     .admin-btn { padding: 8px 16px; border-radius: var(--radius); background: var(--accent); color: #fff; font-size: 14px; font-weight: 500; border: none; cursor: pointer; }
     .admin-btn:hover { background: var(--accent-hover); }
-    @media (min-width: 1920px) { body { padding: 40px; } .admin-grid { grid-template-columns: repeat(4, 1fr); } }
-    @media (min-width: 2560px) { .admin-wrap { max-width: 1600px; } .stat-card .value { font-size: 40px; } }
-    @media (max-width: 640px) { body { padding: 16px; } }
+
+    /* Password gate */
+    .gate {
+      position: fixed; inset: 0; z-index: 999;
+      background: var(--bg);
+      display: flex; align-items: center; justify-content: center; padding: 20px;
+    }
+    .gate.hidden { display: none; }
+    .gate-card {
+      width: 100%; max-width: 380px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      padding: 32px 28px;
+      box-shadow: var(--shadow-lg);
+      text-align: center;
+    }
+    .gate-icon {
+      width: 56px; height: 56px; border-radius: 14px;
+      background: var(--accent-soft); color: var(--accent);
+      display: grid; place-items: center; font-size: 26px;
+      margin: 0 auto 16px;
+    }
+    .gate-title { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+    .gate-sub { font-size: 13.5px; color: var(--text-muted); margin-bottom: 22px; }
+    .gate-input {
+      width: 100%; padding: 12px 14px; border-radius: var(--radius);
+      border: 1px solid var(--border); background: var(--panel-2);
+      font-size: 15px; outline: none;
+      transition: border-color .15s;
+    }
+    .gate-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+    .gate-btn {
+      width: 100%; margin-top: 14px; padding: 12px;
+      border-radius: var(--radius); border: none;
+      background: var(--accent); color: #fff;
+      font-size: 14.5px; font-weight: 600; cursor: pointer;
+    }
+    .gate-btn:hover { background: var(--accent-hover); }
+    .gate-btn:disabled { opacity: .5; cursor: not-allowed; }
+    .gate-err { color: #dc2626; font-size: 13px; margin-top: 10px; min-height: 18px; }
   </style>
 </head>
 <body>
-  <div class="admin-wrap">
+  <!-- Password gate -->
+  <div class="gate" id="gate">
+    <div class="gate-card">
+      <div class="gate-icon"><i class="ri-lock-2-line"></i></div>
+      <div class="gate-title">Admin access</div>
+      <div class="gate-sub">Enter the admin password to continue.</div>
+      <input type="password" id="gatePass" class="gate-input" placeholder="Password" autocomplete="current-password">
+      <button id="gateBtn" class="gate-btn">Unlock</button>
+      <div class="gate-err" id="gateErr"></div>
+    </div>
+  </div>
+
+  <div class="admin-wrap" id="adminWrap" style="display:none;">
     <div class="admin-header">
       <img src="/logo.png" alt="MiroxAI" class="theme-aware-logo" style="width:32px;height:32px;border-radius:8px;">
       <h1>Mirox Admin Console</h1>
+      <button id="adminLogout" class="admin-btn" style="margin-left:auto;background:transparent;color:var(--text-muted);border:1px solid var(--border);">Lock</button>
     </div>
 
     <div class="admin-grid">
@@ -60,37 +111,65 @@
         </table>
       </div>
     </div>
-
-    <div class="admin-section">
-      <h2>Recent Chat Logs</h2>
-      <div style="overflow-x:auto;">
-        <table class="log-table" id="adminChatLogs">
-          <thead><tr><th>User</th><th>Model</th><th>Message</th><th>Time</th></tr></thead>
-          <tbody><tr><td colspan="4" style="color:var(--text-faint)">Loading…</td></tr></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="admin-section">
-      <h2>Recent Image Logs</h2>
-      <div style="overflow-x:auto;">
-        <table class="log-table" id="adminImageLogs">
-          <thead><tr><th>User</th><th>Prompt</th><th>Model</th><th>Time</th></tr></thead>
-          <tbody><tr><td colspan="4" style="color:var(--text-faint)">Loading…</td></tr></tbody>
-        </table>
-      </div>
-    </div>
   </div>
 
-  <script type="module">
-    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-    import { getDatabase, ref, get, update, onValue } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
-
-    const app = initializeApp({ databaseURL: 'https://miroxdata-default-rtdb.europe-west1.firebasedatabase.app/' });
-    const db = getDatabase(app);
-
+  <script>
+    const API = '/api/admin';
+    const TOKEN_KEY = 'mirox_admin_token';
     const $ = s => document.querySelector(s);
 
+    function getAdminToken() { try { return sessionStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
+    function setAdminToken(t) { try { t ? sessionStorage.setItem(TOKEN_KEY, t) : sessionStorage.removeItem(TOKEN_KEY); } catch {} }
+
+    async function adminFetch(path, opts = {}) {
+      const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+      const t = getAdminToken();
+      if (t) headers['X-Admin-Token'] = t;
+      return fetch(API + path, { ...opts, headers, credentials: 'same-origin' });
+    }
+
+    function showGate() { $('#gate').classList.remove('hidden'); $('#adminWrap').style.display = 'none'; }
+    function showAdmin() { $('#gate').classList.add('hidden'); $('#adminWrap').style.display = 'block'; loadAll(); }
+
+    /* Password gate */
+    async function tryUnlock() {
+      const pass = $('#gatePass').value;
+      const btn = $('#gateBtn');
+      const err = $('#gateErr');
+      err.textContent = '';
+      if (!pass) { err.textContent = 'Enter a password.'; return; }
+      btn.disabled = true; btn.textContent = 'Checking…';
+      try {
+        const res = await fetch(API + '/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: pass }),
+        });
+        const data = await res.json();
+        if (data.ok && data.token) {
+          setAdminToken(data.token);
+          showAdmin();
+        } else {
+          err.textContent = data.error || 'Invalid password';
+        }
+      } catch (e) {
+        err.textContent = 'Server error: ' + e.message;
+      } finally {
+        btn.disabled = false; btn.textContent = 'Unlock';
+      }
+    }
+
+    $('#gateBtn')?.addEventListener('click', tryUnlock);
+    $('#gatePass')?.addEventListener('keydown', e => { if (e.key === 'Enter') tryUnlock(); });
+
+    $('#adminLogout')?.addEventListener('click', () => {
+      setAdminToken('');
+      showGate();
+      $('#gatePass').value = '';
+      $('#gateErr').textContent = '';
+    });
+
+    /* Data loading */
     function countLogs(obj) {
       if (!obj) return 0;
       let n = 0;
@@ -101,20 +180,18 @@
       return n;
     }
 
-    async function loadStats() {
+    async function loadAll() {
       try {
-        const [usersSnap, chatsSnap, imgSnap, evSnap] = await Promise.all([
-          get(ref(db, 'users')),
-          get(ref(db, 'logs/chat')),
-          get(ref(db, 'logs/image')),
-          get(ref(db, 'logs/user')),
-        ]);
-        const users = usersSnap.val() || {};
-        $('#statUsers').textContent = Object.keys(users).length;
-        $('#statChats').textContent = countLogs(chatsSnap.val());
-        $('#statImages').textContent = countLogs(imgSnap.val());
-        $('#statEvents').textContent = countLogs(evSnap.val());
+        const res = await adminFetch('/stats');
+        if (res.status === 401) { setAdminToken(''); showGate(); return; }
+        const data = await res.json();
+        if (!data.ok) return;
+        $('#statUsers').textContent = data.users;
+        $('#statChats').textContent = data.chats;
+        $('#statImages').textContent = data.images;
+        $('#statEvents').textContent = data.events;
 
+        const users = data.users_data || {};
         const tbody = $('#adminUserTable tbody');
         const rows = Object.entries(users).map(([email, u]) => `
           <tr>
@@ -125,65 +202,31 @@
             <td>${u.last_login ? new Date(u.last_login).toLocaleString() : '—'}</td>
           </tr>`).join('');
         tbody.innerHTML = rows || '<tr><td colspan="5" style="color:var(--text-faint)">No users yet</td></tr>';
-      } catch (e) { console.warn(e); }
-    }
-
-    async function loadChatLogs() {
-      try {
-        const snap = await get(ref(db, 'logs/chat'));
-        const data = snap.val() || {};
-        const rows = [];
-        Object.entries(data).forEach(([email, logs]) => {
-          const arr = Array.isArray(logs) ? logs : Object.values(logs || {});
-          arr.slice(-5).forEach(log => rows.push({ email, ...log }));
-        });
-        rows.sort((a, b) => (b.ts || 0) - (a.ts || 0));
-        $('#adminChatLogs tbody').innerHTML = rows.slice(0, 30).map(r => `
-          <tr>
-            <td>${r.email}</td>
-            <td>${r.model || '—'}</td>
-            <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.message || r.error || '—'}</td>
-            <td>${r.ts ? new Date(r.ts).toLocaleString() : '—'}</td>
-          </tr>`).join('') || '<tr><td colspan="4" style="color:var(--text-faint)">No logs yet</td></tr>';
-      } catch (e) { console.warn(e); }
-    }
-
-    async function loadImageLogs() {
-      try {
-        const snap = await get(ref(db, 'logs/image'));
-        const data = snap.val() || {};
-        const rows = [];
-        Object.entries(data).forEach(([email, logs]) => {
-          const arr = Array.isArray(logs) ? logs : Object.values(logs || {});
-          arr.slice(-5).forEach(log => rows.push({ email, ...log }));
-        });
-        rows.sort((a, b) => (b.ts || 0) - (a.ts || 0));
-        $('#adminImageLogs tbody').innerHTML = rows.slice(0, 30).map(r => `
-          <tr>
-            <td>${r.email}</td>
-            <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.prompt || '—'}</td>
-            <td>${r.model || 'FLUX.1-schnell'}</td>
-            <td>${r.ts ? new Date(r.ts).toLocaleString() : '—'}</td>
-          </tr>`).join('') || '<tr><td colspan="4" style="color:var(--text-faint)">No logs yet</td></tr>';
-      } catch (e) { console.warn(e); }
+      } catch (e) {
+        console.warn(e);
+      }
     }
 
     $('#adminSetTierBtn')?.addEventListener('click', async () => {
       const email = $('#adminUserEmail').value.trim().toLowerCase();
       const tier = $('#adminTierSelect').value;
       if (!email) return alert('Enter a user email');
-      await update(ref(db, `users/${email}`), { tier });
-      alert(`Tier updated for ${email}: ${tier}`);
-      loadStats();
+      const res = await adminFetch('/set-tier', { method: 'POST', body: JSON.stringify({ email, tier }) });
+      const data = await res.json();
+      if (data.ok) { alert(`Tier updated for ${email}: ${tier}`); loadAll(); }
+      else alert(data.error || 'Failed');
     });
 
-    loadStats();
-    loadChatLogs();
-    loadImageLogs();
-
-    onValue(ref(db, 'users'), () => loadStats());
-    onValue(ref(db, 'logs/chat'), () => loadChatLogs());
-    onValue(ref(db, 'logs/image'), () => loadImageLogs());
+    /* On load: if we already have a token, verify it */
+    (async function boot() {
+      const t = getAdminToken();
+      if (!t) { showGate(); return; }
+      try {
+        const res = await adminFetch('/stats');
+        if (res.status === 401) { setAdminToken(''); showGate(); }
+        else showAdmin();
+      } catch { showGate(); }
+    })();
   </script>
 </body>
 </html>
