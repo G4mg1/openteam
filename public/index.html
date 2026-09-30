@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#fafafb">
+  <meta name="theme-color" content="#faf9f5">
   <title>MiroxAI — by OpenSurr</title>
   <link rel="icon" href="/logo.png" type="image/png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/remixicon@4.9.0/fonts/remixicon.css" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
 </head>
@@ -55,12 +55,14 @@
       <button id="hamburgerBtn" class="icon-btn hamburger"><i class="ri-menu-line"></i></button>
       <h2 id="chatTitle" class="chat-title">New chat</h2>
       <div class="chat-header-actions">
-        <button id="modelPickerBtn" class="model-picker-btn" type="button">
-          <i class="ri-cpu-line"></i>
-          <span id="currentModelLabel">Luna</span>
-          <i class="ri-arrow-down-s-line"></i>
-        </button>
-        <div id="modelPickerMenu" class="model-picker-menu"></div>
+        <div id="modelPicker" class="model-picker-wrap">
+          <button id="modelPickerBtn" class="model-picker-btn" type="button">
+            <i class="ri-sparkling-2-line"></i>
+            <span id="currentModelLabel">Luna</span>
+            <i class="ri-arrow-down-s-line"></i>
+          </button>
+          <div id="modelPickerMenu" class="model-picker-menu"></div>
+        </div>
         <button id="editTitleBtn" class="icon-btn"><i class="ri-edit-line"></i></button>
       </div>
     </header>
@@ -85,21 +87,24 @@
         <div id="attachmentList" class="attachment-list"></div>
         <button id="removeAttachmentBtn" class="icon-btn"><i class="ri-close-line"></i></button>
       </div>
+
+      <!-- TOOLS BAR -->
       <div class="tools-row">
-        <button id="talkModeBtn" class="tool-btn"><i class="ri-mic-line"></i> Talk</button>
-        <button id="imageModeBtn" class="tool-btn"><i class="ri-image-line"></i> Image</button>
-        <button id="backgroundModeBtn" class="tool-btn"><i class="ri-panorama-line"></i> BG</button>
-        <button id="plansModeBtn" class="tool-btn"><i class="ri-vip-crown-line"></i> Plans</button>
-        <button id="supportModeBtn2" class="tool-btn"><i class="ri-question-line"></i> Help</button>
+        <button id="talkModeBtn" class="tool-btn"><i class="ri-mic-line"></i><span>Call</span></button>
+        <button id="imageModeBtn" class="tool-btn"><i class="ri-image-line"></i><span>Image</span></button>
+        <button id="backgroundModeBtn" class="tool-btn"><i class="ri-panorama-line"></i><span>Background</span></button>
+        <button id="plansModeBtn" class="tool-btn"><i class="ri-vip-crown-line"></i><span>Plans</span></button>
+        <button id="supportModeBtn2" class="tool-btn"><i class="ri-question-line"></i><span>Help</span></button>
       </div>
+
       <form id="composerForm" class="composer">
         <button type="button" id="attachBtn" class="icon-btn"><i class="ri-attachment-2"></i></button>
         <input type="file" id="fileInput" multiple hidden>
         <button type="button" id="searchToggleBtn" class="icon-btn"><i class="ri-global-line"></i></button>
-        <textarea id="messageInput" class="message-input" placeholder="Say something…" rows="1"></textarea>
+        <textarea id="messageInput" class="message-input" placeholder="How can I help you today?" rows="1"></textarea>
         <button type="button" id="micBtn" class="icon-btn mic-btn"><i class="ri-mic-line"></i></button>
         <button type="button" id="stopBtn" class="icon-btn stop-btn" style="display:none;"><i class="ri-stop-circle-line"></i></button>
-        <button type="submit" id="sendBtn" class="send-btn" disabled><i class="ri-send-plane-fill"></i></button>
+        <button type="submit" id="sendBtn" class="send-btn" disabled><i class="ri-arrow-up-line"></i></button>
       </form>
     </div>
   </main>
@@ -139,10 +144,7 @@
           <div class="setting-row"><span>Sound</span><button class="toggle-btn active" data-toggle="soundOn">ON</button></div>
           <div class="setting-row"><span>Notifications</span><button class="toggle-btn active" data-toggle="notifOn">ON</button></div>
         </div>
-        <div class="setting-group">
-          <h4>Session</h4>
-          <button id="logoutBtn" class="modal-btn danger">Sign out</button>
-        </div>
+        <div class="setting-group"><h4>Session</h4><button id="logoutBtn" class="modal-btn danger">Sign out</button></div>
       </div>
 
       <div class="settings-pane" data-pane="appearance">
@@ -156,11 +158,11 @@
         <div class="setting-group">
           <h4>Accent</h4>
           <div class="swatch-grid">
-            <button class="swatch" data-theme="default" style="--sw:#c4694b"></button>
-            <button class="swatch" data-theme="green" style="--sw:#4ea82e"></button>
-            <button class="swatch" data-theme="orange" style="--sw:#ea580c"></button>
-            <button class="swatch" data-theme="pink" style="--sw:#db2777"></button>
-            <button class="swatch" data-theme="blue" style="--sw:#2563eb"></button>
+            <button class="swatch" data-theme="default" style="--sw:#c96442"></button>
+            <button class="swatch" data-theme="sage" style="--sw:#7a8c6b"></button>
+            <button class="swatch" data-theme="sky" style="--sw:#5b7ca8"></button>
+            <button class="swatch" data-theme="plum" style="--sw:#8b5a83"></button>
+            <button class="swatch" data-theme="amber" style="--sw:#c48a3f"></button>
           </div>
         </div>
         <div class="setting-group">
@@ -195,10 +197,7 @@
             <option value="ja-JP">Japanese</option>
           </select>
         </div>
-        <div class="setting-group">
-          <h4>Microphone</h4>
-          <button id="requestMicBtn" class="modal-btn">Grant mic access</button>
-        </div>
+        <div class="setting-group"><h4>Microphone</h4><button id="requestMicBtn" class="modal-btn">Grant mic access</button></div>
       </div>
 
       <div class="settings-pane" data-pane="personal">
@@ -223,14 +222,13 @@
       <div class="settings-pane" data-pane="mcp">
         <div class="setting-group">
           <h4>MCP Servers</h4>
-          <p class="setting-desc">Connect Mirox to Model Context Protocol servers so it can use external tools and data.</p>
+          <p class="setting-desc">Connect Mirox to Model Context Protocol servers.</p>
           <div id="mcpList" class="mcp-list"></div>
           <div class="mcp-add-row">
-            <input type="text" id="mcpNameInput" class="modal-input" placeholder="Name (e.g. Files)">
+            <input type="text" id="mcpNameInput" class="modal-input" placeholder="Name">
             <input type="url" id="mcpUrlInput" class="modal-input" placeholder="https://mcp.example.com/sse">
             <button id="addMcpBtn" class="modal-btn primary"><i class="ri-add-line"></i></button>
           </div>
-          <p class="mcp-hint">Mirox will POST tool requests to the URL you provide. Only add servers you trust.</p>
         </div>
       </div>
     </div>
@@ -241,7 +239,7 @@
     <div class="modal modal-wide">
       <button class="icon-btn modal-close" data-close="plansModal"><i class="ri-close-line"></i></button>
       <h2 class="modal-title">Plans</h2>
-      <p class="modal-sub">Free users get 10 Eclipse (Ultimate) chats per day, then fall back to Luna.</p>
+      <p class="modal-sub">Free users get 10 Eclipse chats per day, then fall back to Luna.</p>
       <div id="plansGrid" class="plans-grid"></div>
       <div class="plans-soon"><i class="ri-time-line"></i> More plans will be added soon in the future.</div>
       <div class="setting-group" style="margin-top:24px;">
@@ -257,9 +255,9 @@
     <div class="modal">
       <button class="icon-btn modal-close" data-close="backgroundModal"><i class="ri-close-line"></i></button>
       <h2 class="modal-title">Background</h2>
-      <div id="bgUploadZone" class="upload-zone" style="padding:20px;text-align:center;border:1px dashed var(--border-strong);border-radius:var(--radius);cursor:pointer;">
-        <i class="ri-upload-cloud-2-line" style="font-size:24px;color:var(--accent);"></i>
-        <div style="margin-top:6px;font-size:13px;color:var(--text-muted);">Click or drag an image here</div>
+      <div id="bgUploadZone" class="upload-zone">
+        <i class="ri-upload-cloud-2-line"></i>
+        <span>Click to upload an image</span>
       </div>
       <input type="file" id="bgFileInput" accept="image/*" hidden>
       <div class="modal-form" style="margin-top:12px;">
@@ -301,7 +299,6 @@
     <div class="modal">
       <button class="icon-btn modal-close" data-close="supportModal"><i class="ri-close-line"></i></button>
       <h2 class="modal-title">Contact Support</h2>
-      <p class="modal-sub">A real person will reply soon.</p>
       <div class="support-form">
         <select id="supportCategory" class="modal-select">
           <option>General question</option>
@@ -309,7 +306,7 @@
           <option>Billing</option>
           <option>Feature request</option>
         </select>
-        <input type="text" id="supportSubject" class="modal-input" placeholder="Subject" maxlength="120">
+        <input type="text" id="supportSubject" class="modal-input" placeholder="Subject">
         <textarea id="supportMessage" class="modal-textarea" rows="4" placeholder="Message"></textarea>
         <button id="submitReportBtn" class="modal-btn primary">Submit</button>
       </div>
