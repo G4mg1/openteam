@@ -2,86 +2,83 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Mirox Admin Console</title>
   <link href="https://cdn.jsdelivr.net/npm/remixicon@4.9.0/fonts/remixicon.css" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="/style.css">
   <style>
-    body { display: block; padding: 24px; }
-    .admin-wrap { max-width: 1000px; margin: 0 auto; }
+    body { display: block; overflow-y: auto; padding: 24px; }
+    .admin-wrap { max-width: 1200px; margin: 0 auto; }
     .admin-header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
     .admin-header h1 { font-size: 22px; font-weight: 700; }
-    .admin-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .admin-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
     .stat-card { padding: 18px; border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--panel); }
     .stat-card h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); margin-bottom: 6px; }
     .stat-card .value { font-size: 28px; font-weight: 700; }
     .admin-section { margin-bottom: 28px; }
     .admin-section h2 { font-size: 16px; font-weight: 600; margin-bottom: 12px; }
-    .log-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .log-table { width: 100%; border-collapse: collapse; font-size: 13px; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
     .log-table th, .log-table td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); }
-    .log-table th { font-weight: 600; color: var(--text-faint); font-size: 11px; text-transform: uppercase; }
+    .log-table th { font-weight: 600; color: var(--text-faint); font-size: 11px; text-transform: uppercase; background: var(--panel-2); }
     .admin-input { padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--panel-2); font-size: 14px; width: 100%; max-width: 300px; }
     .admin-btn { padding: 8px 16px; border-radius: var(--radius); background: var(--accent); color: #fff; font-size: 14px; font-weight: 500; border: none; cursor: pointer; }
     .admin-btn:hover { background: var(--accent-hover); }
+    @media (min-width: 1920px) { body { padding: 40px; } .admin-grid { grid-template-columns: repeat(4, 1fr); } }
+    @media (min-width: 2560px) { .admin-wrap { max-width: 1600px; } .stat-card .value { font-size: 40px; } }
+    @media (max-width: 640px) { body { padding: 16px; } }
   </style>
 </head>
 <body>
   <div class="admin-wrap">
     <div class="admin-header">
-      <img src="logo.png" alt="MiroxAI" style="width:32px;height:32px;border-radius:8px;">
+      <img src="/logo.png" alt="MiroxAI" class="theme-aware-logo" style="width:32px;height:32px;border-radius:8px;">
       <h1>Mirox Admin Console</h1>
     </div>
 
     <div class="admin-grid">
-      <div class="stat-card">
-        <h3>Total Users</h3>
-        <div class="value" id="statUsers">—</div>
-      </div>
-      <div class="stat-card">
-        <h3>Chats Today</h3>
-        <div class="value" id="statChats">—</div>
-      </div>
-      <div class="stat-card">
-        <h3>Images Generated</h3>
-        <div class="value" id="statImages">—</div>
-      </div>
-      <div class="stat-card">
-        <h3>Active Sessions</h3>
-        <div class="value" id="statSessions">—</div>
-      </div>
+      <div class="stat-card"><h3>Total Users</h3><div class="value" id="statUsers">—</div></div>
+      <div class="stat-card"><h3>Chats Total</h3><div class="value" id="statChats">—</div></div>
+      <div class="stat-card"><h3>Images Generated</h3><div class="value" id="statImages">—</div></div>
+      <div class="stat-card"><h3>User Events</h3><div class="value" id="statEvents">—</div></div>
     </div>
 
     <div class="admin-section">
       <h2>User Management</h2>
-      <div style="display:flex;gap:8px;margin-bottom:12px;">
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
         <input type="text" id="adminUserEmail" class="admin-input" placeholder="User email">
-        <select id="adminTierSelect" class="admin-input" style="max-width:140px;">
+        <select id="adminTierSelect" class="admin-input" style="max-width:160px;">
           <option value="free">Free</option>
           <option value="pro">Pro</option>
           <option value="ultimate">Ultimate</option>
         </select>
         <button id="adminSetTierBtn" class="admin-btn">Set Tier</button>
       </div>
-      <table class="log-table" id="adminUserTable">
-        <thead><tr><th>Email</th><th>Name</th><th>Tier</th><th>Eclipse Credits</th><th>Last Login</th></tr></thead>
-        <tbody></tbody>
-      </table>
+      <div style="overflow-x:auto;">
+        <table class="log-table" id="adminUserTable">
+          <thead><tr><th>Email</th><th>Name</th><th>Tier</th><th>Eclipse</th><th>Last Login</th></tr></thead>
+          <tbody><tr><td colspan="5" style="color:var(--text-faint)">Loading…</td></tr></tbody>
+        </table>
+      </div>
     </div>
 
     <div class="admin-section">
       <h2>Recent Chat Logs</h2>
-      <table class="log-table" id="adminChatLogs">
-        <thead><tr><th>User</th><th>Model</th><th>Message</th><th>Time</th></tr></thead>
-        <tbody></tbody>
-      </table>
+      <div style="overflow-x:auto;">
+        <table class="log-table" id="adminChatLogs">
+          <thead><tr><th>User</th><th>Model</th><th>Message</th><th>Time</th></tr></thead>
+          <tbody><tr><td colspan="4" style="color:var(--text-faint)">Loading…</td></tr></tbody>
+        </table>
+      </div>
     </div>
 
     <div class="admin-section">
       <h2>Recent Image Logs</h2>
-      <table class="log-table" id="adminImageLogs">
-        <thead><tr><th>User</th><th>Prompt</th><th>Model</th><th>Time</th></tr></thead>
-        <tbody></tbody>
-      </table>
+      <div style="overflow-x:auto;">
+        <table class="log-table" id="adminImageLogs">
+          <thead><tr><th>User</th><th>Prompt</th><th>Model</th><th>Time</th></tr></thead>
+          <tbody><tr><td colspan="4" style="color:var(--text-faint)">Loading…</td></tr></tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -92,103 +89,98 @@
     const app = initializeApp({ databaseURL: 'https://miroxdata-default-rtdb.europe-west1.firebasedatabase.app/' });
     const db = getDatabase(app);
 
+    const $ = s => document.querySelector(s);
+
+    function countLogs(obj) {
+      if (!obj) return 0;
+      let n = 0;
+      Object.values(obj).forEach(v => {
+        if (Array.isArray(v)) n += v.length;
+        else if (v && typeof v === 'object') n += Object.keys(v).length;
+      });
+      return n;
+    }
+
     async function loadStats() {
-      // Users
-      const usersSnap = await get(ref(db, 'users'));
-      const users = usersSnap.val() || {};
-      document.getElementById('statUsers').textContent = Object.keys(users).length;
+      try {
+        const [usersSnap, chatsSnap, imgSnap, evSnap] = await Promise.all([
+          get(ref(db, 'users')),
+          get(ref(db, 'logs/chat')),
+          get(ref(db, 'logs/image')),
+          get(ref(db, 'logs/user')),
+        ]);
+        const users = usersSnap.val() || {};
+        $('#statUsers').textContent = Object.keys(users).length;
+        $('#statChats').textContent = countLogs(chatsSnap.val());
+        $('#statImages').textContent = countLogs(imgSnap.val());
+        $('#statEvents').textContent = countLogs(evSnap.val());
 
-      // Chats today
-      const chatsSnap = await get(ref(db, 'logs/chat'));
-      const chats = chatsSnap.val() || {};
-      let chatCount = 0;
-      Object.values(chats).forEach(arr => {
-        if (Array.isArray(arr)) chatCount += arr.length;
-        else if (typeof arr === 'object') chatCount += Object.keys(arr).length;
-      });
-      document.getElementById('statChats').textContent = chatCount;
-
-      // Images
-      const imgSnap = await get(ref(db, 'logs/image'));
-      const imgs = imgSnap.val() || {};
-      let imgCount = 0;
-      Object.values(imgs).forEach(arr => {
-        if (Array.isArray(arr)) imgCount += arr.length;
-        else if (typeof arr === 'object') imgCount += Object.keys(arr).length;
-      });
-      document.getElementById('statImages').textContent = imgCount;
-
-      // Populate user table
-      const tbody = document.querySelector('#adminUserTable tbody');
-      tbody.innerHTML = Object.entries(users).map(([email, u]) => `
-        <tr>
-          <td>${email}</td>
-          <td>${u.name || '—'}</td>
-          <td><span style="padding:2px 8px;border-radius:99px;background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:600;">${u.tier || 'free'}</span></td>
-          <td>${u.eclipse_credits ?? 10}</td>
-          <td>${u.last_login ? new Date(u.last_login).toLocaleString() : '—'}</td>
-        </tr>
-      `).join('') || '<tr><td colspan="5" style="color:var(--text-faint)">No users yet</td></tr>';
+        const tbody = $('#adminUserTable tbody');
+        const rows = Object.entries(users).map(([email, u]) => `
+          <tr>
+            <td>${email}</td>
+            <td>${u.name || '—'}</td>
+            <td><span style="padding:2px 8px;border-radius:99px;background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:600;">${u.tier || 'free'}</span></td>
+            <td>${u.eclipse_credits ?? 10}</td>
+            <td>${u.last_login ? new Date(u.last_login).toLocaleString() : '—'}</td>
+          </tr>`).join('');
+        tbody.innerHTML = rows || '<tr><td colspan="5" style="color:var(--text-faint)">No users yet</td></tr>';
+      } catch (e) { console.warn(e); }
     }
 
     async function loadChatLogs() {
-      const snap = await get(ref(db, 'logs/chat'));
-      const data = snap.val() || {};
-      const rows = [];
-      Object.entries(data).forEach(([email, logs]) => {
-        const arr = Array.isArray(logs) ? logs : Object.values(logs);
-        arr.slice(-5).forEach(log => {
-          rows.push({ email, ...log });
+      try {
+        const snap = await get(ref(db, 'logs/chat'));
+        const data = snap.val() || {};
+        const rows = [];
+        Object.entries(data).forEach(([email, logs]) => {
+          const arr = Array.isArray(logs) ? logs : Object.values(logs || {});
+          arr.slice(-5).forEach(log => rows.push({ email, ...log }));
         });
-      });
-      rows.sort((a, b) => (b.ts || 0) - (a.ts || 0));
-      document.querySelector('#adminChatLogs tbody').innerHTML = rows.slice(0, 30).map(r => `
-        <tr>
-          <td>${r.email}</td>
-          <td>${r.model || '—'}</td>
-          <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.message || r.error || '—'}</td>
-          <td>${r.ts ? new Date(r.ts).toLocaleString() : '—'}</td>
-        </tr>
-      `).join('') || '<tr><td colspan="4" style="color:var(--text-faint)">No logs yet</td></tr>';
+        rows.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+        $('#adminChatLogs tbody').innerHTML = rows.slice(0, 30).map(r => `
+          <tr>
+            <td>${r.email}</td>
+            <td>${r.model || '—'}</td>
+            <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.message || r.error || '—'}</td>
+            <td>${r.ts ? new Date(r.ts).toLocaleString() : '—'}</td>
+          </tr>`).join('') || '<tr><td colspan="4" style="color:var(--text-faint)">No logs yet</td></tr>';
+      } catch (e) { console.warn(e); }
     }
 
     async function loadImageLogs() {
-      const snap = await get(ref(db, 'logs/image'));
-      const data = snap.val() || {};
-      const rows = [];
-      Object.entries(data).forEach(([email, logs]) => {
-        const arr = Array.isArray(logs) ? logs : Object.values(logs);
-        arr.slice(-5).forEach(log => {
-          rows.push({ email, ...log });
+      try {
+        const snap = await get(ref(db, 'logs/image'));
+        const data = snap.val() || {};
+        const rows = [];
+        Object.entries(data).forEach(([email, logs]) => {
+          const arr = Array.isArray(logs) ? logs : Object.values(logs || {});
+          arr.slice(-5).forEach(log => rows.push({ email, ...log }));
         });
-      });
-      rows.sort((a, b) => (b.ts || 0) - (a.ts || 0));
-      document.querySelector('#adminImageLogs tbody').innerHTML = rows.slice(0, 30).map(r => `
-        <tr>
-          <td>${r.email}</td>
-          <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.prompt || '—'}</td>
-          <td>${r.model || 'FLUX.1-schnell'}</td>
-          <td>${r.ts ? new Date(r.ts).toLocaleString() : '—'}</td>
-        </tr>
-      `).join('') || '<tr><td colspan="4" style="color:var(--text-faint)">No logs yet</td></tr>';
+        rows.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+        $('#adminImageLogs tbody').innerHTML = rows.slice(0, 30).map(r => `
+          <tr>
+            <td>${r.email}</td>
+            <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.prompt || '—'}</td>
+            <td>${r.model || 'FLUX.1-schnell'}</td>
+            <td>${r.ts ? new Date(r.ts).toLocaleString() : '—'}</td>
+          </tr>`).join('') || '<tr><td colspan="4" style="color:var(--text-faint)">No logs yet</td></tr>';
+      } catch (e) { console.warn(e); }
     }
 
-    // Admin: set tier
-    document.getElementById('adminSetTierBtn')?.addEventListener('click', async () => {
-      const email = document.getElementById('adminUserEmail')?.value.trim().toLowerCase();
-      const tier = document.getElementById('adminTierSelect')?.value;
+    $('#adminSetTierBtn')?.addEventListener('click', async () => {
+      const email = $('#adminUserEmail').value.trim().toLowerCase();
+      const tier = $('#adminTierSelect').value;
       if (!email) return alert('Enter a user email');
       await update(ref(db, `users/${email}`), { tier });
       alert(`Tier updated for ${email}: ${tier}`);
       loadStats();
     });
 
-    // Load everything
     loadStats();
     loadChatLogs();
     loadImageLogs();
 
-    // Real-time updates
     onValue(ref(db, 'users'), () => loadStats());
     onValue(ref(db, 'logs/chat'), () => loadChatLogs());
     onValue(ref(db, 'logs/image'), () => loadImageLogs());
