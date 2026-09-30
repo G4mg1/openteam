@@ -9,7 +9,6 @@ const HF_API_KEY = (process.env.HF_API_KEY || '').trim();
 const SECRET = process.env.SECRET_KEY || 'mirox-dev-fallback-change-me';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '2010';
 
-/* ---------- Firebase Admin (OPTIONAL — never blocks boot) ---------- */
 let fdb = null;
 try {
   const admin = require('firebase-admin');
@@ -28,18 +27,12 @@ try {
       });
       fdb = admin.database();
     }
-  } else {
-    fdb = admin.database();
-  }
-} catch (e) {
-  console.warn('[Firebase] Init skipped:', e.message);
-  fdb = null;
-}
+  } else fdb = admin.database();
+} catch (e) { fdb = null; }
 
 const now = () => Math.floor(Date.now() / 1000);
 const today = () => new Date().toISOString().slice(0, 10);
 
-/* ---------- Session helpers ---------- */
 function signSession(d) {
   const p = Buffer.from(JSON.stringify(d)).toString('base64url');
   return p + '.' + crypto.createHmac('sha256', SECRET).update(p).digest('base64url');
@@ -67,15 +60,19 @@ function setSession(res, d) {
 }
 function clearSession(res) { res.setHeader('Set-Cookie', 'mirox_sess=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0'); }
 
-/* ---------- Models ---------- */
+/* ---------- MODELS — Luna is FIRST ---------- */
 const MODELS = {
-  'mirox-luna-1.2': { label: 'Luna', tagline: 'Fast · warm', tier: 'free', default: true, tokens: 900,
-    prompt: 'You are Luna, a warm assistant by OpenSurr. Use fenced code blocks with the language name. Never mention other companies.' },
-  'mirox-gen-1': { label: 'Gen', tagline: 'Ultra concise', tier: 'free', fallback: true, tokens: 600,
-    prompt: 'You are Gen from OpenSurr. Ultra-concise. Code only inside fenced blocks with the language name.' },
-  'mirox-pro-5': { label: 'Pro', tagline: 'Balanced', tier: 'pro', tokens: 1400, prompt: 'You are Pro from OpenSurr.' },
-  'mirox-ultra-10': { label: 'Ultra', tagline: 'Deep', tier: 'pro', tokens: 1800, prompt: 'You are Ultra from OpenSurr.' },
-  'mirox-eclipse-2.0': { label: 'Eclipse', tagline: 'Best', tier: 'ultimate', tokens: 2400, prompt: 'You are Eclipse from OpenSurr.' },
+  'mirox-luna-1.2': {
+    label: 'Luna', tagline: 'Fast · warm · free', tier: 'free', default: true, tokens: 900,
+    prompt: 'You are Luna, a warm assistant by OpenSurr. Use fenced code blocks with the language name. Never mention other companies.',
+  },
+  'mirox-gen-1': {
+    label: 'Gen', tagline: 'Ultra concise', tier: 'free', tokens: 600,
+    prompt: 'You are Gen from OpenSurr. Ultra-concise. Code only inside fenced blocks with the language name.',
+  },
+  'mirox-pro-5': { label: 'Pro', tagline: 'Balanced · deeper', tier: 'pro', tokens: 1400, prompt: 'You are Pro from OpenSurr. Balanced depth.' },
+  'mirox-ultra-10': { label: 'Ultra', tagline: 'Deep reasoning', tier: 'pro', tokens: 1800, prompt: 'You are Ultra from OpenSurr. Deep reasoning.' },
+  'mirox-eclipse-2.0': { label: 'Eclipse', tagline: 'Best quality', tier: 'ultimate', tokens: 2400, prompt: 'You are Eclipse from OpenSurr. Best quality.' },
 };
 const API_ALLOWED_MODELS = ['mirox-luna-1.2', 'mirox-gen-1'];
 
@@ -86,7 +83,6 @@ const PLANS = {
 };
 const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
 
-/* ---------- User helpers (Firebase optional) ---------- */
 async function getUserRecord(email) {
   if (!fdb || !email) return null;
   try { const s = await fdb.ref(`users/${email}`).once('value'); return s.exists() ? s.val() : null; } catch { return null; }
@@ -99,8 +95,7 @@ async function ensureFreshUser(email) {
   if (!email) return null;
   let rec = await getUserRecord(email);
   if (!rec) {
-    rec = { email, name: '', tier: 'free', daily_used: 0, trial_used: 0, daily_reset: today(),
-      eclipse_credits: 10, eclipse_reset: null, created_at: now() };
+    rec = { email, name: '', tier: 'free', daily_used: 0, trial_used: 0, daily_reset: today(), eclipse_credits: 10, eclipse_reset: null, created_at: now() };
     await saveUserRecord(rec);
     return rec;
   }
@@ -116,7 +111,6 @@ async function currentUser(req) {
   return ensureFreshUser(s.uid);
 }
 
-/* ---------- HF ---------- */
 const HF_CHAT = 'https://router.huggingface.co/v1/chat/completions';
 const HF_IMAGE = 'https://router.huggingface.co/fal-ai/fal-ai/flux/schnell';
 
@@ -127,10 +121,7 @@ async function hfChatStream(messages, maxTokens, signal) {
     body: JSON.stringify({ model: 'Qwen/Qwen2.5-7B-Instruct', messages, max_tokens: maxTokens, stream: true }),
     signal,
   });
-  if (!res.ok) {
-    const t = await res.text().catch(() => '');
-    throw new Error(`HF ${res.status}: ${t.slice(0, 200)}`);
-  }
+  if (!res.ok) { const t = await res.text().catch(() => ''); throw new Error(`HF ${res.status}: ${t.slice(0, 200)}`); }
   return res.body;
 }
 async function hfImageGenerate(prompt, aspectRatio = '1:1') {
@@ -145,7 +136,6 @@ async function hfImageGenerate(prompt, aspectRatio = '1:1') {
   return data.images?.[0]?.url || data.url || null;
 }
 
-/* ---------- Message builder ---------- */
 function buildMessages(systemPrompt, history, userText, persona, mem, files) {
   let sys = systemPrompt || '';
   if (persona) sys += `\n\nUser preference: ${persona}`;
@@ -176,7 +166,6 @@ function buildMessages(systemPrompt, history, userText, persona, mem, files) {
   return msgs;
 }
 
-/* ---------- SSE pipe ---------- */
 async function pipeSSE(stream, res, onDone) {
   const reader = stream.getReader(), dec = new TextDecoder();
   let buf = '', full = '';
@@ -202,32 +191,25 @@ async function pipeSSE(stream, res, onDone) {
   return full;
 }
 
-/* ============================================================
-   ROUTES
-   ============================================================ */
+/* ============ ROUTES ============ */
 
-/* Health check with diagnostics */
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
-  res.json({
-    ok: true,
-    app: 'MiroxAI',
-    hf_key: !!HF_API_KEY,
-    firebase: !!fdb,
-    admin_password_set: ADMIN_PASSWORD !== '2010',
-    t: now(),
-  });
+  res.json({ ok: true, app: 'MiroxAI', hf_key: !!HF_API_KEY, firebase: !!fdb, t: now() });
 });
 
 app.get(['/api/config', '/config'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   let u = null;
   try { u = await currentUser(req); } catch {}
+  /* Models array — FIRST entry is the default */
+  const modelsArr = Object.entries(MODELS).map(([id, m]) => ({
+    id, label: m.label, tagline: m.tagline, tier: m.tier,
+    default: !!m.default,
+  }));
   res.json({
-    app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v16' },
-    models: Object.entries(MODELS).map(([id, m]) => ({
-      id, label: m.label, tagline: m.tagline, tier: m.tier,
-      default: !!m.default, fallback: !!m.fallback,
-    })),
+    app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v17' },
+    models: modelsArr,
+    default_model: modelsArr[0].id,
     plans: PLANS,
     user_tier: u ? u.tier : 'free',
     guest: !u,
@@ -235,7 +217,6 @@ app.get(['/api/config', '/config'], async (req, res) => {
   });
 });
 
-/* ---------- Auth ---------- */
 app.post(['/api/auth/simple-login', '/auth/simple-login'], async (req, res) => {
   const { name, email } = req.body || {};
   const n = String(name || '').trim().slice(0, 60);
@@ -243,23 +224,15 @@ app.post(['/api/auth/simple-login', '/auth/simple-login'], async (req, res) => {
   if (!n || !e || !e.includes('@') || !e.split('@')[1].includes('.')) {
     return res.status(400).json({ ok: false, error: 'Valid name and email required' });
   }
-
   let rec = await getUserRecord(e);
   const existing = !!rec;
-  if (!rec) {
-    rec = { email: e, name: n, tier: 'free', daily_used: 0, trial_used: 0, daily_reset: today(),
-      eclipse_credits: 10, eclipse_reset: null, created_at: now() };
-  } else {
-    rec.name = n;
-  }
+  if (!rec) rec = { email: e, name: n, tier: 'free', daily_used: 0, trial_used: 0, daily_reset: today(), eclipse_credits: 10, eclipse_reset: null, created_at: now() };
+  else rec.name = n;
   rec.last_login = now();
   await saveUserRecord(rec);
-
   const token = setSession(res, { uid: e, name: n, tier: rec.tier });
   if (fdb) try { await fdb.ref(`logs/user/${e}`).push({ event: existing ? 'signin' : 'signup', name: n, ts: now() }); } catch {}
-
-  res.json({ ok: true, token,
-    user: { id: e, email: e, name: n, tier: rec.tier, tier_label: PLANS[rec.tier].label } });
+  res.json({ ok: true, token, user: { id: e, email: e, name: n, tier: rec.tier, tier_label: PLANS[rec.tier].label } });
 });
 
 app.post(['/api/logout', '/logout'], (req, res) => { clearSession(res); res.json({ ok: true }); });
@@ -271,7 +244,6 @@ app.get(['/api/me', '/me'], async (req, res) => {
   res.json({ user: { id: u.email, email: u.email, name: u.name, tier: u.tier } });
 });
 
-/* ---------- Plans ---------- */
 app.get(['/api/subscription/plans', '/subscription/plans'], (req, res) => {
   const perks = {
     free: ['Luna & Gen — free', 'Vision + web search', '10 Eclipse chats/day', 'Memory & persona'],
@@ -286,13 +258,8 @@ app.get(['/api/subscription/plans', '/subscription/plans'], (req, res) => {
   res.json({ ok: true, plans: out });
 });
 
-/* ============================================================
-   CHAT COMPLETIONS
-   ============================================================ */
 app.post('/v1/chat/completions', async (req, res) => {
-  if (!HF_API_KEY) {
-    return res.status(503).json({ ok: false, error: 'HF_API_KEY not configured on server.' });
-  }
+  if (!HF_API_KEY) return res.status(503).json({ ok: false, error: 'HF_API_KEY not configured on server.' });
 
   const { model, messages, stream = false, temperature, message, history, files } = req.body || {};
   let u = null;
@@ -312,7 +279,7 @@ app.post('/v1/chat/completions', async (req, res) => {
 
   const requestedModel = model || 'mirox-luna-1.2';
   if (isApiCall && !API_ALLOWED_MODELS.includes(requestedModel)) {
-    return res.status(403).json({ ok: false, error: `Model "${requestedModel}" not available via API. Use mirox-luna-1.2 or mirox-gen-1.` });
+    return res.status(403).json({ ok: false, error: `Model "${requestedModel}" not available via API.` });
   }
 
   const cfg = MODELS[requestedModel] || MODELS['mirox-luna-1.2'];
@@ -333,20 +300,13 @@ app.post('/v1/chat/completions', async (req, res) => {
   if (u) {
     const plan = PLANS[u.tier];
     if ((u.daily_used || 0) >= plan.daily_limit) {
-      return res.status(429).json({ ok: false, error: `Daily limit reached (${plan.daily_limit}/day). Refills in 24h.`, limit_reached: true });
+      return res.status(429).json({ ok: false, error: `Daily limit reached (${plan.daily_limit}/day).`, limit_reached: true });
     }
   }
   if (fdb && u) {
-    try {
-      fdb.ref(`logs/chat/${u.email}`).push({
-        model: effectiveCfg.label,
-        message: String(message || msgs[msgs.length - 1]?.content || '').slice(0, 1000),
-        ts: now(),
-      });
-    } catch {}
+    try { fdb.ref(`logs/chat/${u.email}`).push({ model: effectiveCfg.label, message: String(message || msgs[msgs.length - 1]?.content || '').slice(0, 1000), ts: now() }); } catch {}
   }
 
-  /* --- Non-stream --- */
   if (!stream) {
     try {
       const hfRes = await fetch(HF_CHAT, {
@@ -354,10 +314,7 @@ app.post('/v1/chat/completions', async (req, res) => {
         headers: { Authorization: `Bearer ${HF_API_KEY}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: 'Qwen/Qwen2.5-7B-Instruct', messages: msgs, max_tokens: effectiveCfg.tokens, temperature: temperature ?? 0.7 }),
       });
-      if (!hfRes.ok) {
-        const t = await hfRes.text().catch(() => '');
-        throw new Error(`HF ${hfRes.status}: ${t.slice(0, 160)}`);
-      }
+      if (!hfRes.ok) { const t = await hfRes.text().catch(() => ''); throw new Error(`HF ${hfRes.status}: ${t.slice(0, 160)}`); }
       const data = await hfRes.json();
       const reply = data.choices?.[0]?.message?.content || '';
 
@@ -370,17 +327,13 @@ app.post('/v1/chat/completions', async (req, res) => {
         }
         await saveUserRecord(u);
       }
-      return res.json({ ok: true, reply, model: effectiveCfg.label, switched,
-        switched_from: switched ? cfg.label : null, using_trial: usingTrial,
+      return res.json({ ok: true, reply, model: effectiveCfg.label, switched, switched_from: switched ? cfg.label : null, using_trial: usingTrial,
         daily_used: u ? (u.daily_used || 0) : 0,
         daily_remaining: u ? Math.max(0, PLANS[u.tier].daily_limit - (u.daily_used || 0)) : 0,
         eclipse_credits: u ? (u.eclipse_credits ?? 10) : 10 });
-    } catch (e) {
-      return res.status(502).json({ ok: false, error: String(e.message).slice(0, 200) });
-    }
+    } catch (e) { return res.status(502).json({ ok: false, error: String(e.message).slice(0, 200) }); }
   }
 
-  /* --- Stream --- */
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
@@ -392,7 +345,6 @@ app.post('/v1/chat/completions', async (req, res) => {
   try {
     const streamBody = await hfChatStream(msgs, effectiveCfg.tokens, abortCtrl.signal);
     await pipeSSE(streamBody, res);
-
     if (u && !isApiCall) {
       u.daily_used = (u.daily_used || 0) + 1;
       if (usingTrial) u.trial_used = (u.trial_used || 0) + 1;
@@ -402,9 +354,7 @@ app.post('/v1/chat/completions', async (req, res) => {
       }
       await saveUserRecord(u);
     }
-
-    res.write(`data: ${JSON.stringify({ done: true, model: effectiveCfg.label, switched,
-      switched_from: switched ? cfg.label : null, using_trial: usingTrial,
+    res.write(`data: ${JSON.stringify({ done: true, model: effectiveCfg.label, switched, switched_from: switched ? cfg.label : null, using_trial: usingTrial,
       daily_used: u ? (u.daily_used || 0) : 0,
       daily_remaining: u ? Math.max(0, PLANS[u.tier].daily_limit - (u.daily_used || 0)) : 0,
       eclipse_credits: u ? (u.eclipse_credits ?? 10) : 10 })}\n\n`);
@@ -415,7 +365,6 @@ app.post('/v1/chat/completions', async (req, res) => {
   }
 });
 
-/* ---------- Images ---------- */
 app.post('/v1/images/generations', async (req, res) => {
   if (!HF_API_KEY) return res.status(503).json({ ok: false, error: 'HF_API_KEY not configured.' });
   const { prompt, aspect_ratio = '1:1' } = req.body || {};
@@ -428,7 +377,6 @@ app.post('/v1/images/generations', async (req, res) => {
   } catch (e) { res.status(502).json({ ok: false, error: String(e.message).slice(0, 200) }); }
 });
 
-/* ---------- API keys ---------- */
 app.post(['/api/keys/generate', '/keys/generate'], async (req, res) => {
   const u = await currentUser(req);
   if (!u) return res.status(401).json({ ok: false, error: 'Sign in first' });
@@ -440,10 +388,7 @@ app.post(['/api/keys/generate', '/keys/generate'], async (req, res) => {
     const maxKeys = u.tier === 'free' ? 2 : u.tier === 'pro' ? 5 : 20;
     if (Object.keys(existing).length >= maxKeys) return res.status(429).json({ ok: false, error: `Key limit reached (${maxKeys}).` });
     const keyId = crypto.randomBytes(8).toString('hex');
-    await fdb.ref(`api_keys/${u.email}/${keyId}`).set({
-      hash: crypto.createHash('sha256').update(key).digest('hex'),
-      prefix, created: now(), active: true,
-    });
+    await fdb.ref(`api_keys/${u.email}/${keyId}`).set({ hash: crypto.createHash('sha256').update(key).digest('hex'), prefix, created: now(), active: true });
   }
   res.json({ ok: true, key, prefix });
 });
@@ -457,9 +402,6 @@ app.get(['/api/keys/list', '/keys/list'], async (req, res) => {
   res.json({ ok: true, keys });
 });
 
-/* ============================================================
-   ADMIN — password gated
-   ============================================================ */
 function adminSession(req) {
   const token = (req.headers['x-admin-token'] || '').trim();
   if (!token) return null;
@@ -471,9 +413,7 @@ function adminSession(req) {
 
 app.post('/api/admin/auth', (req, res) => {
   const { password } = req.body || {};
-  if (!password || password !== ADMIN_PASSWORD) {
-    return res.status(401).json({ ok: false, error: 'Invalid password' });
-  }
+  if (!password || password !== ADMIN_PASSWORD) return res.status(401).json({ ok: false, error: 'Invalid password' });
   const token = signSession({ admin: true, exp: Date.now() + 12 * 60 * 60 * 1000 });
   res.json({ ok: true, token });
 });
@@ -489,7 +429,7 @@ app.post('/api/admin/set-tier', async (req, res) => {
 
 app.get('/api/admin/stats', async (req, res) => {
   if (!adminSession(req)) return res.status(401).json({ ok: false, error: 'Unauthorized' });
-  if (!fdb) return res.json({ ok: true, users: 0, chats: 0, images: 0, events: 0, users_data: [] });
+  if (!fdb) return res.json({ ok: true, users: 0, chats: 0, images: 0, events: 0, users_data: {} });
   try {
     const [usersSnap, chatsSnap, imgSnap, evSnap] = await Promise.all([
       fdb.ref('users').once('value'),
@@ -514,9 +454,7 @@ app.get('/api/admin/stats', async (req, res) => {
       events: countLogs(evSnap.val()),
       users_data: usersSnap.val() || {},
     });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
 module.exports = app;
