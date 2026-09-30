@@ -9,6 +9,7 @@ const HF_API_KEY = (process.env.HF_API_KEY || '').trim();
 const SECRET = process.env.SECRET_KEY || 'mirox-dev-fallback-change-me';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '2010';
 
+/* Firebase (optional) */
 let fdb = null;
 try {
   const admin = require('firebase-admin');
@@ -28,11 +29,12 @@ try {
       fdb = admin.database();
     }
   } else fdb = admin.database();
-} catch (e) { fdb = null; }
+} catch { fdb = null; }
 
 const now = () => Math.floor(Date.now() / 1000);
 const today = () => new Date().toISOString().slice(0, 10);
 
+/* Session */
 function signSession(d) {
   const p = Buffer.from(JSON.stringify(d)).toString('base64url');
   return p + '.' + crypto.createHmac('sha256', SECRET).update(p).digest('base64url');
@@ -60,19 +62,19 @@ function setSession(res, d) {
 }
 function clearSession(res) { res.setHeader('Set-Cookie', 'mirox_sess=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0'); }
 
-/* ---------- MODELS — Luna is FIRST ---------- */
+/* Models — Luna first, faster tokens */
 const MODELS = {
   'mirox-luna-1.2': {
-    label: 'Luna', tagline: 'Fast · warm · free', tier: 'free', default: true, tokens: 900,
-    prompt: 'You are Luna, a warm assistant by OpenSurr. Use fenced code blocks with the language name. Never mention other companies.',
+    label: 'Luna', tagline: 'Fast · warm · free', tier: 'free', default: true, tokens: 500,
+    prompt: 'You are Luna, a warm assistant by OpenSurr. Keep replies concise. Use fenced code blocks with the language name.'
   },
   'mirox-gen-1': {
-    label: 'Gen', tagline: 'Ultra concise', tier: 'free', tokens: 600,
-    prompt: 'You are Gen from OpenSurr. Ultra-concise. Code only inside fenced blocks with the language name.',
+    label: 'Gen', tagline: 'Ultra concise', tier: 'free', tokens: 400,
+    prompt: 'You are Gen from OpenSurr. Ultra-concise. Code only inside fenced blocks with the language name.'
   },
-  'mirox-pro-5': { label: 'Pro', tagline: 'Balanced · deeper', tier: 'pro', tokens: 1400, prompt: 'You are Pro from OpenSurr. Balanced depth.' },
-  'mirox-ultra-10': { label: 'Ultra', tagline: 'Deep reasoning', tier: 'pro', tokens: 1800, prompt: 'You are Ultra from OpenSurr. Deep reasoning.' },
-  'mirox-eclipse-2.0': { label: 'Eclipse', tagline: 'Best quality', tier: 'ultimate', tokens: 2400, prompt: 'You are Eclipse from OpenSurr. Best quality.' },
+  'mirox-pro-5': { label: 'Pro', tagline: 'Balanced', tier: 'pro', tokens: 800, prompt: 'You are Pro from OpenSurr. Balanced depth.' },
+  'mirox-ultra-10': { label: 'Ultra', tagline: 'Deep reasoning', tier: 'pro', tokens: 1000, prompt: 'You are Ultra from OpenSurr. Deep reasoning.' },
+  'mirox-eclipse-2.0': { label: 'Eclipse', tagline: 'Best quality', tier: 'ultimate', tokens: 1200, prompt: 'You are Eclipse from OpenSurr. Best quality.' },
 };
 const API_ALLOWED_MODELS = ['mirox-luna-1.2', 'mirox-gen-1'];
 
@@ -83,6 +85,7 @@ const PLANS = {
 };
 const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
 
+/* User helpers */
 async function getUserRecord(email) {
   if (!fdb || !email) return null;
   try { const s = await fdb.ref(`users/${email}`).once('value'); return s.exists() ? s.val() : null; } catch { return null; }
@@ -111,14 +114,16 @@ async function currentUser(req) {
   return ensureFreshUser(s.uid);
 }
 
+/* HF */
 const HF_CHAT = 'https://router.huggingface.co/v1/chat/completions';
 const HF_IMAGE = 'https://router.huggingface.co/fal-ai/fal-ai/flux/schnell';
+const FAST_MODEL = 'Qwen/Qwen2.5-3B-Instruct';
 
 async function hfChatStream(messages, maxTokens, signal) {
   const res = await fetch(HF_CHAT, {
     method: 'POST',
     headers: { Authorization: `Bearer ${HF_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: 'Qwen/Qwen2.5-7B-Instruct', messages, max_tokens: maxTokens, stream: true }),
+    body: JSON.stringify({ model: FAST_MODEL, messages, max_tokens: maxTokens, stream: true }),
     signal,
   });
   if (!res.ok) { const t = await res.text().catch(() => ''); throw new Error(`HF ${res.status}: ${t.slice(0, 200)}`); }
@@ -136,6 +141,7 @@ async function hfImageGenerate(prompt, aspectRatio = '1:1') {
   return data.images?.[0]?.url || data.url || null;
 }
 
+/* Message builder */
 function buildMessages(systemPrompt, history, userText, persona, mem, files) {
   let sys = systemPrompt || '';
   if (persona) sys += `\n\nUser preference: ${persona}`;
@@ -166,7 +172,7 @@ function buildMessages(systemPrompt, history, userText, persona, mem, files) {
   return msgs;
 }
 
-async function pipeSSE(stream, res, onDone) {
+async function pipeSSE(stream, res) {
   const reader = stream.getReader(), dec = new TextDecoder();
   let buf = '', full = '';
   while (true) {
@@ -187,7 +193,6 @@ async function pipeSSE(stream, res, onDone) {
       } catch {}
     }
   }
-  if (onDone) onDone(full);
   return full;
 }
 
@@ -201,13 +206,11 @@ app.get(['/api/config', '/config'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   let u = null;
   try { u = await currentUser(req); } catch {}
-  /* Models array — FIRST entry is the default */
   const modelsArr = Object.entries(MODELS).map(([id, m]) => ({
-    id, label: m.label, tagline: m.tagline, tier: m.tier,
-    default: !!m.default,
+    id, label: m.label, tagline: m.tagline, tier: m.tier, default: !!m.default,
   }));
   res.json({
-    app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v17' },
+    app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v22' },
     models: modelsArr,
     default_model: modelsArr[0].id,
     plans: PLANS,
@@ -312,7 +315,7 @@ app.post('/v1/chat/completions', async (req, res) => {
       const hfRes = await fetch(HF_CHAT, {
         method: 'POST',
         headers: { Authorization: `Bearer ${HF_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'Qwen/Qwen2.5-7B-Instruct', messages: msgs, max_tokens: effectiveCfg.tokens, temperature: temperature ?? 0.7 }),
+        body: JSON.stringify({ model: FAST_MODEL, messages: msgs, max_tokens: effectiveCfg.tokens, temperature: temperature ?? 0.7 }),
       });
       if (!hfRes.ok) { const t = await hfRes.text().catch(() => ''); throw new Error(`HF ${hfRes.status}: ${t.slice(0, 160)}`); }
       const data = await hfRes.json();
@@ -377,6 +380,7 @@ app.post('/v1/images/generations', async (req, res) => {
   } catch (e) { res.status(502).json({ ok: false, error: String(e.message).slice(0, 200) }); }
 });
 
+/* API keys */
 app.post(['/api/keys/generate', '/keys/generate'], async (req, res) => {
   const u = await currentUser(req);
   if (!u) return res.status(401).json({ ok: false, error: 'Sign in first' });
@@ -402,6 +406,7 @@ app.get(['/api/keys/list', '/keys/list'], async (req, res) => {
   res.json({ ok: true, keys });
 });
 
+/* Admin */
 function adminSession(req) {
   const token = (req.headers['x-admin-token'] || '').trim();
   if (!token) return null;
