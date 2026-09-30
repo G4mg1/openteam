@@ -1,369 +1,432 @@
 <!DOCTYPE html>
-<html lang="en" data-mode="light" data-theme="warm" data-corner="soft" data-font="system">
+<html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5">
-<meta name="theme-color" content="#fafafb">
-<title>MiroxAI — by OpenSurr</title>
-<link rel="icon" type="image/png" href="/logo.png">
-<script>
-(function(){
-  function hide(i){if(!i||i.tagName!=='IMG')return;i.style.display='none';i.setAttribute('data-broken','1');
-    const p=i.parentElement;if(p&&p.classList.contains('ai-avatar')&&!p.querySelector('.avatar-fallback')){const f=document.createElement('span');f.className='avatar-fallback';f.textContent='M';p.appendChild(f);}}
-  document.addEventListener('error',e=>{if(e.target?.tagName==='IMG')hide(e.target);},true);
-  document.addEventListener('DOMContentLoaded',()=>{document.querySelectorAll('img').forEach(i=>{if(i.complete&&i.naturalWidth===0&&i.src)hide(i);});});
-})();
-</script>
-<link href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css" rel="stylesheet">
-<link id="hljs-light" rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/atom-one-light.min.css">
-<link id="hljs-dark"  rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/atom-one-dark.min.css" disabled>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#fafafb">
+  <title>MiroxAI — by OpenSurr</title>
+  <link rel="icon" href="logo.png" type="image/png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/remixicon@4.9.0/fonts/remixicon.css" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- Loading Screen -->
+  <div id="loadingScreen" class="loading-screen">
+    <img src="logo.png" alt="MiroxAI" class="loading-logo">
+    <div class="loading-bar"><div class="loading-bar-fill"></div></div>
+  </div>
 
-<div id="userBackground" aria-hidden="true"></div>
+  <!-- Sidebar Scrim -->
+  <div id="sidebarScrim" class="sidebar-scrim"></div>
 
-<div id="loadingScreen">
-  <img src="/logo.png" alt="" class="load-logo theme-logo">
-  <span class="load-name">MiroxAI</span>
-  <span class="load-sub">by OpenSurr</span>
-  <div class="load-bar"><span></span></div>
-</div>
-<script>(function(){function k(){const l=document.getElementById('loadingScreen');if(l){l.classList.add('hidden','force-hidden');l.style.display='none';}}setTimeout(k,600);if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(k,40));else setTimeout(k,40);})();</script>
+  <!-- Sidebar -->
+  <aside id="sidebar" class="sidebar">
+    <div class="sidebar-header">
+      <a href="#" id="brandLogo" class="brand">
+        <img src="logo.png" alt="MiroxAI" class="brand-logo">
+        <span class="brand-text">MiroxAI</span>
+      </a>
+      <button id="sidebarCloseBtn" class="icon-btn sidebar-close" aria-label="Close sidebar">
+        <i class="ri-close-line"></i>
+      </button>
+    </div>
 
-<div class="app">
-  <div class="sidebar-scrim" id="sidebarScrim"></div>
-  <aside class="sidebar" id="sidebar">
-    <div class="brand">
-      <img src="/logo.png" alt="" class="theme-logo" id="brandLogo" title="Home">
-      <span>MiroxAI</span>
-      <button class="sidebar-close" id="sidebarCloseBtn"><i class="ri-close-line"></i></button>
+    <button id="newChatBtn" class="new-chat-btn">
+      <i class="ri-add-line"></i>
+      <span>New chat</span>
+    </button>
+
+    <div class="sidebar-section">
+      <h3 class="sidebar-label">Chats</h3>
+      <ul id="historyList" class="history-list">
+        <li class="history-empty">No conversations yet</li>
+      </ul>
     </div>
-    <div class="sidebar-search">
-      <i class="ri-search-line"></i>
-      <input type="text" id="chatSearchInput" placeholder="Search chats…" autocomplete="off">
-      <button id="clearSearchBtn" type="button"><i class="ri-close-line"></i></button>
-    </div>
-    <button class="new-chat-btn" id="newChatBtn"><i class="ri-add-line"></i> New chat</button>
-    <div class="history">
-      <p class="history-label">Chats</p>
-      <ul id="historyList"><li class="history-empty">No conversations yet</li></ul>
-    </div>
-    <div class="tier-chip" id="tierChip">
-      <div class="tier-chip-icon"><i class="ri-vip-crown-2-line"></i></div>
-      <div class="tier-chip-info">
-        <div class="tier-chip-label" id="tierLabel">Guest mode</div>
-        <div class="tier-chip-meta" id="tierMeta">Sign in to save chats</div>
-      </div>
-      <button class="tier-chip-btn" id="upgradeBtn">Sign in</button>
-    </div>
+
     <div class="sidebar-footer">
-      <div class="user-chip" id="userChip"><i class="ri-user-3-line"></i><span id="userChipLabel">Sign in</span></div>
-      <button class="icon-only-btn" id="settingsBtn" title="Settings"><i class="ri-settings-3-line"></i></button>
+      <div id="userChip" class="user-chip">
+        <div class="user-avatar"><i class="ri-user-line"></i></div>
+        <div class="user-info">
+          <span class="user-name">Guest mode</span>
+          <span class="user-sub">Sign in to save chats</span>
+        </div>
+        <button id="upgradeBtn" class="upgrade-btn">
+          <i class="ri-vip-crown-line"></i>
+        </button>
+      </div>
+      <div class="sidebar-links">
+        <a href="#" id="settingsBtn" class="sidebar-link"><i class="ri-settings-3-line"></i> Settings</a>
+        <a href="/developers/" class="sidebar-link"><i class="ri-code-s-slash-line"></i> Developers</a>
+        <a href="#" id="supportModeBtn" class="sidebar-link"><i class="ri-customer-service-2-line"></i> Support</a>
+      </div>
+      <div class="made-by">Made by OpenSurr</div>
     </div>
-    <p class="made-by">Made by <b>OpenSurr</b></p>
   </aside>
 
-  <main class="main" id="mainEl">
-    <header class="topbar">
-      <div class="topbar-left">
-        <button class="hamburger-btn" id="hamburgerBtn"><i class="ri-menu-line"></i></button>
-        <div class="topbar-title">
-          <span class="title-row">
-            <h1 id="chatTitle">New chat</h1>
-            <button class="icon-only-btn small" id="editTitleBtn"><i class="ri-pencil-line"></i></button>
-          </span>
-          <small id="chatSubtitle"></small>
+  <!-- Main Chat Area -->
+  <main class="main">
+    <header class="chat-header">
+      <button id="hamburgerBtn" class="icon-btn hamburger" aria-label="Open sidebar">
+        <i class="ri-menu-line"></i>
+      </button>
+      <h2 id="chatTitle" class="chat-title">New chat</h2>
+      <div class="chat-header-actions">
+        <button id="modelPickerBtn" class="model-picker-btn">
+          <i class="ri-cpu-line"></i>
+          <span id="currentModelLabel">Luna</span>
+          <i class="ri-arrow-down-s-line"></i>
+        </button>
+        <div id="modelPickerMenu" class="model-picker-menu">
+          <!-- Populated by JS -->
         </div>
-      </div>
-      <div class="topbar-actions">
-        <button class="icon-only-btn" id="stopBtn" title="Stop" style="display:none;color:#dc2626;"><i class="ri-stop-circle-line"></i></button>
+        <button id="editTitleBtn" class="icon-btn" aria-label="Rename chat">
+          <i class="ri-edit-line"></i>
+        </button>
       </div>
     </header>
 
-    <div class="chat" id="chat">
-      <div class="message ai">
-        <div class="avatar ai-avatar"><img src="/logo.png" alt=""></div>
-        <div class="bubble-wrap"><div class="bubble">Hi, I'm Mirox — built by the OpenSurr team. Ask anything, attach images or files, use web search, or start a voice call.</div></div>
+    <div id="chatMessages" class="chat-messages">
+      <div class="welcome-screen">
+        <img src="logo.png" alt="MiroxAI" class="welcome-logo">
+        <h1 class="welcome-title">Hi, I'm Mirox</h1>
+        <p class="welcome-sub">Built by the OpenSurr team. Ask anything, attach images or files, use web search, or start a voice call.</p>
+        <div class="suggestion-grid">
+          <button class="suggestion-card" data-prompt="What would you like to talk about?">
+            <i class="ri-chat-3-line"></i>
+            <span>What would you like to talk about?</span>
+          </button>
+          <button class="suggestion-card" data-prompt="Help me write code">
+            <i class="ri-code-line"></i>
+            <span>Help me write code</span>
+          </button>
+          <button class="suggestion-card" data-prompt="Explain a concept simply">
+            <i class="ri-lightbulb-line"></i>
+            <span>Explain a concept simply</span>
+          </button>
+          <button class="suggestion-card" data-prompt="Generate an image">
+            <i class="ri-image-line"></i>
+            <span>Generate an image</span>
+          </button>
+        </div>
+        <p class="welcome-disclaimer">Mirox can make mistakes. Made by the OpenSurr team.</p>
       </div>
     </div>
 
-    <div class="welcome-hero" id="welcomeHero">
-      <img src="/logo.png" alt="" class="theme-logo hero-logo">
-      <span class="hero-text">What would you like to talk about?</span>
+    <!-- Thinking Indicator -->
+    <div id="thinkingIndicator" class="thinking-indicator" style="display:none;">
+      <div class="thinking-dots">
+        <span></span><span></span><span></span>
+      </div>
+      <span class="thinking-label">Thinking</span>
     </div>
 
-    <div class="attachment-preview" id="attachmentPreview" style="display:none;">
-      <span id="attachmentList" class="att-list"></span>
-      <button type="button" id="removeAttachmentBtn"><i class="ri-close-line"></i></button>
-    </div>
+    <!-- Composer -->
+    <div class="composer-wrap">
+      <div id="attachmentPreview" class="attachment-preview" style="display:none;">
+        <div id="attachmentList" class="attachment-list"></div>
+        <button id="removeAttachmentBtn" class="icon-btn remove-attach"><i class="ri-close-line"></i></button>
+      </div>
 
-    <form class="composer" id="composerForm" onsubmit="return false;">
-      <button type="button" class="icon-btn" id="attachBtn" title="Attach images or files"><i class="ri-attachment-2"></i></button>
-      <input type="file" id="fileInput" multiple hidden>
-      <button type="button" class="icon-btn" id="searchToggleBtn" title="Web search"><i class="ri-global-line"></i></button>
-      <button type="button" class="icon-btn" id="micBtn" title="Voice"><i class="ri-mic-line"></i></button>
+      <div class="tools-row">
+        <button id="talkModeBtn" class="tool-btn" title="Voice call"><i class="ri-mic-line"></i> Talk</button>
+        <button id="imageModeBtn" class="tool-btn" title="Image generation"><i class="ri-image-line"></i> Image</button>
+        <button id="backgroundModeBtn" class="tool-btn" title="Background"><i class="ri-panorama-line"></i> BG</button>
+        <button id="plansModeBtn" class="tool-btn" title="Plans"><i class="ri-vip-crown-line"></i> Plans</button>
+        <button id="supportModeBtn2" class="tool-btn" title="Help"><i class="ri-question-line"></i> Help</button>
+      </div>
 
-      <div class="model-picker" id="modelPicker">
-        <button type="button" class="model-picker-btn" id="modelPickerBtn" title="Choose model">
-          <span class="model-picker-dot"></span>
-          <span class="model-picker-label" id="modelPickerLabel">Luna</span>
-          <i class="ri-arrow-down-s-line"></i>
+      <form id="composerForm" class="composer">
+        <button type="button" id="attachBtn" class="icon-btn attach-btn" aria-label="Attach file">
+          <i class="ri-attachment-2"></i>
         </button>
-        <div class="model-picker-menu" id="modelPickerMenu"></div>
-      </div>
-
-      <input type="text" id="messageInput" placeholder="Message Mirox…" autocomplete="off" spellcheck="true">
-      <button type="submit" class="send-btn" id="sendBtn"><i class="ri-arrow-up-line"></i></button>
-    </form>
-    <p class="disclaimer" id="disclaimer">Mirox can make mistakes. Made by the <b>OpenSurr</b> team.</p>
+        <input type="file" id="fileInput" multiple hidden>
+        <button type="button" id="searchToggleBtn" class="icon-btn" aria-label="Web search" title="Web search">
+          <i class="ri-global-line"></i>
+        </button>
+        <textarea id="messageInput" class="message-input" placeholder="Say something…" rows="1"></textarea>
+        <button type="button" id="micBtn" class="icon-btn mic-btn" aria-label="Microphone">
+          <i class="ri-mic-line"></i>
+        </button>
+        <button type="button" id="stopBtn" class="icon-btn stop-btn" style="display:none;" aria-label="Stop">
+          <i class="ri-stop-circle-line"></i>
+        </button>
+        <button type="submit" id="sendBtn" class="send-btn" disabled aria-label="Send">
+          <i class="ri-send-plane-fill"></i>
+        </button>
+      </form>
+    </div>
   </main>
 
-  <aside class="tool-rail" id="toolRail">
-    <div class="rail-head">Tools</div>
-    <div class="rail-items">
-      <button class="rail-btn" id="talkModeBtn"><span class="rail-icon"><i class="ri-phone-line"></i></span><span class="rail-label">Talk</span></button>
-      <button class="rail-btn" id="imageModeBtn"><span class="rail-icon"><i class="ri-image-line"></i></span><span class="rail-label">Image</span></button>
-      <button class="rail-btn" id="backgroundModeBtn"><span class="rail-icon"><i class="ri-image-2-line"></i></span><span class="rail-label">BG</span></button>
-      <button class="rail-btn" id="plansModeBtn"><span class="rail-icon"><i class="ri-vip-crown-2-line"></i></span><span class="rail-label">Plans</span></button>
-      <button class="rail-btn" id="supportModeBtn"><span class="rail-icon"><i class="ri-customer-service-2-line"></i></span><span class="rail-label">Help</span></button>
+  <!-- ============ MODALS ============ -->
+
+  <!-- Sign In Modal -->
+  <div id="loginModal" class="modal-overlay">
+    <div class="modal">
+      <button class="icon-btn modal-close" data-close="loginModal"><i class="ri-close-line"></i></button>
+      <h2 class="modal-title">Sign in</h2>
+      <p class="modal-sub">Sign in to save your chats. Guests can still chat.</p>
+      <form id="simpleLoginForm" class="modal-form">
+        <input type="text" id="loginName" class="modal-input" placeholder="Name" required maxlength="60">
+        <input type="email" id="loginEmail" class="modal-input" placeholder="Email" required>
+        <button type="submit" class="modal-btn primary">Continue</button>
+      </form>
     </div>
-  </aside>
-
-  <button class="rail-toggle" id="railToggleBtn" title="Minimize tools"><i class="ri-contract-left-line" id="railToggleIcon"></i></button>
-</div>
-
-<div class="modal-overlay" id="loginModal"><div class="modal">
-  <button class="modal-close" data-close="loginModal"><i class="ri-close-line"></i></button>
-  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt=""><h2 id="loginTitle">Sign in</h2></div>
-  <p class="modal-sub">Sign in to save your chats. Guests can still chat.</p>
-  <form id="simpleLoginForm" onsubmit="return false;">
-    <label class="field-label">Name</label>
-    <input type="text" id="simpleLoginName" placeholder="Alex" required>
-    <label class="field-label">Email</label>
-    <input type="email" id="simpleLoginEmail" placeholder="alex@example.com" required>
-    <button type="submit" class="save-btn full"><i class="ri-login-box-line"></i> Continue</button>
-  </form>
-  <p class="field-hint" id="loginStatus"></p>
-</div></div>
-
-<div class="modal-overlay" id="settingsModal"><div class="modal wide">
-  <button class="modal-close" data-close="settingsModal"><i class="ri-close-line"></i></button>
-  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt=""><h2>Settings</h2></div>
-  <div class="settings-tabs">
-    <button class="settings-tab active" data-tab="general">General</button>
-    <button class="settings-tab" data-tab="appearance">Appearance</button>
-    <button class="settings-tab" data-tab="chat">Chat</button>
-    <button class="settings-tab" data-tab="voice">Voice</button>
-    <button class="settings-tab" data-tab="personal">Personal</button>
-    <button class="settings-tab" data-tab="memory">Memory</button>
   </div>
 
-  <div class="settings-pane active" data-pane="general">
-    <div class="settings-section"><h4><i class="ri-notification-line"></i> Notifications</h4>
-      <div class="option-row">
-        <button class="option-btn" data-toggle="soundOn" id="toggleSound">Sound: ON</button>
-        <button class="option-btn" data-toggle="notifOn" id="toggleNotif">Notifications: ON</button>
+  <!-- Settings Modal -->
+  <div id="settingsModal" class="modal-overlay">
+    <div class="modal modal-wide">
+      <button class="icon-btn modal-close" data-close="settingsModal"><i class="ri-close-line"></i></button>
+      <h2 class="modal-title">Settings</h2>
+      <div class="settings-tabs">
+        <button class="settings-tab active" data-tab="general">General</button>
+        <button class="settings-tab" data-tab="appearance">Appearance</button>
+        <button class="settings-tab" data-tab="chat">Chat</button>
+        <button class="settings-tab" data-tab="voice">Voice</button>
+        <button class="settings-tab" data-tab="personal">Personal</button>
+        <button class="settings-tab" data-tab="memory">Memory</button>
+      </div>
+
+      <div class="settings-pane active" data-pane="general">
+        <div class="setting-group">
+          <h4>Notifications</h4>
+          <div class="setting-row">
+            <span>Sound</span>
+            <button class="toggle-btn active" data-toggle="soundOn">ON</button>
+          </div>
+          <div class="setting-row">
+            <span>Notifications</span>
+            <button class="toggle-btn active" data-toggle="notifOn">ON</button>
+          </div>
+        </div>
+        <div class="setting-group">
+          <h4>Session</h4>
+          <button id="logoutBtn" class="modal-btn danger">Sign out</button>
+        </div>
+      </div>
+
+      <div class="settings-pane" data-pane="appearance">
+        <div class="setting-group">
+          <h4>Mode</h4>
+          <div id="modeOptions" class="segmented">
+            <button class="seg-btn" data-mode="light">Light</button>
+            <button class="seg-btn" data-mode="dark">Dark</button>
+          </div>
+        </div>
+        <div class="setting-group">
+          <h4>Accent</h4>
+          <div class="swatch-grid">
+            <button class="swatch" data-theme="default" style="--sw:#c4694b"></button>
+            <button class="swatch" data-theme="green" style="--sw:#4ea82e"></button>
+            <button class="swatch" data-theme="orange" style="--sw:#ea580c"></button>
+            <button class="swatch" data-theme="pink" style="--sw:#db2777"></button>
+            <button class="swatch" data-theme="blue" style="--sw:#2563eb"></button>
+          </div>
+        </div>
+        <div class="setting-group">
+          <h4>Corners</h4>
+          <div id="cornerOptions" class="segmented">
+            <button class="seg-btn" data-corner="sharp">Sharp</button>
+            <button class="seg-btn" data-corner="soft">Soft</button>
+            <button class="seg-btn" data-corner="round">Round</button>
+          </div>
+        </div>
+        <div class="setting-group">
+          <h4>Font</h4>
+          <div id="fontOptions" class="segmented">
+            <button class="seg-btn" data-font="system">System</button>
+            <button class="seg-btn" data-font="inter">Inter</button>
+            <button class="seg-btn" data-font="mono">Mono</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-pane" data-pane="chat">
+        <div class="setting-group">
+          <h4>Code rendering</h4>
+          <div class="setting-row">
+            <span>Syntax highlight</span>
+            <button class="toggle-btn active" data-toggle="highlightOn">ON</button>
+          </div>
+          <div class="setting-row">
+            <span>Line numbers</span>
+            <button class="toggle-btn" data-toggle="lineNumbers">OFF</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-pane" data-pane="voice">
+        <div class="setting-group">
+          <h4>Voice language</h4>
+          <select id="langSelect" class="modal-select">
+            <option value="en-US">English</option>
+            <option value="es-ES">Spanish</option>
+            <option value="fr-FR">French</option>
+            <option value="de-DE">German</option>
+            <option value="ar-SA">Arabic</option>
+            <option value="ps-AF">Pashto</option>
+            <option value="fa-AF">Dari</option>
+            <option value="hi-IN">Hindi</option>
+            <option value="zh-CN">Chinese</option>
+            <option value="ja-JP">Japanese</option>
+          </select>
+        </div>
+        <div class="setting-group">
+          <h4>Microphone</h4>
+          <p class="setting-desc">Click below to grant microphone access.</p>
+          <button id="requestMicBtn" class="modal-btn">Grant mic access</button>
+        </div>
+        <div class="setting-group">
+          <h4>Voice output</h4>
+          <div class="setting-row">
+            <span>Voice Speed: <span id="voiceRateLabel">1.0×</span></span>
+            <input type="range" id="voiceRateInput" min="0.5" max="2" step="0.1" value="1" class="range-input">
+          </div>
+          <button id="testVoiceBtn" class="modal-btn">Test voice</button>
+        </div>
+      </div>
+
+      <div class="settings-pane" data-pane="personal">
+        <div class="setting-group">
+          <h4>Custom character</h4>
+          <textarea id="personaInput" class="modal-textarea" rows="3" placeholder="Describe how Mirox should behave…"></textarea>
+          <button id="savePersonaBtn" class="modal-btn">Save</button>
+        </div>
+      </div>
+
+      <div class="settings-pane" data-pane="memory">
+        <div class="setting-group">
+          <h4>Memory</h4>
+          <div id="memoryList" class="memory-list"></div>
+          <div class="memory-add">
+            <input type="text" id="memoryInput" class="modal-input" placeholder="Add a fact…" maxlength="200">
+            <button id="addMemoryBtn" class="modal-btn">Add</button>
+          </div>
+        </div>
       </div>
     </div>
-    <div class="settings-section"><h4><i class="ri-logout-box-line"></i> Session</h4>
-      <button class="save-btn outline" id="logoutBtn"><i class="ri-logout-box-line"></i> Sign out</button>
-    </div>
   </div>
 
-  <div class="settings-pane" data-pane="appearance">
-    <div class="settings-section"><h4><i class="ri-contrast-2-line"></i> Mode</h4>
-      <div class="option-row" id="modeOptions">
-        <button class="option-btn" data-mode="light"><i class="ri-sun-line"></i> Light</button>
-        <button class="option-btn" data-mode="dark"><i class="ri-moon-line"></i> Dark</button>
+  <!-- Contact Support Modal -->
+  <div id="supportModal" class="modal-overlay">
+    <div class="modal">
+      <button class="icon-btn modal-close" data-close="supportModal"><i class="ri-close-line"></i></button>
+      <h2 class="modal-title">Contact Support</h2>
+      <p class="modal-sub">A real person will reply in 15–30 minutes. Chat live below.</p>
+      <div class="support-form">
+        <select id="supportCategory" class="modal-select">
+          <option>General question</option>
+          <option>Bug report</option>
+          <option>Billing</option>
+          <option>Feature request</option>
+        </select>
+        <input type="text" id="supportSubject" class="modal-input" placeholder="Subject" maxlength="120">
+        <textarea id="supportMessage" class="modal-textarea" rows="4" placeholder="Message"></textarea>
+        <button id="submitReportBtn" class="modal-btn primary">Start chat</button>
       </div>
-    </div>
-    <div class="settings-section"><h4><i class="ri-palette-line"></i> Accent</h4>
-      <div class="theme-swatches" id="themeSwatches">
-        <button class="swatch" data-theme="warm" style="--sw1:#c4694b;--sw2:#a8503a"></button>
-        <button class="swatch" data-theme="green" style="--sw1:#4ea82e;--sw2:#3a8a1f"></button>
-        <button class="swatch" data-theme="orange" style="--sw1:#ea580c;--sw2:#c2410c"></button>
-        <button class="swatch" data-theme="pink" style="--sw1:#db2777;--sw2:#a21caf"></button>
-        <button class="swatch" data-theme="blue" style="--sw1:#2563eb;--sw2:#4f46e5"></button>
-        <button class="swatch" data-theme="violet" style="--sw1:#8b5cf6;--sw2:#6d28d9"></button>
-        <button class="swatch" data-theme="mono" style="--sw1:#52525b;--sw2:#27272a"></button>
-      </div>
-    </div>
-    <div class="settings-section"><h4><i class="ri-shape-line"></i> Corners</h4>
-      <div class="option-row" id="cornerOptions">
-        <button class="option-btn" data-corner="sharp">Sharp</button>
-        <button class="option-btn" data-corner="soft">Soft</button>
-        <button class="option-btn" data-corner="round">Round</button>
-      </div>
-    </div>
-    <div class="settings-section"><h4><i class="ri-font-size-2"></i> Font</h4>
-      <div class="option-row" id="fontOptions">
-        <button class="option-btn" data-font="system">System</button>
-        <button class="option-btn" data-font="inter">Inter</button>
-        <button class="option-btn" data-font="mono">Mono</button>
+      <div id="supportTicketView" style="display:none;">
+        <button id="supportBackBtn" class="modal-btn"><i class="ri-arrow-left-line"></i> Back to tickets</button>
+        <div id="supportThread" class="support-thread"></div>
+        <div class="support-reply">
+          <input type="text" id="supportReplyInput" class="modal-input" placeholder="Type your reply…">
+          <button id="supportReplyBtn" class="modal-btn primary"><i class="ri-send-plane-fill"></i></button>
+        </div>
       </div>
     </div>
   </div>
 
-  <div class="settings-pane" data-pane="chat">
-    <div class="settings-section"><h4><i class="ri-language"></i> Voice language</h4>
-      <select id="langSelect">
-        <option value="en-US">English</option><option value="es-ES">Spanish</option>
-        <option value="fr-FR">French</option><option value="de-DE">German</option>
-        <option value="ar-SA">Arabic</option><option value="ps-AF">Pashto</option>
-        <option value="fa-AF">Dari</option><option value="hi-IN">Hindi</option>
-        <option value="zh-CN">Chinese</option><option value="ja-JP">Japanese</option>
-      </select>
-    </div>
-    <div class="settings-section"><h4><i class="ri-code-s-slash-line"></i> Code rendering</h4>
-      <div class="option-row">
-        <button class="option-btn active" id="toggleHighlight" data-toggle="highlightOn">Syntax highlight: ON</button>
-        <button class="option-btn" id="toggleLineNumbers" data-toggle="lineNumbers">Line numbers: OFF</button>
+  <!-- Plans Modal -->
+  <div id="plansModal" class="modal-overlay">
+    <div class="modal modal-wide">
+      <button class="icon-btn modal-close" data-close="plansModal"><i class="ri-close-line"></i></button>
+      <h2 class="modal-title">Plans</h2>
+      <p class="modal-sub">Free users get 10 Eclipse (Ultimate) chats per day, then fall back to Luna.</p>
+      <div id="plansGrid" class="plans-grid"></div>
+      <div class="setting-group" style="margin-top:24px;">
+        <h4>Your API keys</h4>
+        <div id="apiKeysList" class="api-keys-list"></div>
+        <button id="generateKeyBtn" class="modal-btn">Generate</button>
       </div>
     </div>
   </div>
 
-  <div class="settings-pane" data-pane="voice">
-    <div class="settings-section"><h4><i class="ri-mic-line"></i> Microphone</h4>
-      <p class="field-hint" id="micStatus">Click below to grant microphone access.</p>
-      <button class="save-btn" id="requestMicBtn"><i class="ri-mic-line"></i> Grant mic access</button>
+  <!-- Background Modal -->
+  <div id="backgroundModal" class="modal-overlay">
+    <div class="modal">
+      <button class="icon-btn modal-close" data-close="backgroundModal"><i class="ri-close-line"></i></button>
+      <h2 class="modal-title">Background</h2>
+      <p class="modal-sub">Pick an image — it saves instantly.</p>
+      <div id="bgUploadZone" class="upload-zone">
+        <i class="ri-upload-cloud-2-line"></i>
+        <span>Click or drag an image here</span>
+      </div>
+      <input type="file" id="bgFileInput" accept="image/*" hidden>
+      <div class="modal-form">
+        <input type="url" id="bgUrlInput" class="modal-input" placeholder="Or paste a URL">
+        <button id="bgUrlApplyBtn" class="modal-btn primary">Apply</button>
+      </div>
+      <div class="setting-group">
+        <div class="setting-row">
+          <span>Dim: <span id="bgDimLabel">45%</span></span>
+          <input type="range" id="bgDimInput" min="0" max="90" value="45" class="range-input">
+        </div>
+        <div class="setting-row">
+          <span>Blur: <span id="bgBlurLabel">0px</span></span>
+          <input type="range" id="bgBlurInput" min="0" max="20" value="0" class="range-input">
+        </div>
+        <button id="bgRemoveBtn" class="modal-btn danger">Remove</button>
+      </div>
     </div>
-    <div class="settings-section"><h4><i class="ri-volume-up-line"></i> Voice output</h4>
-      <label class="field-label">Voice</label><select id="voiceSelect"></select>
-      <label class="field-label">Speed: <span id="voiceRateLabel">1.0×</span></label>
-      <input type="range" id="voiceRateInput" min="0.5" max="2" step="0.1" value="1">
-      <button class="save-btn" id="testVoiceBtn"><i class="ri-play-line"></i> Test voice</button>
+  </div>
+
+  <!-- Image Studio Modal -->
+  <div id="imageModal" class="modal-overlay">
+    <div class="modal">
+      <button class="icon-btn modal-close" data-close="imageModal"><i class="ri-close-line"></i></button>
+      <h2 class="modal-title">Image Studio</h2>
+      <p class="modal-sub">Powered by FLUX.1-schnell on Hugging Face</p>
+      <div class="image-studio">
+        <textarea id="imagePrompt" class="modal-textarea" rows="3" placeholder="Describe the image you want…"></textarea>
+        <div class="setting-row">
+          <span>Aspect ratio</span>
+          <select id="imageAspect" class="modal-select" style="width:auto;">
+            <option value="1:1">1:1</option>
+            <option value="16:9">16:9</option>
+            <option value="9:16">9:16</option>
+            <option value="4:3">4:3</option>
+          </select>
+        </div>
+        <button id="generateImageBtn" class="modal-btn primary">
+          <i class="ri-image-add-line"></i> Generate
+        </button>
+        <div id="imageResult" class="image-result"></div>
+      </div>
     </div>
   </div>
 
-  <div class="settings-pane" data-pane="personal">
-    <div class="settings-section"><h4><i class="ri-user-star-line"></i> Custom character</h4>
-      <textarea id="personaInput" class="image-prompt" rows="4" placeholder="e.g. Talk like a witty pirate."></textarea>
-      <button class="save-btn" id="savePersonaBtn"><i class="ri-save-line"></i> Save</button>
-      <p class="field-hint" id="personaStatus"></p>
+  <!-- Voice Call Overlay -->
+  <div id="callOverlay" class="call-overlay">
+    <div class="call-content">
+      <div class="call-avatar"><i class="ri-mic-line"></i></div>
+      <div class="call-status" id="callStatus">Listening…</div>
+      <div class="call-actions">
+        <button id="callMuteBtn" class="call-btn"><i class="ri-mic-off-line"></i></button>
+        <button id="callEndBtn" class="call-btn danger"><i class="ri-phone-fill"></i></button>
+      </div>
+      <div class="call-transcript" id="callTranscript"></div>
     </div>
   </div>
 
-  <div class="settings-pane" data-pane="memory">
-    <div class="settings-section"><h4><i class="ri-brain-line"></i> Memory</h4>
-      <div class="memory-add-row"><input type="text" id="memoryInput" placeholder="e.g. I prefer concise answers"><button class="save-btn" id="addMemoryBtn"><i class="ri-add-line"></i> Add</button></div>
-      <ul class="memory-list" id="memoryList"></ul>
-    </div>
-  </div>
-</div></div>
-
-<div class="modal-overlay" id="supportModal"><div class="modal wide">
-  <button class="modal-close" data-close="supportModal"><i class="ri-close-line"></i></button>
-  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt=""><h2>Contact Support</h2></div>
-  <p class="modal-sub">A real person will reply in 15–30 minutes. Chat live below.</p>
-
-  <div id="newTicketForm">
-    <label class="field-label">Category</label>
-    <select id="reportCategory">
-      <option value="general">General question</option>
-      <option value="bug">Bug report</option>
-      <option value="billing">Billing</option>
-      <option value="feature">Feature request</option>
-    </select>
-    <label class="field-label">Subject</label>
-    <input type="text" id="reportSubject" placeholder="Short summary (optional)">
-    <label class="field-label">Message</label>
-    <textarea id="reportMessage" class="image-prompt" rows="4" placeholder="Explain what happened..."></textarea>
-    <button class="save-btn full" id="submitReportBtn"><i class="ri-send-plane-fill"></i> Start chat</button>
-    <p class="field-hint" id="reportStatus"></p>
+  <!-- Lightbox -->
+  <div id="lightbox" class="lightbox">
+    <img src="" alt="Preview">
   </div>
 
-  <div id="ticketChat" style="display:none;">
-    <div class="support-thread" id="supportThread"></div>
-    <div class="support-reply-row">
-      <input type="text" id="supportReplyInput" placeholder="Type your reply…">
-      <button class="save-btn" id="supportReplyBtn"><i class="ri-send-plane-fill"></i></button>
-    </div>
-    <button class="save-btn outline" id="supportBackBtn" style="margin-top:12px;"><i class="ri-arrow-left-line"></i> Back to tickets</button>
-  </div>
-
-  <div class="support-mine" id="supportMine"></div>
-</div></div>
-
-<div class="modal-overlay" id="plansModal"><div class="modal wide">
-  <button class="modal-close" data-close="plansModal"><i class="ri-close-line"></i></button>
-  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt=""><h2>Plans</h2></div>
-  <p class="modal-sub">Free users get 10 Eclipse (Ultimate) chats per day, then fall back to Luna.</p>
-  <div class="plans-grid" id="plansGrid"></div>
-  <div class="keys-section">
-    <div class="keys-head"><h3><i class="ri-key-2-line"></i> Your API keys</h3><div class="keys-usage" id="keysUsage"></div></div>
-    <div class="keys-add"><input type="text" id="newKeyNameInput" placeholder="Key name"><button class="save-btn" id="generateKeyBtn"><i class="ri-add-line"></i> Generate</button></div>
-    <p class="field-hint" id="keyGenStatus"></p>
-    <ul class="keys-list" id="keysList"></ul>
-  </div>
-</div></div>
-
-<div class="modal-overlay" id="backgroundModal"><div class="modal wide">
-  <button class="modal-close" data-close="backgroundModal"><i class="ri-close-line"></i></button>
-  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt=""><h2>Background</h2></div>
-  <p class="modal-sub">Pick an image — it saves instantly.</p>
-  <div class="ext-upload-zone" id="bgUploadZone">
-    <i class="ri-upload-cloud-2-line"></i><span>Click or drag an image here</span>
-    <input type="file" id="bgFileInput" accept="image/*" hidden>
-  </div>
-  <label class="field-label">Or paste a URL</label>
-  <div class="row"><input type="text" id="bgUrlInput" placeholder="https://..."><button class="save-btn" id="bgUrlApplyBtn" style="margin-top:0;">Apply</button></div>
-  <label class="field-label">Dim: <span id="bgDimLabel">45%</span></label>
-  <input type="range" id="bgDimInput" min="0" max="90" step="5" value="45">
-  <label class="field-label">Blur: <span id="bgBlurLabel">0px</span></label>
-  <input type="range" id="bgBlurInput" min="0" max="20" step="1" value="0">
-  <div class="row" style="margin-top:20px;">
-    <button class="save-btn outline" id="bgRemoveBtn"><i class="ri-delete-bin-line"></i> Remove</button>
-  </div>
-</div></div>
-
-<div class="modal-overlay" id="imageModal"><div class="modal wide">
-  <button class="modal-close" data-close="imageModal"><i class="ri-close-line"></i></button>
-  <div class="modal-brand"><img src="/logo.png" class="theme-logo" alt=""><h2>Image Studio <span style="font-size:11px;font-weight:700;color:var(--accent);margin-left:6px;">DALL·E 3</span></h2></div>
-  <textarea id="imagePromptInput" class="image-prompt" placeholder="A fox curled up in fresh snow..." rows="3"></textarea>
-  <button class="generate-btn" id="generateImageBtn"><i class="ri-magic-line"></i> Generate</button>
-  <p class="field-hint" id="imageStudioStatus"></p>
-  <div class="gallery" id="imageGallery"></div>
-</div></div>
-
-<div class="call-overlay" id="callOverlay">
-  <div class="call-status" id="callStatus">Tap the mic to start</div>
-  <div class="call-orb-wrap">
-    <div class="call-orb-ring"></div><div class="call-orb-ring delay"></div>
-    <img src="/logo.png" alt="" class="call-orb theme-logo" id="callOrb">
-  </div>
-  <p class="call-transcript" id="callTranscript">Say something…</p>
-  <div class="call-controls">
-    <button class="call-btn" id="callMuteBtn"><i class="ri-mic-line"></i></button>
-    <button class="call-btn end" id="callEndBtn"><i class="ri-phone-line"></i></button>
-  </div>
-</div>
-
-<div id="lightbox" class="lightbox"><img alt=""></div>
-
-<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/python.min.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/c.min.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/cpp.min.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/csharp.min.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/java.min.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/javascript.min.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/typescript.min.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/css.min.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/xml.min.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/lua.min.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/bash.min.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/json.min.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/sql.min.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/yaml.min.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/go.min.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/rust.min.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/php.min.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/ruby.min.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/markdown.min.js"></script>
-<script src="/script.js" defer></script>
+  <!-- Scripts -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script type="module" src="script.js"></script>
 </body>
 </html>
