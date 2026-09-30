@@ -2,50 +2,36 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#fafafb">
   <title>MiroxAI — by OpenSurr</title>
-  <link rel="icon" href="logo.png" type="image/png">
+  <link rel="icon" href="/logo.png" type="image/png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/remixicon@4.9.0/fonts/remixicon.css" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <!-- Loading Screen -->
   <div id="loadingScreen" class="loading-screen">
-    <img src="logo.png" alt="MiroxAI" class="loading-logo">
+    <img src="/logo.png" alt="MiroxAI" class="loading-logo theme-aware-logo">
     <div class="loading-bar"><div class="loading-bar-fill"></div></div>
   </div>
 
-  <!-- Sidebar Scrim -->
   <div id="sidebarScrim" class="sidebar-scrim"></div>
 
-  <!-- Sidebar -->
   <aside id="sidebar" class="sidebar">
     <div class="sidebar-header">
       <a href="#" id="brandLogo" class="brand">
-        <img src="logo.png" alt="MiroxAI" class="brand-logo">
+        <img src="/logo.png" alt="MiroxAI" class="brand-logo theme-aware-logo">
         <span class="brand-text">MiroxAI</span>
       </a>
-      <button id="sidebarCloseBtn" class="icon-btn sidebar-close" aria-label="Close sidebar">
-        <i class="ri-close-line"></i>
-      </button>
+      <button id="sidebarCloseBtn" class="icon-btn sidebar-close" aria-label="Close"><i class="ri-close-line"></i></button>
     </div>
-
-    <button id="newChatBtn" class="new-chat-btn">
-      <i class="ri-add-line"></i>
-      <span>New chat</span>
-    </button>
-
+    <button id="newChatBtn" class="new-chat-btn"><i class="ri-add-line"></i><span>New chat</span></button>
     <div class="sidebar-section">
       <h3 class="sidebar-label">Chats</h3>
-      <ul id="historyList" class="history-list">
-        <li class="history-empty">No conversations yet</li>
-      </ul>
+      <ul id="historyList" class="history-list"><li class="history-empty">No conversations yet</li></ul>
     </div>
-
     <div class="sidebar-footer">
       <div id="userChip" class="user-chip">
         <div class="user-avatar"><i class="ri-user-line"></i></div>
@@ -53,9 +39,7 @@
           <span class="user-name">Guest mode</span>
           <span class="user-sub">Sign in to save chats</span>
         </div>
-        <button id="upgradeBtn" class="upgrade-btn">
-          <i class="ri-vip-crown-line"></i>
-        </button>
+        <button id="upgradeBtn" class="upgrade-btn"><i class="ri-vip-crown-line"></i></button>
       </div>
       <div class="sidebar-links">
         <a href="#" id="settingsBtn" class="sidebar-link"><i class="ri-settings-3-line"></i> Settings</a>
@@ -66,103 +50,68 @@
     </div>
   </aside>
 
-  <!-- Main Chat Area -->
   <main class="main">
     <header class="chat-header">
-      <button id="hamburgerBtn" class="icon-btn hamburger" aria-label="Open sidebar">
-        <i class="ri-menu-line"></i>
-      </button>
+      <button id="hamburgerBtn" class="icon-btn hamburger" aria-label="Menu"><i class="ri-menu-line"></i></button>
       <h2 id="chatTitle" class="chat-title">New chat</h2>
       <div class="chat-header-actions">
-        <button id="modelPickerBtn" class="model-picker-btn">
-          <i class="ri-cpu-line"></i>
-          <span id="currentModelLabel">Luna</span>
-          <i class="ri-arrow-down-s-line"></i>
-        </button>
-        <div id="modelPickerMenu" class="model-picker-menu">
-          <!-- Populated by JS -->
+        <div class="model-picker" id="modelPicker">
+          <button id="modelPickerBtn" class="model-picker-btn" type="button">
+            <i class="ri-cpu-line"></i>
+            <span id="currentModelLabel">Luna</span>
+            <i class="ri-arrow-down-s-line"></i>
+          </button>
+          <div id="modelPickerMenu" class="model-picker-menu"></div>
         </div>
-        <button id="editTitleBtn" class="icon-btn" aria-label="Rename chat">
-          <i class="ri-edit-line"></i>
-        </button>
+        <button id="editTitleBtn" class="icon-btn" aria-label="Rename"><i class="ri-edit-line"></i></button>
       </div>
     </header>
 
     <div id="chatMessages" class="chat-messages">
       <div class="welcome-screen">
-        <img src="logo.png" alt="MiroxAI" class="welcome-logo">
+        <img src="/logo.png" alt="MiroxAI" class="welcome-logo theme-aware-logo">
         <h1 class="welcome-title">Hi, I'm Mirox</h1>
         <p class="welcome-sub">Built by the OpenSurr team. Ask anything, attach images or files, use web search, or start a voice call.</p>
         <div class="suggestion-grid">
-          <button class="suggestion-card" data-prompt="What would you like to talk about?">
-            <i class="ri-chat-3-line"></i>
-            <span>What would you like to talk about?</span>
-          </button>
-          <button class="suggestion-card" data-prompt="Help me write code">
-            <i class="ri-code-line"></i>
-            <span>Help me write code</span>
-          </button>
-          <button class="suggestion-card" data-prompt="Explain a concept simply">
-            <i class="ri-lightbulb-line"></i>
-            <span>Explain a concept simply</span>
-          </button>
-          <button class="suggestion-card" data-prompt="Generate an image">
-            <i class="ri-image-line"></i>
-            <span>Generate an image</span>
-          </button>
+          <button class="suggestion-card" data-prompt="What would you like to talk about?"><i class="ri-chat-3-line"></i><span>What would you like to talk about?</span></button>
+          <button class="suggestion-card" data-prompt="Help me write code"><i class="ri-code-line"></i><span>Help me write code</span></button>
+          <button class="suggestion-card" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span>Explain a concept simply</span></button>
+          <button class="suggestion-card" data-prompt="Generate an image"><i class="ri-image-line"></i><span>Generate an image</span></button>
         </div>
         <p class="welcome-disclaimer">Mirox can make mistakes. Made by the OpenSurr team.</p>
       </div>
     </div>
 
-    <!-- Thinking Indicator -->
     <div id="thinkingIndicator" class="thinking-indicator" style="display:none;">
-      <div class="thinking-dots">
-        <span></span><span></span><span></span>
-      </div>
+      <div class="thinking-dots"><span></span><span></span><span></span></div>
       <span class="thinking-label">Thinking</span>
     </div>
 
-    <!-- Composer -->
     <div class="composer-wrap">
       <div id="attachmentPreview" class="attachment-preview" style="display:none;">
         <div id="attachmentList" class="attachment-list"></div>
-        <button id="removeAttachmentBtn" class="icon-btn remove-attach"><i class="ri-close-line"></i></button>
+        <button id="removeAttachmentBtn" class="icon-btn"><i class="ri-close-line"></i></button>
       </div>
-
       <div class="tools-row">
-        <button id="talkModeBtn" class="tool-btn" title="Voice call"><i class="ri-mic-line"></i> Talk</button>
-        <button id="imageModeBtn" class="tool-btn" title="Image generation"><i class="ri-image-line"></i> Image</button>
-        <button id="backgroundModeBtn" class="tool-btn" title="Background"><i class="ri-panorama-line"></i> BG</button>
-        <button id="plansModeBtn" class="tool-btn" title="Plans"><i class="ri-vip-crown-line"></i> Plans</button>
-        <button id="supportModeBtn2" class="tool-btn" title="Help"><i class="ri-question-line"></i> Help</button>
+        <button id="talkModeBtn" class="tool-btn"><i class="ri-mic-line"></i> Talk</button>
+        <button id="imageModeBtn" class="tool-btn"><i class="ri-image-line"></i> Image</button>
+        <button id="backgroundModeBtn" class="tool-btn"><i class="ri-panorama-line"></i> BG</button>
+        <button id="plansModeBtn" class="tool-btn"><i class="ri-vip-crown-line"></i> Plans</button>
+        <button id="supportModeBtn2" class="tool-btn"><i class="ri-question-line"></i> Help</button>
       </div>
-
       <form id="composerForm" class="composer">
-        <button type="button" id="attachBtn" class="icon-btn attach-btn" aria-label="Attach file">
-          <i class="ri-attachment-2"></i>
-        </button>
+        <button type="button" id="attachBtn" class="icon-btn"><i class="ri-attachment-2"></i></button>
         <input type="file" id="fileInput" multiple hidden>
-        <button type="button" id="searchToggleBtn" class="icon-btn" aria-label="Web search" title="Web search">
-          <i class="ri-global-line"></i>
-        </button>
+        <button type="button" id="searchToggleBtn" class="icon-btn"><i class="ri-global-line"></i></button>
         <textarea id="messageInput" class="message-input" placeholder="Say something…" rows="1"></textarea>
-        <button type="button" id="micBtn" class="icon-btn mic-btn" aria-label="Microphone">
-          <i class="ri-mic-line"></i>
-        </button>
-        <button type="button" id="stopBtn" class="icon-btn stop-btn" style="display:none;" aria-label="Stop">
-          <i class="ri-stop-circle-line"></i>
-        </button>
-        <button type="submit" id="sendBtn" class="send-btn" disabled aria-label="Send">
-          <i class="ri-send-plane-fill"></i>
-        </button>
+        <button type="button" id="micBtn" class="icon-btn mic-btn"><i class="ri-mic-line"></i></button>
+        <button type="button" id="stopBtn" class="icon-btn stop-btn" style="display:none;"><i class="ri-stop-circle-line"></i></button>
+        <button type="submit" id="sendBtn" class="send-btn" disabled><i class="ri-send-plane-fill"></i></button>
       </form>
     </div>
   </main>
 
-  <!-- ============ MODALS ============ -->
-
-  <!-- Sign In Modal -->
+  <!-- Login modal -->
   <div id="loginModal" class="modal-overlay">
     <div class="modal">
       <button class="icon-btn modal-close" data-close="loginModal"><i class="ri-close-line"></i></button>
@@ -176,7 +125,7 @@
     </div>
   </div>
 
-  <!-- Settings Modal -->
+  <!-- Settings modal -->
   <div id="settingsModal" class="modal-overlay">
     <div class="modal modal-wide">
       <button class="icon-btn modal-close" data-close="settingsModal"><i class="ri-close-line"></i></button>
@@ -188,19 +137,14 @@
         <button class="settings-tab" data-tab="voice">Voice</button>
         <button class="settings-tab" data-tab="personal">Personal</button>
         <button class="settings-tab" data-tab="memory">Memory</button>
+        <button class="settings-tab" data-tab="mcp">MCP</button>
       </div>
 
       <div class="settings-pane active" data-pane="general">
         <div class="setting-group">
           <h4>Notifications</h4>
-          <div class="setting-row">
-            <span>Sound</span>
-            <button class="toggle-btn active" data-toggle="soundOn">ON</button>
-          </div>
-          <div class="setting-row">
-            <span>Notifications</span>
-            <button class="toggle-btn active" data-toggle="notifOn">ON</button>
-          </div>
+          <div class="setting-row"><span>Sound</span><button class="toggle-btn active" data-toggle="soundOn">ON</button></div>
+          <div class="setting-row"><span>Notifications</span><button class="toggle-btn active" data-toggle="notifOn">ON</button></div>
         </div>
         <div class="setting-group">
           <h4>Session</h4>
@@ -247,14 +191,8 @@
       <div class="settings-pane" data-pane="chat">
         <div class="setting-group">
           <h4>Code rendering</h4>
-          <div class="setting-row">
-            <span>Syntax highlight</span>
-            <button class="toggle-btn active" data-toggle="highlightOn">ON</button>
-          </div>
-          <div class="setting-row">
-            <span>Line numbers</span>
-            <button class="toggle-btn" data-toggle="lineNumbers">OFF</button>
-          </div>
+          <div class="setting-row"><span>Syntax highlight</span><button class="toggle-btn active" data-toggle="highlightOn">ON</button></div>
+          <div class="setting-row"><span>Line numbers</span><button class="toggle-btn" data-toggle="lineNumbers">OFF</button></div>
         </div>
       </div>
 
@@ -276,7 +214,6 @@
         </div>
         <div class="setting-group">
           <h4>Microphone</h4>
-          <p class="setting-desc">Click below to grant microphone access.</p>
           <button id="requestMicBtn" class="modal-btn">Grant mic access</button>
         </div>
         <div class="setting-group">
@@ -307,82 +244,63 @@
           </div>
         </div>
       </div>
-    </div>
-  </div>
 
-  <!-- Contact Support Modal -->
-  <div id="supportModal" class="modal-overlay">
-    <div class="modal">
-      <button class="icon-btn modal-close" data-close="supportModal"><i class="ri-close-line"></i></button>
-      <h2 class="modal-title">Contact Support</h2>
-      <p class="modal-sub">A real person will reply in 15–30 minutes. Chat live below.</p>
-      <div class="support-form">
-        <select id="supportCategory" class="modal-select">
-          <option>General question</option>
-          <option>Bug report</option>
-          <option>Billing</option>
-          <option>Feature request</option>
-        </select>
-        <input type="text" id="supportSubject" class="modal-input" placeholder="Subject" maxlength="120">
-        <textarea id="supportMessage" class="modal-textarea" rows="4" placeholder="Message"></textarea>
-        <button id="submitReportBtn" class="modal-btn primary">Start chat</button>
-      </div>
-      <div id="supportTicketView" style="display:none;">
-        <button id="supportBackBtn" class="modal-btn"><i class="ri-arrow-left-line"></i> Back to tickets</button>
-        <div id="supportThread" class="support-thread"></div>
-        <div class="support-reply">
-          <input type="text" id="supportReplyInput" class="modal-input" placeholder="Type your reply…">
-          <button id="supportReplyBtn" class="modal-btn primary"><i class="ri-send-plane-fill"></i></button>
+      <div class="settings-pane" data-pane="mcp">
+        <div class="setting-group">
+          <h4>MCP Servers</h4>
+          <p class="setting-desc">Connect Mirox to Model Context Protocol servers so it can use external tools and data.</p>
+          <div id="mcpList" class="mcp-list"></div>
+          <div class="mcp-add-row">
+            <input type="text" id="mcpNameInput" class="modal-input" placeholder="Name (e.g. Files)">
+            <input type="url" id="mcpUrlInput" class="modal-input" placeholder="https://mcp.example.com/sse">
+            <button id="addMcpBtn" class="modal-btn primary"><i class="ri-add-line"></i></button>
+          </div>
+          <p class="mcp-hint">Mirox will POST tool requests to the server URL you provide. Only add servers you trust.</p>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Plans Modal -->
+  <!-- Plans modal -->
   <div id="plansModal" class="modal-overlay">
     <div class="modal modal-wide">
       <button class="icon-btn modal-close" data-close="plansModal"><i class="ri-close-line"></i></button>
       <h2 class="modal-title">Plans</h2>
       <p class="modal-sub">Free users get 10 Eclipse (Ultimate) chats per day, then fall back to Luna.</p>
       <div id="plansGrid" class="plans-grid"></div>
+      <div class="plans-soon"><i class="ri-time-line"></i> More plans will be added soon in the future.</div>
       <div class="setting-group" style="margin-top:24px;">
         <h4>Your API keys</h4>
         <div id="apiKeysList" class="api-keys-list"></div>
-        <button id="generateKeyBtn" class="modal-btn">Generate</button>
+        <button id="generateKeyBtn" class="modal-btn">Generate key</button>
       </div>
     </div>
   </div>
 
-  <!-- Background Modal -->
+  <!-- Background modal -->
   <div id="backgroundModal" class="modal-overlay">
     <div class="modal">
       <button class="icon-btn modal-close" data-close="backgroundModal"><i class="ri-close-line"></i></button>
       <h2 class="modal-title">Background</h2>
       <p class="modal-sub">Pick an image — it saves instantly.</p>
-      <div id="bgUploadZone" class="upload-zone">
-        <i class="ri-upload-cloud-2-line"></i>
-        <span>Click or drag an image here</span>
+      <div id="bgUploadZone" class="upload-zone" style="padding:20px;text-align:center;border:1px dashed var(--border-strong);border-radius:var(--radius);cursor:pointer;">
+        <i class="ri-upload-cloud-2-line" style="font-size:24px;color:var(--accent);"></i>
+        <div style="margin-top:6px;font-size:13px;color:var(--text-muted);">Click or drag an image here</div>
       </div>
       <input type="file" id="bgFileInput" accept="image/*" hidden>
-      <div class="modal-form">
+      <div class="modal-form" style="margin-top:12px;">
         <input type="url" id="bgUrlInput" class="modal-input" placeholder="Or paste a URL">
         <button id="bgUrlApplyBtn" class="modal-btn primary">Apply</button>
       </div>
-      <div class="setting-group">
-        <div class="setting-row">
-          <span>Dim: <span id="bgDimLabel">45%</span></span>
-          <input type="range" id="bgDimInput" min="0" max="90" value="45" class="range-input">
-        </div>
-        <div class="setting-row">
-          <span>Blur: <span id="bgBlurLabel">0px</span></span>
-          <input type="range" id="bgBlurInput" min="0" max="20" value="0" class="range-input">
-        </div>
+      <div class="setting-group" style="margin-top:16px;">
+        <div class="setting-row"><span>Dim: <span id="bgDimLabel">45%</span></span><input type="range" id="bgDimInput" min="0" max="90" value="45" class="range-input"></div>
+        <div class="setting-row"><span>Blur: <span id="bgBlurLabel">0px</span></span><input type="range" id="bgBlurInput" min="0" max="20" value="0" class="range-input"></div>
         <button id="bgRemoveBtn" class="modal-btn danger">Remove</button>
       </div>
     </div>
   </div>
 
-  <!-- Image Studio Modal -->
+  <!-- Image modal -->
   <div id="imageModal" class="modal-overlay">
     <div class="modal">
       <button class="icon-btn modal-close" data-close="imageModal"><i class="ri-close-line"></i></button>
@@ -399,15 +317,32 @@
             <option value="4:3">4:3</option>
           </select>
         </div>
-        <button id="generateImageBtn" class="modal-btn primary">
-          <i class="ri-image-add-line"></i> Generate
-        </button>
+        <button id="generateImageBtn" class="modal-btn primary"><i class="ri-image-add-line"></i> Generate</button>
         <div id="imageResult" class="image-result"></div>
       </div>
     </div>
   </div>
 
-  <!-- Voice Call Overlay -->
+  <!-- Support modal -->
+  <div id="supportModal" class="modal-overlay">
+    <div class="modal">
+      <button class="icon-btn modal-close" data-close="supportModal"><i class="ri-close-line"></i></button>
+      <h2 class="modal-title">Contact Support</h2>
+      <p class="modal-sub">A real person will reply in 15–30 minutes.</p>
+      <div class="support-form">
+        <select id="supportCategory" class="modal-select">
+          <option>General question</option>
+          <option>Bug report</option>
+          <option>Billing</option>
+          <option>Feature request</option>
+        </select>
+        <input type="text" id="supportSubject" class="modal-input" placeholder="Subject" maxlength="120">
+        <textarea id="supportMessage" class="modal-textarea" rows="4" placeholder="Message"></textarea>
+        <button id="submitReportBtn" class="modal-btn primary">Start chat</button>
+      </div>
+    </div>
+  </div>
+
   <div id="callOverlay" class="call-overlay">
     <div class="call-content">
       <div class="call-avatar"><i class="ri-mic-line"></i></div>
@@ -420,13 +355,9 @@
     </div>
   </div>
 
-  <!-- Lightbox -->
-  <div id="lightbox" class="lightbox">
-    <img src="" alt="Preview">
-  </div>
+  <div id="lightbox" class="lightbox"><img src="" alt="Preview"></div>
 
-  <!-- Scripts -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-  <script type="module" src="script.js"></script>
+  <script type="module" src="/script.js"></script>
 </body>
 </html>
