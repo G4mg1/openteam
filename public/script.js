@@ -1,6 +1,6 @@
 /* ============================================================
    MiroxAI — Frontend Script v15
-   Fixed: model switch, logo theme, MCP, plan persistence
+   Fix: stream:true added so SSE response is received correctly
    ============================================================ */
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
@@ -97,9 +97,7 @@ function loadUserSettings() {
 }
 function saveUserSettings() {
   try { localStorage.setItem(USER_SETTINGS_KEY, JSON.stringify(userSettings)); } catch {}
-  if (__user) {
-    updateFirebase(`users/${__user.email}/settings`, userSettings).catch(() => {});
-  }
+  if (__user) updateFirebase(`users/${__user.email}/settings`, userSettings).catch(() => {});
 }
 
 /* ---------- Appearance ---------- */
@@ -447,12 +445,25 @@ async function sendToAPI(text) {
         message: text,
         history: history.map(m => ({ role: m.role, content: m.content })),
         model,
+        stream: true,                          // ← FIX: tell backend to stream SSE
         files: pendingFiles,
       }),
       signal: activeStreamController.signal,
     });
 
-    if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || 'Request failed'); }
+    if (!res.ok) {
+      // Try to parse JSON error; fall back to text
+      const ct = (res.headers.get('content-type') || '').toLowerCase();
+      let errMsg = `HTTP ${res.status}`;
+      if (ct.includes('application/json')) {
+        const err = await res.json().catch(() => ({}));
+        errMsg = err.error || errMsg;
+      } else {
+        const txt = await res.text().catch(() => '');
+        if (txt) errMsg = txt.slice(0, 200);
+      }
+      throw new Error(errMsg);
+    }
 
     const container = $('#chatMessages');
     const msgEl = document.createElement('div');
@@ -563,7 +574,7 @@ function updatePreview() {
     : `<div class="attach-chip"><i class="ri-file-line"></i>${escapeHtml(f.name)}</div>`).join('');
 }
 
-/* ---------- Model picker (FIX) ---------- */
+/* ---------- Model picker ---------- */
 function renderModelPicker() {
   const menu = $('#modelPickerMenu');
   if (!menu || !__config?.models) return;
@@ -575,19 +586,9 @@ function renderModelPicker() {
       <span class="model-option-tag">${escapeHtml(m.tagline || '')}</span>
     </div>`).join('');
 
-  // Attach listeners DIRECTLY to each option (fixes the click race bug)
   menu.querySelectorAll('.model-option').forEach(opt => {
-    // Use mousedown so it fires BEFORE the document close handler
-    opt.addEventListener('mousedown', e => {
-      e.preventDefault();
-      e.stopPropagation();
-      selectModel(opt.dataset.modelId);
-    });
-    opt.addEventListener('click', e => {
-      e.preventDefault();
-      e.stopPropagation();
-      selectModel(opt.dataset.modelId);
-    });
+    opt.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); selectModel(opt.dataset.modelId); });
+    opt.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); selectModel(opt.dataset.modelId); });
   });
 
   const current = __config.models.find(m => m.id === currentId);
@@ -829,14 +830,8 @@ document.addEventListener('click', function(e) {
   if (closest('#callMuteBtn')) { toggleMute(); return; }
   if (closest('#stopBtn')) { stopStreaming(); return; }
 
-  // Model picker — toggle only
-  if (closest('#modelPickerBtn')) {
-    e.stopPropagation();
-    $('#modelPickerMenu')?.classList.toggle('open');
-    return;
-  }
+  if (closest('#modelPickerBtn')) { e.stopPropagation(); $('#modelPickerMenu')?.classList.toggle('open'); return; }
 
-  // Settings tabs
   const tab = closest('.settings-tab');
   if (tab) {
     document.querySelectorAll('.settings-tab').forEach(x => x.classList.remove('active'));
@@ -847,13 +842,11 @@ document.addEventListener('click', function(e) {
     return;
   }
 
-  // Appearance
   const mb = closest('[data-mode]'); if (mb && mb.closest('#modeOptions')) { applyAppearance({ mode: mb.dataset.mode }); return; }
   const sw = closest('.swatch'); if (sw?.dataset.theme) { applyAppearance({ theme: sw.dataset.theme }); return; }
   const cb = closest('[data-corner]'); if (cb && cb.closest('#cornerOptions')) { applyAppearance({ corner: cb.dataset.corner }); return; }
   const fb = closest('[data-font]'); if (fb && fb.closest('#fontOptions')) { applyAppearance({ font: fb.dataset.font }); return; }
 
-  // Toggles
   const tg = closest('[data-toggle]');
   if (tg) {
     const k = tg.dataset.toggle;
@@ -891,7 +884,6 @@ document.addEventListener('click', function(e) {
   if (closest('#requestMicBtn')) { requestMic(); return; }
   if (closest('#testVoiceBtn')) { speakText('Hi, this is Mirox, made by the OpenSurr team.'); return; }
 
-  // MCP
   if (closest('#addMcpBtn')) {
     const name = $('#mcpNameInput')?.value.trim();
     const url = $('#mcpUrlInput')?.value.trim();
@@ -921,7 +913,6 @@ document.addEventListener('click', function(e) {
     return;
   }
 
-  // History items
   const hist = closest('.history-item');
   if (hist) {
     if (t.closest('.history-delete')) {
@@ -938,7 +929,6 @@ document.addEventListener('click', function(e) {
   }
 });
 
-// Close model picker ONLY when clicking truly outside
 document.addEventListener('pointerdown', function(e) {
   if (!e.target.closest('#modelPicker')) {
     $('#modelPickerMenu')?.classList.remove('open');
