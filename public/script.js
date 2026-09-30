@@ -1,6 +1,5 @@
 /* ============================================================
-   MiroxAI — Frontend Script v20
-   Send button + Enter key = bulletproof
+   MiroxAI — Frontend Script v22
    ============================================================ */
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
@@ -18,7 +17,7 @@ const $$ = s => document.querySelectorAll(s);
 const FALLBACK_MODELS = [
   { id: 'mirox-luna-1.2', label: 'Luna', tagline: 'Fast · warm · free', default: true },
   { id: 'mirox-gen-1', label: 'Gen', tagline: 'Ultra concise' },
-  { id: 'mirox-pro-5', label: 'Pro', tagline: 'Balanced · deeper' },
+  { id: 'mirox-pro-5', label: 'Pro', tagline: 'Balanced' },
   { id: 'mirox-ultra-10', label: 'Ultra', tagline: 'Deep reasoning' },
   { id: 'mirox-eclipse-2.0', label: 'Eclipse', tagline: 'Best quality' },
 ];
@@ -34,16 +33,16 @@ let pendingFiles = [];
 let bgState = { url: null, dim: 45 };
 let recognition = null, callRecognition = null;
 let synth = window.speechSynthesis;
-let callActive = false, callMuted = false, micStream = null;
+let callActive = false, callMuted = false;
 let activeStreamController = null;
 
-const LS_KEY = 'miroxai_conversations_v8';
+const LS_KEY = 'miroxai_conversations_v10';
 const TOKEN_KEY = 'mirox_token';
-const USER_SETTINGS_KEY = 'miroxai_user_settings_v8';
+const USER_SETTINGS_KEY = 'miroxai_user_settings_v10';
 const DEVICE_ID_KEY = 'mirox_device_id';
-const APPEARANCE_KEY = 'miroxai_appearance_v8';
-const BG_KEY = 'miroxai_bg_v8';
-const MCP_KEY = 'miroxai_mcp_v8';
+const APPEARANCE_KEY = 'miroxai_appearance_v10';
+const BG_KEY = 'miroxai_bg_v10';
+const MCP_KEY = 'miroxai_mcp_v10';
 
 function killLoader() {
   const l = document.getElementById('loadingScreen');
@@ -83,12 +82,12 @@ function closeModal(id) { document.getElementById(id)?.classList.remove('open');
 function openSidebar() { $('#sidebar')?.classList.add('open'); $('#sidebarScrim')?.classList.add('open'); }
 function closeSidebar() { $('#sidebar')?.classList.remove('open'); $('#sidebarScrim')?.classList.remove('open'); }
 
-/* ---------- Settings ---------- */
+/* Settings */
 let userSettings = { soundOn: true, notifOn: true, highlightOn: true, lineNumbers: false, language: 'en-US', voiceRate: 1 };
 function loadUserSettings() { try { userSettings = { ...userSettings, ...JSON.parse(localStorage.getItem(USER_SETTINGS_KEY) || '{}') }; } catch {} }
 function saveUserSettings() { try { localStorage.setItem(USER_SETTINGS_KEY, JSON.stringify(userSettings)); } catch {} }
 
-/* ---------- Appearance ---------- */
+/* Appearance */
 function loadAppearance() {
   let prefs = {};
   try { prefs = JSON.parse(localStorage.getItem(APPEARANCE_KEY) || '{}'); } catch {}
@@ -109,7 +108,7 @@ function applyAppearance(prefs) {
   $$('[data-corner]').forEach(b => b.classList.toggle('active', b.dataset.corner === corner));
 }
 
-/* ---------- Background ---------- */
+/* Background */
 function loadBgPrefs() { try { bgState = { ...bgState, ...JSON.parse(localStorage.getItem(BG_KEY) || '{}') }; } catch {}; applyBackground(); }
 function applyBackground() {
   if (bgState.url) {
@@ -126,7 +125,7 @@ function applyBackground() {
 }
 function saveBgPrefs() { try { localStorage.setItem(BG_KEY, JSON.stringify(bgState)); } catch {} }
 
-/* ---------- MCP ---------- */
+/* MCP */
 function loadMcp() {
   let servers = [];
   try { servers = JSON.parse(localStorage.getItem(MCP_KEY) || '[]'); } catch {}
@@ -149,7 +148,7 @@ function renderMcp(servers) {
     </div>`).join('');
 }
 
-/* ---------- Markdown ---------- */
+/* Markdown */
 function renderMarkdown(text) {
   if (!text) return '';
   const src = String(text);
@@ -248,7 +247,7 @@ function wireCodeButtons(scope) {
   });
 }
 
-/* ---------- Conversations ---------- */
+/* Conversations */
 function currentConvo() { return __conversations.find(c => c.id === currentConversationId) || null; }
 function saveChatsToLS() {
   try { localStorage.setItem(LS_KEY, JSON.stringify(__conversations)); } catch {}
@@ -360,9 +359,6 @@ function addThinkingBubble() {
   return msgEl;
 }
 
-/* ============================================================
-   SEND BUTTON STATE
-   ============================================================ */
 function updateSendButtonState() {
   const btn = $('#sendBtn');
   const inp = $('#messageInput');
@@ -378,9 +374,6 @@ function updateSendButtonState() {
   }
 }
 
-/* ============================================================
-   SEND
-   ============================================================ */
 function handleSend() {
   if (isReplying) return;
   const inp = $('#messageInput');
@@ -524,7 +517,7 @@ function stopStreaming() {
   updateSendButtonState();
 }
 
-/* ---------- Files ---------- */
+/* Files */
 function handleFiles(files) {
   if (!files?.length) return;
   const arr = Array.from(files);
@@ -560,9 +553,7 @@ function updatePreview() {
     : `<div class="attach-chip"><i class="ri-file-line"></i>${escapeHtml(f.name)}</div>`).join('');
 }
 
-/* ============================================================
-   MODEL PICKER
-   ============================================================ */
+/* Model picker */
 function getModelsList() {
   if (__config?.models?.length) return __config.models;
   return FALLBACK_MODELS;
@@ -596,14 +587,8 @@ function selectModel(id) {
   renderModelPicker();
   closeModelPicker();
 }
-function openModelPicker() {
-  $('#modelPicker')?.classList.add('open');
-  $('#modelPickerMenu')?.classList.add('open');
-}
-function closeModelPicker() {
-  $('#modelPicker')?.classList.remove('open');
-  $('#modelPickerMenu')?.classList.remove('open');
-}
+function openModelPicker() { $('#modelPicker')?.classList.add('open'); $('#modelPickerMenu')?.classList.add('open'); }
+function closeModelPicker() { $('#modelPicker')?.classList.remove('open'); $('#modelPickerMenu')?.classList.remove('open'); }
 function wireModelPicker() {
   const btn = $('#modelPickerBtn');
   if (!btn) return;
@@ -622,9 +607,7 @@ function wireModelPicker() {
   });
 }
 
-/* ============================================================
-   SEND BUTTON + ENTER KEY WIRING
-   ============================================================ */
+/* Send button + Enter key */
 function wireSendButton() {
   const btn = $('#sendBtn');
   const inp = $('#messageInput');
@@ -656,7 +639,7 @@ function wireSendButton() {
   updateSendButtonState();
 }
 
-/* ---------- Auth ---------- */
+/* Auth */
 async function doLogin() {
   const name = $('#loginName')?.value.trim();
   const email = $('#loginEmail')?.value.trim().toLowerCase();
@@ -710,7 +693,7 @@ async function loadUser() {
   }
 }
 
-/* ---------- Config ---------- */
+/* Config */
 async function loadConfig() {
   try {
     const res = await fetch('/api/config', { cache: 'no-store' });
@@ -726,7 +709,7 @@ async function loadConfig() {
   if ($('#currentModelLabel')) $('#currentModelLabel').textContent = models[0].label;
 }
 
-/* ---------- Plans ---------- */
+/* Plans */
 async function loadPlans() {
   const grid = $('#plansGrid');
   if (!grid) return;
@@ -739,20 +722,34 @@ async function loadPlans() {
       <ul class="plan-perks">${(p.perks || []).map(x => `<li><i class="ri-check-line"></i> ${escapeHtml(x)}</li>`).join('')}</ul>
     </div>`).join('');
 }
+
 async function loadUserKeys() {
   const list = $('#apiKeysList');
   if (!list) return;
+  if (!__user) { list.innerHTML = '<div style="font-size:13px;color:var(--text-faint);">Sign in to see your API keys.</div>'; return; }
+  list.innerHTML = '<div style="font-size:12.5px;color:var(--text-faint);">Loading…</div>';
   const res = await authJson('/api/keys/list', {}, null);
   if (!res?.keys?.length) { list.innerHTML = '<div style="font-size:13px;color:var(--text-faint);">No API keys yet.</div>'; return; }
   list.innerHTML = res.keys.map(k => `<div class="api-key-item"><i class="ri-key-line"></i><span class="key-prefix">${escapeHtml(k.prefix)}…</span></div>`).join('');
 }
+
 async function genKey() {
-  const res = await authJson('/api/keys/generate', { method: 'POST' }, null);
-  if (res?.ok && res.key) { alert('API Key (save this):\n\n' + res.key); loadUserKeys(); }
-  else alert(res?.error || 'Failed');
+  if (!__user) { alert('Sign in first to generate an API key.'); openModal('loginModal'); return; }
+  const btn = $('#generateKeyBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
+  try {
+    const res = await authJson('/api/keys/generate', { method: 'POST' }, null);
+    if (res?.ok && res.key) {
+      alert('API Key (save this — it will not be shown again):\n\n' + res.key);
+      loadUserKeys();
+    } else {
+      alert(res?.error || 'Failed to generate key.');
+    }
+  } catch (e) { alert('Network error: ' + e.message); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = 'Generate key'; } }
 }
 
-/* ---------- Image ---------- */
+/* Image */
 async function genImage() {
   const prompt = $('#imagePrompt')?.value.trim();
   if (!prompt) return alert('Please describe the image.');
@@ -771,7 +768,7 @@ async function genImage() {
       if (__user) pushToFirebase(`logs/image/${__user.email}`, { prompt: prompt.slice(0, 300), model: 'FLUX.1-schnell', ts: Date.now() });
     } else {
       const errMsg = data.error || `HTTP ${res.status}`;
-      if (result) result.innerHTML = `<div style="padding:16px;border-radius:12px;background:rgba(220,38,38,0.08);border:1px solid rgba(220,38,38,0.2);"><p style="color:#dc2626;font-size:13px;margin:0;"><strong>Failed:</strong> ${escapeHtml(errMsg)}</p><p style="color:var(--text-faint);font-size:11.5px;margin-top:6px;margin-bottom:0;">Check that HF_API_KEY is set in Vercel.</p></div>`;
+      if (result) result.innerHTML = `<div style="padding:16px;border-radius:12px;background:rgba(220,38,38,0.08);border:1px solid rgba(220,38,38,0.2);"><p style="color:#dc2626;font-size:13px;margin:0;"><strong>Failed:</strong> ${escapeHtml(errMsg)}</p></div>`;
     }
   } catch (e) {
     if (result) result.innerHTML = `<div style="padding:16px;border-radius:12px;background:rgba(220,38,38,0.08);"><p style="color:#dc2626;font-size:13px;margin:0;"><strong>Network error:</strong> ${escapeHtml(e.message)}</p></div>`;
@@ -780,7 +777,7 @@ async function genImage() {
   }
 }
 
-/* ---------- Voice ---------- */
+/* Voice */
 function startMic() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return alert('Speech recognition not supported.');
@@ -816,10 +813,9 @@ function startCallRecognition() {
 }
 function endCall() { callActive = false; try { callRecognition?.stop(); } catch {} callRecognition = null; $('#callOverlay')?.classList.remove('open'); }
 function toggleMute() { callMuted = !callMuted; const b = $('#callMuteBtn'); if (b) b.innerHTML = callMuted ? '<i class="ri-mic-off-line"></i>' : '<i class="ri-mic-line"></i>'; }
-function speakText(t) { if (!synth) return; const u = new SpeechSynthesisUtterance(t); u.rate = userSettings.voiceRate || 1; u.lang = userSettings.language || 'en-US'; synth.speak(u); }
-async function requestMic() { try { micStream = await navigator.mediaDevices.getUserMedia({ audio: true }); alert('Mic granted.'); } catch { alert('Denied.'); } }
+async function requestMic() { try { await navigator.mediaDevices.getUserMedia({ audio: true }); alert('Mic granted.'); } catch { alert('Denied.'); } }
 
-/* ---------- Memory / Persona ---------- */
+/* Memory / Persona */
 async function loadMemory() {
   const list = $('#memoryList'); if (!list || !__user) return;
   const res = await authJson('/api/memory', {}, null);
@@ -838,7 +834,7 @@ async function loadPersona() {
 }
 async function savePersona() { await authJson('/api/persona', { method: 'POST', body: JSON.stringify({ persona: $('#personaInput')?.value.trim() || '' }) }); }
 
-/* ---------- Support ---------- */
+/* Support */
 async function submitReport() {
   const category = $('#supportCategory')?.value;
   const subject = $('#supportSubject')?.value.trim();
@@ -849,9 +845,71 @@ async function submitReport() {
   else alert(res?.error || 'Failed.');
 }
 
-/* ============================================================
-   EVENT DELEGATION
-   ============================================================ */
+/* Direct button wiring */
+function wireToolButtons() {
+  $('#talkModeBtn')?.addEventListener('click', startCall);
+  $('#imageModeBtn')?.addEventListener('click', () => openModal('imageModal'));
+  $('#backgroundModeBtn')?.addEventListener('click', () => openModal('backgroundModal'));
+  $('#plansModeBtn')?.addEventListener('click', () => { openModal('plansModal'); loadPlans(); loadUserKeys(); });
+  $('#supportModeBtn')?.addEventListener('click', () => openModal('supportModal'));
+  $('#supportModeBtn2')?.addEventListener('click', () => openModal('supportModal'));
+  $('#settingsBtn')?.addEventListener('click', () => { openModal('settingsModal'); loadPersona(); loadMemory(); loadMcp(); });
+  $('#upgradeBtn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!__user) openModal('loginModal');
+    else { openModal('plansModal'); loadPlans(); loadUserKeys(); }
+  });
+  $('#logoutBtn')?.addEventListener('click', doLogout);
+  $('#generateKeyBtn')?.addEventListener('click', genKey);
+  $('#generateImageBtn')?.addEventListener('click', genImage);
+  $('#addMcpBtn')?.addEventListener('click', () => {
+    const name = $('#mcpNameInput')?.value.trim();
+    const url = $('#mcpUrlInput')?.value.trim();
+    if (!name || !url) return alert('Name and URL required.');
+    let servers = [];
+    try { servers = JSON.parse(localStorage.getItem(MCP_KEY) || '[]'); } catch {}
+    servers.push({ name, url, enabled: true, created: Date.now() });
+    saveMcp(servers);
+    if ($('#mcpNameInput')) $('#mcpNameInput').value = '';
+    if ($('#mcpUrlInput')) $('#mcpUrlInput').value = '';
+  });
+  $('#savePersonaBtn')?.addEventListener('click', savePersona);
+  $('#addMemoryBtn')?.addEventListener('click', addMemory);
+  $('#submitReportBtn')?.addEventListener('click', submitReport);
+  $('#requestMicBtn')?.addEventListener('click', requestMic);
+  $('#attachBtn')?.addEventListener('click', () => $('#fileInput')?.click());
+  $('#removeAttachmentBtn')?.addEventListener('click', () => { pendingFiles = []; updatePreview(); updateSendButtonState(); });
+  $('#micBtn')?.addEventListener('click', startMic);
+  $('#stopBtn')?.addEventListener('click', stopStreaming);
+  $('#callEndBtn')?.addEventListener('click', endCall);
+  $('#callMuteBtn')?.addEventListener('click', toggleMute);
+  $('#bgUploadZone')?.addEventListener('click', () => $('#bgFileInput')?.click());
+  $('#bgUrlApplyBtn')?.addEventListener('click', () => {
+    const u = $('#bgUrlInput')?.value.trim();
+    if (u) { bgState.url = u; saveBgPrefs(); applyBackground(); }
+  });
+  $('#bgRemoveBtn')?.addEventListener('click', () => {
+    bgState.url = null; saveBgPrefs(); applyBackground();
+    if ($('#bgUrlInput')) $('#bgUrlInput').value = '';
+  });
+  $('#searchToggleBtn')?.addEventListener('click', () => $('#searchToggleBtn')?.classList.toggle('active'));
+  $('#editTitleBtn')?.addEventListener('click', () => {
+    const cur = $('#chatTitle')?.textContent || '';
+    const nxt = prompt('Rename chat', cur);
+    if (nxt === null) return;
+    const tr = nxt.trim(); if (!tr) return;
+    $('#chatTitle').textContent = tr;
+    const c = currentConvo(); if (c) { c.title = tr; saveChatsToLS(); renderHistory(); }
+  });
+  $('#hamburgerBtn')?.addEventListener('click', openSidebar);
+  $('#sidebarCloseBtn')?.addEventListener('click', closeSidebar);
+  $('#sidebarScrim')?.addEventListener('click', closeSidebar);
+  $('#brandLogo')?.addEventListener('click', (e) => { e.preventDefault(); startNewChat(); if (window.innerWidth <= 860) closeSidebar(); });
+  $('#newChatBtn')?.addEventListener('click', () => { startNewChat(); if (window.innerWidth <= 860) closeSidebar(); });
+  $('#userChip')?.addEventListener('click', () => { if (!__user) openModal('loginModal'); });
+}
+
+/* Delegated clicks */
 document.addEventListener('click', function(e) {
   const t = e.target;
   const closest = s => t.closest(s);
@@ -860,28 +918,6 @@ document.addEventListener('click', function(e) {
   if (closer) { closeModal(closer.dataset.close); return; }
   if (t.classList.contains('modal-overlay')) { t.classList.remove('open'); return; }
   if (t.classList.contains('lightbox')) { t.classList.remove('open'); return; }
-
-  if (closest('#hamburgerBtn')) { openSidebar(); return; }
-  if (closest('#sidebarCloseBtn')) { closeSidebar(); return; }
-  if (t.id === 'sidebarScrim') { closeSidebar(); return; }
-  if (closest('#brandLogo') || closest('#newChatBtn')) { startNewChat(); if (window.innerWidth <= 860) closeSidebar(); return; }
-
-  if (closest('#userChip')) { if (!__user) openModal('loginModal'); return; }
-  if (closest('#upgradeBtn')) {
-    if (!__user) openModal('loginModal');
-    else { openModal('plansModal'); loadPlans(); loadUserKeys(); }
-    return;
-  }
-
-  if (closest('#settingsBtn')) { openModal('settingsModal'); loadPersona(); loadMemory(); loadMcp(); return; }
-  if (closest('#imageModeBtn')) { openModal('imageModal'); return; }
-  if (closest('#backgroundModeBtn')) { openModal('backgroundModal'); return; }
-  if (closest('#plansModeBtn')) { openModal('plansModal'); loadPlans(); loadUserKeys(); return; }
-  if (closest('#supportModeBtn') || closest('#supportModeBtn2')) { openModal('supportModal'); return; }
-  if (closest('#talkModeBtn')) { startCall(); return; }
-  if (closest('#callEndBtn')) { endCall(); return; }
-  if (closest('#callMuteBtn')) { toggleMute(); return; }
-  if (closest('#stopBtn')) { stopStreaming(); return; }
 
   const tab = closest('.settings-tab');
   if (tab) {
@@ -907,44 +943,6 @@ document.addEventListener('click', function(e) {
     return;
   }
 
-  if (closest('#attachBtn')) { $('#fileInput')?.click(); return; }
-  if (closest('#removeAttachmentBtn')) { pendingFiles = []; updatePreview(); updateSendButtonState(); return; }
-  if (closest('#searchToggleBtn')) { $('#searchToggleBtn').classList.toggle('active'); return; }
-  if (closest('#micBtn')) { startMic(); return; }
-
-  if (closest('#editTitleBtn')) {
-    const cur = $('#chatTitle')?.textContent || '';
-    const nxt = prompt('Rename chat', cur);
-    if (nxt === null) return;
-    const tr = nxt.trim(); if (!tr) return;
-    $('#chatTitle').textContent = tr;
-    const c = currentConvo(); if (c) { c.title = tr; saveChatsToLS(); renderHistory(); }
-    return;
-  }
-
-  if (closest('#logoutBtn')) { doLogout(); return; }
-  if (closest('#savePersonaBtn')) { savePersona(); return; }
-  if (closest('#addMemoryBtn')) { addMemory(); return; }
-  if (closest('#submitReportBtn')) { submitReport(); return; }
-  if (closest('#generateKeyBtn')) { genKey(); return; }
-  if (closest('#generateImageBtn')) { genImage(); return; }
-  if (closest('#bgUploadZone')) { $('#bgFileInput')?.click(); return; }
-  if (closest('#bgUrlApplyBtn')) { const u = $('#bgUrlInput')?.value.trim(); if (u) { bgState.url = u; saveBgPrefs(); applyBackground(); } return; }
-  if (closest('#bgRemoveBtn')) { bgState.url = null; saveBgPrefs(); applyBackground(); if ($('#bgUrlInput')) $('#bgUrlInput').value = ''; return; }
-  if (closest('#requestMicBtn')) { requestMic(); return; }
-
-  if (closest('#addMcpBtn')) {
-    const name = $('#mcpNameInput')?.value.trim();
-    const url = $('#mcpUrlInput')?.value.trim();
-    if (!name || !url) return alert('Name and URL required.');
-    let servers = [];
-    try { servers = JSON.parse(localStorage.getItem(MCP_KEY) || '[]'); } catch {}
-    servers.push({ name, url, enabled: true, created: Date.now() });
-    saveMcp(servers);
-    if ($('#mcpNameInput')) $('#mcpNameInput').value = '';
-    if ($('#mcpUrlInput')) $('#mcpUrlInput').value = '';
-    return;
-  }
   const mt = closest('.mcp-toggle');
   if (mt) {
     let servers = [];
@@ -984,7 +982,11 @@ document.addEventListener('submit', function(e) {
 }, true);
 
 document.addEventListener('input', function(e) {
-  if (e.target?.id === 'bgDimInput') { bgState.dim = parseInt(e.target.value); const l = $('#bgDimLabel'); if (l) l.textContent = bgState.dim + '%'; applyBackground(); saveBgPrefs(); }
+  if (e.target?.id === 'bgDimInput') {
+    bgState.dim = parseInt(e.target.value);
+    const l = $('#bgDimLabel'); if (l) l.textContent = bgState.dim + '%';
+    applyBackground(); saveBgPrefs();
+  }
 });
 
 document.addEventListener('change', function(e) {
@@ -998,7 +1000,7 @@ document.addEventListener('change', function(e) {
   if (e.target?.id === 'langSelect') { userSettings.language = e.target.value; saveUserSettings(); }
 });
 
-/* ---------- INIT ---------- */
+/* INIT */
 async function init() {
   loadUserSettings();
   loadAppearance();
@@ -1006,6 +1008,7 @@ async function init() {
 
   wireModelPicker();
   wireSendButton();
+  wireToolButtons();
   renderModelPicker();
 
   await loadConfig();
