@@ -1,7 +1,5 @@
 /* ============================================================
-   MiroxAI — Claude-inspired UI v18
-   FIXED: bubble width, mobile safe-area, streaming cursor,
-   layout fit for all resolutions
+   MiroxAI — Full Styles v20
    ============================================================ */
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -64,6 +62,7 @@
   --code-header: #292721;
   --code-text: #ede8da;
 }
+
 :root[data-mode="dark"] .theme-aware-logo { filter: invert(1) brightness(1.15); }
 
 :root[data-theme="sage"] { --accent: #7a8c6b; --accent-hover: #617351; --accent-soft: rgba(122,140,107,.12); --accent-glow: rgba(122,140,107,.25); }
@@ -229,7 +228,7 @@ a { color: inherit; text-decoration: none; }
   display: flex;
   flex-direction: column;
   height: 100vh;
-  height: 100dvh; /* dynamic viewport height — fixes mobile */
+  height: 100dvh;
   min-width: 0;
   transition: margin-left 0.3s;
 }
@@ -263,9 +262,7 @@ a { color: inherit; text-decoration: none; }
 }
 .icon-btn:hover { background: var(--panel-2); color: var(--text); }
 
-/* ============================================================
-   MODEL PICKER — FIXED with pointerdown + wrapper
-   ============================================================ */
+/* Model picker */
 .model-picker-wrap { position: relative; }
 
 .model-picker-btn {
@@ -339,9 +336,7 @@ a { color: inherit; text-decoration: none; }
 }
 .model-option-tag { font-size: 11.5px; color: var(--text-faint); margin-left: 14px; }
 
-/* ============================================================
-   CHAT MESSAGES
-   ============================================================ */
+/* Chat messages */
 .chat-messages {
   flex: 1;
   overflow-y: auto;
@@ -385,9 +380,6 @@ a { color: inherit; text-decoration: none; }
 .suggestion-card i { font-size: 18px; color: var(--accent); flex-shrink: 0; }
 .welcome-disclaimer { font-size: 12px; color: var(--text-faint); }
 
-/* ============================================================
-   MESSAGE + BUBBLE — FIXED WIDTH
-   ============================================================ */
 .message {
   max-width: var(--content-max);
   margin: 0 auto 20px;
@@ -430,9 +422,6 @@ a { color: inherit; text-decoration: none; }
 .message.user .message-content { align-items: flex-end; }
 .message.ai .message-content { align-items: flex-start; }
 
-/* ============================================================
-   BUBBLE — width: fit-content so it hugs the text
-   ============================================================ */
 .bubble {
   display: block;
   width: fit-content;
@@ -446,7 +435,6 @@ a { color: inherit; text-decoration: none; }
   position: relative;
 }
 
-/* User bubble — max 80% so it never feels huge on desktop */
 .message.user .bubble {
   max-width: min(560px, 80%);
   background: linear-gradient(135deg, var(--accent), var(--accent-hover));
@@ -455,7 +443,6 @@ a { color: inherit; text-decoration: none; }
   box-shadow: 0 4px 16px var(--accent-glow);
 }
 
-/* AI bubble — max 100% of content width */
 .message.ai .bubble {
   max-width: min(var(--bubble-max), 100%);
   background: color-mix(in srgb, var(--panel) 88%, transparent);
@@ -466,7 +453,6 @@ a { color: inherit; text-decoration: none; }
   box-shadow: var(--shadow-sm);
 }
 
-/* Thinking dots inside bubble */
 .bubble.thinking {
   display: flex; gap: 5px; align-items: center;
   min-height: 44px;
@@ -487,9 +473,6 @@ a { color: inherit; text-decoration: none; }
   30% { transform: translateY(-5px) scale(1.1); opacity: 1; }
 }
 
-/* ============================================================
-   STREAMING CURSOR — blinks at end of bubble while AI writes
-   ============================================================ */
 .bubble.streaming::after {
   content: '';
   display: inline-block;
@@ -504,7 +487,6 @@ a { color: inherit; text-decoration: none; }
 }
 @keyframes blink { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
 
-/* Subtle highlight ring on new AI response */
 .bubble.highlight-active::after {
   content: ''; position: absolute; inset: -1px;
   border-radius: inherit;
@@ -558,9 +540,7 @@ a { color: inherit; text-decoration: none; }
 }
 .code-block code { font-family: inherit; }
 
-/* ============================================================
-   COMPOSER — with mobile safe-area
-   ============================================================ */
+/* Composer */
 .composer-wrap {
   padding: 0 20px 20px;
   padding-bottom: calc(20px + var(--safe-bottom));
@@ -630,6 +610,7 @@ a { color: inherit; text-decoration: none; }
   min-width: 0;
 }
 .message-input::placeholder { color: var(--text-faint); }
+
 .send-btn {
   width: 38px; height: 38px; border-radius: 50%;
   background: linear-gradient(135deg, var(--accent), var(--accent-hover));
@@ -639,9 +620,15 @@ a { color: inherit; text-decoration: none; }
   transition: all 0.18s;
   box-shadow: 0 2px 10px var(--accent-glow);
 }
-.send-btn:disabled { opacity: 0.35; cursor: not-allowed; box-shadow: none; }
-.send-btn:not(:disabled):hover { transform: scale(1.06); box-shadow: 0 4px 16px var(--accent-glow); }
-.send-btn:not(:disabled):active { transform: scale(0.94); }
+.send-btn:not(.is-disabled):hover { transform: scale(1.06); box-shadow: 0 4px 16px var(--accent-glow); }
+.send-btn:not(.is-disabled):active { transform: scale(0.94); }
+.send-btn.is-disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.send-btn.is-disabled:hover { transform: none; }
+
 .mic-btn.active { color: var(--accent); }
 
 .attachment-preview {
@@ -930,11 +917,7 @@ a { color: inherit; text-decoration: none; }
 ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 99px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
 
-/* ============================================================
-   RESPONSIVE — all resolutions
-   ============================================================ */
-
-/* Tablets */
+/* Responsive */
 @media (max-width: 860px) {
   :root { --content-max: 100%; --bubble-max: 100%; }
   .main { margin-left: 0; }
@@ -948,7 +931,6 @@ a { color: inherit; text-decoration: none; }
   }
 }
 
-/* Phones */
 @media (max-width: 640px) {
   :root { --base-font-size: 14.5px; }
   .chat-header { padding: 10px 14px; min-height: 56px; }
@@ -965,18 +947,16 @@ a { color: inherit; text-decoration: none; }
   .tool-btn { padding: 6px 12px; font-size: 12.5px; }
   .tool-btn i { font-size: 14px; }
   .composer { padding: 6px; gap: 4px; }
-  .message-input { font-size: 16px; } /* prevents iOS zoom on focus */
+  .message-input { font-size: 16px; }
   .send-btn, .icon-btn { width: 34px; height: 34px; }
   .model-picker-btn { padding: 6px 10px; font-size: 12px; gap: 6px; }
   .modal { padding: 22px 18px; }
   .modal-title { font-size: 22px; }
   .mcp-add-row { grid-template-columns: 1fr; }
   .plans-grid { grid-template-columns: 1fr; }
-  .settings-tabs { gap: 2px; }
   .settings-tab { padding: 7px 11px; font-size: 12.5px; }
 }
 
-/* Small phones */
 @media (max-width: 400px) {
   :root { --base-font-size: 14px; }
   .chat-title { font-size: 15px; }
@@ -989,7 +969,6 @@ a { color: inherit; text-decoration: none; }
   .model-picker-btn span { max-width: 60px; overflow: hidden; text-overflow: ellipsis; }
 }
 
-/* Landscape phones — compact height */
 @media (max-height: 500px) and (orientation: landscape) {
   .chat-messages { padding: 10px 12px; }
   .composer-wrap { padding: 0 12px 8px; padding-bottom: calc(8px + var(--safe-bottom)); }
@@ -999,36 +978,22 @@ a { color: inherit; text-decoration: none; }
   .tools-row { margin-bottom: 6px; }
 }
 
-/* Desktop large */
 @media (min-width: 1280px) {
   :root { --content-max: 820px; --bubble-max: 700px; }
 }
 
-/* 2K */
 @media (min-width: 1920px) {
-  :root {
-    --content-max: 960px;
-    --bubble-max: 800px;
-    --base-font-size: 16px;
-    --sidebar-width: 300px;
-  }
+  :root { --content-max: 960px; --bubble-max: 800px; --base-font-size: 16px; --sidebar-width: 300px; }
 }
 
-/* 4K/TV */
 @media (min-width: 2560px) {
-  :root {
-    --content-max: 1200px;
-    --bubble-max: 1000px;
-    --base-font-size: 18px;
-    --sidebar-width: 340px;
-  }
+  :root { --content-max: 1200px; --bubble-max: 1000px; --base-font-size: 18px; --sidebar-width: 340px; }
   .icon-btn { width: 44px; height: 44px; font-size: 22px; }
   .send-btn { width: 46px; height: 46px; font-size: 20px; }
   .bubble { font-size: 17px; padding: 15px 20px; }
   .welcome-title { font-size: 52px; }
 }
 
-/* 8K */
 @media (min-width: 3840px) {
   :root { --content-max: 1600px; --bubble-max: 1300px; --base-font-size: 22px; --sidebar-width: 400px; }
   .bubble { font-size: 20px; padding: 18px 24px; }
