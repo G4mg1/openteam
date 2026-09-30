@@ -24,7 +24,6 @@
     .admin-btn { padding: 8px 16px; border-radius: var(--radius); background: var(--accent); color: #fff; font-size: 14px; font-weight: 500; border: none; cursor: pointer; }
     .admin-btn:hover { background: var(--accent-hover); }
 
-    /* Password gate */
     .gate {
       position: fixed; inset: 0; z-index: 999;
       background: var(--bg);
@@ -52,7 +51,7 @@
       width: 100%; padding: 12px 14px; border-radius: var(--radius);
       border: 1px solid var(--border); background: var(--panel-2);
       font-size: 15px; outline: none;
-      transition: border-color .15s;
+      transition: border-color .15s, box-shadow .15s;
     }
     .gate-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
     .gate-btn {
@@ -67,7 +66,6 @@
   </style>
 </head>
 <body>
-  <!-- Password gate -->
   <div class="gate" id="gate">
     <div class="gate-card">
       <div class="gate-icon"><i class="ri-lock-2-line"></i></div>
@@ -107,7 +105,7 @@
       <div style="overflow-x:auto;">
         <table class="log-table" id="adminUserTable">
           <thead><tr><th>Email</th><th>Name</th><th>Tier</th><th>Eclipse</th><th>Last Login</th></tr></thead>
-          <tbody><tr><td colspan="5" style="color:var(--text-faint)">Loading…</td></tr></tbody>
+          <tbody><tr><td colspan="5" style="color:var(--text-faint)">Sign in to load.</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -128,10 +126,17 @@
       return fetch(API + path, { ...opts, headers, credentials: 'same-origin' });
     }
 
-    function showGate() { $('#gate').classList.remove('hidden'); $('#adminWrap').style.display = 'none'; }
-    function showAdmin() { $('#gate').classList.add('hidden'); $('#adminWrap').style.display = 'block'; loadAll(); }
+    function showGate(msg) {
+      $('#gate').classList.remove('hidden');
+      $('#adminWrap').style.display = 'none';
+      if (msg) $('#gateErr').textContent = msg;
+    }
+    function showAdmin() {
+      $('#gate').classList.add('hidden');
+      $('#adminWrap').style.display = 'block';
+      loadAll();
+    }
 
-    /* Password gate */
     async function tryUnlock() {
       const pass = $('#gatePass').value;
       const btn = $('#gateBtn');
@@ -145,13 +150,9 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ password: pass }),
         });
-        const data = await res.json();
-        if (data.ok && data.token) {
-          setAdminToken(data.token);
-          showAdmin();
-        } else {
-          err.textContent = data.error || 'Invalid password';
-        }
+        const data = await res.json().catch(() => ({}));
+        if (data.ok && data.token) { setAdminToken(data.token); showAdmin(); }
+        else { err.textContent = data.error || 'Invalid password'; }
       } catch (e) {
         err.textContent = 'Server error: ' + e.message;
       } finally {
@@ -164,12 +165,10 @@
 
     $('#adminLogout')?.addEventListener('click', () => {
       setAdminToken('');
-      showGate();
+      showGate('');
       $('#gatePass').value = '';
-      $('#gateErr').textContent = '';
     });
 
-    /* Data loading */
     function countLogs(obj) {
       if (!obj) return 0;
       let n = 0;
@@ -183,7 +182,7 @@
     async function loadAll() {
       try {
         const res = await adminFetch('/stats');
-        if (res.status === 401) { setAdminToken(''); showGate(); return; }
+        if (res.status === 401) { setAdminToken(''); showGate('Session expired, please log in again.'); return; }
         const data = await res.json();
         if (!data.ok) return;
         $('#statUsers').textContent = data.users;
@@ -202,9 +201,7 @@
             <td>${u.last_login ? new Date(u.last_login).toLocaleString() : '—'}</td>
           </tr>`).join('');
         tbody.innerHTML = rows || '<tr><td colspan="5" style="color:var(--text-faint)">No users yet</td></tr>';
-      } catch (e) {
-        console.warn(e);
-      }
+      } catch (e) { console.warn(e); }
     }
 
     $('#adminSetTierBtn')?.addEventListener('click', async () => {
@@ -212,20 +209,21 @@
       const tier = $('#adminTierSelect').value;
       if (!email) return alert('Enter a user email');
       const res = await adminFetch('/set-tier', { method: 'POST', body: JSON.stringify({ email, tier }) });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (data.ok) { alert(`Tier updated for ${email}: ${tier}`); loadAll(); }
       else alert(data.error || 'Failed');
     });
 
-    /* On load: if we already have a token, verify it */
-    (async function boot() {
+    /* Show gate immediately; verify in background */
+    (function boot() {
       const t = getAdminToken();
-      if (!t) { showGate(); return; }
-      try {
-        const res = await adminFetch('/stats');
-        if (res.status === 401) { setAdminToken(''); showGate(); }
-        else showAdmin();
-      } catch { showGate(); }
+      if (!t) { showGate(''); return; }
+      adminFetch('/stats')
+        .then(res => {
+          if (res.status === 401) { setAdminToken(''); showGate('Session expired, please log in again.'); }
+          else showAdmin();
+        })
+        .catch(() => { setAdminToken(''); showGate('Could not reach server. Please log in.'); });
     })();
   </script>
 </body>
