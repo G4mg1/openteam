@@ -25,7 +25,7 @@
         <img src="/logo.png" alt="MiroxAI" class="brand-logo theme-aware-logo">
         <span class="brand-text">MiroxAI</span>
       </a>
-      <button id="sidebarCloseBtn" class="icon-btn sidebar-close" aria-label="Close"><i class="ri-close-line"></i></button>
+      <button id="sidebarCloseBtn" class="icon-btn sidebar-close"><i class="ri-close-line"></i></button>
     </div>
     <button id="newChatBtn" class="new-chat-btn"><i class="ri-add-line"></i><span>New chat</span></button>
     <div class="sidebar-section">
@@ -52,18 +52,16 @@
 
   <main class="main">
     <header class="chat-header">
-      <button id="hamburgerBtn" class="icon-btn hamburger" aria-label="Menu"><i class="ri-menu-line"></i></button>
+      <button id="hamburgerBtn" class="icon-btn hamburger"><i class="ri-menu-line"></i></button>
       <h2 id="chatTitle" class="chat-title">New chat</h2>
       <div class="chat-header-actions">
-        <div class="model-picker" id="modelPicker">
-          <button id="modelPickerBtn" class="model-picker-btn" type="button">
-            <i class="ri-cpu-line"></i>
-            <span id="currentModelLabel">Luna</span>
-            <i class="ri-arrow-down-s-line"></i>
-          </button>
-          <div id="modelPickerMenu" class="model-picker-menu"></div>
-        </div>
-        <button id="editTitleBtn" class="icon-btn" aria-label="Rename"><i class="ri-edit-line"></i></button>
+        <button id="modelPickerBtn" class="model-picker-btn" type="button">
+          <i class="ri-cpu-line"></i>
+          <span id="currentModelLabel">Luna</span>
+          <i class="ri-arrow-down-s-line"></i>
+        </button>
+        <div id="modelPickerMenu" class="model-picker-menu"></div>
+        <button id="editTitleBtn" class="icon-btn"><i class="ri-edit-line"></i></button>
       </div>
     </header>
 
@@ -71,7 +69,7 @@
       <div class="welcome-screen">
         <img src="/logo.png" alt="MiroxAI" class="welcome-logo theme-aware-logo">
         <h1 class="welcome-title">Hi, I'm Mirox</h1>
-        <p class="welcome-sub">Built by the OpenSurr team. Ask anything, attach images or files, use web search, or start a voice call.</p>
+        <p class="welcome-sub">Built by the OpenSurr team. Ask anything, attach images or files, or start a voice call.</p>
         <div class="suggestion-grid">
           <button class="suggestion-card" data-prompt="What would you like to talk about?"><i class="ri-chat-3-line"></i><span>What would you like to talk about?</span></button>
           <button class="suggestion-card" data-prompt="Help me write code"><i class="ri-code-line"></i><span>Help me write code</span></button>
@@ -80,11 +78,6 @@
         </div>
         <p class="welcome-disclaimer">Mirox can make mistakes. Made by the OpenSurr team.</p>
       </div>
-    </div>
-
-    <div id="thinkingIndicator" class="thinking-indicator" style="display:none;">
-      <div class="thinking-dots"><span></span><span></span><span></span></div>
-      <span class="thinking-label">Thinking</span>
     </div>
 
     <div class="composer-wrap">
@@ -111,7 +104,7 @@
     </div>
   </main>
 
-  <!-- Login modal -->
+  <!-- Login -->
   <div id="loginModal" class="modal-overlay">
     <div class="modal">
       <button class="icon-btn modal-close" data-close="loginModal"><i class="ri-close-line"></i></button>
@@ -125,7 +118,7 @@
     </div>
   </div>
 
-  <!-- Settings modal -->
+  <!-- Settings -->
   <div id="settingsModal" class="modal-overlay">
     <div class="modal modal-wide">
       <button class="icon-btn modal-close" data-close="settingsModal"><i class="ri-close-line"></i></button>
@@ -178,14 +171,6 @@
             <button class="seg-btn" data-corner="round">Round</button>
           </div>
         </div>
-        <div class="setting-group">
-          <h4>Font</h4>
-          <div id="fontOptions" class="segmented">
-            <button class="seg-btn" data-font="system">System</button>
-            <button class="seg-btn" data-font="inter">Inter</button>
-            <button class="seg-btn" data-font="mono">Mono</button>
-          </div>
-        </div>
       </div>
 
       <div class="settings-pane" data-pane="chat">
@@ -205,8 +190,6 @@
             <option value="fr-FR">French</option>
             <option value="de-DE">German</option>
             <option value="ar-SA">Arabic</option>
-            <option value="ps-AF">Pashto</option>
-            <option value="fa-AF">Dari</option>
             <option value="hi-IN">Hindi</option>
             <option value="zh-CN">Chinese</option>
             <option value="ja-JP">Japanese</option>
@@ -215,14 +198,6 @@
         <div class="setting-group">
           <h4>Microphone</h4>
           <button id="requestMicBtn" class="modal-btn">Grant mic access</button>
-        </div>
-        <div class="setting-group">
-          <h4>Voice output</h4>
-          <div class="setting-row">
-            <span>Voice Speed: <span id="voiceRateLabel">1.0×</span></span>
-            <input type="range" id="voiceRateInput" min="0.5" max="2" step="0.1" value="1" class="range-input">
-          </div>
-          <button id="testVoiceBtn" class="modal-btn">Test voice</button>
         </div>
       </div>
 
@@ -255,13 +230,13 @@
             <input type="url" id="mcpUrlInput" class="modal-input" placeholder="https://mcp.example.com/sse">
             <button id="addMcpBtn" class="modal-btn primary"><i class="ri-add-line"></i></button>
           </div>
-          <p class="mcp-hint">Mirox will POST tool requests to the server URL you provide. Only add servers you trust.</p>
+          <p class="mcp-hint">Mirox will POST tool requests to the URL you provide. Only add servers you trust.</p>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Plans modal -->
+  <!-- Plans -->
   <div id="plansModal" class="modal-overlay">
     <div class="modal modal-wide">
       <button class="icon-btn modal-close" data-close="plansModal"><i class="ri-close-line"></i></button>
@@ -277,12 +252,11 @@
     </div>
   </div>
 
-  <!-- Background modal -->
+  <!-- Background -->
   <div id="backgroundModal" class="modal-overlay">
     <div class="modal">
       <button class="icon-btn modal-close" data-close="backgroundModal"><i class="ri-close-line"></i></button>
       <h2 class="modal-title">Background</h2>
-      <p class="modal-sub">Pick an image — it saves instantly.</p>
       <div id="bgUploadZone" class="upload-zone" style="padding:20px;text-align:center;border:1px dashed var(--border-strong);border-radius:var(--radius);cursor:pointer;">
         <i class="ri-upload-cloud-2-line" style="font-size:24px;color:var(--accent);"></i>
         <div style="margin-top:6px;font-size:13px;color:var(--text-muted);">Click or drag an image here</div>
@@ -294,13 +268,12 @@
       </div>
       <div class="setting-group" style="margin-top:16px;">
         <div class="setting-row"><span>Dim: <span id="bgDimLabel">45%</span></span><input type="range" id="bgDimInput" min="0" max="90" value="45" class="range-input"></div>
-        <div class="setting-row"><span>Blur: <span id="bgBlurLabel">0px</span></span><input type="range" id="bgBlurInput" min="0" max="20" value="0" class="range-input"></div>
         <button id="bgRemoveBtn" class="modal-btn danger">Remove</button>
       </div>
     </div>
   </div>
 
-  <!-- Image modal -->
+  <!-- Image -->
   <div id="imageModal" class="modal-overlay">
     <div class="modal">
       <button class="icon-btn modal-close" data-close="imageModal"><i class="ri-close-line"></i></button>
@@ -323,12 +296,12 @@
     </div>
   </div>
 
-  <!-- Support modal -->
+  <!-- Support -->
   <div id="supportModal" class="modal-overlay">
     <div class="modal">
       <button class="icon-btn modal-close" data-close="supportModal"><i class="ri-close-line"></i></button>
       <h2 class="modal-title">Contact Support</h2>
-      <p class="modal-sub">A real person will reply in 15–30 minutes.</p>
+      <p class="modal-sub">A real person will reply soon.</p>
       <div class="support-form">
         <select id="supportCategory" class="modal-select">
           <option>General question</option>
@@ -338,7 +311,7 @@
         </select>
         <input type="text" id="supportSubject" class="modal-input" placeholder="Subject" maxlength="120">
         <textarea id="supportMessage" class="modal-textarea" rows="4" placeholder="Message"></textarea>
-        <button id="submitReportBtn" class="modal-btn primary">Start chat</button>
+        <button id="submitReportBtn" class="modal-btn primary">Submit</button>
       </div>
     </div>
   </div>
