@@ -29,20 +29,14 @@
         <div class="logo-fallback logo-fallback-sm" style="display:none;">M</div>
         <span class="brand-text">MiroxAI</span>
       </a>
-      <button id="sidebarCloseBtn" class="icon-btn sidebar-close" type="button" aria-label="Close">
-        <i class="ri-close-line"></i>
-      </button>
+      <button id="sidebarCloseBtn" class="icon-btn sidebar-close" type="button" aria-label="Close"><i class="ri-close-line"></i></button>
     </div>
 
-    <button id="newChatBtn" class="new-chat-btn" type="button">
-      <i class="ri-add-line"></i><span>New chat</span>
-    </button>
+    <button id="newChatBtn" class="new-chat-btn" type="button"><i class="ri-add-line"></i><span>New chat</span></button>
 
     <div class="sidebar-section">
       <h3 class="sidebar-label">Chats</h3>
-      <ul id="historyList" class="history-list">
-        <li class="history-empty">No conversations yet</li>
-      </ul>
+      <ul id="historyList" class="history-list"><li class="history-empty">No conversations yet</li></ul>
     </div>
 
     <div class="sidebar-footer">
@@ -52,9 +46,7 @@
           <span class="user-name">Guest mode</span>
           <span class="user-sub">Sign in to save chats</span>
         </div>
-        <button id="upgradeBtn" class="upgrade-btn" type="button" aria-label="Upgrade">
-          <i class="ri-vip-crown-line"></i>
-        </button>
+        <button id="upgradeBtn" class="upgrade-btn" type="button" aria-label="Upgrade"><i class="ri-vip-crown-line"></i></button>
       </div>
       <div class="sidebar-links">
         <a href="#" id="settingsBtn" class="sidebar-link"><i class="ri-settings-3-line"></i> Settings</a>
@@ -67,9 +59,7 @@
 
   <main class="main">
     <header class="chat-header">
-      <button id="hamburgerBtn" class="icon-btn hamburger" type="button" aria-label="Menu">
-        <i class="ri-menu-line"></i>
-      </button>
+      <button id="hamburgerBtn" class="icon-btn hamburger" type="button" aria-label="Menu"><i class="ri-menu-line"></i></button>
       <h2 id="chatTitle" class="chat-title">New chat</h2>
       <div class="chat-header-actions">
         <div id="modelPicker" class="model-picker-wrap">
@@ -80,9 +70,7 @@
           </button>
           <div id="modelPickerMenu" class="model-picker-menu"></div>
         </div>
-        <button id="editTitleBtn" class="icon-btn" type="button" aria-label="Rename">
-          <i class="ri-edit-line"></i>
-        </button>
+        <button id="editTitleBtn" class="icon-btn" type="button" aria-label="Rename"><i class="ri-edit-line"></i></button>
       </div>
     </header>
 
@@ -98,11 +86,13 @@
           <button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span>Explain a concept simply</span></button>
           <button class="suggestion-card" type="button" data-prompt="Generate an image"><i class="ri-image-line"></i><span>Generate an image</span></button>
         </div>
-        <p class="welcome-disclaimer">Mirox can make mistakes. Made by the OpenSurr team.</p>
       </div>
     </div>
 
+    <!-- FIXED: disclaimer inside composer area, scrolls with page -->
     <div class="composer-wrap">
+      <p class="welcome-disclaimer-static">Mirox AI can make mistakes. Made by the OpenSurr team.</p>
+
       <div id="attachmentPreview" class="attachment-preview" style="display:none;">
         <div id="attachmentList" class="attachment-list"></div>
         <button id="removeAttachmentBtn" class="icon-btn" type="button" aria-label="Remove"><i class="ri-close-line"></i></button>
@@ -111,7 +101,7 @@
       <div class="tools-row">
         <button id="talkModeBtn" class="tool-btn" type="button"><i class="ri-mic-line"></i><span>Call</span></button>
         <button id="imageModeBtn" class="tool-btn" type="button"><i class="ri-image-line"></i><span>Lumenal</span></button>
-        <button id="backgroundModeBtn" class="tool-btn" type="button"><i class="ri-panorama-line"></i><span>Background</span></button>
+        <button id="backgroundModeBtn" class="tool-btn" type="button"><i class="ri-image-2-line"></i><span>Background</span></button>
         <button id="plansModeBtn" class="tool-btn" type="button"><i class="ri-vip-crown-line"></i><span>Plans</span></button>
         <button id="supportModeBtn2" class="tool-btn" type="button"><i class="ri-question-line"></i><span>Help</span></button>
       </div>
@@ -128,6 +118,7 @@
     </div>
   </main>
 
+  <!-- Login Modal -->
   <div id="loginModal" class="modal-overlay">
     <div class="modal">
       <button class="icon-btn modal-close" type="button" data-close="loginModal" aria-label="Close"><i class="ri-close-line"></i></button>
@@ -141,6 +132,7 @@
     </div>
   </div>
 
+  <!-- Settings Modal (unchanged structure, full in CSS) -->
   <div id="settingsModal" class="modal-overlay">
     <div class="modal modal-wide">
       <button class="icon-btn modal-close" type="button" data-close="settingsModal" aria-label="Close"><i class="ri-close-line"></i></button>
@@ -155,8 +147,7 @@
         <button class="settings-tab" type="button" data-tab="mcp">MCP</button>
       </div>
       <div class="settings-pane active" data-pane="general">
-        <div class="setting-group">
-          <h4>Notifications</h4>
+        <div class="setting-group"><h4>Notifications</h4>
           <div class="setting-row"><span>Sound</span><button class="toggle-btn active" type="button" data-toggle="soundOn">ON</button></div>
           <div class="setting-row"><span>Notifications</span><button class="toggle-btn active" type="button" data-toggle="notifOn">ON</button></div>
         </div>
@@ -181,8 +172,7 @@
         </div></div>
       </div>
       <div class="settings-pane" data-pane="chat">
-        <div class="setting-group">
-          <h4>Code rendering</h4>
+        <div class="setting-group"><h4>Code rendering</h4>
           <div class="setting-row"><span>Syntax highlight</span><button class="toggle-btn active" type="button" data-toggle="highlightOn">ON</button></div>
           <div class="setting-row"><span>Line numbers</span><button class="toggle-btn" type="button" data-toggle="lineNumbers">OFF</button></div>
         </div>
@@ -197,15 +187,13 @@
         <div class="setting-group"><h4>Microphone</h4><button id="requestMicBtn" class="modal-btn" type="button">Grant mic access</button></div>
       </div>
       <div class="settings-pane" data-pane="personal">
-        <div class="setting-group">
-          <h4>Custom character</h4>
+        <div class="setting-group"><h4>Custom character</h4>
           <textarea id="personaInput" class="modal-textarea" rows="3" placeholder="Describe how Mirox should behave…"></textarea>
           <button id="savePersonaBtn" class="modal-btn" type="button">Save</button>
         </div>
       </div>
       <div class="settings-pane" data-pane="memory">
-        <div class="setting-group">
-          <h4>Memory</h4>
+        <div class="setting-group"><h4>Memory</h4>
           <div id="memoryList" class="memory-list"></div>
           <div class="memory-add">
             <input type="text" id="memoryInput" class="modal-input" placeholder="Add a fact…" maxlength="200">
@@ -214,8 +202,7 @@
         </div>
       </div>
       <div class="settings-pane" data-pane="mcp">
-        <div class="setting-group">
-          <h4>MCP Servers</h4>
+        <div class="setting-group"><h4>MCP Servers</h4>
           <p class="setting-desc">Connect Mirox to Model Context Protocol servers.</p>
           <div id="mcpList" class="mcp-list"></div>
           <div class="mcp-add-row">
@@ -228,6 +215,7 @@
     </div>
   </div>
 
+  <!-- Plans Modal -->
   <div id="plansModal" class="modal-overlay">
     <div class="modal modal-wide">
       <button class="icon-btn modal-close" type="button" data-close="plansModal" aria-label="Close"><i class="ri-close-line"></i></button>
@@ -236,13 +224,21 @@
       <div id="plansGrid" class="plans-grid"></div>
       <div class="plans-soon"><i class="ri-time-line"></i> More plans will be added soon in the future.</div>
       <div class="setting-group" style="margin-top:24px;">
-        <h4>Your API keys</h4>
+        <h4>Your API keys <span id="apiKeyCounter" style="font-weight:400;color:var(--text-faint);font-size:11px;text-transform:none;letter-spacing:0;">(0/2 this month)</span></h4>
         <div id="apiKeysList" class="api-keys-list"></div>
         <button id="generateKeyBtn" class="modal-btn" type="button">Generate key</button>
+        <div id="newKeyDisplay" class="new-key-display" style="display:none;">
+          <div class="new-key-label">New key — copy it now</div>
+          <div class="new-key-row">
+            <code id="newKeyValue" class="new-key-value"></code>
+            <button id="copyNewKeyBtn" class="icon-btn" type="button" title="Copy"><i class="ri-file-copy-line"></i></button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
+  <!-- Background Modal -->
   <div id="backgroundModal" class="modal-overlay">
     <div class="modal">
       <button class="icon-btn modal-close" type="button" data-close="backgroundModal" aria-label="Close"><i class="ri-close-line"></i></button>
@@ -262,6 +258,7 @@
     </div>
   </div>
 
+  <!-- Image Modal -->
   <div id="imageModal" class="modal-overlay">
     <div class="modal">
       <button class="icon-btn modal-close" type="button" data-close="imageModal" aria-label="Close"><i class="ri-close-line"></i></button>
@@ -272,10 +269,8 @@
         <div class="setting-row">
           <span>Aspect ratio</span>
           <select id="imageAspect" class="modal-select" style="width:auto;">
-            <option value="1:1">1:1</option>
-            <option value="16:9">16:9</option>
-            <option value="9:16">9:16</option>
-            <option value="4:3">4:3</option>
+            <option value="1:1">1:1</option><option value="16:9">16:9</option>
+            <option value="9:16">9:16</option><option value="4:3">4:3</option>
           </select>
         </div>
         <button id="generateImageBtn" class="modal-btn primary" type="button"><i class="ri-image-add-line"></i> Generate</button>
@@ -284,6 +279,7 @@
     </div>
   </div>
 
+  <!-- Support Modal -->
   <div id="supportModal" class="modal-overlay">
     <div class="modal">
       <button class="icon-btn modal-close" type="button" data-close="supportModal" aria-label="Close"><i class="ri-close-line"></i></button>
