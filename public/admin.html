@@ -23,43 +23,15 @@
     .admin-input { padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--panel-2); font-size: 14px; width: 100%; max-width: 300px; }
     .admin-btn { padding: 8px 16px; border-radius: var(--radius); background: var(--accent); color: #fff; font-size: 14px; font-weight: 500; border: none; cursor: pointer; }
     .admin-btn:hover { background: var(--accent-hover); }
-
-    .gate {
-      position: fixed; inset: 0; z-index: 999;
-      background: var(--bg);
-      display: flex; align-items: center; justify-content: center; padding: 20px;
-    }
+    .gate { position: fixed; inset: 0; z-index: 999; background: var(--bg); display: flex; align-items: center; justify-content: center; padding: 20px; }
     .gate.hidden { display: none; }
-    .gate-card {
-      width: 100%; max-width: 380px;
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-xl);
-      padding: 32px 28px;
-      box-shadow: var(--shadow-lg);
-      text-align: center;
-    }
-    .gate-icon {
-      width: 56px; height: 56px; border-radius: 14px;
-      background: var(--accent-soft); color: var(--accent);
-      display: grid; place-items: center; font-size: 26px;
-      margin: 0 auto 16px;
-    }
+    .gate-card { width: 100%; max-width: 380px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-xl); padding: 32px 28px; box-shadow: var(--shadow-lg); text-align: center; }
+    .gate-icon { width: 56px; height: 56px; border-radius: 14px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-size: 26px; margin: 0 auto 16px; }
     .gate-title { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
     .gate-sub { font-size: 13.5px; color: var(--text-muted); margin-bottom: 22px; }
-    .gate-input {
-      width: 100%; padding: 12px 14px; border-radius: var(--radius);
-      border: 1px solid var(--border); background: var(--panel-2);
-      font-size: 15px; outline: none;
-      transition: border-color .15s, box-shadow .15s;
-    }
+    .gate-input { width: 100%; padding: 12px 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--panel-2); font-size: 15px; outline: none; transition: border-color .15s, box-shadow .15s; }
     .gate-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-    .gate-btn {
-      width: 100%; margin-top: 14px; padding: 12px;
-      border-radius: var(--radius); border: none;
-      background: var(--accent); color: #fff;
-      font-size: 14.5px; font-weight: 600; cursor: pointer;
-    }
+    .gate-btn { width: 100%; margin-top: 14px; padding: 12px; border-radius: var(--radius); border: none; background: var(--accent); color: #fff; font-size: 14.5px; font-weight: 600; cursor: pointer; }
     .gate-btn:hover { background: var(--accent-hover); }
     .gate-btn:disabled { opacity: .5; cursor: not-allowed; }
     .gate-err { color: #dc2626; font-size: 13px; margin-top: 10px; min-height: 18px; }
@@ -83,14 +55,12 @@
       <h1>Mirox Admin Console</h1>
       <button id="adminLogout" class="admin-btn" style="margin-left:auto;background:transparent;color:var(--text-muted);border:1px solid var(--border);">Lock</button>
     </div>
-
     <div class="admin-grid">
       <div class="stat-card"><h3>Total Users</h3><div class="value" id="statUsers">—</div></div>
       <div class="stat-card"><h3>Chats Total</h3><div class="value" id="statChats">—</div></div>
       <div class="stat-card"><h3>Images Generated</h3><div class="value" id="statImages">—</div></div>
       <div class="stat-card"><h3>User Events</h3><div class="value" id="statEvents">—</div></div>
     </div>
-
     <div class="admin-section">
       <h2>User Management</h2>
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
@@ -115,70 +85,39 @@
     const API = '/api/admin';
     const TOKEN_KEY = 'mirox_admin_token';
     const $ = s => document.querySelector(s);
-
     function getAdminToken() { try { return sessionStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
     function setAdminToken(t) { try { t ? sessionStorage.setItem(TOKEN_KEY, t) : sessionStorage.removeItem(TOKEN_KEY); } catch {} }
-
     async function adminFetch(path, opts = {}) {
       const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
       const t = getAdminToken();
       if (t) headers['X-Admin-Token'] = t;
       return fetch(API + path, { ...opts, headers, credentials: 'same-origin' });
     }
-
-    function showGate(msg) {
-      $('#gate').classList.remove('hidden');
-      $('#adminWrap').style.display = 'none';
-      if (msg) $('#gateErr').textContent = msg;
-    }
-    function showAdmin() {
-      $('#gate').classList.add('hidden');
-      $('#adminWrap').style.display = 'block';
-      loadAll();
-    }
-
+    function showGate(msg) { $('#gate').classList.remove('hidden'); $('#adminWrap').style.display = 'none'; if (msg) $('#gateErr').textContent = msg; }
+    function showAdmin() { $('#gate').classList.add('hidden'); $('#adminWrap').style.display = 'block'; loadAll(); }
     async function tryUnlock() {
       const pass = $('#gatePass').value;
-      const btn = $('#gateBtn');
-      const err = $('#gateErr');
+      const btn = $('#gateBtn'), err = $('#gateErr');
       err.textContent = '';
       if (!pass) { err.textContent = 'Enter a password.'; return; }
       btn.disabled = true; btn.textContent = 'Checking…';
       try {
-        const res = await fetch(API + '/auth', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password: pass }),
-        });
+        const res = await fetch(API + '/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pass }) });
         const data = await res.json().catch(() => ({}));
         if (data.ok && data.token) { setAdminToken(data.token); showAdmin(); }
         else { err.textContent = data.error || 'Invalid password'; }
-      } catch (e) {
-        err.textContent = 'Server error: ' + e.message;
-      } finally {
-        btn.disabled = false; btn.textContent = 'Unlock';
-      }
+      } catch (e) { err.textContent = 'Server error: ' + e.message; }
+      finally { btn.disabled = false; btn.textContent = 'Unlock'; }
     }
-
     $('#gateBtn')?.addEventListener('click', tryUnlock);
     $('#gatePass')?.addEventListener('keydown', e => { if (e.key === 'Enter') tryUnlock(); });
-
-    $('#adminLogout')?.addEventListener('click', () => {
-      setAdminToken('');
-      showGate('');
-      $('#gatePass').value = '';
-    });
-
+    $('#adminLogout')?.addEventListener('click', () => { setAdminToken(''); showGate(''); $('#gatePass').value = ''; });
     function countLogs(obj) {
       if (!obj) return 0;
       let n = 0;
-      Object.values(obj).forEach(v => {
-        if (Array.isArray(v)) n += v.length;
-        else if (v && typeof v === 'object') n += Object.keys(v).length;
-      });
+      Object.values(obj).forEach(v => { if (Array.isArray(v)) n += v.length; else if (v && typeof v === 'object') n += Object.keys(v).length; });
       return n;
     }
-
     async function loadAll() {
       try {
         const res = await adminFetch('/stats');
@@ -189,7 +128,6 @@
         $('#statChats').textContent = data.chats;
         $('#statImages').textContent = data.images;
         $('#statEvents').textContent = data.events;
-
         const users = data.users_data || {};
         const tbody = $('#adminUserTable tbody');
         const rows = Object.entries(users).map(([email, u]) => `
@@ -203,7 +141,6 @@
         tbody.innerHTML = rows || '<tr><td colspan="5" style="color:var(--text-faint)">No users yet</td></tr>';
       } catch (e) { console.warn(e); }
     }
-
     $('#adminSetTierBtn')?.addEventListener('click', async () => {
       const email = $('#adminUserEmail').value.trim().toLowerCase();
       const tier = $('#adminTierSelect').value;
@@ -213,17 +150,13 @@
       if (data.ok) { alert(`Tier updated for ${email}: ${tier}`); loadAll(); }
       else alert(data.error || 'Failed');
     });
-
-    /* Show gate immediately; verify in background */
     (function boot() {
       const t = getAdminToken();
       if (!t) { showGate(''); return; }
-      adminFetch('/stats')
-        .then(res => {
-          if (res.status === 401) { setAdminToken(''); showGate('Session expired, please log in again.'); }
-          else showAdmin();
-        })
-        .catch(() => { setAdminToken(''); showGate('Could not reach server. Please log in.'); });
+      adminFetch('/stats').then(res => {
+        if (res.status === 401) { setAdminToken(''); showGate('Session expired, please log in again.'); }
+        else showAdmin();
+      }).catch(() => { setAdminToken(''); showGate('Could not reach server. Please log in.'); });
     })();
   </script>
 </body>
