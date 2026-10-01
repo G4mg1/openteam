@@ -1,12 +1,12 @@
 /* ============================================================
-   MiroxAI Backend v39
-   FIXED for Roblox HttpService + all auth headers:
-   - Accepts: Authorization Bearer, x-api-key, api-key, X-Auth-Token,
-              X-API-Key, Api-Key, and ?api_key= query param
-   - Auto-detects streaming intent via Accept header + body.stream
-   - Non-streaming returns JSON fast (no SSE buffering issues)
-   - 25s race timeout on HF so Roblox never times out
-   - Warm-up request primes the provider before real call
+   MiroxAI Backend v40
+   FIXED:
+   - Session auth works (browser login, cookies, Bearer token)
+   - API key auth works (all header formats)
+   - Firebase optional (never blocks boot)
+   - Non-streaming returns fast JSON for Roblox HttpService
+   - Streaming SSE with heartbeat for browsers/Studio
+   - No more DB scan on every request
    ============================================================ */
 
 let express, crypto, firebaseAdmin;
@@ -26,17 +26,18 @@ if (!express || !crypto) {
 const HF_API_KEY = (process.env.HF_API_KEY || '').trim();
 const SECRET = process.env.SECRET_KEY || 'mirox-fallback-secret';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '2010';
-const HF_TIMEOUT_MS = 25000;   // 25s per provider attempt — Roblox gives ~30s
-const HF_WARMUP_MS = 15000;    // warmup probe
+const HF_TIMEOUT_MS = 25000;
 
-/* ---------- Firebase ---------- */
+/* ---------- Firebase (optional) ---------- */
 let fdb = null;
 try {
   if (firebaseAdmin && !firebaseAdmin.apps.length) {
     let cred = null;
     if (process.env.FIREBASE_SERVICE_ACCOUNT) {
       try { const sa = JSON.parse(Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT, 'base64').toString()); cred = firebaseAdmin.credential.cert(sa); } catch {}
-    } else { try { cred = firebaseAdmin.credential.applicationDefault(); } catch {} }
+    } else {
+      try { cred = firebaseAdmin.credential.applicationDefault(); } catch {}
+    }
     if (cred) {
       firebaseAdmin.initializeApp({
         databaseURL: 'https://miroxdata-default-rtdb.europe-west1.firebasedatabase.app/',
@@ -54,88 +55,19 @@ const today = () => new Date().toISOString().slice(0, 10);
 const monthKey = () => new Date().toISOString().slice(0, 7);
 
 /* ============================================================
-   AUTH HEADER EXTRACTION — supports ALL common formats
-   ============================================================ */
-function extractAuthKey(req) {
-  const h = req.headers || {};
-
-  /* 1. Authorization: Bearer xxx (OpenAI SDK, most common) */
-  const authz = String(h.authorization || h.Authorization || '').trim();
-  if (authz) {
-    const m = authz.match(/^Bearer\s+(.+)$/i);
-    if (m) return m[1].trim();
-    /* Some tools send raw key without Bearer */
-    if (authz.startsWith('mxk_')) return authz;
-  }
-
-  /* 2. x-api-key (Anthropic / many tools) */
-  if (h['x-api-key']) return String(h['x-api-key']).trim();
-
-  /* 3. api-key (Azure style) */
-  if (h['api-key']) return String(h['api-key']).trim();
-
-  /* 4. X-Auth-Token (Roblox community standard) */
-  if (h['x-auth-token']) return String(h['x-auth-token']).trim();
-
-  /* 5. X-API-Key */
-  if (h['x-api-key'] || h['x-apikey']) return String(h['x-api-key'] || h['x-apikey']).trim();
-
-  /* 6. Api-Key */
-  if (h['apikey'] || h['Api-Key']) return String(h['apikey'] || h['Api-Key']).trim();
-
-  /* 7. Query param ?api_key=xxx (some executors) */
-  if (req.query && req.query.api_key) return String(req.query.api_key).trim();
-
-  /* 8. Custom header */
-  if (h['mirox-key']) return String(h['mirox-key']).trim();
-
-  return '';
-}
-
-/* ============================================================
-   STREAM DETECTION — Roblox can't handle SSE, so be careful
-   ============================================================ */
-function wantsStream(req, body) {
-  /* Explicit body flag wins */
-  if (body && typeof body.stream === 'boolean') return body.stream;
-
-  /* Check Accept header */
-  const accept = String(req.headers.accept || '').toLowerCase();
-  if (accept.includes('text/event-stream')) return true;
-  if (accept.includes('application/json')) return false;
-
-  /* Roblox sends "*/*" — treat as non-stream */
-  if (accept === '*/*' || accept === '') return false;
-
-  /* Default: non-stream */
-  return false;
-}
-
-/* ============================================================
-   Session
+   SESSION TOKENS
    ============================================================ */
 function signSession(d) {
   const p = Buffer.from(JSON.stringify(d)).toString('base64url');
   return p + '.' + crypto.createHmac('sha256', SECRET).update(p).digest('base64url');
 }
 function verifySession(t) {
-  if (!t) return {};
-  const a = String(t).split('.');
+  if (!t || typeof t !== 'string') return {};
+  const a = t.split('.');
   if (a.length !== 2) return {};
   const e = crypto.createHmac('sha256', SECRET).update(a[0]).digest('base64url');
   if (e !== a[1]) return {};
   try { return JSON.parse(Buffer.from(a[0], 'base64url').toString()); } catch { return {}; }
-}
-function getSession(req) {
-  const key = extractAuthKey(req);
-  if (key && key.startsWith('mxk_')) return { apiKey: key };
-  if (key) {
-    const s = verifySession(key);
-    if (s?.uid) return s;
-  }
-  const m = (req.headers.cookie || '').match(/(?:^|;\s*)mirox_sess=([^;]+)/);
-  if (!m) return {};
-  return verifySession(decodeURIComponent(m[1]));
 }
 function setSession(res, d) {
   const t = signSession(d);
@@ -143,12 +75,148 @@ function setSession(res, d) {
   res.setHeader('Set-Cookie', `mirox_sess=${t}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 60 * 60}${sc}`);
   return t;
 }
-function clearSession(res) { res.setHeader('Set-Cookie', 'mirox_sess=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0'); }
+function clearSession(res) {
+  res.setHeader('Set-Cookie', 'mirox_sess=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
+}
 
-async function safeGet(p) { if (!fdb) return null; try { const s = await fdb.ref(p).once('value'); return s.exists() ? s.val() : null; } catch { return null; } }
-async function safeUpdate(p, d) { if (!fdb) return false; try { await fdb.ref(p).update(d); return true; } catch { return false; } }
-async function safeSet(p, d) { if (!fdb) return false; try { await fdb.ref(p).set(d); return true; } catch { return false; } }
-async function safePush(p, d) { if (!fdb) return null; try { const r = fdb.ref(p).push(); await r.set({ ...d, _ts: now() }); return r.key; } catch { return null; } }
+/* ============================================================
+   AUTH EXTRACTION — supports ALL formats
+   ============================================================ */
+function extractToken(req) {
+  const h = req.headers || {};
+
+  // 1. Authorization: Bearer xxx  (OpenAI SDK, most common)
+  const authz = String(h.authorization || '').trim();
+  if (authz) {
+    const m = authz.match(/^Bearer\s+(.+)$/i);
+    if (m) return m[1].trim();
+    // Some clients pass raw key without "Bearer"
+    if (/^mxk_/.test(authz)) return authz;
+  }
+
+  // 2. Alternative headers used by different tools
+  if (h['x-api-key']) return String(h['x-api-key']).trim();
+  if (h['api-key']) return String(h['api-key']).trim();
+  if (h['x-auth-token']) return String(h['x-auth-token']).trim();
+  if (h['mirox-key']) return String(h['mirox-key']).trim();
+  if (h['apikey']) return String(h['apikey']).trim();
+
+  // 3. Query parameter ?api_key=xxx
+  if (req.query && req.query.api_key) return String(req.query.api_key).trim();
+
+  return '';
+}
+
+function getSession(req) {
+  // 1. Try any auth header
+  const token = extractToken(req);
+  if (token) {
+    // API key (external caller)
+    if (token.startsWith('mxk_')) return { apiKey: token };
+    // Session token (browser)
+    const s = verifySession(token);
+    if (s && s.uid) return s;
+  }
+
+  // 2. Fall back to session cookie
+  const m = (req.headers.cookie || '').match(/(?:^|;\s*)mirox_sess=([^;]+)/);
+  if (m) {
+    const s = verifySession(decodeURIComponent(m[1]));
+    if (s && s.uid) return s;
+  }
+
+  return {};
+}
+
+/* ============================================================
+   FIREBASE HELPERS (all safe — never throw)
+   ============================================================ */
+async function safeGet(p) {
+  if (!fdb) return null;
+  try { const s = await fdb.ref(p).once('value'); return s.exists() ? s.val() : null; } catch { return null; }
+}
+async function safeUpdate(p, d) {
+  if (!fdb) return false;
+  try { await fdb.ref(p).update(d); return true; } catch { return false; }
+}
+async function safeSet(p, d) {
+  if (!fdb) return false;
+  try { await fdb.ref(p).set(d); return true; } catch { return false; }
+}
+async function safePush(p, d) {
+  if (!fdb) return null;
+  try { const r = fdb.ref(p).push(); await r.set({ ...d, _ts: now() }); return r.key; } catch { return null; }
+}
+
+/* ============================================================
+   USER RECORDS
+   ============================================================ */
+async function getUserRecord(email) { return await safeGet(`users/${email}`); }
+async function saveUserRecord(rec) { if (!rec?.email) return false; return await safeUpdate(`users/${rec.email}`, rec); }
+
+async function ensureFreshUser(email) {
+  if (!email) return null;
+  let rec = await getUserRecord(email);
+  if (!rec) {
+    rec = {
+      email, name: '', tier: 'free',
+      daily_used: 0, eclipse_used: 0, daily_reset: today(),
+      month_key: monthKey(), keys_this_month: 0,
+      created_at: now(),
+    };
+    await saveUserRecord(rec);
+    return rec;
+  }
+  let dirty = false;
+  if (rec.daily_reset !== today()) { rec.daily_used = 0; rec.eclipse_used = 0; rec.daily_reset = today(); dirty = true; }
+  if (rec.month_key !== monthKey()) { rec.keys_this_month = 0; rec.month_key = monthKey(); dirty = true; }
+  if (dirty) await saveUserRecord(rec);
+  return rec;
+}
+
+/* ============================================================
+   API KEY VALIDATION — index-based (fast)
+   ============================================================ */
+async function validateApiKey(apiKey) {
+  if (!apiKey || !apiKey.startsWith('mxk_')) return null;
+  if (!fdb) return { valid: true, email: 'guest@apikey.local', tier: 'free' };
+
+  try {
+    const hash = crypto.createHash('sha256').update(apiKey).digest('hex');
+    // Look up via hash index instead of scanning all users
+    const idxSnap = await fdb.ref(`api_key_index/${hash}`).once('value');
+    const idx = idxSnap.val();
+    if (idx && idx.email) {
+      const ur = await fdb.ref(`users/${idx.email}`).once('value');
+      const user = ur.val() || {};
+      return { valid: true, email: idx.email, tier: user.tier || 'free', keyId: idx.keyId };
+    }
+    return null;
+  } catch (e) {
+    console.warn('[Mirox] key validation error:', e.message);
+    return null;
+  }
+}
+
+/* ============================================================
+   CURRENT USER
+   ============================================================ */
+async function currentUser(req) {
+  const s = getSession(req);
+
+  // API key path
+  if (s.apiKey) {
+    const v = await validateApiKey(s.apiKey);
+    if (!v) return null;
+    return { email: v.email, tier: v.tier, _viaKey: true };
+  }
+
+  // Session path
+  if (!s.uid) return null;
+  const rec = await ensureFreshUser(s.uid);
+  if (!rec) return { email: s.uid, name: s.name || '', tier: s.tier || 'free' };
+  return rec;
+}
 
 /* ============================================================
    IDENTITY GUARD
@@ -238,13 +306,14 @@ const MIROX_MODELS = {
 const API_ALLOWED_MODELS = ['mirox-luna-1.2', 'mirox-gen-1'];
 
 const PLANS = {
-  free: { label: 'Free', daily_limit: 50, eclipse_daily_limit: 5, price_robux: 0, api_keys_per_month: 2 },
-  pro: { label: 'Pro', daily_limit: 500, eclipse_daily_limit: 0, price_robux: 250, api_keys_per_month: 5 },
+  free:     { label: 'Free',     daily_limit: 50,   eclipse_daily_limit: 5,   price_robux: 0,    api_keys_per_month: 2  },
+  pro:      { label: 'Pro',      daily_limit: 500,  eclipse_daily_limit: 0,   price_robux: 250,  api_keys_per_month: 5  },
   ultimate: { label: 'Ultimate', daily_limit: 5000, eclipse_daily_limit: 999, price_robux: 1200, api_keys_per_month: 20 },
 };
 const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
 
 function buildSystemPrompt(cfg) { return fillGuard(cfg.label) + '\n\n---\n\n' + cfg.basePrompt; }
+
 function injectIdentityGuard(messages, cfg) {
   const guard = buildSystemPrompt(cfg);
   if (!Array.isArray(messages) || !messages.length) return [{ role: 'system', content: guard }];
@@ -253,56 +322,6 @@ function injectIdentityGuard(messages, cfg) {
     return [{ role: 'system', content: merged }, ...messages.slice(1)];
   }
   return [{ role: 'system', content: guard }, ...messages];
-}
-
-/* ============================================================
-   API KEY VALIDATION
-   ============================================================ */
-async function validateApiKey(apiKey) {
-  if (!apiKey || !apiKey.startsWith('mxk_')) return null;
-  if (!fdb) return { valid: true, email: 'guest@apikey.local', tier: 'free' };
-  try {
-    const hash = crypto.createHash('sha256').update(apiKey).digest('hex');
-    const snap = await fdb.ref('api_keys').once('value');
-    const all = snap.val() || {};
-    for (const [email, keys] of Object.entries(all)) {
-      for (const [keyId, kd] of Object.entries(keys || {})) {
-        if (kd && kd.hash === hash && kd.active !== false) {
-          const ur = await fdb.ref(`users/${email}`).once('value');
-          const user = ur.val() || {};
-          return { valid: true, email, tier: user.tier || 'free', keyId };
-        }
-      }
-    }
-    return null;
-  } catch { return null; }
-}
-
-async function getUserRecord(email) { return await safeGet(`users/${email}`); }
-async function saveUserRecord(rec) { if (!rec?.email) return; return await safeUpdate(`users/${rec.email}`, rec); }
-async function ensureFreshUser(email) {
-  if (!email) return null;
-  let rec = await getUserRecord(email);
-  if (!rec) {
-    rec = { email, name: '', tier: 'free', daily_used: 0, eclipse_used: 0, daily_reset: today(), month_key: monthKey(), keys_this_month: 0, created_at: now() };
-    await saveUserRecord(rec);
-    return rec;
-  }
-  let dirty = false;
-  if (rec.daily_reset !== today()) { rec.daily_used = 0; rec.eclipse_used = 0; rec.daily_reset = today(); dirty = true; }
-  if (rec.month_key !== monthKey()) { rec.keys_this_month = 0; rec.month_key = monthKey(); dirty = true; }
-  if (dirty) await saveUserRecord(rec);
-  return rec;
-}
-async function currentUser(req) {
-  const s = getSession(req);
-  if (s.apiKey) {
-    const v = await validateApiKey(s.apiKey);
-    if (!v) return null;
-    return { email: v.email, tier: v.tier, _viaKey: true };
-  }
-  if (!s.uid) return null;
-  return await ensureFreshUser(s.uid);
 }
 
 /* ============================================================
@@ -318,18 +337,12 @@ const IMAGE_MODELS = [
   'ByteDance/SDXL-Lightning'
 ];
 
-/* Fetch with timeout */
 async function fetchWithTimeout(url, opts = {}, timeoutMs = HF_TIMEOUT_MS, externalSignal = null) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => { try { ctrl.abort(new Error('timeout')); } catch {} }, timeoutMs);
-  if (externalSignal) {
-    externalSignal.addEventListener('abort', () => { try { ctrl.abort(); } catch {} });
-  }
-  try {
-    return await fetch(url, { ...opts, signal: ctrl.signal });
-  } finally {
-    clearTimeout(timer);
-  }
+  if (externalSignal) externalSignal.addEventListener('abort', () => { try { ctrl.abort(); } catch {} });
+  try { return await fetch(url, { ...opts, signal: ctrl.signal }); }
+  finally { clearTimeout(timer); }
 }
 
 async function miroxChat(modelId, messages, maxTokens, stream = false, signal) {
@@ -355,7 +368,7 @@ async function miroxChatChain(chain, messages, maxTokens, stream = false, signal
     if (signal?.aborted) throw new Error('aborted');
     try {
       const res = await miroxChat(modelId, messages, maxTokens, stream, signal);
-      console.log(`[Mirox] ✅ Chat via ${modelId}`);
+      console.log(`[Mirox] ✅ ${modelId}`);
       return res;
     } catch (e) {
       lastErr = e;
@@ -420,17 +433,26 @@ function buildMessages(systemPrompt, history, userText, persona, mem, files) {
 }
 
 /* ============================================================
+   STREAM DETECTION
+   ============================================================ */
+function wantsStream(req, body) {
+  if (body && typeof body.stream === 'boolean') return body.stream;
+  const accept = String(req.headers.accept || '').toLowerCase();
+  if (accept.includes('text/event-stream')) return true;
+  return false; // default: non-stream JSON (Roblox-safe)
+}
+
+/* ============================================================
    APP
    ============================================================ */
 const app = express();
 app.use(express.json({ limit: '15mb' }));
 
-/* CORS */
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, DELETE');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Admin-Token, Accept, Origin, X-Requested-With, X-Api-Key, X-API-Key, api-key, Api-Key, X-Auth-Token, Mirox-Key');
-  res.header('Access-Control-Expose-Headers', 'Content-Length, Content-Type');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, X-Api-Key, X-API-Key, api-key, Api-Key, X-Auth-Token, Mirox-Key');
+  res.header('Access-Control-Expose-Headers', 'Content-Length, Content-Type, X-Mirox-Latency');
   res.header('Access-Control-Max-Age', '86400');
   if (req.method === 'OPTIONS') return res.status(200).end();
   next();
@@ -439,17 +461,16 @@ app.use((req, res, next) => {
 /* ---------- Health ---------- */
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
   res.json({
-    ok: true, app: 'MiroxAI', version: 'v39',
+    ok: true, app: 'MiroxAI', version: 'v40',
     inference: !!HF_API_KEY, database: !!fdb,
     api_models: API_ALLOWED_MODELS,
-    supports_auth: ['Authorization Bearer', 'x-api-key', 'api-key', 'X-API-Key', 'X-Auth-Token', 'Mirox-Key', '?api_key='],
-    time: now()
+    time: now(),
   });
 });
 
-/* ---------- /v1/models ---------- */
+/* ---------- Models ---------- */
 app.get(['/v1/models', '/models'], (req, res) => {
-  const modelsArr = API_ALLOWED_MODELS.map(id => {
+  const data = API_ALLOWED_MODELS.map(id => {
     const m = MIROX_MODELS[id];
     return {
       id, object: 'model', created: 1700000000, owned_by: 'miroxai',
@@ -457,7 +478,7 @@ app.get(['/v1/models', '/models'], (req, res) => {
       label: m.label, tagline: m.tagline, tier: m.tier, default: !!m.default,
     };
   });
-  res.json({ object: 'list', data: modelsArr });
+  res.json({ object: 'list', data });
 });
 
 app.get(['/v1/models/:modelId', '/models/:modelId'], (req, res) => {
@@ -477,14 +498,20 @@ app.get(['/api/config', '/config'], async (req, res) => {
     id, label: m.label, tagline: m.tagline, tier: m.tier, default: !!m.default,
   }));
   res.json({
-    app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v39' },
-    models: modelsArr, default_model: modelsArr[0].id, plans: PLANS,
-    user_tier: u ? u.tier : 'free', guest: !u, ready: !!HF_API_KEY,
+    app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v40' },
+    models: modelsArr,
+    default_model: modelsArr[0].id,
+    plans: PLANS,
+    user_tier: u ? u.tier : 'free',
+    guest: !u,
+    ready: !!HF_API_KEY,
     api_models: API_ALLOWED_MODELS,
   });
 });
 
-/* ---------- Auth ---------- */
+/* ============================================================
+   AUTH
+   ============================================================ */
 app.post(['/api/auth/simple-login', '/auth/simple-login'], async (req, res) => {
   try {
     const { name, email } = req.body || {};
@@ -493,29 +520,55 @@ app.post(['/api/auth/simple-login', '/auth/simple-login'], async (req, res) => {
     if (!n || !e || !e.includes('@') || !e.split('@')[1].includes('.')) {
       return res.status(400).json({ ok: false, error: 'Valid name and email required' });
     }
+
     let rec = await getUserRecord(e);
     const existing = !!rec;
-    if (!rec) rec = { email: e, name: n, tier: 'free', daily_used: 0, eclipse_used: 0, daily_reset: today(), month_key: monthKey(), keys_this_month: 0, created_at: now() };
-    else rec.name = n;
+    if (!rec) {
+      rec = {
+        email: e, name: n, tier: 'free',
+        daily_used: 0, eclipse_used: 0, daily_reset: today(),
+        month_key: monthKey(), keys_this_month: 0, created_at: now(),
+      };
+    } else {
+      rec.name = n;
+    }
     rec.last_login = now();
     await saveUserRecord(rec);
+
     const token = setSession(res, { uid: e, name: n, tier: rec.tier });
-    if (fdb) safePush(`logs/user/${e}`, { event: existing ? 'signin' : 'signup', name: n, ts: now() });
+
+    if (fdb) {
+      safePush(`logs/user/${e}`, { event: existing ? 'signin' : 'signup', name: n, ts: now() });
+    }
+
     res.json({ ok: true, token, user: { id: e, email: e, name: n, tier: rec.tier } });
   } catch (e) {
+    console.error('[Mirox] login error:', e);
     res.status(500).json({ ok: false, error: 'Login failed: ' + e.message });
   }
 });
 
-app.post(['/api/logout', '/logout'], (req, res) => { clearSession(res); res.json({ ok: true }); });
+app.post(['/api/logout', '/logout'], (req, res) => {
+  clearSession(res);
+  res.json({ ok: true });
+});
 
 app.get(['/api/me', '/me'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   try {
     const u = await currentUser(req);
     if (!u) return res.json({ user: null });
-    res.json({ user: { id: u.email, email: u.email, name: u.name, tier: u.tier, keys_this_month: u.keys_this_month || 0, eclipse_used: u.eclipse_used || 0 } });
-  } catch { res.json({ user: null }); }
+    res.json({
+      user: {
+        id: u.email, email: u.email, name: u.name, tier: u.tier,
+        keys_this_month: u.keys_this_month || 0,
+        eclipse_used: u.eclipse_used || 0,
+      }
+    });
+  } catch (e) {
+    console.error('[Mirox] /me error:', e);
+    res.json({ user: null });
+  }
 });
 
 /* ---------- Plans ---------- */
@@ -534,25 +587,25 @@ app.get(['/api/subscription/plans', '/subscription/plans'], (req, res) => {
 });
 
 /* ============================================================
-   /v1/chat/completions
-   Non-streaming = returns JSON fast (Roblox-friendly)
-   Streaming = SSE with heartbeats
+   CHAT COMPLETIONS
    ============================================================ */
 app.post('/v1/chat/completions', async (req, res) => {
   const t0 = Date.now();
   try {
-    if (!HF_API_KEY) return res.status(503).json({ error: { message: 'Inference service not configured.', type: 'server_error' } });
+    if (!HF_API_KEY) {
+      return res.status(503).json({ error: { message: 'Inference service not configured.', type: 'server_error' } });
+    }
 
     const body = req.body || {};
     const { model, messages, temperature, message, history, files } = body;
     const stream = wantsStream(req, body);
 
-    let u = null; try { u = await currentUser(req); } catch {}
+    let u = null;
+    try { u = await currentUser(req); } catch (e) { console.warn('[Mirox] currentUser:', e.message); }
 
-    const apiKey = extractAuthKey(req);
-    const isApiCall = apiKey && apiKey.startsWith('mxk_');
-
-    /* API key provided but invalid */
+    // API key provided but invalid
+    const token = extractToken(req);
+    const isApiCall = token && token.startsWith('mxk_');
     if (isApiCall && !u) {
       return res.status(401).json({ error: { message: 'Invalid API key.', type: 'invalid_request_error', code: 'invalid_api_key' } });
     }
@@ -560,12 +613,24 @@ app.post('/v1/chat/completions', async (req, res) => {
     const requestedModel = model || 'mirox-luna-1.2';
 
     if (isApiCall && !API_ALLOWED_MODELS.includes(requestedModel)) {
-      return res.status(403).json({ error: { message: `Model "${requestedModel}" not available via API. Use mirox-luna-1.2 or mirox-gen-1.`, type: 'invalid_request_error', code: 'model_not_found' } });
+      return res.status(403).json({
+        error: {
+          message: `Model "${requestedModel}" not available via API. Use ${API_ALLOWED_MODELS.join(' or ')}.`,
+          type: 'invalid_request_error',
+          code: 'model_not_found'
+        }
+      });
     }
 
     const cfg = MIROX_MODELS[requestedModel];
     if (!cfg) {
-      return res.status(404).json({ error: { message: `Model "${requestedModel}" not found. Available: ${API_ALLOWED_MODELS.join(', ')}`, type: 'invalid_request_error', code: 'model_not_found' } });
+      return res.status(404).json({
+        error: {
+          message: `Model "${requestedModel}" not found. Available: ${API_ALLOWED_MODELS.join(', ')}`,
+          type: 'invalid_request_error',
+          code: 'model_not_found'
+        }
+      });
     }
 
     const userTier = u ? u.tier : 'free';
@@ -578,7 +643,7 @@ app.post('/v1/chat/completions', async (req, res) => {
       if (userTier === 'free') {
         const used = u ? (u.eclipse_used || 0) : 0;
         if (used >= PLANS.free.eclipse_daily_limit) {
-          return res.status(429).json({ error: { message: `Eclipse daily limit reached (${PLANS.free.eclipse_daily_limit}/day). Upgrade to Ultimate for unlimited.`, type: 'rate_limit_error', code: 'eclipse_limit_reached' } });
+          return res.status(429).json({ error: { message: `Eclipse daily limit reached (${PLANS.free.eclipse_daily_limit}/day).`, type: 'rate_limit_error', code: 'eclipse_limit_reached' } });
         }
       } else {
         return res.status(403).json({ error: { message: 'Eclipse requires Ultimate plan.', type: 'invalid_request_error', code: 'plan_required' } });
@@ -586,55 +651,64 @@ app.post('/v1/chat/completions', async (req, res) => {
     }
 
     let msgs;
-    if (messages && Array.isArray(messages)) {
+    if (Array.isArray(messages) && messages.length) {
       msgs = injectIdentityGuard(messages, cfg);
     } else {
       const msg = String(message || '').trim();
-      if (!msg && !files?.length) return res.status(400).json({ error: { message: 'Empty message', type: 'invalid_request_error' } });
+      if (!msg && !files?.length) {
+        return res.status(400).json({ error: { message: 'Empty message', type: 'invalid_request_error' } });
+      }
       msgs = buildMessages(buildSystemPrompt(cfg), history, msg, u?.persona, u?.memory, files || []);
     }
 
     if (u) {
-      const plan = PLANS[u.tier];
+      const plan = PLANS[u.tier] || PLANS.free;
       if ((u.daily_used || 0) >= plan.daily_limit) {
         return res.status(429).json({ error: { message: `Daily limit reached (${plan.daily_limit}/day).`, type: 'rate_limit_error', code: 'daily_limit_reached' } });
       }
     }
 
     if (fdb && u && !u._viaKey) {
-      safePush(`logs/chat/${u.email}`, { model: cfg.label, message: String(message || msgs[msgs.length - 1]?.content || '').slice(0, 1000), ts: now() });
+      safePush(`logs/chat/${u.email}`, {
+        model: cfg.label,
+        message: String(message || msgs[msgs.length - 1]?.content || '').slice(0, 1000),
+        ts: now(),
+      });
     }
 
     async function updateUsage() {
-      if (u && !u._viaKey) {
+      if (u && !u._viaKey && u.email) {
         u.daily_used = (u.daily_used || 0) + 1;
         if (requestedModel === 'mirox-eclipse-2.0') u.eclipse_used = (u.eclipse_used || 0) + 1;
         await saveUserRecord(u);
       }
     }
 
-    /* ============================================================
-       NON-STREAMING — Roblox-friendly, returns JSON fast
-       Uses Promise.race with a 25s timeout so we always respond
-       ============================================================ */
+    /* ---------- NON-STREAMING (Roblox-safe) ---------- */
     if (!stream) {
       try {
         const hfRes = await miroxChatChain(cfg.chain, msgs, cfg.tokens, false);
         const data = await hfRes.json();
         const reply = data.choices?.[0]?.message?.content || '';
         await updateUsage();
+
         const ms = Date.now() - t0;
         res.setHeader('X-Mirox-Latency', String(ms));
+
         return res.json({
           id: 'chatcmpl-' + Date.now(),
           object: 'chat.completion',
           created: now(),
           model: cfg.label,
-          choices: [{ index: 0, message: { role: 'assistant', content: reply }, finish_reason: 'stop' }],
+          choices: [{
+            index: 0,
+            message: { role: 'assistant', content: reply },
+            finish_reason: 'stop',
+          }],
           usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
-          reply, /* backwards-compat */
+          reply, // backwards-compat
           daily_used: u ? (u.daily_used || 0) : 0,
-          daily_remaining: u ? Math.max(0, PLANS[u.tier].daily_limit - (u.daily_used || 0)) : 0,
+          daily_remaining: u ? Math.max(0, (PLANS[u.tier]?.daily_limit || 50) - (u.daily_used || 0)) : 0,
           _ms: ms,
         });
       } catch (e) {
@@ -646,9 +720,7 @@ app.post('/v1/chat/completions', async (req, res) => {
       }
     }
 
-    /* ============================================================
-       STREAMING — SSE with heartbeats (for Studio / browsers)
-       ============================================================ */
+    /* ---------- STREAMING (SSE) ---------- */
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
@@ -660,7 +732,11 @@ app.post('/v1/chat/completions', async (req, res) => {
 
     const abortCtrl = new AbortController();
     let clientClosed = false;
-    req.on('close', () => { clientClosed = true; try { abortCtrl.abort(); } catch {}; clearInterval(heartbeat); });
+    req.on('close', () => {
+      clientClosed = true;
+      try { abortCtrl.abort(); } catch {}
+      clearInterval(heartbeat);
+    });
 
     (async () => {
       try {
@@ -698,17 +774,23 @@ app.post('/v1/chat/completions', async (req, res) => {
           try { res.write(`data: ${JSON.stringify({ error: String(e.message).slice(0, 240) })}\n\n`); } catch {}
         }
         try { res.end(); } catch {}
-      } finally { clearInterval(heartbeat); }
+      } finally {
+        clearInterval(heartbeat);
+      }
     })();
 
     return;
   } catch (e) {
-    if (!res.headersSent) res.status(500).json({ error: { message: 'Server error: ' + e.message, type: 'server_error' } });
-    else { try { res.end(); } catch {} }
+    console.error('[Mirox] chat handler error:', e);
+    if (!res.headersSent) {
+      res.status(500).json({ error: { message: 'Server error: ' + e.message, type: 'server_error' } });
+    } else {
+      try { res.end(); } catch {}
+    }
   }
 });
 
-/* ---------- Image generation ---------- */
+/* ---------- Images ---------- */
 app.post('/v1/images/generations', async (req, res) => {
   try {
     if (!HF_API_KEY) return res.status(503).json({ error: { message: 'Image service not configured.' } });
@@ -716,7 +798,9 @@ app.post('/v1/images/generations', async (req, res) => {
     if (!prompt) return res.status(400).json({ error: { message: 'Prompt required' } });
     const u = await currentUser(req);
     const imageUrl = await lumenalGenerate(prompt, aspect_ratio);
-    if (fdb && u && !u._viaKey) safePush(`logs/image/${u.email}`, { prompt: prompt.slice(0, 300), model: 'Lumenal 1.0', ts: now() });
+    if (fdb && u && !u._viaKey) {
+      safePush(`logs/image/${u.email}`, { prompt: prompt.slice(0, 300), model: 'Lumenal 1.0', ts: now() });
+    }
     res.json({ ok: true, image: imageUrl, model: 'Lumenal 1.0' });
   } catch (e) {
     res.status(502).json({ error: { message: 'Lumenal error: ' + String(e.message).slice(0, 250) } });
@@ -728,36 +812,47 @@ app.post(['/api/keys/generate', '/keys/generate'], async (req, res) => {
   try {
     const u = await currentUser(req);
     if (!u) return res.status(401).json({ ok: false, error: 'Sign in first.' });
-    const plan = PLANS[u.tier];
+    const plan = PLANS[u.tier] || PLANS.free;
     const limit = plan.api_keys_per_month || 2;
     const used = u.keys_this_month || 0;
     if (used >= limit) {
       return res.status(429).json({ ok: false, error: `Monthly key limit reached (${limit}/month for ${plan.label}).`, key_limit_reached: true, limit, used });
     }
+
     const key = 'mxk_' + crypto.randomBytes(24).toString('hex');
     const prefix = key.slice(0, 12);
     const hash = crypto.createHash('sha256').update(key).digest('hex');
     let stored = false;
+
     if (fdb) {
       const keyId = crypto.randomBytes(8).toString('hex');
       stored = await safeSet(`api_keys/${u.email}/${keyId}`, { hash, prefix, created: now(), active: true, plan: u.tier });
+      // Write fast-lookup index
+      await safeSet(`api_key_index/${hash}`, { email: u.email, keyId, prefix, created: now() });
+
       u.keys_this_month = used + 1;
       u.month_key = monthKey();
       await saveUserRecord(u);
       safePush(`logs/account/${u.email}`, { event: 'apikey_created', prefix, ts: now() });
     }
     res.json({ ok: true, key, prefix, stored, used: used + 1, limit });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
 });
 
 app.get(['/api/keys/list', '/keys/list'], async (req, res) => {
   try {
     const u = await currentUser(req);
-    if (!u || !fdb) return res.json({ ok: true, keys: [], used: 0, limit: (PLANS[u?.tier || 'free'].api_keys_per_month || 2) });
+    if (!u || !fdb || u._viaKey) {
+      return res.json({ ok: true, keys: [], used: 0, limit: (PLANS[u?.tier || 'free']?.api_keys_per_month || 2) });
+    }
     const data = (await safeGet(`api_keys/${u.email}`)) || {};
     const keys = Object.entries(data).map(([id, k]) => ({ id, prefix: k.prefix, created: k.created, active: k.active }));
-    res.json({ ok: true, keys, used: u.keys_this_month || 0, limit: PLANS[u.tier].api_keys_per_month || 2 });
-  } catch { res.json({ ok: true, keys: [], used: 0, limit: 2 }); }
+    res.json({ ok: true, keys, used: u.keys_this_month || 0, limit: PLANS[u.tier]?.api_keys_per_month || 2 });
+  } catch {
+    res.json({ ok: true, keys: [], used: 0, limit: 2 });
+  }
 });
 
 /* ---------- Admin ---------- */
@@ -769,12 +864,16 @@ function adminSession(req) {
   if (s.exp < Date.now()) return null;
   return s;
 }
+
 app.post('/api/admin/auth', (req, res) => {
   const { password } = req.body || {};
-  if (!password || password !== ADMIN_PASSWORD) return res.status(401).json({ ok: false, error: 'Invalid password' });
+  if (!password || password !== ADMIN_PASSWORD) {
+    return res.status(401).json({ ok: false, error: 'Invalid password' });
+  }
   const token = signSession({ admin: true, exp: Date.now() + 12 * 60 * 60 * 1000 });
   res.json({ ok: true, token });
 });
+
 app.post('/api/admin/set-tier', async (req, res) => {
   try {
     if (!adminSession(req)) return res.status(401).json({ ok: false, error: 'Unauthorized' });
@@ -784,16 +883,23 @@ app.post('/api/admin/set-tier', async (req, res) => {
     await safeUpdate(`users/${email}`, { tier, tier_updated: now() });
     safePush(`logs/account/${email}`, { event: 'tier_change', tier, ts: now() });
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
 });
+
 app.get('/api/admin/stats', async (req, res) => {
   try {
     if (!adminSession(req)) return res.status(401).json({ ok: false, error: 'Unauthorized' });
     if (!fdb) return res.json({ ok: true, users: 0, chats: 0, images: 0, events: 0, users_data: {}, chats_data: [], images_data: [], events_data: [] });
+
     const [usersSnap, chatsSnap, imgSnap, evSnap] = await Promise.all([
-      fdb.ref('users').once('value'), fdb.ref('logs/chat').once('value'),
-      fdb.ref('logs/image').once('value'), fdb.ref('logs/user').once('value'),
+      fdb.ref('users').once('value'),
+      fdb.ref('logs/chat').once('value'),
+      fdb.ref('logs/image').once('value'),
+      fdb.ref('logs/user').once('value'),
     ]);
+
     const flatten = (obj) => {
       const out = [];
       Object.entries(obj || {}).forEach(([email, list]) => {
@@ -803,6 +909,7 @@ app.get('/api/admin/stats', async (req, res) => {
       out.sort((a, b) => (b.ts || 0) - (a.ts || 0));
       return out.slice(0, 100);
     };
+
     res.json({
       ok: true,
       users: Object.keys(usersSnap.val() || {}).length,
@@ -814,14 +921,20 @@ app.get('/api/admin/stats', async (req, res) => {
       images_data: flatten(imgSnap.val()),
       events_data: flatten(evSnap.val()),
     });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
 });
 
 /* ---------- 404 / Error ---------- */
-app.use((req, res) => res.status(404).json({ error: { message: 'Not found: ' + req.path, type: 'invalid_request_error' } }));
+app.use((req, res) => {
+  res.status(404).json({ error: { message: 'Not found: ' + req.path, type: 'invalid_request_error' } });
+});
 app.use((err, req, res, next) => {
-  console.error('Unhandled:', err);
-  if (!res.headersSent) res.status(500).json({ error: { message: err.message || 'Internal error', type: 'server_error' } });
+  console.error('[Mirox] unhandled:', err);
+  if (!res.headersSent) {
+    res.status(500).json({ error: { message: err.message || 'Internal error', type: 'server_error' } });
+  }
 });
 
 module.exports = app;
