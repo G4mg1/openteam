@@ -1,5 +1,6 @@
 /* ============================================================
-   MiroxAI — Frontend Script v22
+   MiroxAI — Frontend Script v25
+   Fixed: HF endpoints, Lumenal image model, send button
    ============================================================ */
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
@@ -36,13 +37,13 @@ let synth = window.speechSynthesis;
 let callActive = false, callMuted = false;
 let activeStreamController = null;
 
-const LS_KEY = 'miroxai_conversations_v10';
+const LS_KEY = 'miroxai_conversations_v11';
 const TOKEN_KEY = 'mirox_token';
-const USER_SETTINGS_KEY = 'miroxai_user_settings_v10';
+const USER_SETTINGS_KEY = 'miroxai_user_settings_v11';
 const DEVICE_ID_KEY = 'mirox_device_id';
-const APPEARANCE_KEY = 'miroxai_appearance_v10';
-const BG_KEY = 'miroxai_bg_v10';
-const MCP_KEY = 'miroxai_mcp_v10';
+const APPEARANCE_KEY = 'miroxai_appearance_v11';
+const BG_KEY = 'miroxai_bg_v11';
+const MCP_KEY = 'miroxai_mcp_v11';
 
 function killLoader() {
   const l = document.getElementById('loadingScreen');
@@ -82,12 +83,10 @@ function closeModal(id) { document.getElementById(id)?.classList.remove('open');
 function openSidebar() { $('#sidebar')?.classList.add('open'); $('#sidebarScrim')?.classList.add('open'); }
 function closeSidebar() { $('#sidebar')?.classList.remove('open'); $('#sidebarScrim')?.classList.remove('open'); }
 
-/* Settings */
 let userSettings = { soundOn: true, notifOn: true, highlightOn: true, lineNumbers: false, language: 'en-US', voiceRate: 1 };
 function loadUserSettings() { try { userSettings = { ...userSettings, ...JSON.parse(localStorage.getItem(USER_SETTINGS_KEY) || '{}') }; } catch {} }
 function saveUserSettings() { try { localStorage.setItem(USER_SETTINGS_KEY, JSON.stringify(userSettings)); } catch {} }
 
-/* Appearance */
 function loadAppearance() {
   let prefs = {};
   try { prefs = JSON.parse(localStorage.getItem(APPEARANCE_KEY) || '{}'); } catch {}
@@ -108,7 +107,6 @@ function applyAppearance(prefs) {
   $$('[data-corner]').forEach(b => b.classList.toggle('active', b.dataset.corner === corner));
 }
 
-/* Background */
 function loadBgPrefs() { try { bgState = { ...bgState, ...JSON.parse(localStorage.getItem(BG_KEY) || '{}') }; } catch {}; applyBackground(); }
 function applyBackground() {
   if (bgState.url) {
@@ -125,7 +123,6 @@ function applyBackground() {
 }
 function saveBgPrefs() { try { localStorage.setItem(BG_KEY, JSON.stringify(bgState)); } catch {} }
 
-/* MCP */
 function loadMcp() {
   let servers = [];
   try { servers = JSON.parse(localStorage.getItem(MCP_KEY) || '[]'); } catch {}
@@ -148,7 +145,6 @@ function renderMcp(servers) {
     </div>`).join('');
 }
 
-/* Markdown */
 function renderMarkdown(text) {
   if (!text) return '';
   const src = String(text);
@@ -247,7 +243,6 @@ function wireCodeButtons(scope) {
   });
 }
 
-/* Conversations */
 function currentConvo() { return __conversations.find(c => c.id === currentConversationId) || null; }
 function saveChatsToLS() {
   try { localStorage.setItem(LS_KEY, JSON.stringify(__conversations)); } catch {}
@@ -316,10 +311,7 @@ function renderHistory() {
       <button class="history-delete icon-btn"><i class="ri-delete-bin-line"></i></button>
     </li>`).join('');
 }
-function scrollToBottom() {
-  const c = $('#chatMessages');
-  if (c) c.scrollTop = c.scrollHeight;
-}
+function scrollToBottom() { const c = $('#chatMessages'); if (c) c.scrollTop = c.scrollHeight; }
 function addMessageToDOM(role, content, ts, animate = true) {
   const container = $('#chatMessages');
   if (!container) return null;
@@ -517,7 +509,6 @@ function stopStreaming() {
   updateSendButtonState();
 }
 
-/* Files */
 function handleFiles(files) {
   if (!files?.length) return;
   const arr = Array.from(files);
@@ -553,11 +544,7 @@ function updatePreview() {
     : `<div class="attach-chip"><i class="ri-file-line"></i>${escapeHtml(f.name)}</div>`).join('');
 }
 
-/* Model picker */
-function getModelsList() {
-  if (__config?.models?.length) return __config.models;
-  return FALLBACK_MODELS;
-}
+function getModelsList() { if (__config?.models?.length) return __config.models; return FALLBACK_MODELS; }
 function renderModelPicker() {
   const menu = $('#modelPickerMenu');
   if (!menu) return;
@@ -569,11 +556,7 @@ function renderModelPicker() {
       <span class="model-option-tag">${escapeHtml(m.tagline || '')}</span>
     </div>`).join('');
   menu.querySelectorAll('.model-option').forEach(opt => {
-    opt.onclick = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      selectModel(opt.dataset.modelId);
-    };
+    opt.onclick = (e) => { e.preventDefault(); e.stopPropagation(); selectModel(opt.dataset.modelId); };
   });
   const current = models.find(m => m.id === currentId) || models[0];
   if (current && $('#currentModelLabel')) $('#currentModelLabel').textContent = current.label;
@@ -599,26 +582,15 @@ function wireModelPicker() {
     if (isOpen) closeModelPicker();
     else openModelPicker();
   });
-  document.addEventListener('pointerdown', (e) => {
-    if (!e.target.closest('#modelPicker')) closeModelPicker();
-  }, true);
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeModelPicker();
-  });
+  document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#modelPicker')) closeModelPicker(); }, true);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModelPicker(); });
 }
 
-/* Send button + Enter key */
 function wireSendButton() {
   const btn = $('#sendBtn');
   const inp = $('#messageInput');
   if (!btn || !inp) return;
-
-  btn.addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    handleSend();
-  });
-
+  btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); handleSend(); });
   inp.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
@@ -627,19 +599,15 @@ function wireSendButton() {
       return false;
     }
   });
-
   inp.addEventListener('input', () => {
     updateSendButtonState();
     inp.style.height = 'auto';
     inp.style.height = Math.min(inp.scrollHeight, 180) + 'px';
   });
-
   inp.addEventListener('paste', () => setTimeout(updateSendButtonState, 10));
-
   updateSendButtonState();
 }
 
-/* Auth */
 async function doLogin() {
   const name = $('#loginName')?.value.trim();
   const email = $('#loginEmail')?.value.trim().toLowerCase();
@@ -693,23 +661,19 @@ async function loadUser() {
   }
 }
 
-/* Config */
 async function loadConfig() {
   try {
     const res = await fetch('/api/config', { cache: 'no-store' });
     const data = await res.json();
     if (data?.models?.length) __config = data;
     else __config = { models: FALLBACK_MODELS };
-  } catch {
-    __config = { models: FALLBACK_MODELS };
-  }
+  } catch { __config = { models: FALLBACK_MODELS }; }
   const models = getModelsList();
   __model = models[0].id;
   renderModelPicker();
   if ($('#currentModelLabel')) $('#currentModelLabel').textContent = models[0].label;
 }
 
-/* Plans */
 async function loadPlans() {
   const grid = $('#plansGrid');
   if (!grid) return;
@@ -749,13 +713,12 @@ async function genKey() {
   finally { if (btn) { btn.disabled = false; btn.textContent = 'Generate key'; } }
 }
 
-/* Image */
 async function genImage() {
   const prompt = $('#imagePrompt')?.value.trim();
   if (!prompt) return alert('Please describe the image.');
   const btn = $('#generateImageBtn'), result = $('#imageResult');
   if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line"></i> Generating…'; }
-  if (result) result.innerHTML = '<div style="text-align:center;padding:20px;"><div class="bubble thinking" style="display:inline-flex;background:var(--panel);border:1px solid var(--border);padding:12px 16px;border-radius:16px;"><span></span><span></span><span></span></div><p style="margin-top:12px;font-size:12px;color:var(--text-faint);">Generating with FLUX.1-schnell…</p></div>';
+  if (result) result.innerHTML = '<div style="text-align:center;padding:20px;"><div class="bubble thinking" style="display:inline-flex;background:var(--panel);border:1px solid var(--border);padding:12px 16px;border-radius:16px;"><span></span><span></span><span></span></div><p style="margin-top:12px;font-size:12px;color:var(--text-faint);">Lumenal 1.0 is generating…</p></div>';
   try {
     const res = await fetch('/v1/images/generations', {
       method: 'POST',
@@ -765,7 +728,7 @@ async function genImage() {
     const data = await res.json().catch(() => ({}));
     if (res.ok && data.ok && data.image) {
       if (result) result.innerHTML = `<img src="${data.image}" alt="${escapeHtml(prompt)}" loading="lazy">`;
-      if (__user) pushToFirebase(`logs/image/${__user.email}`, { prompt: prompt.slice(0, 300), model: 'FLUX.1-schnell', ts: Date.now() });
+      if (__user) pushToFirebase(`logs/image/${__user.email}`, { prompt: prompt.slice(0, 300), model: 'Lumenal 1.0', ts: Date.now() });
     } else {
       const errMsg = data.error || `HTTP ${res.status}`;
       if (result) result.innerHTML = `<div style="padding:16px;border-radius:12px;background:rgba(220,38,38,0.08);border:1px solid rgba(220,38,38,0.2);"><p style="color:#dc2626;font-size:13px;margin:0;"><strong>Failed:</strong> ${escapeHtml(errMsg)}</p></div>`;
@@ -777,7 +740,6 @@ async function genImage() {
   }
 }
 
-/* Voice */
 function startMic() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return alert('Speech recognition not supported.');
@@ -815,7 +777,6 @@ function endCall() { callActive = false; try { callRecognition?.stop(); } catch 
 function toggleMute() { callMuted = !callMuted; const b = $('#callMuteBtn'); if (b) b.innerHTML = callMuted ? '<i class="ri-mic-off-line"></i>' : '<i class="ri-mic-line"></i>'; }
 async function requestMic() { try { await navigator.mediaDevices.getUserMedia({ audio: true }); alert('Mic granted.'); } catch { alert('Denied.'); } }
 
-/* Memory / Persona */
 async function loadMemory() {
   const list = $('#memoryList'); if (!list || !__user) return;
   const res = await authJson('/api/memory', {}, null);
@@ -834,7 +795,6 @@ async function loadPersona() {
 }
 async function savePersona() { await authJson('/api/persona', { method: 'POST', body: JSON.stringify({ persona: $('#personaInput')?.value.trim() || '' }) }); }
 
-/* Support */
 async function submitReport() {
   const category = $('#supportCategory')?.value;
   const subject = $('#supportSubject')?.value.trim();
@@ -845,7 +805,6 @@ async function submitReport() {
   else alert(res?.error || 'Failed.');
 }
 
-/* Direct button wiring */
 function wireToolButtons() {
   $('#talkModeBtn')?.addEventListener('click', startCall);
   $('#imageModeBtn')?.addEventListener('click', () => openModal('imageModal'));
@@ -909,16 +868,13 @@ function wireToolButtons() {
   $('#userChip')?.addEventListener('click', () => { if (!__user) openModal('loginModal'); });
 }
 
-/* Delegated clicks */
 document.addEventListener('click', function(e) {
   const t = e.target;
   const closest = s => t.closest(s);
-
   const closer = closest('[data-close]');
   if (closer) { closeModal(closer.dataset.close); return; }
   if (t.classList.contains('modal-overlay')) { t.classList.remove('open'); return; }
   if (t.classList.contains('lightbox')) { t.classList.remove('open'); return; }
-
   const tab = closest('.settings-tab');
   if (tab) {
     document.querySelectorAll('.settings-tab').forEach(x => x.classList.remove('active'));
@@ -928,11 +884,9 @@ document.addEventListener('click', function(e) {
     if (tab.dataset.tab === 'mcp') loadMcp();
     return;
   }
-
   const mb = closest('[data-mode]'); if (mb && mb.closest('#modeOptions')) { applyAppearance({ mode: mb.dataset.mode }); return; }
   const sw = closest('.swatch'); if (sw?.dataset.theme) { applyAppearance({ theme: sw.dataset.theme }); return; }
   const cb = closest('[data-corner]'); if (cb && cb.closest('#cornerOptions')) { applyAppearance({ corner: cb.dataset.corner }); return; }
-
   const tg = closest('[data-toggle]');
   if (tg) {
     const k = tg.dataset.toggle;
@@ -942,7 +896,6 @@ document.addEventListener('click', function(e) {
     saveUserSettings();
     return;
   }
-
   const mt = closest('.mcp-toggle');
   if (mt) {
     let servers = [];
@@ -959,7 +912,6 @@ document.addEventListener('click', function(e) {
     saveMcp(servers);
     return;
   }
-
   const hist = closest('.history-item');
   if (hist) {
     if (t.closest('.history-delete')) {
@@ -1000,26 +952,21 @@ document.addEventListener('change', function(e) {
   if (e.target?.id === 'langSelect') { userSettings.language = e.target.value; saveUserSettings(); }
 });
 
-/* INIT */
 async function init() {
   loadUserSettings();
   loadAppearance();
   loadBgPrefs();
-
   wireModelPicker();
   wireSendButton();
   wireToolButtons();
   renderModelPicker();
-
   await loadConfig();
   await loadUser();
-
   loadChatsFromLS();
   renderHistory();
   bindSuggestionClicks();
   updateUserUI();
   loadMcp();
-
   document.addEventListener('keydown', e => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
       e.preventDefault();
