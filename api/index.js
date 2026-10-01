@@ -1,14 +1,15 @@
 /* ============================================================
-   MiroxAI Backend v46
-   FIXED: "malformed_stream" / "malformed packet" on code gen
-   - Code-point-safe chunking (no broken UTF-8)
-   - Robust upstream SSE parser (handles \r\n, partial JSON)
-   - First frame = OpenAI role delta (proper spec)
-   - Global 55s safety timer ensures [DONE] always sent
-   - Heartbeat as event frame (not comment) for strict parsers
-   - Padding as valid data frame (not comment)
-   - All providers: HF / PL / AR / searchque
+   MiroxAI Backend v47
+   FIXED: FUNCTION_INVOCATION_FAILED
+   - No async IIFE — stream is awaited inline (Vercel-safe)
+   - 45s global deadline across ALL provider attempts
+   - Global unhandledRejection / uncaughtException guards
+   - Every res.write wrapped in try/catch
+   - Removed post-flush setHeader calls
    ============================================================ */
+
+process.on('unhandledRejection', (r) => { console.error('[Mirox] unhandledRejection:', r); });
+process.on('uncaughtException', (e) => { console.error('[Mirox] uncaughtException:', e && e.message); });
 
 let express, crypto, firebaseAdmin;
 try { express = require('express'); } catch (e) {}
@@ -30,10 +31,11 @@ const AR_KEY = (process.env.AR_KEY || '').trim();
 const SECRET = process.env.SECRET_KEY || 'mirox-fallback-secret';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '2010';
 
-const HF_TIMEOUT_MS = 25000;
-const PL_TIMEOUT_MS = 30000;
-const AR_TIMEOUT_MS = 30000;
-const STREAM_SAFETY_MS = 55000; // Vercel hobby caps at 60s
+const HF_TIMEOUT_MS = 22000;
+const PL_TIMEOUT_MS = 22000;
+const AR_TIMEOUT_MS = 22000;
+const TOTAL_DEADLINE_MS = 45000; // hard cap across all provider attempts
+const STREAM_SAFETY_MS = 50000;  // force close before Vercel's 60s cut
 
 const PROVIDERS = { hf: !!HF_API_KEY, pl: !!PL_KEY, ar: !!AR_KEY };
 const HAS_ANY_PROVIDER = PROVIDERS.hf || PROVIDERS.pl || PROVIDERS.ar;
@@ -157,7 +159,6 @@ async function safePush(p, d) {
 /* ---------- Users ---------- */
 async function getUserRecord(email) { return await safeGet(`users/${email}`); }
 async function saveUserRecord(rec) { if (!rec?.email) return false; return await safeUpdate(`users/${rec.email}`, rec); }
-
 async function ensureFreshUser(email) {
   if (!email) return null;
   let rec = await getUserRecord(email);
@@ -172,7 +173,6 @@ async function ensureFreshUser(email) {
   if (dirty) await saveUserRecord(rec);
   return rec;
 }
-
 async function validateApiKey(apiKey) {
   if (!apiKey || !apiKey.startsWith('mxk_')) return null;
   if (!fdb) return { valid: true, email: 'guest@apikey.local', tier: 'free' };
@@ -186,7 +186,6 @@ async function validateApiKey(apiKey) {
     return null;
   } catch { return null; }
 }
-
 async function currentUser(req) {
   const s = getSession(req);
   if (s.apiKey) {
@@ -287,18 +286,20 @@ const AR_IMG_MODELS = ['black-forest-labs/FLUX.1-schnell'];
 async function fetchWithTimeout(url, opts = {}, timeoutMs = HF_TIMEOUT_MS, externalSignal = null) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => { try { ctrl.abort(new Error('timeout')); } catch {} }, timeoutMs);
-  if (externalSignal) externalSignal.addEventListener('abort', () => { try { ctrl.abort(); } catch {} });
+  if (externalSignal) {
+    try { externalSignal.addEventListener('abort', () => { try { ctrl.abort(); } catch {} }); } catch {}
+  }
   try { return await fetch(url, { ...opts, signal: ctrl.signal }); }
   finally { clearTimeout(timer); }
 }
 
-/* ---------- Providers ---------- */
-async function hfChat(modelId, messages, maxTokens, stream, signal) {
+/* ---------- Provider calls ---------- */
+async function hfChat(modelId, messages, maxTokens, stream, signal, timeoutMs) {
   const res = await fetchWithTimeout(HF_CHAT_URL, {
     method: 'POST',
     headers: { Authorization: `Bearer ${HF_API_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: modelId, messages, max_tokens: maxTokens, stream: !!stream, temperature: 0.7 }),
-  }, HF_TIMEOUT_MS, signal);
+  }, timeoutMs, signal);
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     let errMsg = `HF ${res.status}`;
@@ -308,13 +309,13 @@ async function hfChat(modelId, messages, maxTokens, stream, signal) {
   }
   return res;
 }
-async function pollinationsChat(modelId, messages, maxTokens, stream, signal) {
+async function pollinationsChat(modelId, messages, maxTokens, stream, signal, timeoutMs) {
   if (!PL_KEY) throw new Error('PL_KEY not set');
   const res = await fetchWithTimeout(PL_CHAT_URL, {
     method: 'POST',
     headers: { Authorization: `Bearer ${PL_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: modelId, messages, max_tokens: maxTokens, stream: !!stream, temperature: 0.7 }),
-  }, PL_TIMEOUT_MS, signal);
+  }, timeoutMs, signal);
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     let errMsg = `PL ${res.status}`;
@@ -339,13 +340,13 @@ function toAiRouteFormat(messages) {
   if (history.length && history[history.length - 1].role === 'user') history.pop();
   return { prompt: systemContent ? `${systemContent}\n\n---\n\n${userPrompt}` : userPrompt, history };
 }
-async function aiRouteChat(modelId, messages, maxTokens, stream, signal) {
+async function aiRouteChat(modelId, messages, maxTokens, stream, signal, timeoutMs) {
   const { prompt, history } = toAiRouteFormat(messages);
   const headers = { 'Content-Type': 'application/json' };
   if (AR_KEY) headers.Authorization = `Bearer ${AR_KEY}`;
-  const body = { model: modelId, prompt, timeout_ms: AR_TIMEOUT_MS };
+  const body = { model: modelId, prompt, timeout_ms: timeoutMs };
   if (history && history.length) body.history = history.slice(-40);
-  const res = await fetchWithTimeout(AR_CHAT_URL, { method: 'POST', headers, body: JSON.stringify(body) }, AR_TIMEOUT_MS, signal);
+  const res = await fetchWithTimeout(AR_CHAT_URL, { method: 'POST', headers, body: JSON.stringify(body) }, timeoutMs, signal);
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     let errMsg = `AR ${res.status}`;
@@ -356,42 +357,51 @@ async function aiRouteChat(modelId, messages, maxTokens, stream, signal) {
   return res;
 }
 
-async function miroxChatChain(messages, cfg, stream, signal) {
+/* Deadline-aware chain */
+async function miroxChatChain(messages, cfg, stream, signal, deadline) {
   const errors = [];
-  if (PROVIDERS.hf) {
+  const timeLeft = () => deadline - Date.now();
+  const perAttempt = () => Math.max(3000, Math.min(HF_TIMEOUT_MS, timeLeft() - 1500));
+
+  if (PROVIDERS.hf && timeLeft() > 3000) {
     for (const modelId of HF_CHAT_MODELS) {
       if (signal?.aborted) throw new Error('aborted');
+      if (timeLeft() < 3000) { errors.push('deadline-hf'); break; }
       try {
-        const res = await hfChat(modelId, messages, cfg.tokens, stream, signal);
+        const res = await hfChat(modelId, messages, cfg.tokens, stream, signal, perAttempt());
         console.log(`[Mirox] ✅ hf:${modelId}`);
         return { res, provider: 'hf', model: modelId, nativeStream: true };
       } catch (e) { if (e.name === 'AbortError') throw e; errors.push(`hf:${modelId}:${e.message}`); }
     }
   }
-  if (PROVIDERS.pl) {
+  if (PROVIDERS.pl && timeLeft() > 3000) {
     for (const modelId of PL_CHAT_MODELS) {
       if (signal?.aborted) throw new Error('aborted');
+      if (timeLeft() < 3000) { errors.push('deadline-pl'); break; }
       try {
-        const res = await pollinationsChat(modelId, messages, cfg.tokens, stream, signal);
+        const res = await pollinationsChat(modelId, messages, cfg.tokens, stream, signal, perAttempt());
         console.log(`[Mirox] ✅ pl:${modelId}`);
         return { res, provider: 'pl', model: modelId, nativeStream: true };
       } catch (e) { if (e.name === 'AbortError') throw e; errors.push(`pl:${modelId}:${e.message}`); }
     }
   }
-  if (PROVIDERS.ar) {
+  if (PROVIDERS.ar && timeLeft() > 3000) {
     for (const modelId of AR_CHAT_MODELS) {
       if (signal?.aborted) throw new Error('aborted');
+      if (timeLeft() < 3000) { errors.push('deadline-ar'); break; }
       try {
-        const res = await aiRouteChat(modelId, messages, cfg.tokens, false, signal);
+        const res = await aiRouteChat(modelId, messages, cfg.tokens, false, signal, perAttempt());
         console.log(`[Mirox] ✅ ar:${modelId}`);
         return { res, provider: 'ar', model: modelId, nativeStream: false };
       } catch (e) { if (e.name === 'AbortError') throw e; errors.push(`ar:${modelId}:${e.message}`); }
     }
-    if (signal?.aborted) throw new Error('aborted');
-    try {
-      const res = await aiRouteChat(AR_SEARCH_MODEL, messages, cfg.tokens, false, signal);
-      return { res, provider: 'ar-search', model: AR_SEARCH_MODEL, nativeStream: false };
-    } catch (e) { if (e.name === 'AbortError') throw e; errors.push(`ar:searchque:${e.message}`); }
+    if (timeLeft() > 3000 && !signal?.aborted) {
+      try {
+        const res = await aiRouteChat(AR_SEARCH_MODEL, messages, cfg.tokens, false, signal, perAttempt());
+        console.log(`[Mirox] ✅ ar:${AR_SEARCH_MODEL}`);
+        return { res, provider: 'ar-search', model: AR_SEARCH_MODEL, nativeStream: false };
+      } catch (e) { if (e.name === 'AbortError') throw e; errors.push(`ar:searchque:${e.message}`); }
+    }
   }
   throw new Error('All providers failed: ' + errors.slice(-4).join(' | ').slice(0, 400));
 }
@@ -446,14 +456,19 @@ async function lumenalGenerate(prompt, aspectRatio = '1:1') {
   const dims = { '1:1': { w: 1024, h: 1024 }, '16:9': { w: 1344, h: 768 }, '9:16': { w: 768, h: 1344 }, '4:3': { w: 1152, h: 864 } };
   const { w, h } = dims[aspectRatio] || dims['1:1'];
   const errors = [];
+  const deadline = Date.now() + 45000;
+  const timeLeft = () => deadline - Date.now();
+  const per = () => Math.max(4000, Math.min(20000, timeLeft() - 1500));
+
   if (PROVIDERS.hf) {
     for (const modelId of HF_IMG_MODELS) {
+      if (timeLeft() < 3000) break;
       try {
         const res = await fetchWithTimeout(`${HF_IMG_BASE}/${modelId}`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${HF_API_KEY}`, 'Content-Type': 'application/json', 'Accept': 'image/png', 'x-wait-for-model': 'true' },
           body: JSON.stringify({ inputs: prompt, parameters: { width: w, height: h } }),
-        }, 20000);
+        }, per());
         if (!res.ok) { errors.push(`hf:${modelId}:${res.status}`); continue; }
         const ct = res.headers.get('content-type') || '';
         if (ct.includes('image/')) {
@@ -470,9 +485,10 @@ async function lumenalGenerate(prompt, aspectRatio = '1:1') {
   }
   if (PROVIDERS.pl) {
     for (const modelId of PL_IMG_MODELS) {
+      if (timeLeft() < 3000) break;
       try {
         const url = `${PL_IMG_BASE}/${encodeURIComponent(prompt)}?model=${modelId}&width=${w}&height=${h}&nologo=true&safe=false`;
-        const res = await fetchWithTimeout(url, { method: 'GET', headers: { Authorization: `Bearer ${PL_KEY}`, 'Accept': 'image/png' } }, PL_TIMEOUT_MS);
+        const res = await fetchWithTimeout(url, { method: 'GET', headers: { Authorization: `Bearer ${PL_KEY}`, 'Accept': 'image/png' } }, per());
         if (!res.ok) { errors.push(`pl:${modelId}:${res.status}`); continue; }
         const ct = res.headers.get('content-type') || '';
         if (ct.includes('image/')) {
@@ -486,12 +502,13 @@ async function lumenalGenerate(prompt, aspectRatio = '1:1') {
   }
   if (PROVIDERS.ar) {
     for (const modelId of AR_IMG_MODELS) {
+      if (timeLeft() < 3000) break;
       try {
         const res = await fetchWithTimeout(AR_IMG_URL, {
           method: 'POST',
           headers: { Authorization: `Bearer ${AR_KEY}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ model: modelId, prompt }),
-        }, AR_TIMEOUT_MS);
+        }, per());
         if (!res.ok) { errors.push(`ar:${modelId}:${res.status}`); continue; }
         const data = await res.json().catch(() => ({}));
         if (data.image && typeof data.image === 'string') return data.image;
@@ -520,7 +537,7 @@ app.use((req, res, next) => {
 
 /* ---------- Health / debug ---------- */
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
-  res.json({ ok: true, app: 'MiroxAI', version: 'v46', providers: PROVIDERS, firebase: { connected: !!fdb, error: firebaseError }, ready: HAS_ANY_PROVIDER, time: now() });
+  res.json({ ok: true, app: 'MiroxAI', version: 'v47', providers: PROVIDERS, firebase: { connected: !!fdb, error: firebaseError }, ready: HAS_ANY_PROVIDER, time: now() });
 });
 app.get('/api/debug/firebase', async (req, res) => {
   const out = { configured: !!fdb, error: firebaseError, write: null, read: null };
@@ -551,7 +568,7 @@ app.get(['/api/config', '/config'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   let u = null; try { u = await currentUser(req); } catch {}
   const modelsArr = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tagline: m.tagline, tier: m.tier, default: !!m.default }));
-  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v46' }, models: modelsArr, default_model: modelsArr[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: HAS_ANY_PROVIDER, providers: PROVIDERS, api_models: API_ALLOWED_MODELS });
+  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v47' }, models: modelsArr, default_model: modelsArr[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: HAS_ANY_PROVIDER, providers: PROVIDERS, api_models: API_ALLOWED_MODELS });
 });
 
 /* ---------- Auth ---------- */
@@ -593,142 +610,108 @@ app.get(['/api/subscription/plans', '/subscription/plans'], (req, res) => {
 });
 
 /* ============================================================
-   SSE HELPERS — fully OpenAI-compatible + code-safe
+   SSE HELPERS
    ============================================================ */
 function sseInit(res) {
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-store, no-transform');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
-  res.setHeader('Content-Encoding', 'identity'); // disable gzip buffering
-  if (res.flushHeaders) res.flushHeaders();
-  if (typeof res.socket?.setNoDelay === 'function') { try { res.socket.setNoDelay(true); } catch {} }
+  if (res.flushHeaders) { try { res.flushHeaders(); } catch {} }
+  try { if (res.socket && typeof res.socket.setNoDelay === 'function') res.socket.setNoDelay(true); } catch {}
 }
 
-function sseWrite(res, obj) {
-  /* JSON.stringify handles ALL escaping — newlines, quotes, backslashes,
-     backticks, control chars, surrogate pairs. The frame is always valid. */
+function safeWrite(res, chunk) {
   try {
-    const json = JSON.stringify(obj);
-    res.write('data: ' + json + '\n\n');
+    if (res.writableEnded || res.destroyed) return false;
+    res.write(chunk);
     if (typeof res.flush === 'function') { try { res.flush(); } catch {} }
-  } catch (e) {
-    console.warn('[Mirox] sseWrite fail:', e.message);
-  }
+    return true;
+  } catch (e) { return false; }
 }
 
+function sseData(res, obj) {
+  const json = JSON.stringify(obj);
+  return safeWrite(res, 'data: ' + json + '\n\n');
+}
 function sseDone(res) {
-  try {
-    res.write('data: [DONE]\n\n');
-    if (typeof res.flush === 'function') { try { res.flush(); } catch {} }
-  } catch {}
+  return safeWrite(res, 'data: [DONE]\n\n');
 }
-
 function sseHeartbeat(res) {
-  /* Valid SSE event frame — ignored by strict OpenAI clients, accepted by all spec parsers */
-  try {
-    res.write('event: heartbeat\ndata: {}\n\n');
-    if (typeof res.flush === 'function') { try { res.flush(); } catch {} }
-  } catch {}
+  return safeWrite(res, 'event: heartbeat\ndata: {}\n\n');
 }
 
 function oaiChunk(id, model, delta, finishReason) {
-  /* OpenAI-compatible chunk + backwards-compat .d / .done for our own frontend */
   const chunk = {
-    id,
-    object: 'chat.completion.chunk',
-    created: now(),
-    model,
+    id, object: 'chat.completion.chunk', created: now(), model,
     system_fingerprint: 'fp_mirox',
-    choices: [
-      {
-        index: 0,
-        delta: delta || {},
-        logprobs: null,
-        finish_reason: finishReason ?? null,
-      },
-    ],
+    choices: [{ index: 0, delta: delta || {}, logprobs: null, finish_reason: finishReason ?? null }],
   };
-  if (delta && typeof delta.content === 'string' && delta.content.length > 0) {
-    chunk.d = delta.content;         // our frontend reads .d
-  }
-  if (finishReason) chunk.done = true; // our frontend reads .done
+  if (delta && typeof delta.content === 'string' && delta.content.length > 0) chunk.d = delta.content;
+  if (finishReason) chunk.done = true;
   return chunk;
 }
 
-/* ============================================================
-   UPSTREAM SSE PARSER — handles \r\n, partial JSON, multi-line data
-   ============================================================ */
-async function* readUpstreamSSE(stream, signal) {
+/* Upstream SSE line reader */
+async function readUpstreamLines(stream, signal) {
+  const out = [];
+  if (!stream || typeof stream.getReader !== 'function') return out;
   const reader = stream.getReader();
   const dec = new TextDecoder('utf-8', { fatal: false });
   let buf = '';
-
-  const flushBuffer = () => {
-    /* Split on \n only — we strip \r ourselves */
-    let idx;
-    while ((idx = buf.indexOf('\n')) !== -1) {
-      let line = buf.slice(0, idx);
-      buf = buf.slice(idx + 1);
-      /* Strip trailing \r (Windows line endings) */
-      if (line.endsWith('\r')) line = line.slice(0, -1);
-      yield line;
-    }
-  };
-
   try {
     while (true) {
       if (signal?.aborted) break;
       const { value, done } = await reader.read();
       if (done) break;
-      /* Streaming decode — handles UTF-8 codepoints split across chunks */
       buf += dec.decode(value, { stream: true });
-      for (const line of flushBuffer()) {
-        yield line;
+      let idx;
+      while ((idx = buf.indexOf('\n')) !== -1) {
+        let line = buf.slice(0, idx);
+        buf = buf.slice(idx + 1);
+        if (line.endsWith('\r')) line = line.slice(0, -1);
+        out.push(line);
       }
     }
-    /* Final decode flush — emit any remaining bytes */
     buf += dec.decode();
-    for (const line of flushBuffer()) {
-      yield line;
+    let idx;
+    while ((idx = buf.indexOf('\n')) !== -1) {
+      let line = buf.slice(0, idx);
+      buf = buf.slice(idx + 1);
+      if (line.endsWith('\r')) line = line.slice(0, -1);
+      out.push(line);
     }
-  } finally {
-    try { reader.releaseLock(); } catch {}
-  }
+    if (buf) out.push(buf);
+  } finally { try { reader.releaseLock(); } catch {} }
+  return out;
 }
 
-function parseSSEJSON(line) {
-  /* Extract JSON payload from a data: line */
-  const trimmed = line.trim();
-  if (!trimmed.startsWith('data:')) return null;
-  const raw = trimmed.slice(5).trim();
-  if (!raw || raw === '[DONE]') return null;
-  try {
-    return JSON.parse(raw);
-  } catch (e) {
-    /* Upstream sent invalid JSON — log and skip, don't crash */
-    console.warn('[Mirox] upstream JSON parse fail:', e.message, 'raw:', raw.slice(0, 120));
-    return null;
-  }
-}
-
-/* Code-point-safe chunker for fake SSE (doesn't split surrogate pairs) */
-function chunkByCodePoints(text, targetChunks) {
-  const cps = Array.from(text);              /* iterate by code points, not UTF-16 units */
+/* Code-point-safe chunker */
+function splitByCodePoints(text, targetChunks) {
+  const cps = Array.from(text);
   const total = cps.length;
-  const size = Math.max(1, Math.ceil(total / targetChunks));
+  const size = Math.max(1, Math.ceil(total / Math.max(1, targetChunks)));
   const out = [];
-  for (let i = 0; i < total; i += size) {
-    out.push(cps.slice(i, i + size).join(''));
-  }
+  for (let i = 0; i < total; i += size) out.push(cps.slice(i, i + size).join(''));
   return out;
 }
 
 /* ============================================================
-   CHAT COMPLETIONS
+   CHAT — no async IIFE, awaited inline
    ============================================================ */
 app.post('/v1/chat/completions', async (req, res) => {
   const t0 = Date.now();
+  const deadline = t0 + TOTAL_DEADLINE_MS;
+
+  let heartbeat = null;
+  let safety = null;
+  const abortCtrl = new AbortController();
+
+  const cleanup = () => {
+    if (heartbeat) { clearInterval(heartbeat); heartbeat = null; }
+    if (safety) { clearTimeout(safety); safety = null; }
+  };
+
   try {
     if (!HAS_ANY_PROVIDER) return res.status(503).json({ error: { message: 'No inference provider configured.', type: 'server_error' } });
 
@@ -778,18 +761,18 @@ app.post('/v1/chat/completions', async (req, res) => {
       fireAndForget(`logs/chat/${u.email}/${Date.now()}`, { model: cfg.label, message: String(message || msgs[msgs.length - 1]?.content || '').slice(0, 1000), ts: now() });
     }
 
-    async function updateUsage() {
+    const updateUsage = async () => {
       if (u && !u._viaKey && u.email) {
         u.daily_used = (u.daily_used || 0) + 1;
         if (requestedModel === 'mirox-eclipse-2.0') u.eclipse_used = (u.eclipse_used || 0) + 1;
-        await saveUserRecord(u);
+        try { await saveUserRecord(u); } catch {}
       }
-    }
+    };
 
     /* ============ NON-STREAM ============ */
     if (!stream) {
       try {
-        const result = await miroxChatChain(msgs, cfg, false);
+        const result = await miroxChatChain(msgs, cfg, false, abortCtrl.signal, deadline);
         const data = await result.res.json();
         const reply = extractReplyText(data);
         await updateUsage();
@@ -811,124 +794,103 @@ app.post('/v1/chat/completions', async (req, res) => {
       }
     }
 
-    /* ============ STREAM ============ */
+    /* ============ STREAM — no early return, awaited inline ============ */
     sseInit(res);
 
     const streamId = 'chatcmpl-' + crypto.randomBytes(8).toString('hex');
 
-    /* 1) FIRST FRAME: role delta — forces CDN flush AND satisfies strict parsers */
-    sseWrite(res, oaiChunk(streamId, cfg.label, { role: 'assistant', content: '' }, null));
+    /* First frame: role delta */
+    sseData(res, oaiChunk(streamId, cfg.label, { role: 'assistant', content: '' }, null));
 
-    /* 2) Padding: send more empty deltas to push past Fastly's ~2 KB buffer */
-    for (let i = 0; i < 25; i++) {
-      try { res.write('event: pad\ndata: {}\n\n'); } catch {}
-    }
+    /* Padding so Vercel's Fastly CDN flushes immediately */
+    for (let i = 0; i < 20; i++) safeWrite(res, 'event: pad\ndata: {}\n\n');
     if (typeof res.flush === 'function') { try { res.flush(); } catch {} }
 
-    /* 3) Rolling heartbeat every 8 s */
-    const heartbeat = setInterval(() => {
-      sseHeartbeat(res);
-    }, 8000);
+    /* Heartbeat */
+    heartbeat = setInterval(() => sseHeartbeat(res), 8000);
 
-    /* 4) Global safety timeout — 55 s (Vercel kills at 60 s) */
-    let streamEnded = false;
-    const safetyTimer = setTimeout(() => {
-      if (streamEnded || res.writableEnded) return;
-      console.warn('[Mirox] safety timeout — forcing stream close');
-      try { sseWrite(res, oaiChunk(streamId, cfg.label, {}, 'stop')); } catch {}
-      try { sseDone(res); } catch {}
+    /* Safety close */
+    safety = setTimeout(() => {
+      if (res.writableEnded || res.destroyed) return;
+      console.warn('[Mirox] safety stream close');
+      sseData(res, oaiChunk(streamId, cfg.label, {}, 'stop'));
+      sseDone(res);
       try { res.end(); } catch {}
-      streamEnded = true;
     }, STREAM_SAFETY_MS);
 
-    const abortCtrl = new AbortController();
+    /* Client closed */
     let clientClosed = false;
-    req.on('close', () => {
-      clientClosed = true;
-      try { abortCtrl.abort(); } catch {}
-      clearInterval(heartbeat);
-      clearTimeout(safetyTimer);
-    });
+    req.on('close', () => { clientClosed = true; try { abortCtrl.abort(); } catch {} });
 
-    /* 5) Run the stream async (response already sent) */
-    (async () => {
-      try {
-        const result = await miroxChatChain(msgs, cfg, true, abortCtrl.signal);
-        try { res.setHeader('X-Mirox-Provider', result.provider); } catch {} // safe (no-op if already sent)
+    /* Run the stream INLINE — do NOT wrap in an async IIFE */
+    try {
+      const result = await miroxChatChain(msgs, cfg, true, abortCtrl.signal, deadline);
 
-        if (result.nativeStream) {
-          /* HF / PL — parse upstream SSE robustly */
-          for await (const line of readUpstreamSSE(result.res.body, abortCtrl.signal)) {
-            if (clientClosed) break;
-            const o = parseSSEJSON(line);
-            if (!o) continue;
-            const delta = o.choices?.[0]?.delta;
-            if (delta && typeof delta.content === 'string' && delta.content.length > 0) {
-              sseWrite(res, oaiChunk(streamId, cfg.label, { content: delta.content }, null));
-            } else if (o.choices?.[0]?.finish_reason) {
-              /* Upstream already declared finish — we'll send ours at the end */
-            }
-          }
-        } else {
-          /* AIroute / searchque — fake-SSE from full JSON, code-point-safe */
-          const data = await result.res.json();
-          const text = extractReplyText(data);
-
-          if (text && text.length) {
-            /* Aim for 30-60 chunks depending on length; code-safe splitting */
-            const targetChunks = Math.min(80, Math.max(30, Math.floor(text.length / 12)));
-            const pieces = chunkByCodePoints(text, targetChunks);
-            for (const piece of pieces) {
-              if (clientClosed) break;
-              if (!piece) continue;
-              sseWrite(res, oaiChunk(streamId, cfg.label, { content: piece }, null));
-              /* Small delay for smooth typing effect */
-              await new Promise(r => setTimeout(r, 6));
-            }
+      if (result.nativeStream) {
+        /* HF / PL — parse upstream SSE */
+        const lines = await readUpstreamLines(result.res.body, abortCtrl.signal);
+        for (const line of lines) {
+          if (clientClosed || res.writableEnded) break;
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data:')) continue;
+          const raw = trimmed.slice(5).trim();
+          if (!raw || raw === '[DONE]') continue;
+          let o;
+          try { o = JSON.parse(raw); } catch { continue; }
+          const delta = o.choices?.[0]?.delta;
+          if (delta && typeof delta.content === 'string' && delta.content.length > 0) {
+            sseData(res, oaiChunk(streamId, cfg.label, { content: delta.content }, null));
           }
         }
-
-        /* 6) Final finish chunk (OpenAI spec requires this) */
-        if (!clientClosed) {
-          sseWrite(res, oaiChunk(streamId, cfg.label, {}, 'stop'));
+      } else {
+        /* AIroute / searchque — fake-SSE */
+        const data = await result.res.json();
+        const text = extractReplyText(data);
+        if (text && text.length) {
+          const targetChunks = Math.min(80, Math.max(30, Math.floor(text.length / 12)));
+          const pieces = splitByCodePoints(text, targetChunks);
+          for (const piece of pieces) {
+            if (clientClosed || res.writableEnded) break;
+            if (!piece) continue;
+            sseData(res, oaiChunk(streamId, cfg.label, { content: piece }, null));
+            await new Promise(r => setTimeout(r, 6));
+          }
         }
-
-        /* 7) Terminator */
-        sseDone(res);
-
-        await updateUsage();
-      } catch (e) {
-        if (e.name !== 'AbortError' && !clientClosed) {
-          console.warn('[Mirox] stream error:', e.message);
-          /* Error frame in OpenAI shape */
-          try {
-            sseWrite(res, {
-              id: streamId,
-              object: 'chat.completion.chunk',
-              created: now(),
-              model: cfg.label,
-              system_fingerprint: 'fp_mirox',
-              choices: [{ index: 0, delta: {}, logprobs: null, finish_reason: 'error' }],
-              error: { message: String(e.message).slice(0, 240), type: 'server_error', code: 'stream_error' },
-              done: true,
-            });
-          } catch {}
-        }
-        /* CRITICAL: always send [DONE] so clients don't report malformed_stream */
-        sseDone(res);
-      } finally {
-        clearInterval(heartbeat);
-        clearTimeout(safetyTimer);
-        streamEnded = true;
-        try { res.end(); } catch {}
       }
-    })();
+
+      /* Final finish + terminator */
+      if (!clientClosed && !res.writableEnded) {
+        sseData(res, oaiChunk(streamId, cfg.label, {}, 'stop'));
+        sseDone(res);
+      }
+      await updateUsage();
+    } catch (e) {
+      if (e.name !== 'AbortError') console.warn('[Mirox] stream error:', e.message);
+      if (!clientClosed && !res.writableEnded) {
+        try {
+          sseData(res, {
+            id: streamId, object: 'chat.completion.chunk', created: now(), model: cfg.label,
+            system_fingerprint: 'fp_mirox',
+            choices: [{ index: 0, delta: {}, logprobs: null, finish_reason: 'error' }],
+            error: { message: String(e.message).slice(0, 240), type: 'server_error', code: 'stream_error' },
+            done: true,
+          });
+        } catch {}
+        sseDone(res);
+      }
+    } finally {
+      cleanup();
+      try { if (!res.writableEnded) res.end(); } catch {}
+    }
 
     return;
   } catch (e) {
-    console.error('[Mirox] chat error:', e);
-    if (!res.headersSent) res.status(500).json({ error: { message: 'Server error: ' + e.message, type: 'server_error' } });
-    else { try { res.end(); } catch {} }
+    console.error('[Mirox] chat handler:', e);
+    cleanup();
+    try {
+      if (!res.headersSent) res.status(500).json({ error: { message: 'Server error: ' + e.message, type: 'server_error' } });
+      else if (!res.writableEnded) res.end();
+    } catch {}
   }
 });
 
@@ -972,9 +934,9 @@ app.post(['/api/keys/generate', '/keys/generate'], async (req, res) => {
     if (!fdb) storeError = 'Firebase not configured.';
     else {
       try {
-        const writePromise = fdb.ref(`api_key_index/${hash}`).set({ email: u.email, keyId, prefix, created });
-        const timeoutPromise = new Promise((_, rej) => setTimeout(() => rej(new Error('index write timed out')), 3000));
-        await Promise.race([writePromise, timeoutPromise]);
+        const wp = fdb.ref(`api_key_index/${hash}`).set({ email: u.email, keyId, prefix, created });
+        const tp = new Promise((_, rej) => setTimeout(() => rej(new Error('index write timed out')), 3000));
+        await Promise.race([wp, tp]);
         stored = true;
       } catch (e) { storeError = 'index: ' + e.message; }
       fireAndForget(`api_keys/${u.email}/${keyId}`, { hash, prefix, created, active: true, plan: u.tier });
