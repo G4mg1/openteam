@@ -89,7 +89,6 @@
       </div>
     </div>
 
-    <!-- FIXED: disclaimer inside composer area, scrolls with page -->
     <div class="composer-wrap">
       <p class="welcome-disclaimer-static">Mirox AI can make mistakes. Made by the OpenSurr team.</p>
 
@@ -118,7 +117,7 @@
     </div>
   </main>
 
-  <!-- Login Modal -->
+  <!-- Login -->
   <div id="loginModal" class="modal-overlay">
     <div class="modal">
       <button class="icon-btn modal-close" type="button" data-close="loginModal" aria-label="Close"><i class="ri-close-line"></i></button>
@@ -132,7 +131,7 @@
     </div>
   </div>
 
-  <!-- Settings Modal (unchanged structure, full in CSS) -->
+  <!-- Settings -->
   <div id="settingsModal" class="modal-overlay">
     <div class="modal modal-wide">
       <button class="icon-btn modal-close" type="button" data-close="settingsModal" aria-label="Close"><i class="ri-close-line"></i></button>
@@ -147,7 +146,8 @@
         <button class="settings-tab" type="button" data-tab="mcp">MCP</button>
       </div>
       <div class="settings-pane active" data-pane="general">
-        <div class="setting-group"><h4>Notifications</h4>
+        <div class="setting-group">
+          <h4>Notifications</h4>
           <div class="setting-row"><span>Sound</span><button class="toggle-btn active" type="button" data-toggle="soundOn">ON</button></div>
           <div class="setting-row"><span>Notifications</span><button class="toggle-btn active" type="button" data-toggle="notifOn">ON</button></div>
         </div>
@@ -172,7 +172,8 @@
         </div></div>
       </div>
       <div class="settings-pane" data-pane="chat">
-        <div class="setting-group"><h4>Code rendering</h4>
+        <div class="setting-group">
+          <h4>Code rendering</h4>
           <div class="setting-row"><span>Syntax highlight</span><button class="toggle-btn active" type="button" data-toggle="highlightOn">ON</button></div>
           <div class="setting-row"><span>Line numbers</span><button class="toggle-btn" type="button" data-toggle="lineNumbers">OFF</button></div>
         </div>
@@ -187,13 +188,15 @@
         <div class="setting-group"><h4>Microphone</h4><button id="requestMicBtn" class="modal-btn" type="button">Grant mic access</button></div>
       </div>
       <div class="settings-pane" data-pane="personal">
-        <div class="setting-group"><h4>Custom character</h4>
+        <div class="setting-group">
+          <h4>Custom character</h4>
           <textarea id="personaInput" class="modal-textarea" rows="3" placeholder="Describe how Mirox should behave…"></textarea>
           <button id="savePersonaBtn" class="modal-btn" type="button">Save</button>
         </div>
       </div>
       <div class="settings-pane" data-pane="memory">
-        <div class="setting-group"><h4>Memory</h4>
+        <div class="setting-group">
+          <h4>Memory</h4>
           <div id="memoryList" class="memory-list"></div>
           <div class="memory-add">
             <input type="text" id="memoryInput" class="modal-input" placeholder="Add a fact…" maxlength="200">
@@ -202,7 +205,8 @@
         </div>
       </div>
       <div class="settings-pane" data-pane="mcp">
-        <div class="setting-group"><h4>MCP Servers</h4>
+        <div class="setting-group">
+          <h4>MCP Servers</h4>
           <p class="setting-desc">Connect Mirox to Model Context Protocol servers.</p>
           <div id="mcpList" class="mcp-list"></div>
           <div class="mcp-add-row">
@@ -215,12 +219,12 @@
     </div>
   </div>
 
-  <!-- Plans Modal -->
+  <!-- Plans -->
   <div id="plansModal" class="modal-overlay">
     <div class="modal modal-wide">
       <button class="icon-btn modal-close" type="button" data-close="plansModal" aria-label="Close"><i class="ri-close-line"></i></button>
       <h2 class="modal-title">Plans</h2>
-      <p class="modal-sub">Free users get 10 Eclipse chats per day, then fall back to Luna.</p>
+      <p class="modal-sub">Free users get 5 Eclipse messages per day. Pro and Ultra require a plan. Eclipse requires Ultimate.</p>
       <div id="plansGrid" class="plans-grid"></div>
       <div class="plans-soon"><i class="ri-time-line"></i> More plans will be added soon in the future.</div>
       <div class="setting-group" style="margin-top:24px;">
@@ -238,7 +242,7 @@
     </div>
   </div>
 
-  <!-- Background Modal -->
+  <!-- Background -->
   <div id="backgroundModal" class="modal-overlay">
     <div class="modal">
       <button class="icon-btn modal-close" type="button" data-close="backgroundModal" aria-label="Close"><i class="ri-close-line"></i></button>
@@ -258,7 +262,7 @@
     </div>
   </div>
 
-  <!-- Image Modal -->
+  <!-- Image -->
   <div id="imageModal" class="modal-overlay">
     <div class="modal">
       <button class="icon-btn modal-close" type="button" data-close="imageModal" aria-label="Close"><i class="ri-close-line"></i></button>
@@ -279,7 +283,7 @@
     </div>
   </div>
 
-  <!-- Support Modal -->
+  <!-- Support -->
   <div id="supportModal" class="modal-overlay">
     <div class="modal">
       <button class="icon-btn modal-close" type="button" data-close="supportModal" aria-label="Close"><i class="ri-close-line"></i></button>
@@ -296,6 +300,7 @@
     </div>
   </div>
 
+  <!-- Call -->
   <div id="callOverlay" class="call-overlay">
     <div class="call-content">
       <div class="call-avatar"><i class="ri-mic-line"></i></div>
