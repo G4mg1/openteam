@@ -10,22 +10,8 @@
   <link href="https://cdn.jsdelivr.net/npm/remixicon@4.9.0/fonts/remixicon.css" rel="stylesheet">
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    :root{
-      --bg:#faf9f5;--panel:#fff;--panel-2:#f5f3ed;--panel-3:#eae6dc;
-      --border:#e5e0d3;--border-strong:#d0cab8;--text:#1a1915;--text-muted:#6b6862;--text-faint:#9a968d;
-      --accent:#c96442;--accent-hover:#ad4f2f;--accent-soft:rgba(201,100,66,.10);
-      --code-bg:#f6f3ea;--code-border:#e4ddcc;--code-header:#efeadd;--code-text:#2a2620;
-      --radius:12px;--radius-lg:16px;--radius-xl:22px;
-      --font:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-      --mono:'JetBrains Mono','SF Mono','Fira Code',Consolas,monospace;
-      --shadow-lg:0 8px 32px rgba(80,60,40,.10),0 20px 60px rgba(80,60,40,.06);
-      --sidebar-w:260px;
-    }
-    :root[data-mode="dark"]{
-      --bg:#1a1915;--panel:#232118;--panel-2:#2a2820;--panel-3:#33302a;
-      --border:#33302a;--border-strong:#4a463b;--text:#f5f2e8;--text-muted:#b0ab9f;--text-faint:#7a756b;
-      --code-bg:#201e19;--code-border:#33302a;--code-header:#292721;--code-text:#ede8da;
-    }
+    :root{--bg:#faf9f5;--panel:#fff;--panel-2:#f5f3ed;--panel-3:#eae6dc;--border:#e5e0d3;--border-strong:#d0cab8;--text:#1a1915;--text-muted:#6b6862;--text-faint:#9a968d;--accent:#c96442;--accent-hover:#ad4f2f;--accent-soft:rgba(201,100,66,.10);--code-bg:#f6f3ea;--code-border:#e4ddcc;--code-header:#efeadd;--code-text:#2a2620;--radius:12px;--radius-lg:16px;--radius-xl:22px;--font:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;--mono:'JetBrains Mono','SF Mono','Fira Code',Consolas,monospace;--shadow-lg:0 8px 32px rgba(80,60,40,.10),0 20px 60px rgba(80,60,40,.06);--sidebar-w:260px}
+    :root[data-mode="dark"]{--bg:#1a1915;--panel:#232118;--panel-2:#2a2820;--panel-3:#33302a;--border:#33302a;--border-strong:#4a463b;--text:#f5f2e8;--text-muted:#b0ab9f;--text-faint:#7a756b;--code-bg:#201e19;--code-border:#33302a;--code-header:#292721;--code-text:#ede8da}
     :root[data-mode="dark"] .theme-aware-logo{filter:invert(1) brightness(1.15)}
     html{scroll-behavior:smooth;scroll-padding-top:24px}
     body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased;min-height:100vh}
@@ -35,10 +21,7 @@
     input,textarea,select{font:inherit;color:inherit}
     img{max-width:100%;display:block}
     .dev-layout{display:flex;min-height:100vh}
-    .dev-sidebar{
-      width:var(--sidebar-w);flex-shrink:0;background:var(--panel);border-right:1px solid var(--border);
-      padding:24px 16px;position:sticky;top:0;height:100vh;overflow-y:auto;display:flex;flex-direction:column;
-    }
+    .dev-sidebar{width:var(--sidebar-w);flex-shrink:0;background:var(--panel);border-right:1px solid var(--border);padding:24px 16px;position:sticky;top:0;height:100vh;overflow-y:auto;display:flex;flex-direction:column}
     .dev-logo{display:flex;align-items:center;gap:10px;margin-bottom:6px;padding:0 8px}
     .dev-logo img{width:32px;height:32px;border-radius:8px}
     .dev-logo-text{display:flex;flex-direction:column;line-height:1.2}
@@ -121,15 +104,7 @@
     td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--text-muted)}
     tr:last-child td{border-bottom:none}
     .mobile-nav-toggle{display:none}
-    @media (max-width:900px){
-      .dev-sidebar{position:fixed;z-index:100;transform:translateX(-100%);transition:transform .25s cubic-bezier(.4,0,.2,1);box-shadow:var(--shadow-lg)}
-      .dev-sidebar.open{transform:translateX(0)}
-      .dev-main{padding:24px 20px 60px}
-      h1{font-size:26px}h2{font-size:19px}
-      .mobile-nav-toggle{display:grid;position:fixed;top:14px;left:14px;z-index:200;width:40px;height:40px;border-radius:10px;background:var(--panel);border:1px solid var(--border);place-items:center;font-size:19px;color:var(--text)}
-      .dev-topbar{padding-left:48px}
-      .field-row{grid-template-columns:1fr}
-    }
+    @media (max-width:900px){.dev-sidebar{position:fixed;z-index:100;transform:translateX(-100%);transition:transform .25s cubic-bezier(.4,0,.2,1);box-shadow:var(--shadow-lg)}.dev-sidebar.open{transform:translateX(0)}.dev-main{padding:24px 20px 60px}h1{font-size:26px}h2{font-size:19px}.mobile-nav-toggle{display:grid;position:fixed;top:14px;left:14px;z-index:200;width:40px;height:40px;border-radius:10px;background:var(--panel);border:1px solid var(--border);place-items:center;font-size:19px;color:var(--text)}.dev-topbar{padding-left:48px}.field-row{grid-template-columns:1fr}}
     @media (min-width:1920px){:root{--sidebar-w:300px}.dev-main{max-width:1200px;padding:56px 72px 96px}}
     @media (min-width:2560px){:root{--sidebar-w:340px;font-size:17px}.dev-main{max-width:1400px}}
     .scrim{display:none;position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.35)}
@@ -139,40 +114,34 @@
 <body>
   <button class="mobile-nav-toggle" id="mobileNavToggle"><i class="ri-menu-line"></i></button>
   <div class="scrim" id="scrim"></div>
-
   <div class="dev-layout">
     <aside class="dev-sidebar" id="devSidebar">
       <div class="dev-logo">
         <img src="/logo.png" alt="MiroxAI" class="theme-aware-logo" onerror="this.style.display='none'">
         <div class="dev-logo-text"><strong>MiroxAI</strong><span>Developer Platform</span></div>
       </div>
-
       <div class="dev-nav-label">Getting Started</div>
       <nav class="dev-nav">
         <a href="#intro" class="active"><i class="ri-book-open-line"></i> Introduction</a>
         <a href="#quickstart"><i class="ri-rocket-line"></i> Quick Start</a>
         <a href="#auth"><i class="ri-key-2-line"></i> Authentication</a>
       </nav>
-
       <div class="dev-nav-label">API Reference</div>
       <nav class="dev-nav">
         <a href="#chat"><i class="ri-chat-3-line"></i> Chat Completions</a>
         <a href="#models"><i class="ri-cpu-line"></i> Models</a>
-        <a href="#images"><i class="ri-image-line"></i> Image Generation</a>
+        <a href="#images"><i class="ri-image-line"></i> Lumenal Images</a>
         <a href="#errors"><i class="ri-error-warning-line"></i> Errors</a>
       </nav>
-
       <div class="dev-nav-label">Tools</div>
       <nav class="dev-nav">
         <a href="#playground"><i class="ri-terminal-box-line"></i> Playground</a>
         <a href="#limits"><i class="ri-speed-up-line"></i> Rate Limits</a>
       </nav>
-
       <div class="dev-sidebar-footer">
         <a href="/"><i class="ri-arrow-left-line"></i> Back to Mirox</a>
       </div>
     </aside>
-
     <main class="dev-main">
       <div class="dev-topbar">
         <div class="dev-topbar-title"><i class="ri-book-2-line"></i> Documentation</div>
@@ -181,7 +150,6 @@
           <a href="/" class="icon-btn"><i class="ri-home-line"></i></a>
         </div>
       </div>
-
       <section id="intro">
         <h1>MiroxAI API</h1>
         <p class="lead">Build intelligent apps with <strong>Luna</strong> and <strong>Gen</strong> — our fast, free AI models. OpenAI-compatible endpoints. Streaming, vision, and image generation included.</p>
@@ -193,12 +161,11 @@
         </div>
         <div class="card-grid">
           <div class="card"><div class="card-icon"><i class="ri-chat-3-line"></i></div><h4>Chat Completions</h4><p>Streaming text with Luna and Gen.</p></div>
-          <div class="card"><div class="card-icon"><i class="ri-image-line"></i></div><h4>Image Generation</h4><p>FLUX.1-schnell via Hugging Face.</p></div>
+          <div class="card"><div class="card-icon"><i class="ri-image-line"></i></div><h4>Lumenal 1.0</h4><p>Strong image generation via FLUX.1-schnell.</p></div>
           <div class="card"><div class="card-icon"><i class="ri-eye-line"></i></div><h4>Vision</h4><p>Send images alongside text prompts.</p></div>
           <div class="card"><div class="card-icon"><i class="ri-shield-check-line"></i></div><h4>Secure</h4><p>API key auth with SHA-256 hashing.</p></div>
         </div>
       </section>
-
       <section id="quickstart">
         <h2>Quick Start</h2>
         <p>Make your first API call in under a minute:</p>
@@ -210,10 +177,9 @@
     "messages": [{"role": "user", "content": "Hello!"}]
   }'<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
       </section>
-
       <section id="auth">
         <h2>Authentication</h2>
-        <p>Include your API key in the <code>Authorization</code> header. Generate keys from <strong>Plans &rarr; API keys</strong> inside the app.</p>
+        <p>Include your API key in the <code>Authorization</code> header. Generate keys from <strong>Plans → API keys</strong> inside the app.</p>
         <pre><code>Authorization: Bearer mxk_live_xxxxxxxxxxxxxxxxxxxxxxxx<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
         <ul>
           <li>Keys are prefixed with <code>mxk_</code> and hashed with SHA-256.</li>
@@ -221,7 +187,6 @@
           <li>Free plan: max 2 keys. Pro: 5. Ultimate: 20.</li>
         </ul>
       </section>
-
       <section id="chat">
         <h2>Chat Completions</h2>
         <div class="endpoint"><span class="method post">POST</span><span>/v1/chat/completions</span></div>
@@ -241,7 +206,6 @@
   "stream": false
 }<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
       </section>
-
       <section id="models">
         <h2>Models</h2>
         <table>
@@ -252,17 +216,15 @@
           </tbody>
         </table>
       </section>
-
       <section id="images">
-        <h2>Image Generation</h2>
+        <h2>Lumenal 1.0 — Image Generation</h2>
         <div class="endpoint"><span class="method post">POST</span><span>/v1/images/generations</span></div>
-        <p>Powered by <strong>FLUX.1-schnell</strong> on Hugging Face.</p>
+        <p>Powered by <strong>FLUX.1-schnell</strong> on Hugging Face. Strong, fast image generation.</p>
         <pre><code>{
   "prompt": "A serene mountain landscape at sunset",
   "aspect_ratio": "16:9"
 }<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
       </section>
-
       <section id="errors">
         <h2>Errors</h2>
         <table>
@@ -276,7 +238,6 @@
           </tbody>
         </table>
       </section>
-
       <section id="playground">
         <h2>API Playground</h2>
         <p>Test the chat completions endpoint. Paste your API key or use your session.</p>
@@ -322,7 +283,6 @@
           </div>
         </div>
       </section>
-
       <section id="limits">
         <h2>Rate Limits</h2>
         <table>
@@ -334,20 +294,16 @@
           </tbody>
         </table>
       </section>
-
       <footer style="margin-top:60px;padding-top:20px;border-top:1px solid var(--border);color:var(--text-faint);font-size:12.5px;text-align:center;">
         Made by OpenSurr · MiroxAI Developer Platform · v1
       </footer>
     </main>
   </div>
-
   <script>
     const $ = s => document.querySelector(s);
     const $$ = s => document.querySelectorAll(s);
-
     const navLinks = $$('.dev-nav a');
     const sections = Array.from(navLinks).map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
-
     navLinks.forEach(a => {
       a.addEventListener('click', e => {
         e.preventDefault();
@@ -357,7 +313,6 @@
         closeMobileNav();
       });
     });
-
     const observer = new IntersectionObserver(entries => {
       entries.forEach(entry => {
         if (entry.isIntersecting) {
@@ -366,13 +321,11 @@
       });
     }, { rootMargin: '-30% 0px -60% 0px' });
     sections.forEach(s => observer.observe(s));
-
     const sidebar = $('#devSidebar');
     const scrim = $('#scrim');
     function closeMobileNav() { sidebar.classList.remove('open'); scrim.classList.remove('open'); }
     $('#mobileNavToggle')?.addEventListener('click', () => { sidebar.classList.toggle('open'); scrim.classList.toggle('open'); });
     scrim?.addEventListener('click', closeMobileNav);
-
     const root = document.documentElement;
     function applyTheme(mode) {
       root.setAttribute('data-mode', mode);
@@ -389,10 +342,7 @@
       } catch {}
       applyTheme(mode);
     })();
-    $('#themeToggle')?.addEventListener('click', () => {
-      applyTheme(root.getAttribute('data-mode') === 'dark' ? 'light' : 'dark');
-    });
-
+    $('#themeToggle')?.addEventListener('click', () => { applyTheme(root.getAttribute('data-mode') === 'dark' ? 'light' : 'dark'); });
     document.querySelectorAll('[data-copy]').forEach(btn => {
       btn.addEventListener('click', async e => {
         e.preventDefault(); e.stopPropagation();
@@ -408,23 +358,19 @@
         } catch {}
       });
     });
-
     const pgApiKey = $('#pgApiKey'), pgModel = $('#pgModel'), pgTemp = $('#pgTemp');
     const pgMessage = $('#pgMessage'), pgStream = $('#pgStream');
     const pgSendBtn = $('#pgSendBtn'), pgResult = $('#pgResult'), pgOutput = $('#pgOutput'), pgStatus = $('#pgStatus');
-
     function setStatus(kind, text) {
       if (kind === 'pending') pgStatus.className = 'status-pill pending', pgStatus.innerHTML = '<span class="dots"><span></span><span></span><span></span></span> ' + (text || 'Streaming');
       else if (kind === 'ok') pgStatus.className = 'status-pill ok', pgStatus.innerHTML = '<i class="ri-check-line"></i> ' + (text || 'OK');
       else if (kind === 'err') pgStatus.className = 'status-pill err', pgStatus.innerHTML = '<i class="ri-close-line"></i> ' + (text || 'Error');
     }
-
     $('#pgResetBtn')?.addEventListener('click', () => {
       pgApiKey.value = ''; pgModel.value = 'mirox-luna-1.2'; pgTemp.value = '0.7';
       pgMessage.value = 'Hello! What can you do?'; pgStream.checked = false;
       pgResult.style.display = 'none'; pgOutput.textContent = '';
     });
-
     $('#pgSendBtn')?.addEventListener('click', async () => {
       const message = pgMessage.value.trim();
       if (!message) return alert('Please enter a message.');
@@ -432,16 +378,13 @@
       const temperature = parseFloat(pgTemp.value) || 0.7;
       const stream = pgStream.checked;
       const apiKey = pgApiKey.value.trim();
-
       const messages = [{ role: 'user', content: message }];
       const headers = { 'Content-Type': 'application/json' };
       if (apiKey) headers.Authorization = 'Bearer ' + apiKey;
-
       pgResult.style.display = 'block';
       pgOutput.textContent = '';
       pgSendBtn.disabled = true;
       setStatus('pending', stream ? 'Streaming' : 'Waiting');
-
       const t0 = performance.now();
       try {
         if (stream) {
