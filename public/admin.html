@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Mirox Admin Console</title>
+  <link rel="icon" href="/logo.png" type="image/png">
   <link href="https://cdn.jsdelivr.net/npm/remixicon@4.9.0/fonts/remixicon.css" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
   <style>
@@ -51,7 +52,8 @@
 
   <div class="admin-wrap" id="adminWrap" style="display:none;">
     <div class="admin-header">
-      <img src="/logo.png" alt="MiroxAI" class="theme-aware-logo" style="width:32px;height:32px;border-radius:8px;">
+      <img src="/logo.png" alt="MiroxAI" class="theme-aware-logo" style="width:32px;height:32px;border-radius:8px;" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';">
+      <div class="logo-fallback logo-fallback-sm" style="display:none;">M</div>
       <h1>Mirox Admin Console</h1>
       <button id="adminLogout" class="admin-btn" style="margin-left:auto;background:transparent;color:var(--text-muted);border:1px solid var(--border);">Lock</button>
     </div>
@@ -66,9 +68,7 @@
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
         <input type="text" id="adminUserEmail" class="admin-input" placeholder="User email">
         <select id="adminTierSelect" class="admin-input" style="max-width:160px;">
-          <option value="free">Free</option>
-          <option value="pro">Pro</option>
-          <option value="ultimate">Ultimate</option>
+          <option value="free">Free</option><option value="pro">Pro</option><option value="ultimate">Ultimate</option>
         </select>
         <button id="adminSetTierBtn" class="admin-btn">Set Tier</button>
       </div>
