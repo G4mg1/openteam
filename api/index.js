@@ -1,8 +1,8 @@
 /* ============================================================
-   MiroxAI Backend v24 — Fixed HF endpoints
-   - Chat: router.huggingface.co/v1/chat/completions with :together
-   - Images: router.huggingface.co/v1/images/generations with "size"
-   - Model renamed to "Lumenal 1.0"
+   MiroxAI Backend v27
+   - Chat: GPT-OSS (fast) + DeepSeek-V4-Pro (deep) via HF router
+   - Images: Lumenal 1.0 (internally served via Mirox Inference)
+   - Never crashes on cold start
    ============================================================ */
 
 let express, crypto, firebaseAdmin;
@@ -20,7 +20,7 @@ if (!express || !crypto) {
 }
 
 const HF_API_KEY = (process.env.HF_API_KEY || '').trim();
-const SECRET = process.env.SECRET_KEY || 'mirox-fallback-secret';
+const SECRET = process.env.SECRET_KEY || 'mirox-fallback-secret-change-me';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '2010';
 
 /* ---------- Firebase (never blocks boot) ---------- */
@@ -96,15 +96,53 @@ async function safePush(path, data) {
   try { const r = fdb.ref(path).push(); await r.set({ ...data, _ts: now() }); return r.key; } catch { return null; }
 }
 
-/* ---------- Models ---------- */
-const MODELS = {
-  'mirox-luna-1.2': { label: 'Luna', tagline: 'Fast · warm · free', tier: 'free', default: true, tokens: 700,
-    prompt: 'You are Luna, a warm assistant by OpenSurr. Keep replies concise. Use fenced code blocks with the language name.' },
-  'mirox-gen-1': { label: 'Gen', tagline: 'Ultra concise', tier: 'free', tokens: 500,
-    prompt: 'You are Gen from OpenSurr. Ultra-concise. Code only inside fenced blocks with the language name.' },
-  'mirox-pro-5': { label: 'Pro', tagline: 'Balanced', tier: 'pro', tokens: 900, prompt: 'You are Pro from OpenSurr. Balanced depth.' },
-  'mirox-ultra-10': { label: 'Ultra', tagline: 'Deep reasoning', tier: 'pro', tokens: 1100, prompt: 'You are Ultra from OpenSurr. Deep reasoning.' },
-  'mirox-eclipse-2.0': { label: 'Eclipse', tagline: 'Best quality', tier: 'ultimate', tokens: 1300, prompt: 'You are Eclipse from OpenSurr. Best quality.' },
+/* ============================================================
+   Mirox Models — internal mapping
+   Public label  →  internal HF router model ID
+   The user only ever sees the public label.
+   ============================================================ */
+const MIROX_MODELS = {
+  'mirox-luna-1.2': {
+    label: 'Luna',
+    tagline: 'Fast · warm · free',
+    tier: 'free',
+    default: true,
+    tokens: 800,
+    internal: 'openai/gpt-oss-120b:cerebras',
+    prompt: 'You are Luna, a warm assistant by OpenSurr. Keep replies concise. Use fenced code blocks with the language name.',
+  },
+  'mirox-gen-1': {
+    label: 'Gen',
+    tagline: 'Ultra concise',
+    tier: 'free',
+    tokens: 600,
+    internal: 'openai/gpt-oss-20b:cerebras',
+    prompt: 'You are Gen from OpenSurr. Ultra-concise. Code only inside fenced blocks with the language name.',
+  },
+  'mirox-pro-5': {
+    label: 'Pro',
+    tagline: 'Balanced · deeper',
+    tier: 'pro',
+    tokens: 1000,
+    internal: 'openai/gpt-oss-120b:fireworks-ai',
+    prompt: 'You are Pro from OpenSurr. Balanced depth.',
+  },
+  'mirox-ultra-10': {
+    label: 'Ultra',
+    tagline: 'Deep reasoning',
+    tier: 'pro',
+    tokens: 1400,
+    internal: 'deepseek-ai/DeepSeek-V4-Pro:novita',
+    prompt: 'You are Ultra from OpenSurr. Deep reasoning.',
+  },
+  'mirox-eclipse-2.0': {
+    label: 'Eclipse',
+    tagline: 'Best quality',
+    tier: 'ultimate',
+    tokens: 1800,
+    internal: 'deepseek-ai/DeepSeek-V4-Pro:novita',
+    prompt: 'You are Eclipse from OpenSurr. Best quality.',
+  },
 };
 const API_ALLOWED_MODELS = ['mirox-luna-1.2', 'mirox-gen-1'];
 
@@ -138,26 +176,24 @@ async function currentUser(req) {
 }
 
 /* ============================================================
-   HuggingFace — CORRECT endpoints
+   Mirox Inference — powered by Mirox Cloud
+   All requests go through a unified routing layer.
    ============================================================ */
+const MIROX_CHAT_URL = 'https://router.huggingface.co/v1/chat/completions';
+const MIROX_IMAGE_URL = 'https://router.huggingface.co/v1/images/generations';
 
-// Chat: router with :together provider suffix (Qwen works via Together)
-const HF_CHAT_URL = 'https://router.huggingface.co/v1/chat/completions';
-const HF_CHAT_MODEL = 'Qwen/Qwen2.5-7B-Instruct:together';
+/* Lumenal 1.0 — internal serving model (never exposed to UI) */
+const LUMENAL_INTERNAL_MODEL = 'black-forest-labs/FLUX.1-schnell';
 
-// Images: router OpenAI-compatible endpoint with "size" (NOT image_size)
-const HF_IMAGE_URL = 'https://router.huggingface.co/v1/images/generations';
-const HF_IMAGE_MODEL = 'black-forest-labs/FLUX.1-schnell';
-
-async function hfChat(messages, maxTokens, stream = false, signal) {
-  const res = await fetch(HF_CHAT_URL, {
+async function miroxChat(modelId, messages, maxTokens, stream = false, signal) {
+  const res = await fetch(MIROX_CHAT_URL, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${HF_API_KEY}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: HF_CHAT_MODEL,
+      model: modelId,
       messages,
       max_tokens: maxTokens,
       stream,
@@ -167,7 +203,7 @@ async function hfChat(messages, maxTokens, stream = false, signal) {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    let errMsg = `HF ${res.status}`;
+    let errMsg = `Inference error ${res.status}`;
     try {
       const j = JSON.parse(text);
       errMsg = j.error?.message || j.error || j.message || errMsg;
@@ -177,8 +213,7 @@ async function hfChat(messages, maxTokens, stream = false, signal) {
   return res;
 }
 
-async function hfImage(prompt, aspectRatio = '1:1') {
-  // Map aspect ratio to valid size strings
+async function lumenalGenerate(prompt, aspectRatio = '1:1') {
   const sizeMap = {
     '1:1': '1024x1024',
     '16:9': '1344x768',
@@ -187,16 +222,16 @@ async function hfImage(prompt, aspectRatio = '1:1') {
   };
   const size = sizeMap[aspectRatio] || '1024x1024';
 
-  const res = await fetch(HF_IMAGE_URL, {
+  const res = await fetch(MIROX_IMAGE_URL, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${HF_API_KEY}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: HF_IMAGE_MODEL,
+      model: LUMENAL_INTERNAL_MODEL,
       prompt,
-      size,                     // ✅ correct param (was image_size)
+      size,
       n: 1,
       response_format: 'url',
       num_inference_steps: 4,
@@ -204,10 +239,9 @@ async function hfImage(prompt, aspectRatio = '1:1') {
   });
   if (!res.ok) {
     const t = await res.text().catch(() => '');
-    throw new Error(`Lumenal error ${res.status}: ${t.slice(0, 200)}`);
+    throw new Error(`Lumenal error ${res.status}: ${t.slice(0, 180)}`);
   }
   const data = await res.json();
-  // OpenAI-compatible shape: { data: [{ url }] }
   return data.data?.[0]?.url || data.images?.[0]?.url || data.url || null;
 }
 
@@ -241,8 +275,7 @@ function buildMessages(systemPrompt, history, userText, persona, mem, files) {
   return msgs;
 }
 
-/* ============ ROUTES ============ */
-
+/* ============ APP ============ */
 const app = express();
 app.use(express.json({ limit: '15mb' }));
 app.use((req, res, next) => {
@@ -255,12 +288,11 @@ app.use((req, res, next) => {
 
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
   res.json({
-    ok: true, app: 'MiroxAI', version: 'v24',
-    hf_key: !!HF_API_KEY, hf_key_length: HF_API_KEY.length,
-    firebase: !!fdb,
+    ok: true, app: 'MiroxAI', version: 'v27',
+    inference: !!HF_API_KEY,
+    database: !!fdb,
     admin_password_set: ADMIN_PASSWORD !== '2010',
     node: process.version,
-    env: process.env.VERCEL ? 'vercel' : 'local',
     time: now(),
   });
 });
@@ -269,18 +301,17 @@ app.get(['/api/config', '/config'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   let u = null;
   try { u = await currentUser(req); } catch {}
-  const modelsArr = Object.entries(MODELS).map(([id, m]) => ({
+  const modelsArr = Object.entries(MIROX_MODELS).map(([id, m]) => ({
     id, label: m.label, tagline: m.tagline, tier: m.tier, default: !!m.default,
   }));
   res.json({
-    app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v24' },
+    app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v27' },
     models: modelsArr,
     default_model: modelsArr[0].id,
     plans: PLANS,
     user_tier: u ? u.tier : 'free',
     guest: !u,
-    hf_ready: !!HF_API_KEY,
-    image_model: 'Lumenal 1.0',
+    ready: !!HF_API_KEY,
   });
 });
 
@@ -321,7 +352,7 @@ app.get(['/api/me', '/me'], async (req, res) => {
 /* ---------- Plans ---------- */
 app.get(['/api/subscription/plans', '/subscription/plans'], (req, res) => {
   const perks = {
-    free: ['Luna & Gen — free', 'Vision + web search', '10 Eclipse chats/day', 'Memory & persona'],
+    free: ['Luna & Gen — free', 'Vision support', '10 Eclipse chats/day', 'Memory & persona'],
     pro: ['Pro & Ultra models', '500 msgs/day', 'Lumenal 1.0 image gen', 'Priority speed'],
     ultimate: ['Eclipse — best', '5000 msgs/day', 'Everything in Pro', 'Ultimate badge'],
   };
@@ -333,10 +364,10 @@ app.get(['/api/subscription/plans', '/subscription/plans'], (req, res) => {
   res.json({ ok: true, plans: out });
 });
 
-/* ---------- Chat Completions ---------- */
+/* ---------- Chat ---------- */
 app.post('/v1/chat/completions', async (req, res) => {
   try {
-    if (!HF_API_KEY) return res.status(503).json({ ok: false, error: 'HF_API_KEY not set.' });
+    if (!HF_API_KEY) return res.status(503).json({ ok: false, error: 'Inference service not configured.' });
 
     const { model, messages, stream = false, temperature, message, history, files } = req.body || {};
     let u = null;
@@ -350,8 +381,8 @@ app.post('/v1/chat/completions', async (req, res) => {
     else {
       const msg = String(message || '').trim();
       if (!msg && !files?.length) return res.status(400).json({ ok: false, error: 'Empty message' });
-      const systemMsg = MODELS[model]?.prompt || MODELS['mirox-luna-1.2'].prompt;
-      msgs = buildMessages(systemMsg, history, msg, u?.persona, u?.memory, files || []);
+      const cfg = MIROX_MODELS[model] || MIROX_MODELS['mirox-luna-1.2'];
+      msgs = buildMessages(cfg.prompt, history, msg, u?.persona, u?.memory, files || []);
     }
 
     const requestedModel = model || 'mirox-luna-1.2';
@@ -359,7 +390,7 @@ app.post('/v1/chat/completions', async (req, res) => {
       return res.status(403).json({ ok: false, error: `Model "${requestedModel}" not available via API.` });
     }
 
-    const cfg = MODELS[requestedModel] || MODELS['mirox-luna-1.2'];
+    const cfg = MIROX_MODELS[requestedModel] || MIROX_MODELS['mirox-luna-1.2'];
     const userTier = u ? u.tier : 'free';
     let effectiveCfg = cfg, switched = false, usingTrial = false;
 
@@ -367,12 +398,12 @@ app.post('/v1/chat/completions', async (req, res) => {
       if (userTier === 'free' && cfg.tier === 'ultimate') {
         const tl = PLANS.free.ultimate_trial_limit || 0;
         const tu = u ? (u.trial_used || 0) : 0;
-        if (tu >= tl) { effectiveCfg = MODELS['mirox-luna-1.2']; switched = true; }
+        if (tu >= tl) { effectiveCfg = MIROX_MODELS['mirox-luna-1.2']; switched = true; }
         else usingTrial = true;
-      } else { effectiveCfg = MODELS['mirox-luna-1.2']; switched = true; }
+      } else { effectiveCfg = MIROX_MODELS['mirox-luna-1.2']; switched = true; }
     }
     if (requestedModel === 'mirox-eclipse-2.0' && u) {
-      if ((u.eclipse_credits ?? 10) <= 0) { effectiveCfg = MODELS['mirox-luna-1.2']; switched = true; }
+      if ((u.eclipse_credits ?? 10) <= 0) { effectiveCfg = MIROX_MODELS['mirox-luna-1.2']; switched = true; }
     }
     if (u) {
       const plan = PLANS[u.tier];
@@ -386,7 +417,7 @@ app.post('/v1/chat/completions', async (req, res) => {
 
     if (!stream) {
       try {
-        const hfRes = await hfChat(msgs, effectiveCfg.tokens, false);
+        const hfRes = await miroxChat(effectiveCfg.internal, msgs, effectiveCfg.tokens, false);
         const data = await hfRes.json();
         const reply = data.choices?.[0]?.message?.content || '';
 
@@ -421,7 +452,7 @@ app.post('/v1/chat/completions', async (req, res) => {
     req.on('close', () => { try { abortCtrl.abort(); } catch {} });
 
     try {
-      const hfRes = await hfChat(msgs, effectiveCfg.tokens, true, abortCtrl.signal);
+      const hfRes = await miroxChat(effectiveCfg.internal, msgs, effectiveCfg.tokens, true, abortCtrl.signal);
       const reader = hfRes.body.getReader();
       const dec = new TextDecoder();
       let buf = '';
@@ -472,22 +503,22 @@ app.post('/v1/chat/completions', async (req, res) => {
   }
 });
 
-/* ---------- Image Generation (Lumenal 1.0) ---------- */
+/* ---------- Lumenal 1.0 image generation ---------- */
 app.post('/v1/images/generations', async (req, res) => {
   try {
-    if (!HF_API_KEY) return res.status(503).json({ ok: false, error: 'HF_API_KEY not set.' });
+    if (!HF_API_KEY) return res.status(503).json({ ok: false, error: 'Image service not configured.' });
     const { prompt, aspect_ratio = '1:1' } = req.body || {};
     if (!prompt) return res.status(400).json({ ok: false, error: 'Prompt required' });
     const u = await currentUser(req);
-    const imageUrl = await hfImage(prompt, aspect_ratio);
+    const imageUrl = await lumenalGenerate(prompt, aspect_ratio);
     if (fdb && u) safePush(`logs/image/${u.email}`, { prompt: prompt.slice(0, 300), model: 'Lumenal 1.0', ts: now() });
     res.json({ ok: true, image: imageUrl, model: 'Lumenal 1.0' });
   } catch (e) {
-    res.status(502).json({ ok: false, error: String(e.message).slice(0, 200) });
+    res.status(502).json({ ok: false, error: 'Lumenal error: ' + String(e.message).slice(0, 200) });
   }
 });
 
-/* ---------- API Keys ---------- */
+/* ---------- API keys ---------- */
 app.post(['/api/keys/generate', '/keys/generate'], async (req, res) => {
   try {
     const u = await currentUser(req);
@@ -577,10 +608,7 @@ app.get('/api/admin/stats', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
-/* ---------- 404 ---------- */
 app.use((req, res) => res.status(404).json({ ok: false, error: 'Not found', path: req.path }));
-
-/* ---------- Error handler ---------- */
 app.use((err, req, res, next) => {
   console.error('Unhandled:', err);
   if (!res.headersSent) res.status(500).json({ ok: false, error: err.message || 'Internal error' });
