@@ -6,6 +6,7 @@
     { "source": "/v1/chat/completions", "destination": "/api/index" },
     { "source": "/v1/images/generations", "destination": "/api/index" },
     { "source": "/v1/models", "destination": "/api/index" },
+    { "source": "/v1/models/:path*", "destination": "/api/index" },
     { "source": "/v1/:path*", "destination": "/api/index" },
     { "source": "/api/:path*", "destination": "/api/index" },
     { "source": "/health", "destination": "/api/index" },
@@ -21,7 +22,7 @@
       "headers": [
         { "key": "Access-Control-Allow-Origin", "value": "*" },
         { "key": "Access-Control-Allow-Methods", "value": "GET, POST, OPTIONS" },
-        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization, Accept" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization, Accept, X-Api-Key, X-API-Key, api-key, Api-Key, X-Auth-Token, Mirox-Key" },
         { "key": "Cache-Control", "value": "no-store" },
         { "key": "X-Accel-Buffering", "value": "no" }
       ]
