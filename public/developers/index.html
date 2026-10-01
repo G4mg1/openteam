@@ -1,124 +1,172 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#faf9f5">
-<title>MiroxAI — Developer Docs</title>
-<link rel="icon" href="/logo.png" type="image/png">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link href="https://cdn.jsdelivr.net/npm/remixicon@4.9.0/fonts/remixicon.css" rel="stylesheet">
-<style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#faf9f5;--panel:#fff;--panel-2:#f5f3ed;--panel-3:#eae6dc;--border:#e5e0d3;--border-strong:#d0cab8;--text:#1a1915;--text-muted:#6b6862;--text-faint:#9a968d;--accent:#c96442;--accent-hover:#ad4f2f;--accent-soft:rgba(201,100,66,.1);--code-bg:#f6f3ea;--code-border:#e4ddcc;--code-header:#efeadd;--code-text:#2a2620;--radius:12px;--radius-lg:16px;--radius-xl:22px;--font:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;--mono:'JetBrains Mono','SF Mono',Consolas,monospace;--shadow-lg:0 8px 32px rgba(80,60,40,.10);--sidebar-w:260px}
-:root[data-mode="dark"]{--bg:#1a1915;--panel:#232118;--panel-2:#2a2820;--panel-3:#33302a;--border:#33302a;--border-strong:#4a463b;--text:#f5f2e8;--text-muted:#b0ab9f;--text-faint:#7a756b;--code-bg:#201e19;--code-border:#33302a;--code-header:#292721;--code-text:#ede8da}
-:root[data-mode="dark"] .theme-aware-logo{filter:invert(1) brightness(1.15)}
-html{scroll-behavior:smooth;scroll-padding-top:24px}
-body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased;min-height:100vh}
-a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
-button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
-input,textarea,select{font:inherit;color:inherit}
-img{max-width:100%;display:block}
-.dev-layout{display:flex;min-height:100vh}
-.dev-sidebar{width:var(--sidebar-w);flex-shrink:0;background:var(--panel);border-right:1px solid var(--border);padding:24px 16px;position:sticky;top:0;height:100vh;overflow-y:auto;display:flex;flex-direction:column}
-.dev-logo{display:flex;align-items:center;gap:10px;margin-bottom:6px;padding:0 8px}
-.dev-logo img{width:32px;height:32px;border-radius:8px}
-.dev-logo-text{display:flex;flex-direction:column;line-height:1.2}
-.dev-logo-text strong{font-size:15px;font-weight:700}
-.dev-logo-text span{font-size:11px;color:var(--text-faint);font-weight:500}
-.dev-nav-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-faint);padding:20px 12px 6px}
-.dev-nav{display:flex;flex-direction:column;gap:1px}
-.dev-nav a{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:var(--radius);font-size:13.5px;font-weight:500;color:var(--text-muted);text-decoration:none;transition:background .15s,color .15s}
-.dev-nav a:hover{background:var(--panel-2);color:var(--text);text-decoration:none}
-.dev-nav a.active{background:var(--accent-soft);color:var(--accent)}
-.dev-nav a i{font-size:16px;flex-shrink:0}
-.dev-sidebar-footer{margin-top:auto;padding-top:20px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px}
-.dev-sidebar-footer a{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:var(--radius);font-size:13px;color:var(--text-muted);text-decoration:none}
-.dev-sidebar-footer a:hover{background:var(--panel-2);color:var(--text);text-decoration:none}
-.dev-main{flex:1;min-width:0;padding:48px 56px 80px;max-width:1000px}
-.dev-topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:32px;padding-bottom:20px;border-bottom:1px solid var(--border)}
-.dev-topbar-title{font-size:13px;color:var(--text-faint);font-weight:500}
-.dev-topbar-actions{display:flex;gap:8px}
-.icon-btn{width:36px;height:36px;display:grid;place-items:center;border-radius:var(--radius);color:var(--text-muted);font-size:17px;border:1px solid var(--border);background:var(--panel);transition:background .15s,color .15s;text-decoration:none}
-.icon-btn:hover{background:var(--panel-2);color:var(--text);text-decoration:none}
-section{margin-bottom:56px}
-h1{font-size:34px;font-weight:700;letter-spacing:-.025em;margin-bottom:12px;line-height:1.15}
-h2{font-size:22px;font-weight:700;letter-spacing:-.02em;margin-bottom:14px;padding-top:8px}
-h3{font-size:16px;font-weight:600;margin:22px 0 10px}
-p{color:var(--text-muted);margin-bottom:14px;line-height:1.7}
-ul,ol{margin:10px 0 16px 22px;color:var(--text-muted)}
-li{line-height:1.7;margin-bottom:4px}
-.lead{font-size:16px;color:var(--text-muted);margin-bottom:20px;line-height:1.7}
-code{background:var(--code-bg);color:var(--text);padding:2px 6px;border-radius:4px;font-family:var(--mono);font-size:.88em;border:1px solid var(--code-border)}
-pre{background:var(--code-bg);border:1px solid var(--code-border);border-radius:var(--radius-lg);padding:16px 18px;overflow-x:auto;margin:12px 0 20px;font-family:var(--mono);font-size:13px;line-height:1.65;color:var(--code-text);position:relative}
-pre code{background:none;border:none;padding:0;font-size:13px;color:inherit}
-.code-copy-btn{position:absolute;top:10px;right:10px;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:500;color:var(--text-faint);background:var(--panel);border:1px solid var(--border);display:flex;align-items:center;gap:4px;opacity:0;transition:opacity .15s;font-family:var(--font)}
-pre:hover .code-copy-btn{opacity:1}
-.code-copy-btn:hover{background:var(--panel-2);color:var(--text)}
-.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:99px;font-size:11.5px;font-weight:600;background:var(--accent-soft);color:var(--accent)}
-.badge.neutral{background:var(--panel-3);color:var(--text-muted)}
-.badge.green{background:rgba(78,168,46,.12);color:#4ea82e}
-.badge-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px}
-.endpoint{display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:var(--radius);background:var(--panel-2);border:1px solid var(--border);font-family:var(--mono);font-size:13.5px;margin:12px 0 16px;flex-wrap:wrap}
-.method{font-weight:700;font-size:11px;padding:3px 8px;border-radius:5px;letter-spacing:.03em}
-.method.post{background:rgba(201,100,66,.14);color:var(--accent)}
-.card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:16px 0 24px}
-.card{padding:16px 18px;border-radius:var(--radius-lg);border:1px solid var(--border);background:var(--panel)}
-.card-icon{width:36px;height:36px;border-radius:9px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-size:18px;margin-bottom:12px}
-.card h4{font-size:14.5px;font-weight:600;margin-bottom:4px}
-.card p{font-size:13px;margin:0;line-height:1.55}
-.playground{border:1px solid var(--border);border-radius:var(--radius-xl);background:var(--panel);overflow:hidden;margin:20px 0}
-.playground-header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);background:var(--panel-2);gap:10px;flex-wrap:wrap}
-.playground-header h3{margin:0;font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
-.playground-header h3 i{color:var(--accent)}
-.playground-body{padding:20px}
-.field{margin-bottom:14px}
-.field label{display:block;font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px}
-.field input,.field select,.field textarea{width:100%;padding:10px 12px;border-radius:var(--radius);border:1px solid var(--border);background:var(--panel-2);font-size:14px;outline:none;transition:border-color .15s}
-.field textarea{resize:vertical;min-height:80px;font-family:var(--mono);font-size:13px;line-height:1.6}
-.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
-.field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.field-hint{font-size:11.5px;color:var(--text-faint);margin-top:4px}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 18px;border-radius:var(--radius);font-size:13.5px;font-weight:500;transition:background .15s,opacity .15s;border:1px solid transparent;font-family:var(--font)}
-.btn-primary{background:var(--accent);color:#fff}
-.btn-primary:hover{background:var(--accent-hover)}
-.btn-primary:disabled{opacity:.5;cursor:not-allowed}
-.btn-secondary{background:var(--panel-2);color:var(--text);border-color:var(--border)}
-.btn-secondary:hover{background:var(--panel-3)}
-.playground-result{margin-top:18px;border-radius:var(--radius-lg);border:1px solid var(--code-border);background:var(--code-bg);overflow:hidden}
-.playground-result-header{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-bottom:1px solid var(--code-border);background:var(--code-header);font-size:11.5px;font-weight:600;color:var(--text-muted);letter-spacing:.02em;text-transform:uppercase}
-.status-pill{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600;text-transform:none}
-.status-pill.ok{background:rgba(78,168,46,.14);color:#4ea82e}
-.status-pill.err{background:rgba(220,38,38,.12);color:#dc2626}
-.status-pill.pending{background:var(--panel-3);color:var(--text-muted)}
-.playground-output{padding:14px 16px;font-family:var(--mono);font-size:12.5px;line-height:1.65;color:var(--code-text);white-space:pre-wrap;word-break:break-word;max-height:380px;overflow-y:auto;margin:0;background:transparent;border:none}
-.dots{display:inline-flex;gap:3px;align-items:center}
-.dots span{width:5px;height:5px;border-radius:50%;background:currentColor;animation:bounce 1.4s ease-in-out infinite}
-.dots span:nth-child(2){animation-delay:.15s}
-.dots span:nth-child(3){animation-delay:.3s}
-@keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-4px);opacity:1}}
-table{width:100%;border-collapse:collapse;font-size:13.5px;margin:12px 0 20px;border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden}
-th{text-align:left;padding:10px 14px;font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint);background:var(--panel-2);border-bottom:1px solid var(--border)}
-td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--text-muted)}
-tr:last-child td{border-bottom:none}
-.mobile-nav-toggle{display:none}
-.scrim{display:none;position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.35)}
-.scrim.open{display:block}
-@media (max-width:900px){
-  .dev-sidebar{position:fixed;z-index:100;transform:translateX(-100%);transition:transform .25s;box-shadow:var(--shadow-lg)}
-  .dev-sidebar.open{transform:translateX(0)}
-  .dev-main{padding:24px 20px 60px}
-  h1{font-size:26px}h2{font-size:19px}
-  .mobile-nav-toggle{display:grid;position:fixed;top:14px;left:14px;z-index:200;width:40px;height:40px;border-radius:10px;background:var(--panel);border:1px solid var(--border);place-items:center;font-size:19px;color:var(--text)}
-  .dev-topbar{padding-left:48px}
-  .field-row{grid-template-columns:1fr}
-}
-@media (min-width:1920px){:root{--sidebar-w:300px}.dev-main{max-width:1200px;padding:56px 72px 96px}}
-@media (min-width:2560px){:root{--sidebar-w:340px;font-size:17px}.dev-main{max-width:1400px}}
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#fafafb">
+  <title>MiroxAI — Developer Docs</title>
+  <link rel="icon" href="/logo.png" type="image/png">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/remixicon@4.9.0/fonts/remixicon.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#fafafb;--bg-soft:#f4f4f7;--panel:#fff;--panel-2:#f7f7fa;--panel-3:#eeeef3;
+      --border:#e8e8ef;--border-strong:#d5d5dd;--text:#0a0a0c;--text-muted:#64646f;--text-faint:#9494a0;
+      --accent:#c4694b;--accent-hover:#a8503a;--accent-soft:rgba(196,105,75,.10);
+      --code-bg:#f6f8fa;--code-border:#e4e7ec;--code-header:#eef0f4;--code-text:#24292f;
+      --radius:10px;--radius-lg:14px;--radius-xl:20px;
+      --font:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+      --mono:'JetBrains Mono','SF Mono','Fira Code',Consolas,monospace;
+      --shadow-sm:0 1px 2px rgba(20,20,40,.04),0 2px 6px rgba(20,20,40,.03);
+      --shadow-lg:0 8px 28px rgba(20,20,40,.09);
+      --sidebar-w:260px;
+    }
+    :root[data-mode="dark"]{
+      --bg:#0a0a0d;--bg-soft:#0f0f14;--panel:#15151b;--panel-2:#1d1d24;--panel-3:#26262f;
+      --border:#26262f;--border-strong:#3a3a47;--text:#f4f4f8;--text-muted:#a0a0ab;--text-faint:#6a6a75;
+      --code-bg:#1a1a22;--code-border:#26262f;--code-header:#13131a;--code-text:#e4e4ec;
+    }
+    html{scroll-behavior:smooth;scroll-padding-top:24px}
+    body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased;min-height:100vh}
+    a{color:var(--accent);text-decoration:none}
+    a:hover{text-decoration:underline}
+    button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
+    input,textarea,select{font:inherit;color:inherit}
+    img{max-width:100%;display:block}
+
+    :root[data-mode="dark"] .theme-aware-logo{filter:invert(1) brightness(1.15)}
+
+    .dev-layout{display:flex;min-height:100vh}
+
+    /* SIDEBAR */
+    .dev-sidebar{
+      width:var(--sidebar-w);flex-shrink:0;background:var(--panel);border-right:1px solid var(--border);
+      padding:24px 16px;position:sticky;top:0;height:100vh;overflow-y:auto;display:flex;flex-direction:column;
+    }
+    .dev-logo{display:flex;align-items:center;gap:10px;margin-bottom:6px;padding:0 8px}
+    .dev-logo img{width:32px;height:32px;border-radius:8px}
+    .dev-logo-text{display:flex;flex-direction:column;line-height:1.2}
+    .dev-logo-text strong{font-size:15px;font-weight:700}
+    .dev-logo-text span{font-size:11px;color:var(--text-faint);font-weight:500}
+    .dev-nav-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-faint);padding:20px 12px 6px}
+    .dev-nav{display:flex;flex-direction:column;gap:1px}
+    .dev-nav a{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:var(--radius);font-size:13.5px;font-weight:500;color:var(--text-muted);text-decoration:none;transition:background .15s,color .15s}
+    .dev-nav a:hover{background:var(--panel-2);color:var(--text);text-decoration:none}
+    .dev-nav a.active{background:var(--accent-soft);color:var(--accent)}
+    .dev-nav a i{font-size:16px;flex-shrink:0}
+    .dev-sidebar-footer{margin-top:auto;padding-top:20px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px}
+    .dev-sidebar-footer a{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:var(--radius);font-size:13px;color:var(--text-muted);text-decoration:none}
+    .dev-sidebar-footer a:hover{background:var(--panel-2);color:var(--text);text-decoration:none}
+
+    /* MAIN */
+    .dev-main{flex:1;min-width:0;padding:48px 56px 80px;max-width:1000px}
+    .dev-topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:32px;padding-bottom:20px;border-bottom:1px solid var(--border)}
+    .dev-topbar-title{font-size:13px;color:var(--text-faint);font-weight:500}
+    .dev-topbar-actions{display:flex;gap:8px}
+    .icon-btn{width:36px;height:36px;display:grid;place-items:center;border-radius:var(--radius);color:var(--text-muted);font-size:17px;border:1px solid var(--border);background:var(--panel);transition:background .15s,color .15s;text-decoration:none}
+    .icon-btn:hover{background:var(--panel-2);color:var(--text);text-decoration:none}
+
+    section{margin-bottom:56px}
+    h1{font-size:34px;font-weight:700;letter-spacing:-.025em;margin-bottom:12px;line-height:1.15}
+    h2{font-size:22px;font-weight:700;letter-spacing:-.02em;margin-bottom:14px;padding-top:8px}
+    h3{font-size:16px;font-weight:600;margin:22px 0 10px}
+    p{color:var(--text-muted);margin-bottom:14px;line-height:1.7}
+    ul,ol{margin:10px 0 16px 22px;color:var(--text-muted)}
+    li{line-height:1.7;margin-bottom:4px}
+    .lead{font-size:16px;color:var(--text-muted);margin-bottom:20px;line-height:1.7}
+
+    code{background:var(--code-bg);color:var(--text);padding:2px 6px;border-radius:4px;font-family:var(--mono);font-size:.88em;border:1px solid var(--code-border)}
+    pre{background:var(--code-bg);border:1px solid var(--code-border);border-radius:var(--radius-lg);padding:16px 18px;overflow-x:auto;margin:12px 0 20px;font-family:var(--mono);font-size:13px;line-height:1.65;color:var(--code-text);position:relative}
+    pre code{background:none;border:none;padding:0;font-size:13px;color:inherit}
+    .code-copy-btn{position:absolute;top:10px;right:10px;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:500;color:var(--text-faint);background:var(--panel);border:1px solid var(--border);display:flex;align-items:center;gap:4px;opacity:0;transition:opacity .15s;font-family:var(--font)}
+    pre:hover .code-copy-btn{opacity:1}
+    .code-copy-btn:hover{background:var(--panel-2);color:var(--text)}
+    .code-copy-btn.copied{color:var(--accent)}
+
+    .badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:99px;font-size:11.5px;font-weight:600;background:var(--accent-soft);color:var(--accent)}
+    .badge.neutral{background:var(--panel-3);color:var(--text-muted)}
+    .badge.green{background:rgba(78,168,46,.12);color:#4ea82e}
+    .badge-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px}
+
+    .endpoint{display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:var(--radius);background:var(--panel-2);border:1px solid var(--border);font-family:var(--mono);font-size:13.5px;margin:12px 0 16px;flex-wrap:wrap}
+    .method{font-weight:700;font-size:11px;padding:3px 8px;border-radius:5px;letter-spacing:.03em}
+    .method.post{background:rgba(196,105,75,.14);color:var(--accent)}
+    .method.get{background:rgba(37,99,235,.12);color:#2563eb}
+
+    .card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:16px 0 24px}
+    .card{padding:16px 18px;border-radius:var(--radius-lg);border:1px solid var(--border);background:var(--panel)}
+    .card-icon{width:36px;height:36px;border-radius:9px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-size:18px;margin-bottom:12px}
+    .card h4{font-size:14.5px;font-weight:600;margin-bottom:4px}
+    .card p{font-size:13px;margin:0;line-height:1.55}
+
+    .playground{border:1px solid var(--border);border-radius:var(--radius-xl);background:var(--panel);overflow:hidden;margin:20px 0}
+    .playground-header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);background:var(--panel-2);gap:10px;flex-wrap:wrap}
+    .playground-header h3{margin:0;font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
+    .playground-header h3 i{color:var(--accent)}
+    .playground-body{padding:20px}
+    .field{margin-bottom:14px}
+    .field label{display:block;font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px}
+    .field input,.field select,.field textarea{width:100%;padding:10px 12px;border-radius:var(--radius);border:1px solid var(--border);background:var(--panel-2);font-size:14px;outline:none;transition:border-color .15s,box-shadow .15s;font-family:var(--font)}
+    .field textarea{resize:vertical;min-height:80px;font-family:var(--mono);font-size:13px;line-height:1.6}
+    .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+    .field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .field-hint{font-size:11.5px;color:var(--text-faint);margin-top:4px}
+
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 18px;border-radius:var(--radius);font-size:13.5px;font-weight:500;transition:background .15s,opacity .15s;border:1px solid transparent;font-family:var(--font)}
+    .btn-primary{background:var(--accent);color:#fff}
+    .btn-primary:hover{background:var(--accent-hover)}
+    .btn-primary:disabled{opacity:.5;cursor:not-allowed}
+    .btn-secondary{background:var(--panel-2);color:var(--text);border-color:var(--border)}
+    .btn-secondary:hover{background:var(--panel-3)}
+
+    .playground-result{margin-top:18px;border-radius:var(--radius-lg);border:1px solid var(--code-border);background:var(--code-bg);overflow:hidden}
+    .playground-result-header{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-bottom:1px solid var(--code-border);background:var(--code-header);font-size:11.5px;font-weight:600;color:var(--text-muted);letter-spacing:.02em;text-transform:uppercase}
+    .status-pill{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600;text-transform:none}
+    .status-pill.ok{background:rgba(78,168,46,.14);color:#4ea82e}
+    .status-pill.err{background:rgba(220,38,38,.12);color:#dc2626}
+    .status-pill.pending{background:var(--panel-3);color:var(--text-muted)}
+    .playground-output{padding:14px 16px;font-family:var(--mono);font-size:12.5px;line-height:1.65;color:var(--code-text);white-space:pre-wrap;word-break:break-word;max-height:380px;overflow-y:auto;margin:0;background:transparent;border:none;border-radius:0}
+
+    .dots{display:inline-flex;gap:3px;align-items:center}
+    .dots span{width:5px;height:5px;border-radius:50%;background:currentColor;animation:bounce 1.4s ease-in-out infinite}
+    .dots span:nth-child(2){animation-delay:.15s}
+    .dots span:nth-child(3){animation-delay:.3s}
+    @keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-4px);opacity:1}}
+
+    table{width:100%;border-collapse:collapse;font-size:13.5px;margin:12px 0 20px;border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden}
+    th{text-align:left;padding:10px 14px;font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint);background:var(--panel-2);border-bottom:1px solid var(--border)}
+    td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--text-muted)}
+    tr:last-child td{border-bottom:none}
+
+    .mobile-nav-toggle{display:none}
+
+    /* RESPONSIVE */
+    @media (max-width:900px){
+      .dev-sidebar{position:fixed;z-index:100;transform:translateX(-100%);transition:transform .25s cubic-bezier(.4,0,.2,1);box-shadow:var(--shadow-lg)}
+      .dev-sidebar.open{transform:translateX(0)}
+      .dev-main{padding:24px 20px 60px}
+      h1{font-size:26px}h2{font-size:19px}
+      .mobile-nav-toggle{display:grid;position:fixed;top:14px;left:14px;z-index:200;width:40px;height:40px;border-radius:10px;background:var(--panel);border:1px solid var(--border);place-items:center;font-size:19px;color:var(--text);box-shadow:var(--shadow-sm)}
+      .dev-topbar{padding-left:48px}
+      .field-row{grid-template-columns:1fr}
+    }
+    @media (min-width:1920px){:root{--sidebar-w:300px}.dev-main{max-width:1200px;padding:56px 72px 96px}}
+    @media (min-width:2560px){:root{--sidebar-w:340px;font-size:17px}.dev-main{max-width:1400px}}
+    @media (min-width:3840px){:root{--sidebar-w:420px;font-size:20px}.dev-main{max-width:1800px}h1{font-size:52px}h2{font-size:32px}}
+
+    .scrim{display:none;position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.35)}
+    .scrim.open{display:block}
+
+    /* Syntax highlighting */
+    pre code.hljs{display:block;overflow-x:auto;padding:0;background:transparent}
+    pre .hljs{background:transparent}
+    .code-language{position:absolute;top:10px;left:12px;padding:3px 7px;border:1px solid var(--border);border-radius:5px;background:var(--panel);color:var(--text-faint);font:500 10px var(--font);text-transform:uppercase;letter-spacing:.04em;pointer-events:none}
+  </style>
 </head>
 <body>
-  <button class="mobile-nav-toggle" id="mobileNavToggle"><i class="ri-menu-line"></i></button>
+  <button class="mobile-nav-toggle" id="mobileNavToggle" aria-label="Open nav"><i class="ri-menu-line"></i></button>
   <div class="scrim" id="scrim"></div>
 
   <div class="dev-layout">
@@ -127,24 +175,28 @@ tr:last-child td{border-bottom:none}
         <img src="/logo.png" alt="MiroxAI" class="theme-aware-logo" onerror="this.style.display='none'">
         <div class="dev-logo-text"><strong>MiroxAI</strong><span>Developer Platform</span></div>
       </div>
+
       <div class="dev-nav-label">Getting Started</div>
       <nav class="dev-nav">
         <a href="#intro" class="active"><i class="ri-book-open-line"></i> Introduction</a>
         <a href="#quickstart"><i class="ri-rocket-line"></i> Quick Start</a>
         <a href="#auth"><i class="ri-key-2-line"></i> Authentication</a>
       </nav>
+
       <div class="dev-nav-label">API Reference</div>
       <nav class="dev-nav">
         <a href="#chat"><i class="ri-chat-3-line"></i> Chat Completions</a>
         <a href="#models"><i class="ri-cpu-line"></i> Models</a>
-        <a href="#images"><i class="ri-image-line"></i> Lumenal Images</a>
+        <a href="#images"><i class="ri-image-line"></i> Image Generation</a>
         <a href="#errors"><i class="ri-error-warning-line"></i> Errors</a>
       </nav>
+
       <div class="dev-nav-label">Tools</div>
       <nav class="dev-nav">
         <a href="#playground"><i class="ri-terminal-box-line"></i> Playground</a>
         <a href="#limits"><i class="ri-speed-up-line"></i> Rate Limits</a>
       </nav>
+
       <div class="dev-sidebar-footer">
         <a href="/"><i class="ri-arrow-left-line"></i> Back to Mirox</a>
       </div>
@@ -154,8 +206,8 @@ tr:last-child td{border-bottom:none}
       <div class="dev-topbar">
         <div class="dev-topbar-title"><i class="ri-book-2-line"></i> Documentation</div>
         <div class="dev-topbar-actions">
-          <button class="icon-btn" id="themeToggle"><i class="ri-moon-line"></i></button>
-          <a href="/" class="icon-btn"><i class="ri-home-line"></i></a>
+          <button class="icon-btn" id="themeToggle" title="Toggle theme"><i class="ri-moon-line"></i></button>
+          <a href="/" class="icon-btn" title="Back to app"><i class="ri-home-line"></i></a>
         </div>
       </div>
 
@@ -169,8 +221,8 @@ tr:last-child td{border-bottom:none}
           <span class="badge neutral">by OpenSurr</span>
         </div>
         <div class="card-grid">
-          <div class="card"><div class="card-icon"><i class="ri-chat-3-line"></i></div><h4>Chat Completions</h4><p>Streaming text with Luna and Gen.</p></div>
-          <div class="card"><div class="card-icon"><i class="ri-image-line"></i></div><h4>Lumenal 1.0</h4><p>Strong image generation, powered by Mirox.</p></div>
+          <div class="card"><div class="card-icon"><i class="ri-chat-3-line"></i></div><h4>Chat Completions</h4><p>Streaming text generation with Luna and Gen.</p></div>
+          <div class="card"><div class="card-icon"><i class="ri-image-line"></i></div><h4>Image Generation</h4><p>FLUX.1-schnell via Hugging Face.</p></div>
           <div class="card"><div class="card-icon"><i class="ri-eye-line"></i></div><h4>Vision</h4><p>Send images alongside text prompts.</p></div>
           <div class="card"><div class="card-icon"><i class="ri-shield-check-line"></i></div><h4>Secure</h4><p>API key auth with SHA-256 hashing.</p></div>
         </div>
@@ -179,44 +231,63 @@ tr:last-child td{border-bottom:none}
       <section id="quickstart">
         <h2>Quick Start</h2>
         <p>Make your first API call in under a minute:</p>
-        <pre><code>curl -X POST https://miroxai.org/v1/chat/completions \
+        <pre><code class="language-bash">curl -X POST https://miroxai.org/v1/chat/completions \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"mirox-luna-1.2","messages":[{"role":"user","content":"Hello!"}]}'
-<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
+  -d '{
+    "model": "mirox-luna-1.2",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
       </section>
 
       <section id="auth">
         <h2>Authentication</h2>
-        <p>Include your API key in the <code>Authorization</code> header. Generate keys from <strong>Plans → API keys</strong> inside the app.</p>
-        <pre><code>Authorization: Bearer mxk_live_xxxxxxxxxxxxxxxxxxxxxxxx
-<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
+        <p>Every request must include your API key in the <code>Authorization</code> header. Generate keys from <strong>Plans &rarr; API keys</strong> inside the app.</p>
+        <pre><code>Authorization: Bearer mxk_live_xxxxxxxxxxxxxxxxxxxxxxxx<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
+        <h3>Key rules</h3>
         <ul>
-          <li>Keys are prefixed with <code>mxk_</code> and hashed with SHA-256.</li>
-          <li>Never expose keys in client-side code.</li>
-          <li>Free: 2 keys/month · Pro: 5/month · Ultimate: 20/month.</li>
+          <li>Keys are prefixed with <code>mxk_</code> and hashed with SHA-256 in the database.</li>
+          <li>Never expose keys in client-side code — call the API from your server.</li>
+          <li>Free plan: max 2 keys. Pro: 5. Ultimate: 20.</li>
         </ul>
       </section>
 
       <section id="chat">
         <h2>Chat Completions</h2>
         <div class="endpoint"><span class="method post">POST</span><span>/v1/chat/completions</span></div>
+
         <h3>Request body</h3>
         <table>
           <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
           <tbody>
             <tr><td><code>model</code></td><td>string</td><td><code>mirox-luna-1.2</code> or <code>mirox-gen-1</code></td></tr>
             <tr><td><code>messages</code></td><td>array</td><td>Array of <code>{role, content}</code></td></tr>
-            <tr><td><code>stream</code></td><td>boolean</td><td>Enable SSE streaming</td></tr>
+            <tr><td><code>stream</code></td><td>boolean</td><td>Enable SSE streaming (default <code>false</code>)</td></tr>
             <tr><td><code>temperature</code></td><td>number</td><td>0–2, default <code>0.7</code></td></tr>
           </tbody>
         </table>
-        <pre><code>{"model":"mirox-luna-1.2","messages":[{"role":"user","content":"What is 2+2?"}],"stream":false}
-<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
+
+        <h3>Example request</h3>
+        <pre><code class="language-json">{
+  "model": "mirox-luna-1.2",
+  "messages": [
+    {"role": "system", "content": "You are helpful."},
+    {"role": "user", "content": "What is 2+2?"}
+  ],
+  "stream": false
+}<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
+
+        <h3>Streaming</h3>
+        <p>Set <code>stream: true</code> to receive Server-Sent Events:</p>
+        <pre><code class="language-plaintext">data: {"d":"Hello"}
+data: {"d":" there"}
+data: {"d":"!"}
+data: {"done":true,"model":"Luna"}<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
       </section>
 
       <section id="models">
         <h2>Models</h2>
+        <p>Only two models are available via the public API.</p>
         <table>
           <thead><tr><th>Model ID</th><th>Label</th><th>Best for</th></tr></thead>
           <tbody>
@@ -227,11 +298,13 @@ tr:last-child td{border-bottom:none}
       </section>
 
       <section id="images">
-        <h2>Lumenal 1.0 — Image Generation</h2>
+        <h2>Image Generation</h2>
         <div class="endpoint"><span class="method post">POST</span><span>/v1/images/generations</span></div>
-        <p>Powered by the Mirox image engine. Strong, fast image generation.</p>
-        <pre><code>{"prompt":"A serene mountain landscape at sunset","aspect_ratio":"16:9"}
-<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
+        <p>Powered by <strong>FLUX.1-schnell</strong> on Hugging Face.</p>
+        <pre><code class="language-json">{
+  "prompt": "A serene mountain landscape at sunset",
+  "aspect_ratio": "16:9"
+}<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
       </section>
 
       <section id="errors">
@@ -250,7 +323,8 @@ tr:last-child td{border-bottom:none}
 
       <section id="playground">
         <h2>API Playground</h2>
-        <p>Test the chat completions endpoint. Paste your API key or use your session.</p>
+        <p>Test the chat completions endpoint directly. Paste your API key (starts with <code>mxk_</code>) or leave it blank to use your session.</p>
+
         <div class="playground">
           <div class="playground-header">
             <h3><i class="ri-terminal-box-line"></i> POST /v1/chat/completions</h3>
@@ -258,10 +332,11 @@ tr:last-child td{border-bottom:none}
           </div>
           <div class="playground-body">
             <div class="field">
-              <label for="pgApiKey">API Key (optional)</label>
+              <label for="pgApiKey">API Key <span style="color:var(--text-faint);font-weight:400;">(optional)</span></label>
               <input type="password" id="pgApiKey" placeholder="mxk_live_...">
-              <div class="field-hint">Only used for this request. Never stored.</div>
+              <div class="field-hint">Your key is only used for this request. It's never stored.</div>
             </div>
+
             <div class="field-row">
               <div class="field">
                 <label for="pgModel">Model</label>
@@ -275,14 +350,23 @@ tr:last-child td{border-bottom:none}
                 <input type="number" id="pgTemp" value="0.7" min="0" max="2" step="0.1">
               </div>
             </div>
+
+            <div class="field">
+              <label for="pgSystem">System prompt <span style="color:var(--text-faint);font-weight:400;">(optional)</span></label>
+              <input type="text" id="pgSystem" placeholder="You are a helpful assistant.">
+            </div>
+
             <div class="field">
               <label for="pgMessage">User message</label>
-              <textarea id="pgMessage">Hello! What can you do?</textarea>
+              <textarea id="pgMessage" placeholder="Ask anything…">Hello! What can you do?</textarea>
             </div>
+
             <div class="field">
-              <label><input type="checkbox" id="pgStream" style="width:auto;margin-right:6px;vertical-align:middle;"> Stream (SSE)</label>
+              <label><input type="checkbox" id="pgStream" style="width:auto;margin-right:6px;vertical-align:middle;"> Stream response (SSE)</label>
             </div>
+
             <button class="btn btn-primary" id="pgSendBtn"><i class="ri-send-plane-fill"></i> Send Request</button>
+
             <div class="playground-result" id="pgResult" style="display:none;">
               <div class="playground-result-header">
                 <span>Response</span>
@@ -297,7 +381,7 @@ tr:last-child td{border-bottom:none}
       <section id="limits">
         <h2>Rate Limits</h2>
         <table>
-          <thead><tr><th>Plan</th><th>Daily messages</th><th>API keys/month</th></tr></thead>
+          <thead><tr><th>Plan</th><th>Daily messages</th><th>API keys</th></tr></thead>
           <tbody>
             <tr><td>Free</td><td>50</td><td>2</td></tr>
             <tr><td>Pro</td><td>500</td><td>5</td></tr>
@@ -312,129 +396,190 @@ tr:last-child td{border-bottom:none}
     </main>
   </div>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
   <script>
+    // Highlight.js supports a broad set of programming languages.
+    function highlightAllCode() {
+      if (!window.hljs) return;
+      document.querySelectorAll('pre code').forEach(code => {
+        if (!code.classList.contains('language-plaintext')) {
+          try { window.hljs.highlightElement(code); } catch {}
+        }
+        const pre = code.closest('pre');
+        if (pre && !pre.querySelector('.code-language')) {
+          const match = Array.from(code.classList).find(c => c.startsWith('language-'));
+          if (match && match !== 'language-plaintext') {
+            const label = document.createElement('span');
+            label.className = 'code-language';
+            label.textContent = match.slice(9);
+            pre.appendChild(label);
+          }
+        }
+      });
+    }
+    window.addEventListener('load', highlightAllCode);
+
     const $ = s => document.querySelector(s);
     const $$ = s => document.querySelectorAll(s);
 
+    // Nav
     const navLinks = $$('.dev-nav a');
     const sections = Array.from(navLinks).map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+
     navLinks.forEach(a => {
       a.addEventListener('click', e => {
         e.preventDefault();
         navLinks.forEach(x => x.classList.remove('active'));
         a.classList.add('active');
-        document.querySelector(a.getAttribute('href'))?.scrollIntoView({ behavior:'smooth' });
+        const target = document.querySelector(a.getAttribute('href'));
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
         closeMobileNav();
       });
     });
+
     const observer = new IntersectionObserver(entries => {
       entries.forEach(entry => {
-        if(entry.isIntersecting) navLinks.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#'+entry.target.id));
+        if (entry.isIntersecting) {
+          navLinks.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + entry.target.id));
+        }
       });
-    }, { rootMargin:'-30% 0px -60% 0px' });
+    }, { rootMargin: '-30% 0px -60% 0px' });
     sections.forEach(s => observer.observe(s));
 
-    const sidebar = $('#devSidebar'), scrim = $('#scrim');
-    function closeMobileNav(){ sidebar.classList.remove('open'); scrim.classList.remove('open'); }
+    // Mobile
+    const sidebar = $('#devSidebar');
+    const scrim = $('#scrim');
+    function closeMobileNav() { sidebar.classList.remove('open'); scrim.classList.remove('open'); }
     $('#mobileNavToggle')?.addEventListener('click', () => { sidebar.classList.toggle('open'); scrim.classList.toggle('open'); });
     scrim?.addEventListener('click', closeMobileNav);
 
+    // Theme
     const root = document.documentElement;
-    function applyTheme(mode){
+    function applyTheme(mode) {
       root.setAttribute('data-mode', mode);
       const btn = $('#themeToggle');
-      if(btn) btn.innerHTML = mode === 'dark' ? '<i class="ri-sun-line"></i>' : '<i class="ri-moon-line"></i>';
+      if (btn) btn.innerHTML = mode === 'dark' ? '<i class="ri-sun-line"></i>' : '<i class="ri-moon-line"></i>';
       try { localStorage.setItem('mirox_dev_theme', mode); } catch {}
     }
     (function loadTheme(){
       let mode = 'light';
       try {
         const saved = localStorage.getItem('mirox_dev_theme');
-        if(saved) mode = saved;
-        else if(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) mode = 'dark';
+        if (saved) mode = saved;
+        else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) mode = 'dark';
       } catch {}
       applyTheme(mode);
     })();
-    $('#themeToggle')?.addEventListener('click', () => applyTheme(root.getAttribute('data-mode') === 'dark' ? 'light' : 'dark'));
+    $('#themeToggle')?.addEventListener('click', () => {
+      applyTheme(root.getAttribute('data-mode') === 'dark' ? 'light' : 'dark');
+    });
 
+    // Copy
     document.querySelectorAll('[data-copy]').forEach(btn => {
       btn.addEventListener('click', async e => {
         e.preventDefault(); e.stopPropagation();
-        const codeEl = btn.closest('pre')?.querySelector('code');
-        if(!codeEl) return;
+        const pre = btn.closest('pre');
+        const codeEl = pre?.querySelector('code');
+        if (!codeEl) return;
         const text = codeEl.textContent;
         try {
-          if(navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(text);
+          if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(text);
           else { const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.top = '-1000px'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); }
+          btn.classList.add('copied');
           btn.innerHTML = '<i class="ri-check-line"></i> Copied';
-          setTimeout(() => btn.innerHTML = '<i class="ri-file-copy-line"></i> Copy', 1400);
+          setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = '<i class="ri-file-copy-line"></i> Copy'; }, 1400);
         } catch {}
       });
     });
 
+    // Playground
     const pgApiKey = $('#pgApiKey'), pgModel = $('#pgModel'), pgTemp = $('#pgTemp');
-    const pgMessage = $('#pgMessage'), pgStream = $('#pgStream');
-    const pgSendBtn = $('#pgSendBtn'), pgResult = $('#pgResult'), pgOutput = $('#pgOutput'), pgStatus = $('#pgStatus');
-    function setStatus(kind, text){
-      if(kind==='pending'){ pgStatus.className='status-pill pending'; pgStatus.innerHTML = '<span class="dots"><span></span><span></span><span></span></span> '+(text||'Streaming'); }
-      else if(kind==='ok'){ pgStatus.className='status-pill ok'; pgStatus.innerHTML = '<i class="ri-check-line"></i> '+(text||'OK'); }
-      else { pgStatus.className='status-pill err'; pgStatus.innerHTML = '<i class="ri-close-line"></i> '+(text||'Error'); }
+    const pgSystem = $('#pgSystem'), pgMessage = $('#pgMessage'), pgStream = $('#pgStream');
+    const pgSendBtn = $('#pgSendBtn'), pgResetBtn = $('#pgResetBtn');
+    const pgResult = $('#pgResult'), pgOutput = $('#pgOutput'), pgStatus = $('#pgStatus');
+
+    function setStatus(kind, text) {
+      if (kind === 'pending') pgStatus.className = 'status-pill pending', pgStatus.innerHTML = '<span class="dots"><span></span><span></span><span></span></span> ' + (text || 'Streaming');
+      else if (kind === 'ok') pgStatus.className = 'status-pill ok', pgStatus.innerHTML = '<i class="ri-check-line"></i> ' + (text || 'OK');
+      else if (kind === 'err') pgStatus.className = 'status-pill err', pgStatus.innerHTML = '<i class="ri-close-line"></i> ' + (text || 'Error');
     }
+
     $('#pgResetBtn')?.addEventListener('click', () => {
-      pgApiKey.value=''; pgModel.value='mirox-luna-1.2'; pgTemp.value='0.7';
-      pgMessage.value='Hello! What can you do?'; pgStream.checked=false;
-      pgResult.style.display='none'; pgOutput.textContent='';
+      pgApiKey.value = '';
+      pgModel.value = 'mirox-luna-1.2';
+      pgTemp.value = '0.7';
+      pgSystem.value = '';
+      pgMessage.value = 'Hello! What can you do?';
+      pgStream.checked = false;
+      pgResult.style.display = 'none';
+      pgOutput.textContent = '';
     });
+
     $('#pgSendBtn')?.addEventListener('click', async () => {
       const message = pgMessage.value.trim();
-      if(!message) return alert('Please enter a message.');
+      if (!message) return alert('Please enter a message.');
       const model = pgModel.value;
       const temperature = parseFloat(pgTemp.value) || 0.7;
+      const system = pgSystem.value.trim();
       const stream = pgStream.checked;
       const apiKey = pgApiKey.value.trim();
-      const messages = [{ role:'user', content:message }];
-      const headers = { 'Content-Type':'application/json' };
-      if(apiKey) headers.Authorization = 'Bearer '+apiKey;
-      pgResult.style.display='block'; pgOutput.textContent='';
-      pgSendBtn.disabled=true; setStatus('pending', stream?'Streaming':'Waiting');
+
+      const messages = [];
+      if (system) messages.push({ role: 'system', content: system });
+      messages.push({ role: 'user', content: message });
+
+      const headers = { 'Content-Type': 'application/json' };
+      if (apiKey) headers.Authorization = 'Bearer ' + apiKey;
+
+      pgResult.style.display = 'block';
+      pgOutput.textContent = '';
+      pgSendBtn.disabled = true;
+      setStatus('pending', stream ? 'Streaming' : 'Waiting');
+
       const t0 = performance.now();
       try {
-        if(stream){
-          const res = await fetch('/v1/chat/completions', { method:'POST', headers, body:JSON.stringify({ model, messages, stream:true, temperature }) });
-          if(!res.ok || !res.body){ const e = await res.json().catch(()=>({})); throw new Error(e.error||('HTTP '+res.status)); }
+        if (stream) {
+          const res = await fetch('/v1/chat/completions', { method: 'POST', headers, body: JSON.stringify({ model, messages, stream: true, temperature }) });
+          if (!res.ok || !res.body) { const e = await res.json().catch(()=>({})); throw new Error(e.error || ('HTTP ' + res.status)); }
           const reader = res.body.getReader(), dec = new TextDecoder();
-          let buf='', full='';
-          while(true){
+          let buf = '', full = '';
+          while (true) {
             const { value, done } = await reader.read();
-            if(done) break;
-            buf += dec.decode(value, { stream:true });
+            if (done) break;
+            buf += dec.decode(value, { stream: true });
             let idx;
-            while((idx = buf.indexOf('\n')) !== -1){
-              const line = buf.slice(0, idx).trim(); buf = buf.slice(idx+1);
-              if(!line.startsWith('data:')) continue;
+            while ((idx = buf.indexOf('\n')) !== -1) {
+              const line = buf.slice(0, idx).trim(); buf = buf.slice(idx + 1);
+              if (!line.startsWith('data:')) continue;
               const pl = line.slice(5).trim();
-              if(!pl || pl === '[DONE]') continue;
+              if (!pl || pl === '[DONE]') continue;
               try {
                 const o = JSON.parse(pl);
-                if(o.d){ full += o.d; pgOutput.textContent = full; pgOutput.scrollTop = pgOutput.scrollHeight; }
-                if(o.error) throw new Error(o.error);
-                if(o.done){ pgOutput.textContent += '\n\n— done in '+Math.round(performance.now()-t0)+'ms · model: '+(o.model||'Luna'); setStatus('ok','OK'); }
+                if (o.d) { full += o.d; pgOutput.textContent = full; pgOutput.scrollTop = pgOutput.scrollHeight; }
+                if (o.error) throw new Error(o.error);
+                if (o.done) { pgOutput.textContent += '\n\n— done in ' + Math.round(performance.now()-t0) + 'ms · model: ' + (o.model || 'Luna'); setStatus('ok', 'OK'); }
               } catch {}
             }
           }
         } else {
-          const res = await fetch('/v1/chat/completions', { method:'POST', headers, body:JSON.stringify({ model, messages, stream:false, temperature }) });
+          const res = await fetch('/v1/chat/completions', { method: 'POST', headers, body: JSON.stringify({ model, messages, stream: false, temperature }) });
           const data = await res.json();
           const ms = Math.round(performance.now() - t0);
-          if(res.ok && data.ok !== false){
-            pgOutput.textContent = (data.reply||'(empty)') + '\n\n— metadata —\n' + JSON.stringify({ model:data.model, ms, daily_remaining:data.daily_remaining }, null, 2);
-            setStatus('ok','OK');
-          } else { pgOutput.textContent = JSON.stringify(data, null, 2); setStatus('err', data.error || ('HTTP '+res.status)); }
+          if (res.ok && data.ok !== false) {
+            pgOutput.textContent = (data.reply || '(empty)') + '\n\n— metadata —\n' + JSON.stringify({ model: data.model, ms, daily_remaining: data.daily_remaining }, null, 2);
+            setStatus('ok', 'OK');
+          } else { pgOutput.textContent = JSON.stringify(data, null, 2); setStatus('err', data.error || ('HTTP ' + res.status)); }
         }
-      } catch(e){
+      } catch (e) {
         pgOutput.textContent = 'Error: ' + (e.message || String(e));
-        setStatus('err','Error');
-      } finally { pgSendBtn.disabled=false; }
+        setStatus('err', 'Error');
+      } finally {
+        pgSendBtn.disabled = false;
+      }
+    });
+
+    pgMessage?.addEventListener('keydown', e => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); pgSendBtn.click(); }
     });
   </script>
 </body>
