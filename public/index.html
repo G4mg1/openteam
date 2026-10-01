@@ -14,14 +14,17 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+  <!-- Loading -->
   <div id="loadingScreen" class="loading-screen">
-    <img src="/logo.png" alt="MiroxAI" class="loading-logo theme-aware-logo" onerror="this.style.display='none'; this.parentElement.querySelector('.logo-fallback-lg').style.display='grid';">
+    <img src="/logo.png" alt="MiroxAI" class="loading-logo theme-aware-logo" onerror="this.style.display='none'; this.parentElement.querySelector('.logo-fallback').style.display='grid';">
     <div class="logo-fallback logo-fallback-lg" style="display:none;">M</div>
     <div class="loading-bar"><div class="loading-bar-fill"></div></div>
   </div>
 
+  <!-- Sidebar Scrim -->
   <div id="sidebarScrim" class="sidebar-scrim"></div>
 
+  <!-- Sidebar -->
   <aside id="sidebar" class="sidebar">
     <div class="sidebar-header">
       <a href="#" id="brandLogo" class="brand">
@@ -65,6 +68,7 @@
     </div>
   </aside>
 
+  <!-- Main -->
   <main class="main">
     <header class="chat-header">
       <button id="hamburgerBtn" class="icon-btn hamburger" type="button" aria-label="Menu">
@@ -128,6 +132,7 @@
     </div>
   </main>
 
+  <!-- Login -->
   <div id="loginModal" class="modal-overlay">
     <div class="modal">
       <button class="icon-btn modal-close" type="button" data-close="loginModal" aria-label="Close"><i class="ri-close-line"></i></button>
@@ -141,6 +146,7 @@
     </div>
   </div>
 
+  <!-- Settings -->
   <div id="settingsModal" class="modal-overlay">
     <div class="modal modal-wide">
       <button class="icon-btn modal-close" type="button" data-close="settingsModal" aria-label="Close"><i class="ri-close-line"></i></button>
@@ -154,6 +160,7 @@
         <button class="settings-tab" type="button" data-tab="memory">Memory</button>
         <button class="settings-tab" type="button" data-tab="mcp">MCP</button>
       </div>
+
       <div class="settings-pane active" data-pane="general">
         <div class="setting-group">
           <h4>Notifications</h4>
@@ -162,6 +169,7 @@
         </div>
         <div class="setting-group"><h4>Session</h4><button id="logoutBtn" class="modal-btn danger" type="button">Sign out</button></div>
       </div>
+
       <div class="settings-pane" data-pane="appearance">
         <div class="setting-group"><h4>Mode</h4><div id="modeOptions" class="segmented">
           <button class="seg-btn" type="button" data-mode="light">Light</button>
@@ -180,6 +188,7 @@
           <button class="seg-btn" type="button" data-corner="round">Round</button>
         </div></div>
       </div>
+
       <div class="settings-pane" data-pane="chat">
         <div class="setting-group">
           <h4>Code rendering</h4>
@@ -187,15 +196,21 @@
           <div class="setting-row"><span>Line numbers</span><button class="toggle-btn" type="button" data-toggle="lineNumbers">OFF</button></div>
         </div>
       </div>
+
       <div class="settings-pane" data-pane="voice">
         <div class="setting-group"><h4>Voice language</h4><select id="langSelect" class="modal-select">
-          <option value="en-US">English</option><option value="es-ES">Spanish</option>
-          <option value="fr-FR">French</option><option value="de-DE">German</option>
-          <option value="ar-SA">Arabic</option><option value="hi-IN">Hindi</option>
-          <option value="zh-CN">Chinese</option><option value="ja-JP">Japanese</option>
+          <option value="en-US">English</option>
+          <option value="es-ES">Spanish</option>
+          <option value="fr-FR">French</option>
+          <option value="de-DE">German</option>
+          <option value="ar-SA">Arabic</option>
+          <option value="hi-IN">Hindi</option>
+          <option value="zh-CN">Chinese</option>
+          <option value="ja-JP">Japanese</option>
         </select></div>
         <div class="setting-group"><h4>Microphone</h4><button id="requestMicBtn" class="modal-btn" type="button">Grant mic access</button></div>
       </div>
+
       <div class="settings-pane" data-pane="personal">
         <div class="setting-group">
           <h4>Custom character</h4>
@@ -203,6 +218,7 @@
           <button id="savePersonaBtn" class="modal-btn" type="button">Save</button>
         </div>
       </div>
+
       <div class="settings-pane" data-pane="memory">
         <div class="setting-group">
           <h4>Memory</h4>
@@ -213,6 +229,7 @@
           </div>
         </div>
       </div>
+
       <div class="settings-pane" data-pane="mcp">
         <div class="setting-group">
           <h4>MCP Servers</h4>
@@ -228,6 +245,7 @@
     </div>
   </div>
 
+  <!-- Plans -->
   <div id="plansModal" class="modal-overlay">
     <div class="modal modal-wide">
       <button class="icon-btn modal-close" type="button" data-close="plansModal" aria-label="Close"><i class="ri-close-line"></i></button>
@@ -243,6 +261,7 @@
     </div>
   </div>
 
+  <!-- Background -->
   <div id="backgroundModal" class="modal-overlay">
     <div class="modal">
       <button class="icon-btn modal-close" type="button" data-close="backgroundModal" aria-label="Close"><i class="ri-close-line"></i></button>
@@ -262,6 +281,7 @@
     </div>
   </div>
 
+  <!-- Lumenal 1.0 -->
   <div id="imageModal" class="modal-overlay">
     <div class="modal">
       <button class="icon-btn modal-close" type="button" data-close="imageModal" aria-label="Close"><i class="ri-close-line"></i></button>
@@ -284,14 +304,17 @@
     </div>
   </div>
 
+  <!-- Support -->
   <div id="supportModal" class="modal-overlay">
     <div class="modal">
       <button class="icon-btn modal-close" type="button" data-close="supportModal" aria-label="Close"><i class="ri-close-line"></i></button>
       <h2 class="modal-title">Contact Support</h2>
       <div class="support-form">
         <select id="supportCategory" class="modal-select">
-          <option>General question</option><option>Bug report</option>
-          <option>Billing</option><option>Feature request</option>
+          <option>General question</option>
+          <option>Bug report</option>
+          <option>Billing</option>
+          <option>Feature request</option>
         </select>
         <input type="text" id="supportSubject" class="modal-input" placeholder="Subject">
         <textarea id="supportMessage" class="modal-textarea" rows="4" placeholder="Message"></textarea>
@@ -300,6 +323,7 @@
     </div>
   </div>
 
+  <!-- Call -->
   <div id="callOverlay" class="call-overlay">
     <div class="call-content">
       <div class="call-avatar"><i class="ri-mic-line"></i></div>
