@@ -8,42 +8,41 @@
   <link href="https://cdn.jsdelivr.net/npm/remixicon@4.9.0/fonts/remixicon.css" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
   <style>
-    body{display:block;overflow-y:auto;padding:24px}
-    .admin-wrap{max-width:1400px;margin:0 auto}
-    .admin-header{display:flex;align-items:center;gap:12px;margin-bottom:24px;flex-wrap:wrap}
-    .admin-header h1{font-size:22px;font-weight:700;flex:1}
-    .admin-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px}
-    .stat-card{padding:18px;border-radius:var(--radius-lg);border:1px solid var(--border);background:var(--panel)}
-    .stat-card h3{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint);margin-bottom:6px}
-    .stat-card .value{font-size:28px;font-weight:700}
-    .admin-section{margin-bottom:28px}
-    .admin-section h2{font-size:16px;font-weight:600;margin-bottom:12px}
-    .log-table{width:100%;border-collapse:collapse;font-size:13px;border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden}
-    .log-table th,.log-table td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--border)}
-    .log-table th{font-weight:600;color:var(--text-faint);font-size:11px;text-transform:uppercase;background:var(--panel-2)}
-    .admin-input{padding:8px 12px;border-radius:var(--radius);border:1px solid var(--border);background:var(--panel-2);font-size:14px;width:100%;max-width:300px}
-    .admin-btn{padding:8px 16px;border-radius:var(--radius);background:var(--accent);color:#fff;font-size:14px;font-weight:500;border:none;cursor:pointer}
-    .admin-btn:hover{background:var(--accent-hover)}
-    .tab-bar{display:flex;gap:6px;margin-bottom:20px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:8px}
-    .tab-btn{padding:8px 16px;border-radius:var(--radius);font-size:13px;font-weight:500;color:var(--text-muted);background:transparent;border:1px solid transparent;cursor:pointer}
-    .tab-btn:hover{background:var(--panel-2);color:var(--text)}
-    .tab-btn.active{background:var(--accent-soft);color:var(--accent);border-color:var(--accent)}
-    .tab-pane{display:none}
-    .tab-pane.active{display:block}
-    .gate{position:fixed;inset:0;z-index:999;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px}
-    .gate.hidden{display:none}
-    .gate-card{width:100%;max-width:380px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-xl);padding:32px 28px;box-shadow:var(--shadow-lg);text-align:center}
-    .gate-icon{width:56px;height:56px;border-radius:14px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-size:26px;margin:0 auto 16px}
-    .gate-title{font-size:20px;font-weight:700;margin-bottom:6px}
-    .gate-sub{font-size:13.5px;color:var(--text-muted);margin-bottom:22px}
-    .gate-input{width:100%;padding:12px 14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--panel-2);font-size:15px;outline:none}
-    .gate-btn{width:100%;margin-top:14px;padding:12px;border-radius:var(--radius);border:none;background:var(--accent);color:#fff;font-size:14.5px;font-weight:600;cursor:pointer}
-    .gate-err{color:#dc2626;font-size:13px;margin-top:10px;min-height:18px}
-    @media (max-width:640px){body{padding:12px}.admin-header h1{font-size:18px}}
+    body { display:block; overflow-y:auto; padding:24px; background:var(--bg); background-image:none; }
+    .admin-wrap { max-width:1400px; margin:0 auto; }
+    .admin-header { display:flex; align-items:center; gap:12px; margin-bottom:24px; flex-wrap:wrap; }
+    .admin-header h1 { font-size:22px; font-weight:700; flex:1; }
+    .admin-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px; margin-bottom:24px; }
+    .stat-card { padding:18px; border-radius:var(--radius-lg); border:1px solid var(--border); background:var(--panel); }
+    .stat-card h3 { font-size:12px; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-faint); margin-bottom:6px; }
+    .stat-card .value { font-size:28px; font-weight:700; }
+    .admin-section { margin-bottom:28px; }
+    .admin-section h2 { font-size:16px; font-weight:600; margin-bottom:12px; }
+    .log-table { width:100%; border-collapse:collapse; font-size:13px; border:1px solid var(--border); border-radius:var(--radius-lg); overflow:hidden; }
+    .log-table th, .log-table td { text-align:left; padding:8px 12px; border-bottom:1px solid var(--border); }
+    .log-table th { font-weight:600; color:var(--text-faint); font-size:11px; text-transform:uppercase; background:var(--panel-2); }
+    .admin-input { padding:8px 12px; border-radius:var(--radius); border:1px solid var(--border); background:var(--panel-2); font-size:14px; width:100%; max-width:300px; }
+    .admin-btn { padding:8px 16px; border-radius:var(--radius); background:var(--accent); color:#fff; font-size:14px; font-weight:500; border:none; cursor:pointer; }
+    .admin-btn:hover { background:var(--accent-hover); }
+    .tab-bar { display:flex; gap:6px; margin-bottom:20px; flex-wrap:wrap; border-bottom:1px solid var(--border); padding-bottom:8px; }
+    .tab-btn { padding:8px 16px; border-radius:var(--radius); font-size:13px; font-weight:500; color:var(--text-muted); background:transparent; border:1px solid transparent; cursor:pointer; }
+    .tab-btn:hover { background:var(--panel-2); color:var(--text); }
+    .tab-btn.active { background:var(--accent-soft); color:var(--accent); border-color:var(--accent); }
+    .tab-pane { display:none; }
+    .tab-pane.active { display:block; }
+    .gate { position:fixed; inset:0; z-index:999; background:var(--bg); display:flex; align-items:center; justify-content:center; padding:20px; }
+    .gate.hidden { display:none; }
+    .gate-card { width:100%; max-width:380px; background:var(--panel); border:1px solid var(--border); border-radius:var(--radius-xl); padding:32px 28px; box-shadow:var(--shadow-lg); text-align:center; }
+    .gate-icon { width:56px; height:56px; border-radius:14px; background:var(--accent-soft); color:var(--accent); display:grid; place-items:center; font-size:26px; margin:0 auto 16px; }
+    .gate-title { font-size:20px; font-weight:700; margin-bottom:6px; }
+    .gate-sub { font-size:13.5px; color:var(--text-muted); margin-bottom:22px; }
+    .gate-input { width:100%; padding:12px 14px; border-radius:var(--radius); border:1px solid var(--border); background:var(--panel-2); font-size:15px; outline:none; }
+    .gate-btn { width:100%; margin-top:14px; padding:12px; border-radius:var(--radius); border:none; background:var(--accent); color:#fff; font-size:14.5px; font-weight:600; cursor:pointer; }
+    .gate-err { color:#dc2626; font-size:13px; margin-top:10px; min-height:18px; }
+    @media (max-width:640px){ body{padding:12px} .admin-header h1{font-size:18px} }
   </style>
 </head>
 <body>
-  <!-- Gate -->
   <div class="gate" id="gate">
     <div class="gate-card">
       <div class="gate-icon"><i class="ri-lock-2-line"></i></div>
@@ -83,7 +82,7 @@
         <h2>All Users</h2>
         <div style="overflow-x:auto;">
           <table class="log-table" id="adminUserTable">
-            <thead><tr><th>Email</th><th>Name</th><th>Tier</th><th>Eclipse</th><th>Keys/Month</th><th>Last Login</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Email</th><th>Name</th><th>Tier</th><th>Eclipse Used</th><th>Keys/Month</th><th>Last Login</th><th>Actions</th></tr></thead>
             <tbody><tr><td colspan="7" style="color:var(--text-faint)">Loading…</td></tr></tbody>
           </table>
         </div>
@@ -129,13 +128,13 @@
     <div class="tab-pane" id="pane-manage">
       <div class="admin-section">
         <h2>Change User Plan</h2>
-        <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">Updates are saved instantly to the database. Users will see their new plan on next page load.</p>
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">Updates are saved instantly. Users see their new plan on next page load.</p>
         <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
           <input type="text" id="manageEmail" class="admin-input" placeholder="user@email.com">
           <select id="manageTier" class="admin-input" style="max-width:200px;">
-            <option value="free">Free</option>
-            <option value="pro">Pro</option>
-            <option value="ultimate">Ultimate</option>
+            <option value="free">Free (Luna + Gen, 5 Eclipse/day)</option>
+            <option value="pro">Pro (+ Pro & Ultra models)</option>
+            <option value="ultimate">Ultimate (all models, unlimited Eclipse)</option>
           </select>
           <button id="manageTierBtn" class="admin-btn">Save Plan</button>
         </div>
@@ -180,7 +179,6 @@
     $('#adminLogout').addEventListener('click', () => { setAdminToken(''); showGate(''); $('#gatePass').value=''; });
     $('#refreshBtn').addEventListener('click', () => loadAll());
 
-    /* Tabs */
     $$('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         $$('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -193,16 +191,14 @@
     async function loadAll(){
       try {
         const res = await adminFetch('/stats');
-        if(res.status === 401){ setAdminToken(''); showGate('Session expired, please log in again.'); return; }
+        if(res.status === 401){ setAdminToken(''); showGate('Session expired.'); return; }
         const data = await res.json();
         if(!data.ok) return;
-
         $('#statUsers').textContent = data.users;
         $('#statChats').textContent = data.chats;
         $('#statImages').textContent = data.images;
         $('#statEvents').textContent = data.events;
 
-        /* Users table */
         const users = data.users_data || {};
         const utBody = $('#adminUserTable tbody');
         const uRows = Object.entries(users).map(([email, u]) => `
@@ -210,14 +206,13 @@
             <td>${email}</td>
             <td>${u.name || '—'}</td>
             <td><span style="padding:2px 8px;border-radius:99px;background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:600;">${u.tier||'free'}</span></td>
-            <td>${u.eclipse_credits ?? 10}</td>
+            <td>${u.eclipse_used ?? 0}</td>
             <td>${u.keys_this_month ?? 0}</td>
             <td>${u.last_login ? new Date(u.last_login).toLocaleString() : '—'}</td>
             <td><button class="admin-btn" style="padding:4px 10px;font-size:12px;" onclick="quickSet('${email}','${u.tier||'free'}')">Change</button></td>
           </tr>`).join('');
         utBody.innerHTML = uRows || '<tr><td colspan="7" style="color:var(--text-faint)">No users yet</td></tr>';
 
-        /* Chat logs */
         const cBody = $('#adminChatLogs tbody');
         cBody.innerHTML = (data.chats_data||[]).map(r => `
           <tr>
@@ -227,7 +222,6 @@
             <td>${r.ts ? new Date(r.ts).toLocaleString() : '—'}</td>
           </tr>`).join('') || '<tr><td colspan="4" style="color:var(--text-faint)">No chat logs yet</td></tr>';
 
-        /* Image logs */
         const iBody = $('#adminImageLogs tbody');
         iBody.innerHTML = (data.images_data||[]).map(r => `
           <tr>
@@ -237,7 +231,6 @@
             <td>${r.ts ? new Date(r.ts).toLocaleString() : '—'}</td>
           </tr>`).join('') || '<tr><td colspan="4" style="color:var(--text-faint)">No image logs yet</td></tr>';
 
-        /* Events */
         const eBody = $('#adminEventLogs tbody');
         eBody.innerHTML = (data.events_data||[]).map(r => `
           <tr>
@@ -249,7 +242,6 @@
       } catch(e){ console.warn(e); }
     }
 
-    /* Quick change tier from Users table */
     window.quickSet = (email, currentTier) => {
       $('#manageEmail').value = email;
       $('#manageTier').value = currentTier;
@@ -260,7 +252,6 @@
       $('#manageEmail').scrollIntoView({ behavior:'smooth' });
     };
 
-    /* Auto-save plan change */
     $('#manageTierBtn').addEventListener('click', async () => {
       const email = $('#manageEmail').value.trim().toLowerCase();
       const tier = $('#manageTier').value;
@@ -277,7 +268,6 @@
       }
     });
 
-    /* Boot */
     (function boot(){
       const t = getAdminToken();
       if(!t){ showGate(''); return; }
