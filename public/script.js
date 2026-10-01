@@ -1,6 +1,6 @@
 /* ============================================================
-   MiroxAI — Frontend Script v25
-   Fixed: HF endpoints, Lumenal image model, send button
+   MiroxAI — Frontend v27
+   Fixed: send button, model picker, image generation, streaming
    ============================================================ */
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
@@ -18,7 +18,7 @@ const $$ = s => document.querySelectorAll(s);
 const FALLBACK_MODELS = [
   { id: 'mirox-luna-1.2', label: 'Luna', tagline: 'Fast · warm · free', default: true },
   { id: 'mirox-gen-1', label: 'Gen', tagline: 'Ultra concise' },
-  { id: 'mirox-pro-5', label: 'Pro', tagline: 'Balanced' },
+  { id: 'mirox-pro-5', label: 'Pro', tagline: 'Balanced · deeper' },
   { id: 'mirox-ultra-10', label: 'Ultra', tagline: 'Deep reasoning' },
   { id: 'mirox-eclipse-2.0', label: 'Eclipse', tagline: 'Best quality' },
 ];
@@ -37,13 +37,13 @@ let synth = window.speechSynthesis;
 let callActive = false, callMuted = false;
 let activeStreamController = null;
 
-const LS_KEY = 'miroxai_conversations_v11';
+const LS_KEY = 'miroxai_conversations_v12';
 const TOKEN_KEY = 'mirox_token';
-const USER_SETTINGS_KEY = 'miroxai_user_settings_v11';
+const USER_SETTINGS_KEY = 'miroxai_user_settings_v12';
 const DEVICE_ID_KEY = 'mirox_device_id';
-const APPEARANCE_KEY = 'miroxai_appearance_v11';
-const BG_KEY = 'miroxai_bg_v11';
-const MCP_KEY = 'miroxai_mcp_v11';
+const APPEARANCE_KEY = 'miroxai_appearance_v12';
+const BG_KEY = 'miroxai_bg_v12';
+const MCP_KEY = 'miroxai_mcp_v12';
 
 function killLoader() {
   const l = document.getElementById('loadingScreen');
@@ -256,14 +256,15 @@ async function loadChatsFromFirebase() {
 }
 function getWelcomeHTML() {
   return `<div class="welcome-screen">
-    <img src="/logo.png" alt="MiroxAI" class="welcome-logo theme-aware-logo">
+    <img src="/logo.png" alt="MiroxAI" class="welcome-logo theme-aware-logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';">
+    <div class="logo-fallback logo-fallback-lg" style="display:none;">M</div>
     <h1 class="welcome-title">Hi, I'm Mirox</h1>
     <p class="welcome-sub">Built by the OpenSurr team. Ask anything, attach images or files, or start a voice call.</p>
     <div class="suggestion-grid">
-      <button class="suggestion-card" data-prompt="What would you like to talk about?"><i class="ri-chat-3-line"></i><span>What would you like to talk about?</span></button>
-      <button class="suggestion-card" data-prompt="Help me write code"><i class="ri-code-line"></i><span>Help me write code</span></button>
-      <button class="suggestion-card" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span>Explain a concept simply</span></button>
-      <button class="suggestion-card" data-prompt="Generate an image"><i class="ri-image-line"></i><span>Generate an image</span></button>
+      <button class="suggestion-card" type="button" data-prompt="What would you like to talk about?"><i class="ri-chat-3-line"></i><span>What would you like to talk about?</span></button>
+      <button class="suggestion-card" type="button" data-prompt="Help me write code"><i class="ri-code-line"></i><span>Help me write code</span></button>
+      <button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span>Explain a concept simply</span></button>
+      <button class="suggestion-card" type="button" data-prompt="Generate an image"><i class="ri-image-line"></i><span>Generate an image</span></button>
     </div>
     <p class="welcome-disclaimer">Mirox can make mistakes. Made by the OpenSurr team.</p>
   </div>`;
