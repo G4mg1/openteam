@@ -1,10 +1,10 @@
 /* ============================================================
-   MiroxAI Backend v48
-   NEW: pcall-style safe handling for tools & args
-   - tools / tool_choice / tool_calls / functions / function_call
-     are ALL optional — missing or malformed = safely ignored
-   - Every message sanitized before sending upstream
-   - Never crashes on unexpected client payloads
+   MiroxAI Backend v49
+   FIXED:
+   - Client requests now get responses reliably (no stalled streams)
+   - API keys persist after reload (both index + list writes awaited)
+   - No confusing padding events
+   - Simpler, spec-compliant SSE
    ============================================================ */
 
 process.on('unhandledRejection', (r) => { console.error('[Mirox] unhandledRejection:', r); });
@@ -30,11 +30,11 @@ const AR_KEY = (process.env.AR_KEY || '').trim();
 const SECRET = process.env.SECRET_KEY || 'mirox-fallback-secret';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '2010';
 
-const HF_TIMEOUT_MS = 22000;
-const PL_TIMEOUT_MS = 22000;
-const AR_TIMEOUT_MS = 22000;
-const TOTAL_DEADLINE_MS = 45000;
-const STREAM_SAFETY_MS = 50000;
+const HF_TIMEOUT_MS = 20000;
+const PL_TIMEOUT_MS = 20000;
+const AR_TIMEOUT_MS = 20000;
+const TOTAL_DEADLINE_MS = 40000;
+const STREAM_SAFETY_MS = 52000;
 
 const PROVIDERS = { hf: !!HF_API_KEY, pl: !!PL_KEY, ar: !!AR_KEY };
 const HAS_ANY_PROVIDER = PROVIDERS.hf || PROVIDERS.pl || PROVIDERS.ar;
@@ -42,10 +42,7 @@ console.log('[Mirox] Providers:', PROVIDERS);
 
 /* ============================================================
    PCALL-STYLE SAFE HELPERS
-   Every helper NEVER throws. Returns a sane default on any error.
    ============================================================ */
-
-/** Safe get from object — returns default if missing or wrong type */
 function safeGet(obj, key, defaultValue = undefined) {
   try {
     if (!obj || typeof obj !== 'object') return defaultValue;
@@ -53,8 +50,6 @@ function safeGet(obj, key, defaultValue = undefined) {
     return v === undefined || v === null ? defaultValue : v;
   } catch { return defaultValue; }
 }
-
-/** Safe string coercion */
 function safeString(v, maxLen = 100000) {
   try {
     if (v === undefined || v === null) return '';
@@ -62,21 +57,10 @@ function safeString(v, maxLen = 100000) {
     return s.length > maxLen ? s.slice(0, maxLen) : s;
   } catch { return ''; }
 }
-
-/** Safe number */
 function safeNumber(v, defaultValue = 0) {
-  try {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : defaultValue;
-  } catch { return defaultValue; }
+  try { const n = Number(v); return Number.isFinite(n) ? n : defaultValue; } catch { return defaultValue; }
 }
-
-/** Safe array — returns [] if not an array */
-function safeArray(v) {
-  try { return Array.isArray(v) ? v : []; } catch { return []; }
-}
-
-/** Safe boolean */
+function safeArray(v) { try { return Array.isArray(v) ? v : []; } catch { return []; } }
 function safeBool(v, defaultValue = false) {
   try {
     if (typeof v === 'boolean') return v;
@@ -86,11 +70,6 @@ function safeBool(v, defaultValue = false) {
   } catch { return defaultValue; }
 }
 
-/**
- * Safely parse an OpenAI `tools` array.
- * Returns [] on any error. Never throws.
- * Preserves only well-formed tool definitions.
- */
 function safeParseTools(tools) {
   try {
     if (!Array.isArray(tools)) return [];
@@ -102,77 +81,54 @@ function safeParseTools(tools) {
       if (type === 'function' && fn && typeof fn === 'object') {
         const name = safeString(safeGet(fn, 'name'), 64);
         if (!name) continue;
-        const description = safeString(safeGet(fn, 'description'), 1024);
-        const parameters = safeGet(fn, 'parameters');
         out.push({
           type: 'function',
           function: {
             name,
-            description,
-            parameters: (parameters && typeof parameters === 'object') ? parameters : { type: 'object', properties: {} },
+            description: safeString(safeGet(fn, 'description'), 1024),
+            parameters: (safeGet(fn, 'parameters') && typeof fn.parameters === 'object') ? fn.parameters : { type: 'object', properties: {} },
           },
         });
       } else if (type && type !== 'function') {
-        /* Non-function tools (e.g. code_interpreter, retrieval) — pass through but sanitized */
         out.push({ type });
       }
     }
     return out;
   } catch { return []; }
 }
-
-/** Legacy OpenAI `functions` array (pre-tools) → convert to tools format */
 function safeParseLegacyFunctions(functions) {
   try {
     if (!Array.isArray(functions)) return [];
-    const tools = [];
+    const out = [];
     for (const fn of functions) {
       if (!fn || typeof fn !== 'object') continue;
       const name = safeString(safeGet(fn, 'name'), 64);
       if (!name) continue;
-      tools.push({
-        type: 'function',
-        function: {
-          name,
-          description: safeString(safeGet(fn, 'description'), 1024),
-          parameters: (safeGet(fn, 'parameters') && typeof fn.parameters === 'object') ? fn.parameters : { type: 'object', properties: {} },
-        },
-      });
+      out.push({ type: 'function', function: { name, description: safeString(safeGet(fn, 'description'), 1024), parameters: (safeGet(fn, 'parameters') && typeof fn.parameters === 'object') ? fn.parameters : { type: 'object', properties: {} } } });
     }
-    return tools;
+    return out;
   } catch { return []; }
 }
-
-/** Safe tool_choice — returns a valid value or undefined */
 function safeToolChoice(tc) {
   try {
     if (tc === undefined || tc === null) return undefined;
-    if (typeof tc === 'string') {
-      if (['auto', 'none', 'required'].includes(tc)) return tc;
-      return 'auto';
-    }
+    if (typeof tc === 'string') return ['auto', 'none', 'required'].includes(tc) ? tc : 'auto';
     if (typeof tc === 'object') {
       const type = safeString(safeGet(tc, 'type'), 20);
       if (type === 'function') {
-        const fn = safeGet(tc, 'function');
-        const name = safeString(safeGet(fn, 'name'), 64);
+        const name = safeString(safeGet(safeGet(tc, 'function'), 'name'), 64);
         if (!name) return 'auto';
         return { type: 'function', function: { name } };
       }
-      if (type && ['auto', 'none', 'required'].includes(type)) return type;
+      if (['auto', 'none', 'required'].includes(type)) return type;
     }
     return 'auto';
   } catch { return undefined; }
 }
-
-/** Legacy function_call → tool_choice */
 function safeLegacyFunctionCall(fc) {
   try {
     if (fc === undefined || fc === null) return undefined;
-    if (typeof fc === 'string') {
-      if (['auto', 'none'].includes(fc)) return fc;
-      return 'auto';
-    }
+    if (typeof fc === 'string') return ['auto', 'none'].includes(fc) ? fc : 'auto';
     if (typeof fc === 'object') {
       const name = safeString(safeGet(fc, 'name'), 64);
       if (name) return { type: 'function', function: { name } };
@@ -180,8 +136,6 @@ function safeLegacyFunctionCall(fc) {
     return 'auto';
   } catch { return undefined; }
 }
-
-/** Safe tool_calls inside an assistant message — preserves well-formed entries */
 function safeParseToolCalls(toolCalls) {
   try {
     if (!Array.isArray(toolCalls)) return [];
@@ -201,8 +155,6 @@ function safeParseToolCalls(toolCalls) {
     return out;
   } catch { return []; }
 }
-
-/** Legacy function_call inside assistant message */
 function safeParseAssistantFunctionCall(fc) {
   try {
     if (!fc || typeof fc !== 'object') return null;
@@ -212,45 +164,28 @@ function safeParseAssistantFunctionCall(fc) {
     return { name, arguments: args || '{}' };
   } catch { return null; }
 }
-
-/**
- * Sanitize a single message object for upstream.
- * Never throws, drops malformed entries safely.
- */
 function safeSanitizeMessage(msg) {
   try {
     if (!msg || typeof msg !== 'object') return null;
     const role = safeString(safeGet(msg, 'role'), 20);
     if (!['system', 'user', 'assistant', 'tool', 'function'].includes(role)) return null;
-
     const out = { role };
-
-    /* Content can be string, array (multimodal), or null */
     const rawContent = safeGet(msg, 'content');
-    if (typeof rawContent === 'string') {
-      out.content = rawContent;
-    } else if (Array.isArray(rawContent)) {
-      /* Sanitize multimodal parts — drop anything unrecognized */
+    if (typeof rawContent === 'string') out.content = rawContent;
+    else if (Array.isArray(rawContent)) {
       const parts = [];
       for (const p of rawContent) {
         if (!p || typeof p !== 'object') continue;
         const ptype = safeString(safeGet(p, 'type'), 20);
-        if (ptype === 'text' && typeof safeGet(p, 'text') === 'string') {
-          parts.push({ type: 'text', text: p.text });
-        } else if (ptype === 'image_url' && safeGet(p, 'image_url')) {
+        if (ptype === 'text' && typeof safeGet(p, 'text') === 'string') parts.push({ type: 'text', text: p.text });
+        else if (ptype === 'image_url' && safeGet(p, 'image_url')) {
           const url = safeString(safeGet(p.image_url, 'url'), 20000000);
           if (url) parts.push({ type: 'image_url', image_url: { url } });
         }
-        /* Anything else: silently dropped */
       }
       out.content = parts.length ? parts : '';
-    } else if (rawContent !== undefined && rawContent !== null) {
-      out.content = safeString(rawContent);
-    } else {
-      out.content = '';
-    }
-
-    /* Assistant-specific: tool_calls, function_call, name */
+    } else if (rawContent !== undefined && rawContent !== null) out.content = safeString(rawContent);
+    else out.content = '';
     if (role === 'assistant') {
       const tcs = safeParseToolCalls(safeGet(msg, 'tool_calls'));
       if (tcs.length) out.tool_calls = tcs;
@@ -259,49 +194,34 @@ function safeSanitizeMessage(msg) {
       const name = safeString(safeGet(msg, 'name'), 64);
       if (name) out.name = name;
     }
-
-    /* Tool messages: tool_call_id (preferred) or name (legacy) */
     if (role === 'tool') {
       const tcid = safeString(safeGet(msg, 'tool_call_id'), 128);
       if (tcid) out.tool_call_id = tcid;
       const name = safeString(safeGet(msg, 'name'), 64);
       if (name) out.name = name;
     }
-
-    /* Function (legacy tool) messages */
     if (role === 'function') {
       const name = safeString(safeGet(msg, 'name'), 64);
       if (name) out.name = name;
     }
-
     return out;
   } catch { return null; }
 }
-
-/**
- * Sanitize entire messages array.
- * Returns only well-formed messages. Never throws.
- */
 function safeSanitizeMessages(messages, fallbackText) {
   try {
     const out = [];
-    const arr = safeArray(messages);
-    for (const m of arr) {
+    for (const m of safeArray(messages)) {
       const s = safeSanitizeMessage(m);
       if (s) out.push(s);
     }
-    if (!out.length && fallbackText) {
-      out.push({ role: 'user', content: String(fallbackText) });
-    }
+    if (!out.length && fallbackText) out.push({ role: 'user', content: String(fallbackText) });
     return out;
   } catch {
     return fallbackText ? [{ role: 'user', content: String(fallbackText) }] : [];
   }
 }
 
-/* ============================================================
-   Firebase
-   ============================================================ */
+/* ---------- Firebase ---------- */
 let fdb = null;
 let firebaseError = null;
 try {
@@ -403,12 +323,12 @@ async function safeGetFB(p) {
 async function safeUpdateFB(p, d) {
   if (!fdb) return false;
   try { await fdb.ref(p).update(d); return true; }
-  catch { return false; }
+  catch (e) { console.warn('[Mirox] updateFB fail:', p, e.message); return false; }
 }
 async function safeSetFB(p, d) {
   if (!fdb) return false;
   try { await fdb.ref(p).set(d); return true; }
-  catch { return false; }
+  catch (e) { console.warn('[Mirox] setFB fail:', p, e.message); return false; }
 }
 function fireAndForgetFB(p, d) {
   if (!fdb) return;
@@ -507,7 +427,6 @@ const PLANS = {
 const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
 
 function buildSystemPrompt(cfg) { return fillGuard(cfg.label) + '\n\n---\n\n' + cfg.basePrompt; }
-
 function injectIdentityGuard(messages, cfg) {
   const guard = buildSystemPrompt(cfg);
   if (!Array.isArray(messages) || !messages.length) return [{ role: 'system', content: guard }];
@@ -561,7 +480,6 @@ async function fetchWithTimeout(url, opts = {}, timeoutMs = HF_TIMEOUT_MS, exter
 /* ---------- Provider calls ---------- */
 async function hfChat(modelId, messages, maxTokens, stream, signal, timeoutMs, extra = {}) {
   const body = { model: modelId, messages, max_tokens: maxTokens, stream: !!stream, temperature: 0.7 };
-  /* Safely merge tools ONLY if present and non-empty */
   if (extra.tools && extra.tools.length) body.tools = extra.tools;
   if (extra.tool_choice !== undefined) body.tool_choice = extra.tool_choice;
   const res = await fetchWithTimeout(HF_CHAT_URL, {
@@ -597,8 +515,6 @@ async function pollinationsChat(modelId, messages, maxTokens, stream, signal, ti
   }
   return res;
 }
-
-/* AIroute uses { model, prompt, history } — tools are silently dropped */
 function toAiRouteFormat(messages) {
   let systemContent = '';
   let userPrompt = '';
@@ -611,7 +527,6 @@ function toAiRouteFormat(messages) {
     if (role === 'system') systemContent += (systemContent ? '\n\n' : '') + content;
     else if (role === 'user') { history.push({ role: 'user', content }); userPrompt = content; }
     else if (role === 'assistant') history.push({ role: 'assistant', content });
-    /* 'tool' and 'function' roles silently ignored for AIroute */
   }
   if (history.length && history[history.length - 1].role === 'user') history.pop();
   return { prompt: systemContent ? `${systemContent}\n\n---\n\n${userPrompt}` : userPrompt, history };
@@ -633,13 +548,11 @@ async function aiRouteChat(modelId, messages, maxTokens, stream, signal, timeout
   return res;
 }
 
-/* Provider chain — tools passed only to providers that support them */
 async function miroxChatChain(messages, cfg, stream, signal, deadline, extra = {}) {
   const errors = [];
   const timeLeft = () => deadline - Date.now();
   const perAttempt = () => Math.max(3000, Math.min(HF_TIMEOUT_MS, timeLeft() - 1500));
 
-  /* HF supports tools */
   if (PROVIDERS.hf && timeLeft() > 3000) {
     for (const modelId of HF_CHAT_MODELS) {
       if (signal && signal.aborted) throw new Error('aborted');
@@ -651,7 +564,6 @@ async function miroxChatChain(messages, cfg, stream, signal, deadline, extra = {
       } catch (e) { if (e.name === 'AbortError') throw e; errors.push(`hf:${modelId}:${e.message}`); }
     }
   }
-  /* PL supports tools */
   if (PROVIDERS.pl && timeLeft() > 3000) {
     for (const modelId of PL_CHAT_MODELS) {
       if (signal && signal.aborted) throw new Error('aborted');
@@ -663,7 +575,6 @@ async function miroxChatChain(messages, cfg, stream, signal, deadline, extra = {
       } catch (e) { if (e.name === 'AbortError') throw e; errors.push(`pl:${modelId}:${e.message}`); }
     }
   }
-  /* AR — tools silently ignored */
   if (PROVIDERS.ar && timeLeft() > 3000) {
     for (const modelId of AR_CHAT_MODELS) {
       if (signal && signal.aborted) throw new Error('aborted');
@@ -696,13 +607,10 @@ function extractReplyText(data) {
   if (typeof data.output === 'string') return data.output;
   return '';
 }
-
-/* Extract tool_calls from a non-stream response (OpenAI format) */
 function extractToolCalls(data) {
   try {
     if (!data || !Array.isArray(data.choices) || !data.choices[0]) return [];
-    const tc = data.choices[0].message?.tool_calls;
-    return safeParseToolCalls(tc);
+    return safeParseToolCalls(data.choices[0].message?.tool_calls);
   } catch { return []; }
 }
 
@@ -826,7 +734,7 @@ app.use((req, res, next) => {
 
 /* ---------- Health ---------- */
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
-  res.json({ ok: true, app: 'MiroxAI', version: 'v48', providers: PROVIDERS, firebase: { connected: !!fdb, error: firebaseError }, ready: HAS_ANY_PROVIDER, time: now() });
+  res.json({ ok: true, app: 'MiroxAI', version: 'v49', providers: PROVIDERS, firebase: { connected: !!fdb, error: firebaseError }, ready: HAS_ANY_PROVIDER, time: now() });
 });
 app.get('/api/debug/firebase', async (req, res) => {
   const out = { configured: !!fdb, error: firebaseError, write: null, read: null };
@@ -857,7 +765,7 @@ app.get(['/api/config', '/config'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   let u = null; try { u = await currentUser(req); } catch {}
   const modelsArr = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tagline: m.tagline, tier: m.tier, default: !!m.default }));
-  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v48' }, models: modelsArr, default_model: modelsArr[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: HAS_ANY_PROVIDER, providers: PROVIDERS, api_models: API_ALLOWED_MODELS });
+  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v49' }, models: modelsArr, default_model: modelsArr[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: HAS_ANY_PROVIDER, providers: PROVIDERS, api_models: API_ALLOWED_MODELS });
 });
 
 /* ---------- Auth ---------- */
@@ -898,7 +806,7 @@ app.get(['/api/subscription/plans', '/subscription/plans'], (req, res) => {
 });
 
 /* ============================================================
-   SSE HELPERS
+   SSE HELPERS — SPEC-COMPLIANT, NO CONFUSING EVENTS
    ============================================================ */
 function sseInit(res) {
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -918,7 +826,6 @@ function safeWrite(res, chunk) {
 }
 function sseData(res, obj) { return safeWrite(res, 'data: ' + JSON.stringify(obj) + '\n\n'); }
 function sseDone(res) { return safeWrite(res, 'data: [DONE]\n\n'); }
-function sseHeartbeat(res) { return safeWrite(res, 'event: heartbeat\ndata: {}\n\n'); }
 
 function oaiChunk(id, model, delta, finishReason, toolCalls) {
   const chunk = {
@@ -981,13 +888,9 @@ app.post('/v1/chat/completions', async (req, res) => {
   const t0 = Date.now();
   const deadline = t0 + TOTAL_DEADLINE_MS;
 
-  let heartbeat = null;
   let safety = null;
   const abortCtrl = new AbortController();
-  const cleanup = () => {
-    if (heartbeat) { clearInterval(heartbeat); heartbeat = null; }
-    if (safety) { clearTimeout(safety); safety = null; }
-  };
+  const cleanup = () => { if (safety) { clearTimeout(safety); safety = null; } };
 
   try {
     if (!HAS_ANY_PROVIDER) return res.status(503).json({ error: { message: 'No inference provider configured.', type: 'server_error' } });
@@ -995,28 +898,18 @@ app.post('/v1/chat/completions', async (req, res) => {
     const body = req.body || {};
     const stream = wantsStream(req, body);
 
-    /* ============================================================
-       SAFE EXTRACTION — every field guarded, nothing throws
-       ============================================================ */
     const rawMessages = safeGet(body, 'messages');
     const rawMessage = safeGet(body, 'message');
     const rawHistory = safeGet(body, 'history');
     const rawFiles = safeGet(body, 'files');
-    const rawTemperature = safeGet(body, 'temperature');
     const requestedModel = safeString(safeGet(body, 'model'), 64) || 'mirox-luna-1.2';
 
-    /* Tools & args — all optional, all safe */
     const tools = safeParseTools(safeGet(body, 'tools'));
     const legacyFunctions = safeParseLegacyFunctions(safeGet(body, 'functions'));
     const allTools = tools.length ? tools : legacyFunctions;
-    const toolChoice = safeToolChoice(safeGet(body, 'tool_choice'))
-                    ?? safeLegacyFunctionCall(safeGet(body, 'function_call'));
-    const parallelToolCalls = safeBool(safeGet(body, 'parallel_tool_calls'), true);
-    const responseFormat = safeGet(body, 'response_format');
+    const toolChoice = safeToolChoice(safeGet(body, 'tool_choice')) ?? safeLegacyFunctionCall(safeGet(body, 'function_call'));
 
-    /* Log if tools were sent so we can trace */
-    if (allTools.length) console.log(`[Mirox] tools received: ${allTools.length}, choice:`, JSON.stringify(toolChoice));
-    if (parallelToolCalls === false) console.log('[Mirox] parallel_tool_calls: false');
+    if (allTools.length) console.log(`[Mirox] tools received: ${allTools.length}`);
 
     let u = null; try { u = await currentUser(req); } catch {}
 
@@ -1025,10 +918,10 @@ app.post('/v1/chat/completions', async (req, res) => {
     if (isApiCall && !u) return res.status(401).json({ error: { message: 'Invalid API key.', type: 'invalid_request_error', code: 'invalid_api_key' } });
 
     if (isApiCall && !API_ALLOWED_MODELS.includes(requestedModel)) {
-      return res.status(403).json({ error: { message: `Model "${requestedModel}" not available via API. Use ${API_ALLOWED_MODELS.join(' or ')}.`, type: 'invalid_request_error', code: 'model_not_found' } });
+      return res.status(403).json({ error: { message: `Model "${requestedModel}" not available via API.`, type: 'invalid_request_error', code: 'model_not_found' } });
     }
     const cfg = MIROX_MODELS[requestedModel];
-    if (!cfg) return res.status(404).json({ error: { message: `Model "${requestedModel}" not found. Available: ${API_ALLOWED_MODELS.join(', ')}`, type: 'invalid_request_error', code: 'model_not_found' } });
+    if (!cfg) return res.status(404).json({ error: { message: `Model "${requestedModel}" not found.`, type: 'invalid_request_error', code: 'model_not_found' } });
 
     const userTier = u ? u.tier : 'free';
     const modelTier = cfg.tier;
@@ -1036,13 +929,12 @@ app.post('/v1/chat/completions', async (req, res) => {
     if (modelTier === 'ultimate' && userTier !== 'ultimate') {
       if (userTier === 'free') {
         const used = u ? (u.eclipse_used || 0) : 0;
-        if (used >= PLANS.free.eclipse_daily_limit) return res.status(429).json({ error: { message: `Eclipse daily limit reached (${PLANS.free.eclipse_daily_limit}/day).`, type: 'rate_limit_error', code: 'eclipse_limit_reached' } });
+        if (used >= PLANS.free.eclipse_daily_limit) return res.status(429).json({ error: { message: `Eclipse daily limit reached.`, type: 'rate_limit_error', code: 'eclipse_limit_reached' } });
       } else {
         return res.status(403).json({ error: { message: 'Eclipse requires Ultimate plan.', type: 'invalid_request_error', code: 'plan_required' } });
       }
     }
 
-    /* Build messages — everything sanitized */
     let msgs;
     if (Array.isArray(rawMessages) && rawMessages.length) {
       const sanitized = safeSanitizeMessages(rawMessages, '');
@@ -1060,7 +952,7 @@ app.post('/v1/chat/completions', async (req, res) => {
 
     if (u) {
       const plan = PLANS[u.tier] || PLANS.free;
-      if ((u.daily_used || 0) >= plan.daily_limit) return res.status(429).json({ error: { message: `Daily limit reached (${plan.daily_limit}/day).`, type: 'rate_limit_error', code: 'daily_limit_reached' } });
+      if ((u.daily_used || 0) >= plan.daily_limit) return res.status(429).json({ error: { message: `Daily limit reached.`, type: 'rate_limit_error', code: 'daily_limit_reached' } });
     }
 
     if (fdb && u && !u._viaKey) {
@@ -1075,7 +967,6 @@ app.post('/v1/chat/completions', async (req, res) => {
       }
     };
 
-    /* Package tools/args for provider chain — optional */
     const extra = {};
     if (allTools.length) extra.tools = allTools;
     if (toolChoice !== undefined) extra.tool_choice = toolChoice;
@@ -1113,48 +1004,65 @@ app.post('/v1/chat/completions', async (req, res) => {
     /* ============ STREAM ============ */
     sseInit(res);
     const streamId = 'chatcmpl-' + crypto.randomBytes(8).toString('hex');
-    sseData(res, oaiChunk(streamId, cfg.label, { role: 'assistant', content: '' }, null));
-    for (let i = 0; i < 20; i++) safeWrite(res, 'event: pad\ndata: {}\n\n');
-    if (typeof res.flush === 'function') { try { res.flush(); } catch {} }
 
-    heartbeat = setInterval(() => sseHeartbeat(res), 8000);
+    /* First frame: role delta — flushes CDN, satisfies strict parsers */
+    sseData(res, oaiChunk(streamId, cfg.label, { role: 'assistant', content: '' }, null));
+
+    /* Safety: force-close before Vercel kills us */
+    let streamEnded = false;
     safety = setTimeout(() => {
-      if (res.writableEnded || res.destroyed) return;
+      if (streamEnded || res.writableEnded || res.destroyed) return;
       console.warn('[Mirox] safety stream close');
-      sseData(res, oaiChunk(streamId, cfg.label, {}, 'stop'));
-      sseDone(res);
+      try { sseData(res, oaiChunk(streamId, cfg.label, {}, 'stop')); } catch {}
+      try { sseDone(res); } catch {}
       try { res.end(); } catch {}
+      streamEnded = true;
     }, STREAM_SAFETY_MS);
 
     let clientClosed = false;
-    req.on('close', () => { clientClosed = true; try { abortCtrl.abort(); } catch {} });
+    req.on('close', () => {
+      clientClosed = true;
+      try { abortCtrl.abort(); } catch {}
+      cleanup();
+    });
 
     try {
       const result = await miroxChatChain(msgs, cfg, true, abortCtrl.signal, deadline, extra);
 
       if (result.nativeStream) {
-        const lines = await readUpstreamLines(result.res.body, abortCtrl.signal);
-        for (const line of lines) {
+        const reader = result.res.body.getReader();
+        const dec = new TextDecoder('utf-8', { fatal: false });
+        let buf = '';
+
+        while (true) {
           if (clientClosed || res.writableEnded) break;
-          const trimmed = line.trim();
-          if (!trimmed.startsWith('data:')) continue;
-          const raw = trimmed.slice(5).trim();
-          if (!raw || raw === '[DONE]') continue;
-          let o;
-          try { o = JSON.parse(raw); } catch { continue; }
-          const delta = o.choices?.[0]?.delta;
-          if (!delta) continue;
-          if (typeof delta.content === 'string' && delta.content.length > 0) {
-            sseData(res, oaiChunk(streamId, cfg.label, { content: delta.content }, null));
-          }
-          /* Forward tool_calls deltas if upstream sent them */
-          if (Array.isArray(delta.tool_calls) && delta.tool_calls.length) {
-            const tcs = safeParseToolCalls(delta.tool_calls);
-            if (tcs.length) sseData(res, oaiChunk(streamId, cfg.label, {}, null, tcs));
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let idx;
+          while ((idx = buf.indexOf('\n')) !== -1) {
+            let line = buf.slice(0, idx);
+            buf = buf.slice(idx + 1);
+            if (line.endsWith('\r')) line = line.slice(0, -1);
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('data:')) continue;
+            const raw = trimmed.slice(5).trim();
+            if (!raw || raw === '[DONE]') continue;
+            let o;
+            try { o = JSON.parse(raw); } catch { continue; }
+            const delta = o.choices?.[0]?.delta;
+            if (!delta) continue;
+            if (typeof delta.content === 'string' && delta.content.length > 0) {
+              sseData(res, oaiChunk(streamId, cfg.label, { content: delta.content }, null));
+            }
+            if (Array.isArray(delta.tool_calls) && delta.tool_calls.length) {
+              const tcs = safeParseToolCalls(delta.tool_calls);
+              if (tcs.length) sseData(res, oaiChunk(streamId, cfg.label, {}, null, tcs));
+            }
           }
         }
+        try { reader.releaseLock(); } catch {}
       } else {
-        /* AIroute / searchque — fake SSE */
         const data = await result.res.json();
         const text = extractReplyText(data);
         if (text && text.length) {
@@ -1186,10 +1094,11 @@ app.post('/v1/chat/completions', async (req, res) => {
             done: true,
           });
         } catch {}
-        sseDone(res);
+        try { sseDone(res); } catch {}
       }
     } finally {
       cleanup();
+      streamEnded = true;
       try { if (!res.writableEnded) res.end(); } catch {}
     }
 
@@ -1223,17 +1132,24 @@ app.post('/v1/images/generations', async (req, res) => {
 });
 
 /* ============================================================
-   API KEYS
+   API KEYS — BOTH WRITES AWAITED SO KEYS PERSIST AFTER RELOAD
    ============================================================ */
 app.post(['/api/keys/generate', '/keys/generate'], async (req, res) => {
   const t0 = Date.now();
   try {
     const u = await currentUser(req);
     if (!u) return res.status(401).json({ ok: false, error: 'Sign in first.' });
+
     const plan = PLANS[u.tier] || PLANS.free;
     const limit = plan.api_keys_per_month || 2;
     const used = u.keys_this_month || 0;
-    if (used >= limit) return res.status(429).json({ ok: false, error: `Monthly key limit reached (${limit}/month for ${plan.label}).`, key_limit_reached: true, limit, used });
+    if (used >= limit) {
+      return res.status(429).json({
+        ok: false,
+        error: `Monthly key limit reached (${limit}/month for ${plan.label}).`,
+        key_limit_reached: true, limit, used,
+      });
+    }
 
     const key = 'mxk_' + crypto.randomBytes(24).toString('hex');
     const prefix = key.slice(0, 12);
@@ -1241,20 +1157,44 @@ app.post(['/api/keys/generate', '/keys/generate'], async (req, res) => {
     const keyId = crypto.randomBytes(8).toString('hex');
     const created = now();
 
-    let stored = false, storeError = null;
-    if (!fdb) storeError = 'Firebase not configured.';
-    else {
+    let stored = false;
+    let storeError = null;
+
+    if (!fdb) {
+      storeError = 'Firebase not configured. Add FIREBASE_SERVICE_ACCOUNT env var.';
+    } else {
+      /* CRITICAL FIX: await BOTH writes so key persists */
       try {
-        const wp = fdb.ref(`api_key_index/${hash}`).set({ email: u.email, keyId, prefix, created });
-        const tp = new Promise((_, rej) => setTimeout(() => rej(new Error('index write timed out')), 3000));
-        await Promise.race([wp, tp]);
+        const writes = Promise.all([
+          fdb.ref(`api_key_index/${hash}`).set({ email: u.email, keyId, prefix, created }),
+          fdb.ref(`api_keys/${u.email}/${keyId}`).set({ hash, prefix, created, active: true, plan: u.tier }),
+          fdb.ref(`users/${u.email}`).update({ keys_this_month: used + 1, month_key: monthKey() }),
+        ]);
+        const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('write timeout after 5s')), 5000));
+        await Promise.race([writes, timeout]);
         stored = true;
-      } catch (e) { storeError = 'index: ' + e.message; }
-      fireAndForgetFB(`api_keys/${u.email}/${keyId}`, { hash, prefix, created, active: true, plan: u.tier });
-      fireAndForgetFB(`users/${u.email}`, { keys_this_month: used + 1, month_key: monthKey() });
+        console.log(`[Mirox] ✅ Key stored for ${u.email}, prefix ${prefix}`);
+        /* Non-critical log */
+        safePushFB(`logs/account/${u.email}`, { event: 'apikey_created', prefix, ts: created }).catch(() => {});
+      } catch (e) {
+        storeError = 'write: ' + e.message;
+        console.error('[Mirox] ❌ Key write failed:', e.message);
+      }
     }
-    return res.json({ ok: true, key, prefix, stored, store_error: storeError, used: stored ? used + 1 : used, limit, _ms: Date.now() - t0 });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+
+    return res.json({
+      ok: true,
+      key, prefix,
+      stored,
+      store_error: storeError,
+      used: stored ? used + 1 : used,
+      limit,
+      _ms: Date.now() - t0,
+    });
+  } catch (e) {
+    console.error('[Mirox] key gen fatal:', e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
 });
 
 app.get(['/api/keys/list', '/keys/list'], async (req, res) => {
@@ -1262,13 +1202,28 @@ app.get(['/api/keys/list', '/keys/list'], async (req, res) => {
     const u = await currentUser(req);
     if (!u) return res.json({ ok: true, keys: [], used: 0, limit: 2, message: 'Not signed in' });
     if (!fdb) return res.json({ ok: true, keys: [], used: 0, limit: (PLANS[u.tier]?.api_keys_per_month || 2), message: 'Database not configured' });
+
     const data = (await safeGetFB(`api_keys/${u.email}`)) || {};
     const keys = Object.entries(data)
-      .map(([id, k]) => ({ id, prefix: k && k.prefix ? k.prefix : null, created: k && k.created ? k.created : null, active: k && k.active !== false }))
+      .map(([id, k]) => ({
+        id,
+        prefix: k && k.prefix ? k.prefix : null,
+        created: k && k.created ? k.created : null,
+        active: k && k.active !== false,
+      }))
       .filter(k => k.prefix)
       .sort((a, b) => (b.created || 0) - (a.created || 0));
-    res.json({ ok: true, keys, used: u.keys_this_month || 0, limit: PLANS[u.tier]?.api_keys_per_month || 2 });
-  } catch (e) { res.json({ ok: true, keys: [], used: 0, limit: 2, message: e.message }); }
+
+    res.json({
+      ok: true,
+      keys,
+      used: u.keys_this_month || 0,
+      limit: PLANS[u.tier]?.api_keys_per_month || 2,
+    });
+  } catch (e) {
+    console.error('[Mirox] list keys error:', e);
+    res.json({ ok: true, keys: [], used: 0, limit: 2, message: e.message });
+  }
 });
 
 /* ---------- Admin ---------- */
