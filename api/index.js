@@ -1,11 +1,13 @@
 /* ============================================================
-   MiroxAI Backend v45
-   FIXED: "malformed_stream: stream ended before completion"
-   - SSE now fully OpenAI-compatible:
-     data: {"choices":[{"delta":{"content":"..."}}]}
-   - Ends with proper finish_reason chunk + data: [DONE]
-   - Backwards-compat .d field kept for our own frontend
-   - All providers stream identically (HF / PL / AR / searchque)
+   MiroxAI Backend v46
+   FIXED: "malformed_stream" / "malformed packet" on code gen
+   - Code-point-safe chunking (no broken UTF-8)
+   - Robust upstream SSE parser (handles \r\n, partial JSON)
+   - First frame = OpenAI role delta (proper spec)
+   - Global 55s safety timer ensures [DONE] always sent
+   - Heartbeat as event frame (not comment) for strict parsers
+   - Padding as valid data frame (not comment)
+   - All providers: HF / PL / AR / searchque
    ============================================================ */
 
 let express, crypto, firebaseAdmin;
@@ -31,6 +33,7 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '2010';
 const HF_TIMEOUT_MS = 25000;
 const PL_TIMEOUT_MS = 30000;
 const AR_TIMEOUT_MS = 30000;
+const STREAM_SAFETY_MS = 55000; // Vercel hobby caps at 60s
 
 const PROVIDERS = { hf: !!HF_API_KEY, pl: !!PL_KEY, ar: !!AR_KEY };
 const HAS_ANY_PROVIDER = PROVIDERS.hf || PROVIDERS.pl || PROVIDERS.ar;
@@ -129,17 +132,17 @@ function getSession(req) {
 async function safeGet(p) {
   if (!fdb) return null;
   try { const s = await fdb.ref(p).once('value'); return s.exists() ? s.val() : null; }
-  catch (e) { console.warn('[Mirox] get fail:', p, e.message); return null; }
+  catch { return null; }
 }
 async function safeUpdate(p, d) {
   if (!fdb) return false;
   try { await fdb.ref(p).update(d); return true; }
-  catch (e) { console.warn('[Mirox] update fail:', p, e.message); return false; }
+  catch { return false; }
 }
 async function safeSet(p, d) {
   if (!fdb) return false;
   try { await fdb.ref(p).set(d); return true; }
-  catch (e) { console.warn('[Mirox] set fail:', p, e.message); return false; }
+  catch { return false; }
 }
 function fireAndForget(p, d) {
   if (!fdb) return;
@@ -251,7 +254,7 @@ function injectIdentityGuard(messages, cfg) {
   return [{ role: 'system', content: guard }, ...messages];
 }
 
-/* ---------- URLs ---------- */
+/* ---------- Provider URLs ---------- */
 const HF_CHAT_URL = 'https://router.huggingface.co/v1/chat/completions';
 const HF_IMG_BASE = 'https://router.huggingface.co/hf-inference/models';
 const PL_CHAT_URL = 'https://gen.pollinations.ai/v1/chat/completions';
@@ -517,9 +520,8 @@ app.use((req, res, next) => {
 
 /* ---------- Health / debug ---------- */
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
-  res.json({ ok: true, app: 'MiroxAI', version: 'v45', providers: PROVIDERS, firebase: { connected: !!fdb, error: firebaseError }, ready: HAS_ANY_PROVIDER, time: now() });
+  res.json({ ok: true, app: 'MiroxAI', version: 'v46', providers: PROVIDERS, firebase: { connected: !!fdb, error: firebaseError }, ready: HAS_ANY_PROVIDER, time: now() });
 });
-
 app.get('/api/debug/firebase', async (req, res) => {
   const out = { configured: !!fdb, error: firebaseError, write: null, read: null };
   if (!fdb) return res.json(out);
@@ -549,7 +551,7 @@ app.get(['/api/config', '/config'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   let u = null; try { u = await currentUser(req); } catch {}
   const modelsArr = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tagline: m.tagline, tier: m.tier, default: !!m.default }));
-  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v45' }, models: modelsArr, default_model: modelsArr[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: HAS_ANY_PROVIDER, providers: PROVIDERS, api_models: API_ALLOWED_MODELS });
+  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v46' }, models: modelsArr, default_model: modelsArr[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: HAS_ANY_PROVIDER, providers: PROVIDERS, api_models: API_ALLOWED_MODELS });
 });
 
 /* ---------- Auth ---------- */
@@ -591,22 +593,28 @@ app.get(['/api/subscription/plans', '/subscription/plans'], (req, res) => {
 });
 
 /* ============================================================
-   HELPERS — OpenAI-compatible SSE frames
+   SSE HELPERS — fully OpenAI-compatible + code-safe
    ============================================================ */
-function sseHeaders(res) {
+function sseInit(res) {
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Cache-Control', 'no-cache, no-store, no-transform');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
+  res.setHeader('Content-Encoding', 'identity'); // disable gzip buffering
   if (res.flushHeaders) res.flushHeaders();
+  if (typeof res.socket?.setNoDelay === 'function') { try { res.socket.setNoDelay(true); } catch {} }
 }
 
 function sseWrite(res, obj) {
-  /* Write JSON directly — no stray newlines inside the JSON payload */
+  /* JSON.stringify handles ALL escaping — newlines, quotes, backslashes,
+     backticks, control chars, surrogate pairs. The frame is always valid. */
   try {
-    res.write(`data: ${JSON.stringify(obj)}\n\n`);
+    const json = JSON.stringify(obj);
+    res.write('data: ' + json + '\n\n');
     if (typeof res.flush === 'function') { try { res.flush(); } catch {} }
-  } catch (e) { /* client likely closed */ }
+  } catch (e) {
+    console.warn('[Mirox] sseWrite fail:', e.message);
+  }
 }
 
 function sseDone(res) {
@@ -616,20 +624,104 @@ function sseDone(res) {
   } catch {}
 }
 
-function makeChunk(id, model, deltaContent, finishReason) {
-  /* OpenAI-compatible SSE frame PLUS .d for our own frontend */
+function sseHeartbeat(res) {
+  /* Valid SSE event frame — ignored by strict OpenAI clients, accepted by all spec parsers */
+  try {
+    res.write('event: heartbeat\ndata: {}\n\n');
+    if (typeof res.flush === 'function') { try { res.flush(); } catch {} }
+  } catch {}
+}
+
+function oaiChunk(id, model, delta, finishReason) {
+  /* OpenAI-compatible chunk + backwards-compat .d / .done for our own frontend */
   const chunk = {
-    id, object: 'chat.completion.chunk', created: now(), model,
-    choices: [{
-      index: 0,
-      delta: finishReason ? {} : { content: deltaContent },
-      finish_reason: finishReason || null,
-    }],
+    id,
+    object: 'chat.completion.chunk',
+    created: now(),
+    model,
+    system_fingerprint: 'fp_mirox',
+    choices: [
+      {
+        index: 0,
+        delta: delta || {},
+        logprobs: null,
+        finish_reason: finishReason ?? null,
+      },
+    ],
   };
-  /* Backwards-compat: our frontend reads .d */
-  if (deltaContent) chunk.d = deltaContent;
-  if (finishReason) chunk.done = true;
+  if (delta && typeof delta.content === 'string' && delta.content.length > 0) {
+    chunk.d = delta.content;         // our frontend reads .d
+  }
+  if (finishReason) chunk.done = true; // our frontend reads .done
   return chunk;
+}
+
+/* ============================================================
+   UPSTREAM SSE PARSER — handles \r\n, partial JSON, multi-line data
+   ============================================================ */
+async function* readUpstreamSSE(stream, signal) {
+  const reader = stream.getReader();
+  const dec = new TextDecoder('utf-8', { fatal: false });
+  let buf = '';
+
+  const flushBuffer = () => {
+    /* Split on \n only — we strip \r ourselves */
+    let idx;
+    while ((idx = buf.indexOf('\n')) !== -1) {
+      let line = buf.slice(0, idx);
+      buf = buf.slice(idx + 1);
+      /* Strip trailing \r (Windows line endings) */
+      if (line.endsWith('\r')) line = line.slice(0, -1);
+      yield line;
+    }
+  };
+
+  try {
+    while (true) {
+      if (signal?.aborted) break;
+      const { value, done } = await reader.read();
+      if (done) break;
+      /* Streaming decode — handles UTF-8 codepoints split across chunks */
+      buf += dec.decode(value, { stream: true });
+      for (const line of flushBuffer()) {
+        yield line;
+      }
+    }
+    /* Final decode flush — emit any remaining bytes */
+    buf += dec.decode();
+    for (const line of flushBuffer()) {
+      yield line;
+    }
+  } finally {
+    try { reader.releaseLock(); } catch {}
+  }
+}
+
+function parseSSEJSON(line) {
+  /* Extract JSON payload from a data: line */
+  const trimmed = line.trim();
+  if (!trimmed.startsWith('data:')) return null;
+  const raw = trimmed.slice(5).trim();
+  if (!raw || raw === '[DONE]') return null;
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    /* Upstream sent invalid JSON — log and skip, don't crash */
+    console.warn('[Mirox] upstream JSON parse fail:', e.message, 'raw:', raw.slice(0, 120));
+    return null;
+  }
+}
+
+/* Code-point-safe chunker for fake SSE (doesn't split surrogate pairs) */
+function chunkByCodePoints(text, targetChunks) {
+  const cps = Array.from(text);              /* iterate by code points, not UTF-16 units */
+  const total = cps.length;
+  const size = Math.max(1, Math.ceil(total / targetChunks));
+  const out = [];
+  for (let i = 0; i < total; i += size) {
+    out.push(cps.slice(i, i + size).join(''));
+  }
+  return out;
 }
 
 /* ============================================================
@@ -706,7 +798,8 @@ app.post('/v1/chat/completions', async (req, res) => {
         res.setHeader('X-Mirox-Provider', result.provider);
         return res.json({
           id: 'chatcmpl-' + Date.now(), object: 'chat.completion', created: now(), model: cfg.label,
-          choices: [{ index: 0, message: { role: 'assistant', content: reply }, finish_reason: 'stop' }],
+          system_fingerprint: 'fp_mirox',
+          choices: [{ index: 0, message: { role: 'assistant', content: reply }, logprobs: null, finish_reason: 'stop' }],
           usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
           reply,
           daily_used: u ? (u.daily_used || 0) : 0,
@@ -718,20 +811,35 @@ app.post('/v1/chat/completions', async (req, res) => {
       }
     }
 
-    /* ============ STREAM — OpenAI-compatible SSE ============ */
-    sseHeaders(res);
+    /* ============ STREAM ============ */
+    sseInit(res);
 
-    /* Force Fastly flush with 2 KB padding comment */
-    try { res.write(':' + ' '.repeat(2048) + '\n\n'); } catch {}
+    const streamId = 'chatcmpl-' + crypto.randomBytes(8).toString('hex');
+
+    /* 1) FIRST FRAME: role delta — forces CDN flush AND satisfies strict parsers */
+    sseWrite(res, oaiChunk(streamId, cfg.label, { role: 'assistant', content: '' }, null));
+
+    /* 2) Padding: send more empty deltas to push past Fastly's ~2 KB buffer */
+    for (let i = 0; i < 25; i++) {
+      try { res.write('event: pad\ndata: {}\n\n'); } catch {}
+    }
     if (typeof res.flush === 'function') { try { res.flush(); } catch {} }
 
-    /* Rolling heartbeat (every 8s) */
+    /* 3) Rolling heartbeat every 8 s */
     const heartbeat = setInterval(() => {
-      try {
-        res.write(': ping\n\n');
-        if (typeof res.flush === 'function') { try { res.flush(); } catch {} }
-      } catch {}
+      sseHeartbeat(res);
     }, 8000);
+
+    /* 4) Global safety timeout — 55 s (Vercel kills at 60 s) */
+    let streamEnded = false;
+    const safetyTimer = setTimeout(() => {
+      if (streamEnded || res.writableEnded) return;
+      console.warn('[Mirox] safety timeout — forcing stream close');
+      try { sseWrite(res, oaiChunk(streamId, cfg.label, {}, 'stop')); } catch {}
+      try { sseDone(res); } catch {}
+      try { res.end(); } catch {}
+      streamEnded = true;
+    }, STREAM_SAFETY_MS);
 
     const abortCtrl = new AbortController();
     let clientClosed = false;
@@ -739,78 +847,79 @@ app.post('/v1/chat/completions', async (req, res) => {
       clientClosed = true;
       try { abortCtrl.abort(); } catch {}
       clearInterval(heartbeat);
+      clearTimeout(safetyTimer);
     });
 
-    const streamId = 'chatcmpl-' + crypto.randomBytes(6).toString('hex');
-
+    /* 5) Run the stream async (response already sent) */
     (async () => {
-      let finishedNormally = false;
       try {
         const result = await miroxChatChain(msgs, cfg, true, abortCtrl.signal);
-        try { res.setHeader('X-Mirox-Provider', result.provider); } catch {} // safe: no bytes sent yet? we did send padding, ignore error
+        try { res.setHeader('X-Mirox-Provider', result.provider); } catch {} // safe (no-op if already sent)
 
         if (result.nativeStream) {
-          /* HF / PL — parse upstream SSE and re-wrap into our format */
-          const reader = result.res.body.getReader();
-          const dec = new TextDecoder();
-          let buf = '';
-          while (true) {
+          /* HF / PL — parse upstream SSE robustly */
+          for await (const line of readUpstreamSSE(result.res.body, abortCtrl.signal)) {
             if (clientClosed) break;
-            const { value, done } = await reader.read();
-            if (done) break;
-            buf += dec.decode(value, { stream: true });
-            let idx;
-            while ((idx = buf.indexOf('\n')) !== -1) {
-              const line = buf.slice(0, idx).trim();
-              buf = buf.slice(idx + 1);
-              if (!line.startsWith('data:')) continue;
-              const pl = line.slice(5).trim();
-              if (!pl || pl === '[DONE]') continue;
-              try {
-                const o = JSON.parse(pl);
-                const d = o.choices?.[0]?.delta?.content;
-                if (d) sseWrite(res, makeChunk(streamId, cfg.label, d, null));
-              } catch {}
+            const o = parseSSEJSON(line);
+            if (!o) continue;
+            const delta = o.choices?.[0]?.delta;
+            if (delta && typeof delta.content === 'string' && delta.content.length > 0) {
+              sseWrite(res, oaiChunk(streamId, cfg.label, { content: delta.content }, null));
+            } else if (o.choices?.[0]?.finish_reason) {
+              /* Upstream already declared finish — we'll send ours at the end */
             }
           }
         } else {
-          /* AIroute — fake-SSE from full JSON */
+          /* AIroute / searchque — fake-SSE from full JSON, code-point-safe */
           const data = await result.res.json();
           const text = extractReplyText(data);
-          if (text) {
-            const totalChunks = 30;
-            const chunkSize = Math.max(2, Math.ceil(text.length / totalChunks));
-            for (let i = 0; i < text.length; i += chunkSize) {
+
+          if (text && text.length) {
+            /* Aim for 30-60 chunks depending on length; code-safe splitting */
+            const targetChunks = Math.min(80, Math.max(30, Math.floor(text.length / 12)));
+            const pieces = chunkByCodePoints(text, targetChunks);
+            for (const piece of pieces) {
               if (clientClosed) break;
-              const d = text.slice(i, i + chunkSize);
-              sseWrite(res, makeChunk(streamId, cfg.label, d, null));
-              if (i + chunkSize < text.length) await new Promise(r => setTimeout(r, 8));
+              if (!piece) continue;
+              sseWrite(res, oaiChunk(streamId, cfg.label, { content: piece }, null));
+              /* Small delay for smooth typing effect */
+              await new Promise(r => setTimeout(r, 6));
             }
           }
         }
 
-        /* Final finish_reason chunk */
-        sseWrite(res, makeChunk(streamId, cfg.label, null, 'stop'));
+        /* 6) Final finish chunk (OpenAI spec requires this) */
+        if (!clientClosed) {
+          sseWrite(res, oaiChunk(streamId, cfg.label, {}, 'stop'));
+        }
 
-        /* OpenAI stream terminator */
+        /* 7) Terminator */
         sseDone(res);
 
         await updateUsage();
-        finishedNormally = true;
       } catch (e) {
         if (e.name !== 'AbortError' && !clientClosed) {
-          /* Send an error frame in OpenAI shape, then close the stream properly */
-          sseWrite(res, {
-            id: streamId, object: 'chat.completion.chunk', created: now(), model: cfg.label,
-            choices: [{ index: 0, delta: {}, finish_reason: 'error' }],
-            error: { message: String(e.message).slice(0, 240), type: 'server_error' },
-            done: true,
-          });
+          console.warn('[Mirox] stream error:', e.message);
+          /* Error frame in OpenAI shape */
+          try {
+            sseWrite(res, {
+              id: streamId,
+              object: 'chat.completion.chunk',
+              created: now(),
+              model: cfg.label,
+              system_fingerprint: 'fp_mirox',
+              choices: [{ index: 0, delta: {}, logprobs: null, finish_reason: 'error' }],
+              error: { message: String(e.message).slice(0, 240), type: 'server_error', code: 'stream_error' },
+              done: true,
+            });
+          } catch {}
         }
-        /* Always finish with [DONE] so clients don't report malformed_stream */
+        /* CRITICAL: always send [DONE] so clients don't report malformed_stream */
         sseDone(res);
       } finally {
         clearInterval(heartbeat);
+        clearTimeout(safetyTimer);
+        streamEnded = true;
         try { res.end(); } catch {}
       }
     })();
@@ -872,9 +981,7 @@ app.post(['/api/keys/generate', '/keys/generate'], async (req, res) => {
       fireAndForget(`users/${u.email}`, { keys_this_month: used + 1, month_key: monthKey() });
     }
     return res.json({ ok: true, key, prefix, stored, store_error: storeError, used: stored ? used + 1 : used, limit, _ms: Date.now() - t0 });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
 app.get(['/api/keys/list', '/keys/list'], async (req, res) => {
