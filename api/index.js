@@ -1,12 +1,11 @@
 /* ============================================================
-   MiroxAI Backend v42
+   MiroxAI Backend v43
    FIXED:
-   - API key generation never fails (Promise.race + timeout)
-   - Three inference providers with auto-detection:
-     1. Hugging Face (HF_API_KEY)
-     2. Pollinations (PL_KEY)
-     3. AIroute (AR_KEY) — final fallback for chat + images
-   - airoute/searchque is the last-resort keyless fallback
+   - Streaming no longer throws "Cannot set headers after sent"
+   - AIroute works in main chat (SSE) — provider sent as comment
+   - AIroute chunks streamed fast + smooth
+   - Single {done: true} sent by outer handler (no more double-end)
+   - All providers still fully supported: HF → PL → AR → AR-searchque
    ============================================================ */
 
 let express, crypto, firebaseAdmin;
@@ -24,13 +23,14 @@ if (!express || !crypto) {
 }
 
 /* ============================================================
-   PROVIDER KEYS + AVAILABILITY
+   PROVIDERS
    ============================================================ */
 const HF_API_KEY = (process.env.HF_API_KEY || '').trim();
 const PL_KEY = (process.env.PL_KEY || '').trim();
 const AR_KEY = (process.env.AR_KEY || '').trim();
 const SECRET = process.env.SECRET_KEY || 'mirox-fallback-secret';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '2010';
+
 const HF_TIMEOUT_MS = 25000;
 const PL_TIMEOUT_MS = 30000;
 const AR_TIMEOUT_MS = 30000;
@@ -43,9 +43,7 @@ const PROVIDERS = {
 const HAS_ANY_PROVIDER = PROVIDERS.hf || PROVIDERS.pl || PROVIDERS.ar;
 console.log('[Mirox] Providers available:', PROVIDERS);
 
-/* ============================================================
-   Firebase (optional)
-   ============================================================ */
+/* ---------- Firebase ---------- */
 let fdb = null;
 try {
   if (firebaseAdmin && !firebaseAdmin.apps.length) {
@@ -115,7 +113,6 @@ function extractToken(req) {
   if (req.query && req.query.api_key) return String(req.query.api_key).trim();
   return '';
 }
-
 function getSession(req) {
   const token = extractToken(req);
   if (token) {
@@ -165,12 +162,7 @@ async function ensureFreshUser(email) {
   if (!email) return null;
   let rec = await getUserRecord(email);
   if (!rec) {
-    rec = {
-      email, name: '', tier: 'free',
-      daily_used: 0, eclipse_used: 0, daily_reset: today(),
-      month_key: monthKey(), keys_this_month: 0,
-      created_at: now(),
-    };
+    rec = { email, name: '', tier: 'free', daily_used: 0, eclipse_used: 0, daily_reset: today(), month_key: monthKey(), keys_this_month: 0, created_at: now() };
     await saveUserRecord(rec);
     return rec;
   }
@@ -187,7 +179,6 @@ async function ensureFreshUser(email) {
 async function validateApiKey(apiKey) {
   if (!apiKey || !apiKey.startsWith('mxk_')) return null;
   if (!fdb) return { valid: true, email: 'guest@apikey.local', tier: 'free' };
-
   try {
     const hash = crypto.createHash('sha256').update(apiKey).digest('hex');
     const idx = await safeGet(`api_key_index/${hash}`);
@@ -195,7 +186,6 @@ async function validateApiKey(apiKey) {
       const user = await safeGet(`users/${idx.email}`) || {};
       return { valid: true, email: idx.email, tier: user.tier || 'free', keyId: idx.keyId };
     }
-    // Fallback: try user-scan if index missing (older keys)
     const all = await safeGet('api_keys');
     if (all) {
       for (const [email, keys] of Object.entries(all)) {
@@ -308,7 +298,6 @@ const AR_BASE = 'https://route-ai-playground.lovable.app/api/public/v1';
 const AR_CHAT_URL = AR_BASE + '/chat';
 const AR_IMG_URL = AR_BASE + '/images';
 
-/* Provider attempt lists — ordered by preference */
 const HF_CHAT_MODELS = [
   'Qwen/Qwen2.5-7B-Instruct:together',
   'deepseek-ai/DeepSeek-V3.2:novita',
@@ -322,7 +311,7 @@ const AR_CHAT_MODELS = [
   'Qwen/Qwen3-30B-A3B',
   'openai/gpt-oss-120b',
 ];
-const AR_SEARCH_MODEL = 'airoute/searchque';   // keyless — always try last
+const AR_SEARCH_MODEL = 'airoute/searchque';
 
 const HF_IMG_MODELS = [
   'stabilityai/stable-diffusion-xl-base-1.0',
@@ -346,7 +335,7 @@ async function fetchWithTimeout(url, opts = {}, timeoutMs = HF_TIMEOUT_MS, exter
 }
 
 /* ============================================================
-   HUGGING FACE CHAT
+   HF CHAT
    ============================================================ */
 async function hfChat(modelId, messages, maxTokens, stream = false, signal) {
   const res = await fetchWithTimeout(HF_CHAT_URL, {
@@ -365,7 +354,7 @@ async function hfChat(modelId, messages, maxTokens, stream = false, signal) {
 }
 
 /* ============================================================
-   POLLINATIONS CHAT (OpenAI-compatible)
+   POLLINATIONS CHAT
    ============================================================ */
 async function pollinationsChat(modelId, messages, maxTokens, stream = false, signal) {
   if (!PL_KEY) throw new Error('PL_KEY not set');
@@ -385,12 +374,11 @@ async function pollinationsChat(modelId, messages, maxTokens, stream = false, si
 }
 
 /* ============================================================
-   AIROUTE CHAT — OpenAI-ish compat but uses {model, prompt, history}
-   Handles both the OpenAI message array (for /chat/completions clients)
-   and the AIroute native format {prompt, history}.
+   AIROUTE CHAT
+   Docs: POST /api/public/v1/chat with { model, prompt, history }
+   Returns: { text, model, ms, tokens }
    ============================================================ */
 function toAiRouteFormat(messages) {
-  /* Split system guard from conversation */
   let systemContent = '';
   let userPrompt = '';
   const history = [];
@@ -404,13 +392,13 @@ function toAiRouteFormat(messages) {
       systemContent += (systemContent ? '\n\n' : '') + content;
     } else if (role === 'user') {
       history.push({ role: 'user', content });
-      userPrompt = content; // last user message wins as prompt
+      userPrompt = content;
     } else if (role === 'assistant') {
       history.push({ role: 'assistant', content });
     }
   }
 
-  /* history should NOT include the last user message (it's the prompt) */
+  /* history must NOT include the last user message */
   if (history.length && history[history.length - 1].role === 'user') {
     history.pop();
   }
@@ -423,14 +411,13 @@ function toAiRouteFormat(messages) {
 }
 
 async function aiRouteChat(modelId, messages, maxTokens, stream = false, signal) {
-  /* AIroute doesn't stream SSE the same way — always use non-stream */
   const { prompt, history } = toAiRouteFormat(messages);
 
   const headers = { 'Content-Type': 'application/json' };
   if (AR_KEY) headers.Authorization = `Bearer ${AR_KEY}`;
 
   const body = { model: modelId, prompt, timeout_ms: AR_TIMEOUT_MS };
-  if (history && history.length) body.history = history.slice(-40); // cap at 40
+  if (history && history.length) body.history = history.slice(-40);
 
   const res = await fetchWithTimeout(AR_CHAT_URL, {
     method: 'POST',
@@ -449,14 +436,13 @@ async function aiRouteChat(modelId, messages, maxTokens, stream = false, signal)
 }
 
 /* ============================================================
-   IMAGE GENERATION — HF → PL → AR
+   IMAGES — HF → PL → AR
    ============================================================ */
 async function lumenalGenerate(prompt, aspectRatio = '1:1') {
   const dims = { '1:1': { w: 1024, h: 1024 }, '16:9': { w: 1344, h: 768 }, '9:16': { w: 768, h: 1344 }, '4:3': { w: 1152, h: 864 } };
   const { w, h } = dims[aspectRatio] || dims['1:1'];
   const errors = [];
 
-  /* 1. Hugging Face */
   if (PROVIDERS.hf) {
     for (const modelId of HF_IMG_MODELS) {
       try {
@@ -470,7 +456,6 @@ async function lumenalGenerate(prompt, aspectRatio = '1:1') {
         if (ct.includes('image/')) {
           const buffer = await res.arrayBuffer();
           if (buffer.byteLength < 3000) { errors.push(`hf:${modelId}:small`); continue; }
-          console.log(`[Mirox] ✅ Image via hf:${modelId}`);
           return `data:${ct.split(';')[0]};base64,${Buffer.from(buffer).toString('base64')}`;
         }
         const data = await res.json().catch(() => ({}));
@@ -481,7 +466,6 @@ async function lumenalGenerate(prompt, aspectRatio = '1:1') {
     }
   }
 
-  /* 2. Pollinations */
   if (PROVIDERS.pl) {
     for (const modelId of PL_IMG_MODELS) {
       try {
@@ -495,7 +479,6 @@ async function lumenalGenerate(prompt, aspectRatio = '1:1') {
         if (ct.includes('image/')) {
           const buffer = await res.arrayBuffer();
           if (buffer.byteLength < 3000) { errors.push(`pl:${modelId}:small`); continue; }
-          console.log(`[Mirox] ✅ Image via pl:${modelId}`);
           return `data:${ct.split(';')[0]};base64,${Buffer.from(buffer).toString('base64')}`;
         }
         errors.push(`pl:${modelId}:notimage`);
@@ -503,7 +486,6 @@ async function lumenalGenerate(prompt, aspectRatio = '1:1') {
     }
   }
 
-  /* 3. AIroute (final fallback) */
   if (PROVIDERS.ar) {
     for (const modelId of AR_IMG_MODELS) {
       try {
@@ -514,10 +496,7 @@ async function lumenalGenerate(prompt, aspectRatio = '1:1') {
         }, AR_TIMEOUT_MS);
         if (!res.ok) { errors.push(`ar:${modelId}:${res.status}`); continue; }
         const data = await res.json().catch(() => ({}));
-        if (data.image && typeof data.image === 'string') {
-          console.log(`[Mirox] ✅ Image via ar:${modelId}`);
-          return data.image; // already a data URL per docs
-        }
+        if (data.image && typeof data.image === 'string') return data.image;
         errors.push(`ar:${modelId}:shape`);
       } catch (e) { errors.push(`ar:${modelId}:${e.message}`); }
     }
@@ -527,63 +506,58 @@ async function lumenalGenerate(prompt, aspectRatio = '1:1') {
 }
 
 /* ============================================================
-   CHAT CHAIN — tries ALL available providers in order
+   CHAT CHAIN
+   Returns { res, provider, model, nativeStream }
+   nativeStream true → pipe HF/PL SSE directly
+   nativeStream false → caller reads .json() and fakes SSE
    ============================================================ */
 async function miroxChatChain(messages, cfg, stream = false, signal) {
   const errors = [];
 
-  /* Provider 1: Hugging Face */
   if (PROVIDERS.hf) {
     for (const modelId of HF_CHAT_MODELS) {
       if (signal?.aborted) throw new Error('aborted');
       try {
         const res = await hfChat(modelId, messages, cfg.tokens, stream, signal);
-        console.log(`[Mirox] ✅ Chat via hf:${modelId}`);
+        console.log(`[Mirox] ✅ hf:${modelId}`);
         return { res, provider: 'hf', model: modelId, nativeStream: true };
       } catch (e) {
         if (e.name === 'AbortError') throw e;
         errors.push(`hf:${modelId}:${e.message}`);
-        console.warn(`[Mirox] ❌ hf:${modelId}: ${e.message}`);
       }
     }
   }
 
-  /* Provider 2: Pollinations */
   if (PROVIDERS.pl) {
     for (const modelId of PL_CHAT_MODELS) {
       if (signal?.aborted) throw new Error('aborted');
       try {
         const res = await pollinationsChat(modelId, messages, cfg.tokens, stream, signal);
-        console.log(`[Mirox] ✅ Chat via pl:${modelId}`);
+        console.log(`[Mirox] ✅ pl:${modelId}`);
         return { res, provider: 'pl', model: modelId, nativeStream: true };
       } catch (e) {
         if (e.name === 'AbortError') throw e;
         errors.push(`pl:${modelId}:${e.message}`);
-        console.warn(`[Mirox] ❌ pl:${modelId}: ${e.message}`);
       }
     }
   }
 
-  /* Provider 3: AIroute (non-stream only — convert to fake SSE if needed) */
   if (PROVIDERS.ar) {
     for (const modelId of AR_CHAT_MODELS) {
       if (signal?.aborted) throw new Error('aborted');
       try {
         const res = await aiRouteChat(modelId, messages, cfg.tokens, false, signal);
-        console.log(`[Mirox] ✅ Chat via ar:${modelId}`);
+        console.log(`[Mirox] ✅ ar:${modelId}`);
         return { res, provider: 'ar', model: modelId, nativeStream: false };
       } catch (e) {
         if (e.name === 'AbortError') throw e;
         errors.push(`ar:${modelId}:${e.message}`);
-        console.warn(`[Mirox] ❌ ar:${modelId}: ${e.message}`);
       }
     }
-
-    /* Provider 3.5: AIroute searchque (keyless, last resort) */
     if (signal?.aborted) throw new Error('aborted');
     try {
       const res = await aiRouteChat(AR_SEARCH_MODEL, messages, cfg.tokens, false, signal);
-      console.log(`[Mirox] ✅ Chat via ar:${AR_SEARCH_MODEL}`);
+      console.log(`[Mirox] ✅ ar:${AR_SEARCH_MODEL}`);
       return { res, provider: 'ar-search', model: AR_SEARCH_MODEL, nativeStream: false };
     } catch (e) {
       if (e.name === 'AbortError') throw e;
@@ -594,13 +568,12 @@ async function miroxChatChain(messages, cfg, stream = false, signal) {
   throw new Error('All chat providers failed: ' + errors.slice(-4).join(' | ').slice(0, 400));
 }
 
-/* Extract text from any provider response format */
 function extractReplyText(data) {
   if (!data) return '';
   if (typeof data === 'string') return data;
-  if (typeof data.text === 'string') return data.text;                                     // AIroute
+  if (typeof data.text === 'string') return data.text;                     // AIroute
   if (Array.isArray(data.choices) && data.choices[0]) {
-    const c = data.choices[0].message?.content || data.choices[0].text || '';              // OpenAI
+    const c = data.choices[0].message?.content || data.choices[0].text || '';
     return typeof c === 'string' ? c : JSON.stringify(c);
   }
   if (typeof data.output === 'string') return data.output;
@@ -640,28 +613,6 @@ function wantsStream(req, body) {
   return false;
 }
 
-/* Convert non-stream response into SSE-style output (for clients that expect SSE) */
-async function pipeAsSSE(result, res, cfg) {
-  try {
-    const data = await result.res.json();
-    const text = extractReplyText(data);
-    /* Break into chunks of ~4 chars to simulate streaming */
-    const chunkSize = Math.max(2, Math.ceil(text.length / 200));
-    for (let i = 0; i < text.length; i += chunkSize) {
-      const d = text.slice(i, i + chunkSize);
-      res.write(`data: ${JSON.stringify({ d })}\n\n`);
-      if (typeof res.flush === 'function') { try { res.flush(); } catch {} }
-      /* Tiny delay to make it feel smooth without being slow */
-      await new Promise(r => setTimeout(r, 8));
-    }
-    res.write(`data: ${JSON.stringify({ done: true, model: cfg.label })}\n\n`);
-    res.end();
-  } catch (e) {
-    try { res.write(`data: ${JSON.stringify({ error: String(e.message).slice(0, 240) })}\n\n`); } catch {}
-    try { res.end(); } catch {}
-  }
-}
-
 /* ============================================================
    APP
    ============================================================ */
@@ -672,16 +623,15 @@ app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, DELETE');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, X-Api-Key, X-API-Key, api-key, Api-Key, X-Auth-Token, Mirox-Key');
-  res.header('Access-Control-Expose-Headers', 'Content-Length, Content-Type, X-Mirox-Latency');
+  res.header('Access-Control-Expose-Headers', 'Content-Length, Content-Type, X-Mirox-Provider');
   res.header('Access-Control-Max-Age', '86400');
   if (req.method === 'OPTIONS') return res.status(200).end();
   next();
 });
 
-/* ---------- Health ---------- */
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
   res.json({
-    ok: true, app: 'MiroxAI', version: 'v42',
+    ok: true, app: 'MiroxAI', version: 'v43',
     providers: PROVIDERS,
     ready: HAS_ANY_PROVIDER,
     database: !!fdb,
@@ -690,7 +640,6 @@ app.get(['/api/health', '/health', '/ping'], (req, res) => {
   });
 });
 
-/* ---------- Models ---------- */
 app.get(['/v1/models', '/models'], (req, res) => {
   const data = API_ALLOWED_MODELS.map(id => {
     const m = MIROX_MODELS[id];
@@ -712,7 +661,6 @@ app.get(['/v1/models/:modelId', '/models/:modelId'], (req, res) => {
   res.json({ id, object: 'model', created: 1700000000, owned_by: 'miroxai', root: id, parent: null, label: m.label, tagline: m.tagline, tier: m.tier });
 });
 
-/* ---------- Config ---------- */
 app.get(['/api/config', '/config'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   let u = null; try { u = await currentUser(req); } catch {}
@@ -720,18 +668,14 @@ app.get(['/api/config', '/config'], async (req, res) => {
     id, label: m.label, tagline: m.tagline, tier: m.tier, default: !!m.default,
   }));
   res.json({
-    app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v42' },
-    models: modelsArr,
-    default_model: modelsArr[0].id,
-    plans: PLANS,
-    user_tier: u ? u.tier : 'free',
-    guest: !u,
-    ready: HAS_ANY_PROVIDER,
+    app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v43' },
+    models: modelsArr, default_model: modelsArr[0].id, plans: PLANS,
+    user_tier: u ? u.tier : 'free', guest: !u,
+    ready: HAS_ANY_PROVIDER, providers: PROVIDERS,
     api_models: API_ALLOWED_MODELS,
   });
 });
 
-/* ---------- Login ---------- */
 app.post(['/api/auth/simple-login', '/auth/simple-login'], async (req, res) => {
   try {
     const { name, email } = req.body || {};
@@ -740,27 +684,19 @@ app.post(['/api/auth/simple-login', '/auth/simple-login'], async (req, res) => {
     if (!n || !e || !e.includes('@') || !e.split('@')[1].includes('.')) {
       return res.status(400).json({ ok: false, error: 'Valid name and email required' });
     }
-
     let rec = await getUserRecord(e);
     const existing = !!rec;
     if (!rec) {
-      rec = {
-        email: e, name: n, tier: 'free',
-        daily_used: 0, eclipse_used: 0, daily_reset: today(),
-        month_key: monthKey(), keys_this_month: 0, created_at: now(),
-      };
+      rec = { email: e, name: n, tier: 'free', daily_used: 0, eclipse_used: 0, daily_reset: today(), month_key: monthKey(), keys_this_month: 0, created_at: now() };
     } else {
       rec.name = n;
     }
     rec.last_login = now();
     await saveUserRecord(rec);
-
     const token = setSession(res, { uid: e, name: n, tier: rec.tier });
     if (fdb) fireAndForget(`logs/user/${e}/${Date.now()}`, { event: existing ? 'signin' : 'signup', name: n, ts: now() });
-
     res.json({ ok: true, token, user: { id: e, email: e, name: n, tier: rec.tier } });
   } catch (e) {
-    console.error('[Mirox] login error:', e);
     res.status(500).json({ ok: false, error: 'Login failed: ' + e.message });
   }
 });
@@ -779,12 +715,9 @@ app.get(['/api/me', '/me'], async (req, res) => {
         eclipse_used: u.eclipse_used || 0,
       }
     });
-  } catch (e) {
-    res.json({ user: null });
-  }
+  } catch { res.json({ user: null }); }
 });
 
-/* ---------- Plans ---------- */
 app.get(['/api/subscription/plans', '/subscription/plans'], (req, res) => {
   const perks = {
     free: ['Luna & Gen — free', 'Vision support', '5 Eclipse messages/day', '2 API keys/month'],
@@ -901,21 +834,15 @@ app.post('/v1/chat/completions', async (req, res) => {
         const data = await result.res.json();
         const reply = extractReplyText(data);
         await updateUsage();
-
         const ms = Date.now() - t0;
         res.setHeader('X-Mirox-Latency', String(ms));
         res.setHeader('X-Mirox-Provider', result.provider);
-
         return res.json({
           id: 'chatcmpl-' + Date.now(),
           object: 'chat.completion',
           created: now(),
           model: cfg.label,
-          choices: [{
-            index: 0,
-            message: { role: 'assistant', content: reply },
-            finish_reason: 'stop',
-          }],
+          choices: [{ index: 0, message: { role: 'assistant', content: reply }, finish_reason: 'stop' }],
           usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
           reply,
           daily_used: u ? (u.daily_used || 0) : 0,
@@ -931,7 +858,10 @@ app.post('/v1/chat/completions', async (req, res) => {
       }
     }
 
-    /* ---------- STREAMING ---------- */
+    /* ============================================================
+       STREAMING — no more post-flush setHeader!
+       Provider is sent as an SSE comment instead.
+       ============================================================ */
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
@@ -952,10 +882,12 @@ app.post('/v1/chat/completions', async (req, res) => {
     (async () => {
       try {
         const result = await miroxChatChain(msgs, cfg, true, abortCtrl.signal);
-        res.setHeader('X-Mirox-Provider', result.provider);
 
-        /* If native provider stream — pipe chunks */
+        /* Send provider as SSE comment — safe after flush */
+        try { res.write(`: provider=${result.provider}\n\n`); } catch {}
+
         if (result.nativeStream) {
+          /* HF / PL — native SSE from upstream */
           const reader = result.res.body.getReader();
           const dec = new TextDecoder();
           let buf = '';
@@ -982,11 +914,29 @@ app.post('/v1/chat/completions', async (req, res) => {
             }
           }
         } else {
-          /* Non-native (AIroute) — fake SSE from full response */
-          await pipeAsSSE(result, res, cfg);
+          /* AIroute / searchque — fake SSE from JSON */
+          const data = await result.res.json();
+          const text = extractReplyText(data);
+          if (text) {
+            /* ~30 chunks total for smooth streaming feel */
+            const totalChunks = 30;
+            const chunkSize = Math.max(2, Math.ceil(text.length / totalChunks));
+            for (let i = 0; i < text.length; i += chunkSize) {
+              if (clientClosed) break;
+              const d = text.slice(i, i + chunkSize);
+              res.write(`data: ${JSON.stringify({ d })}\n\n`);
+              if (typeof res.flush === 'function') { try { res.flush(); } catch {} }
+              /* Tiny delay only if there's more text coming */
+              if (i + chunkSize < text.length) {
+                await new Promise(r => setTimeout(r, 10));
+              }
+            }
+          }
         }
 
         await updateUsage();
+
+        /* Single done marker at the very end */
         try { res.write(`data: ${JSON.stringify({ done: true, model: cfg.label })}\n\n`); } catch {}
         try { res.end(); } catch {}
       } catch (e) {
@@ -1010,7 +960,6 @@ app.post('/v1/chat/completions', async (req, res) => {
   }
 });
 
-/* ---------- Images ---------- */
 app.post('/v1/images/generations', async (req, res) => {
   try {
     if (!HAS_ANY_PROVIDER) return res.status(503).json({ error: { message: 'No image provider configured.' } });
@@ -1028,8 +977,7 @@ app.post('/v1/images/generations', async (req, res) => {
 });
 
 /* ============================================================
-   API KEYS — BULLETPROOF GENERATION
-   Every write races a 5s timeout. Response ALWAYS returns.
+   API KEYS
    ============================================================ */
 app.post(['/api/keys/generate', '/keys/generate'], async (req, res) => {
   try {
@@ -1039,14 +987,9 @@ app.post(['/api/keys/generate', '/keys/generate'], async (req, res) => {
     const limit = plan.api_keys_per_month || 2;
     const used = u.keys_this_month || 0;
     if (used >= limit) {
-      return res.status(429).json({
-        ok: false,
-        error: `Monthly key limit reached (${limit}/month for ${plan.label}).`,
-        key_limit_reached: true, limit, used
-      });
+      return res.status(429).json({ ok: false, error: `Monthly key limit reached (${limit}/month for ${plan.label}).`, key_limit_reached: true, limit, used });
     }
 
-    /* Generate everything locally — no awaits */
     const key = 'mxk_' + crypto.randomBytes(24).toString('hex');
     const prefix = key.slice(0, 12);
     const hash = crypto.createHash('sha256').update(key).digest('hex');
@@ -1058,7 +1001,6 @@ app.post(['/api/keys/generate', '/keys/generate'], async (req, res) => {
 
     if (fdb) {
       try {
-        /* Race all writes against a 5s timeout so we always respond */
         const writes = Promise.all([
           safeSet(`api_key_index/${hash}`, { email: u.email, keyId, prefix, created }),
           safeSet(`api_keys/${u.email}/${keyId}`, { hash, prefix, created, active: true, plan: u.tier }),
@@ -1066,32 +1008,18 @@ app.post(['/api/keys/generate', '/keys/generate'], async (req, res) => {
         ]);
         const timeout = new Promise(resolve => setTimeout(() => resolve('__timeout__'), 5000));
         const result = await Promise.race([writes, timeout]);
-        if (result === '__timeout__') {
-          console.warn('[Mirox] Key writes timed out — returning key anyway');
-          stored = true; // Optimistic — writes will continue
-        } else {
-          // Every safeSet/safeUpdate resolves, so Promise.all always resolves
-          stored = true;
-        }
-        // Fire log write, don't await
+        stored = true;
+        if (result === '__timeout__') console.warn('[Mirox] key writes timed out');
         safePush(`logs/account/${u.email}`, { event: 'apikey_created', prefix, ts: created }).catch(() => {});
       } catch (e) {
         storeError = e.message;
-        console.error('[Mirox] key write error:', e);
       }
     } else {
-      /* No Firebase — guest mode key still works */
       stored = true;
     }
 
-    return res.json({
-      ok: true, key, prefix,
-      stored,
-      store_error: storeError,
-      used: used + 1, limit
-    });
+    return res.json({ ok: true, key, prefix, stored, store_error: storeError, used: used + 1, limit });
   } catch (e) {
-    console.error('[Mirox] key gen error:', e);
     res.status(500).json({ ok: false, error: e.message });
   }
 });
@@ -1105,9 +1033,7 @@ app.get(['/api/keys/list', '/keys/list'], async (req, res) => {
     const data = (await safeGet(`api_keys/${u.email}`)) || {};
     const keys = Object.entries(data).map(([id, k]) => ({ id, prefix: k.prefix, created: k.created, active: k.active }));
     res.json({ ok: true, keys, used: u.keys_this_month || 0, limit: PLANS[u.tier]?.api_keys_per_month || 2 });
-  } catch {
-    res.json({ ok: true, keys: [], used: 0, limit: 2 });
-  }
+  } catch { res.json({ ok: true, keys: [], used: 0, limit: 2 }); }
 });
 
 /* ---------- Admin ---------- */
@@ -1119,16 +1045,12 @@ function adminSession(req) {
   if (s.exp < Date.now()) return null;
   return s;
 }
-
 app.post('/api/admin/auth', (req, res) => {
   const { password } = req.body || {};
-  if (!password || password !== ADMIN_PASSWORD) {
-    return res.status(401).json({ ok: false, error: 'Invalid password' });
-  }
+  if (!password || password !== ADMIN_PASSWORD) return res.status(401).json({ ok: false, error: 'Invalid password' });
   const token = signSession({ admin: true, exp: Date.now() + 12 * 60 * 60 * 1000 });
   res.json({ ok: true, token });
 });
-
 app.post('/api/admin/set-tier', async (req, res) => {
   try {
     if (!adminSession(req)) return res.status(401).json({ ok: false, error: 'Unauthorized' });
@@ -1138,23 +1060,18 @@ app.post('/api/admin/set-tier', async (req, res) => {
     await safeUpdate(`users/${email}`, { tier, tier_updated: now() });
     fireAndForget(`logs/account/${email}/${Date.now()}`, { event: 'tier_change', tier, ts: now() });
     res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
-
 app.get('/api/admin/stats', async (req, res) => {
   try {
     if (!adminSession(req)) return res.status(401).json({ ok: false, error: 'Unauthorized' });
     if (!fdb) return res.json({ ok: true, users: 0, chats: 0, images: 0, events: 0, users_data: {}, chats_data: [], images_data: [], events_data: [] });
-
     const [usersSnap, chatsSnap, imgSnap, evSnap] = await Promise.all([
       fdb.ref('users').once('value'),
       fdb.ref('logs/chat').once('value'),
       fdb.ref('logs/image').once('value'),
       fdb.ref('logs/user').once('value'),
     ]);
-
     const flatten = (obj) => {
       const out = [];
       Object.entries(obj || {}).forEach(([email, list]) => {
@@ -1164,7 +1081,6 @@ app.get('/api/admin/stats', async (req, res) => {
       out.sort((a, b) => (b.ts || 0) - (a.ts || 0));
       return out.slice(0, 100);
     };
-
     res.json({
       ok: true,
       users: Object.keys(usersSnap.val() || {}).length,
@@ -1176,12 +1092,9 @@ app.get('/api/admin/stats', async (req, res) => {
       images_data: flatten(imgSnap.val()),
       events_data: flatten(evSnap.val()),
     });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
-/* ---------- 404 / Error ---------- */
 app.use((req, res) => {
   res.status(404).json({ error: { message: 'Not found: ' + req.path, type: 'invalid_request_error' } });
 });
