@@ -1,11 +1,10 @@
 /* ============================================================
-   MiroxAI Backend v47
-   FIXED: FUNCTION_INVOCATION_FAILED
-   - No async IIFE — stream is awaited inline (Vercel-safe)
-   - 45s global deadline across ALL provider attempts
-   - Global unhandledRejection / uncaughtException guards
-   - Every res.write wrapped in try/catch
-   - Removed post-flush setHeader calls
+   MiroxAI Backend v48
+   NEW: pcall-style safe handling for tools & args
+   - tools / tool_choice / tool_calls / functions / function_call
+     are ALL optional — missing or malformed = safely ignored
+   - Every message sanitized before sending upstream
+   - Never crashes on unexpected client payloads
    ============================================================ */
 
 process.on('unhandledRejection', (r) => { console.error('[Mirox] unhandledRejection:', r); });
@@ -34,14 +33,275 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '2010';
 const HF_TIMEOUT_MS = 22000;
 const PL_TIMEOUT_MS = 22000;
 const AR_TIMEOUT_MS = 22000;
-const TOTAL_DEADLINE_MS = 45000; // hard cap across all provider attempts
-const STREAM_SAFETY_MS = 50000;  // force close before Vercel's 60s cut
+const TOTAL_DEADLINE_MS = 45000;
+const STREAM_SAFETY_MS = 50000;
 
 const PROVIDERS = { hf: !!HF_API_KEY, pl: !!PL_KEY, ar: !!AR_KEY };
 const HAS_ANY_PROVIDER = PROVIDERS.hf || PROVIDERS.pl || PROVIDERS.ar;
 console.log('[Mirox] Providers:', PROVIDERS);
 
-/* ---------- Firebase ---------- */
+/* ============================================================
+   PCALL-STYLE SAFE HELPERS
+   Every helper NEVER throws. Returns a sane default on any error.
+   ============================================================ */
+
+/** Safe get from object — returns default if missing or wrong type */
+function safeGet(obj, key, defaultValue = undefined) {
+  try {
+    if (!obj || typeof obj !== 'object') return defaultValue;
+    const v = obj[key];
+    return v === undefined || v === null ? defaultValue : v;
+  } catch { return defaultValue; }
+}
+
+/** Safe string coercion */
+function safeString(v, maxLen = 100000) {
+  try {
+    if (v === undefined || v === null) return '';
+    const s = typeof v === 'string' ? v : JSON.stringify(v);
+    return s.length > maxLen ? s.slice(0, maxLen) : s;
+  } catch { return ''; }
+}
+
+/** Safe number */
+function safeNumber(v, defaultValue = 0) {
+  try {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : defaultValue;
+  } catch { return defaultValue; }
+}
+
+/** Safe array — returns [] if not an array */
+function safeArray(v) {
+  try { return Array.isArray(v) ? v : []; } catch { return []; }
+}
+
+/** Safe boolean */
+function safeBool(v, defaultValue = false) {
+  try {
+    if (typeof v === 'boolean') return v;
+    if (v === 'true' || v === 1) return true;
+    if (v === 'false' || v === 0) return false;
+    return defaultValue;
+  } catch { return defaultValue; }
+}
+
+/**
+ * Safely parse an OpenAI `tools` array.
+ * Returns [] on any error. Never throws.
+ * Preserves only well-formed tool definitions.
+ */
+function safeParseTools(tools) {
+  try {
+    if (!Array.isArray(tools)) return [];
+    const out = [];
+    for (const t of tools) {
+      if (!t || typeof t !== 'object') continue;
+      const type = safeString(t.type, 20);
+      const fn = safeGet(t, 'function');
+      if (type === 'function' && fn && typeof fn === 'object') {
+        const name = safeString(safeGet(fn, 'name'), 64);
+        if (!name) continue;
+        const description = safeString(safeGet(fn, 'description'), 1024);
+        const parameters = safeGet(fn, 'parameters');
+        out.push({
+          type: 'function',
+          function: {
+            name,
+            description,
+            parameters: (parameters && typeof parameters === 'object') ? parameters : { type: 'object', properties: {} },
+          },
+        });
+      } else if (type && type !== 'function') {
+        /* Non-function tools (e.g. code_interpreter, retrieval) — pass through but sanitized */
+        out.push({ type });
+      }
+    }
+    return out;
+  } catch { return []; }
+}
+
+/** Legacy OpenAI `functions` array (pre-tools) → convert to tools format */
+function safeParseLegacyFunctions(functions) {
+  try {
+    if (!Array.isArray(functions)) return [];
+    const tools = [];
+    for (const fn of functions) {
+      if (!fn || typeof fn !== 'object') continue;
+      const name = safeString(safeGet(fn, 'name'), 64);
+      if (!name) continue;
+      tools.push({
+        type: 'function',
+        function: {
+          name,
+          description: safeString(safeGet(fn, 'description'), 1024),
+          parameters: (safeGet(fn, 'parameters') && typeof fn.parameters === 'object') ? fn.parameters : { type: 'object', properties: {} },
+        },
+      });
+    }
+    return tools;
+  } catch { return []; }
+}
+
+/** Safe tool_choice — returns a valid value or undefined */
+function safeToolChoice(tc) {
+  try {
+    if (tc === undefined || tc === null) return undefined;
+    if (typeof tc === 'string') {
+      if (['auto', 'none', 'required'].includes(tc)) return tc;
+      return 'auto';
+    }
+    if (typeof tc === 'object') {
+      const type = safeString(safeGet(tc, 'type'), 20);
+      if (type === 'function') {
+        const fn = safeGet(tc, 'function');
+        const name = safeString(safeGet(fn, 'name'), 64);
+        if (!name) return 'auto';
+        return { type: 'function', function: { name } };
+      }
+      if (type && ['auto', 'none', 'required'].includes(type)) return type;
+    }
+    return 'auto';
+  } catch { return undefined; }
+}
+
+/** Legacy function_call → tool_choice */
+function safeLegacyFunctionCall(fc) {
+  try {
+    if (fc === undefined || fc === null) return undefined;
+    if (typeof fc === 'string') {
+      if (['auto', 'none'].includes(fc)) return fc;
+      return 'auto';
+    }
+    if (typeof fc === 'object') {
+      const name = safeString(safeGet(fc, 'name'), 64);
+      if (name) return { type: 'function', function: { name } };
+    }
+    return 'auto';
+  } catch { return undefined; }
+}
+
+/** Safe tool_calls inside an assistant message — preserves well-formed entries */
+function safeParseToolCalls(toolCalls) {
+  try {
+    if (!Array.isArray(toolCalls)) return [];
+    const out = [];
+    for (const tc of toolCalls) {
+      if (!tc || typeof tc !== 'object') continue;
+      const id = safeString(safeGet(tc, 'id'), 128);
+      const type = safeString(safeGet(tc, 'type'), 20) || 'function';
+      const fn = safeGet(tc, 'function');
+      if (type === 'function' && fn && typeof fn === 'object') {
+        const name = safeString(safeGet(fn, 'name'), 64);
+        const args = safeString(safeGet(fn, 'arguments'), 100000);
+        if (!name) continue;
+        out.push({ id: id || 'call_' + crypto.randomBytes(4).toString('hex'), type, function: { name, arguments: args || '{}' } });
+      }
+    }
+    return out;
+  } catch { return []; }
+}
+
+/** Legacy function_call inside assistant message */
+function safeParseAssistantFunctionCall(fc) {
+  try {
+    if (!fc || typeof fc !== 'object') return null;
+    const name = safeString(safeGet(fc, 'name'), 64);
+    const args = safeString(safeGet(fc, 'arguments'), 100000);
+    if (!name) return null;
+    return { name, arguments: args || '{}' };
+  } catch { return null; }
+}
+
+/**
+ * Sanitize a single message object for upstream.
+ * Never throws, drops malformed entries safely.
+ */
+function safeSanitizeMessage(msg) {
+  try {
+    if (!msg || typeof msg !== 'object') return null;
+    const role = safeString(safeGet(msg, 'role'), 20);
+    if (!['system', 'user', 'assistant', 'tool', 'function'].includes(role)) return null;
+
+    const out = { role };
+
+    /* Content can be string, array (multimodal), or null */
+    const rawContent = safeGet(msg, 'content');
+    if (typeof rawContent === 'string') {
+      out.content = rawContent;
+    } else if (Array.isArray(rawContent)) {
+      /* Sanitize multimodal parts — drop anything unrecognized */
+      const parts = [];
+      for (const p of rawContent) {
+        if (!p || typeof p !== 'object') continue;
+        const ptype = safeString(safeGet(p, 'type'), 20);
+        if (ptype === 'text' && typeof safeGet(p, 'text') === 'string') {
+          parts.push({ type: 'text', text: p.text });
+        } else if (ptype === 'image_url' && safeGet(p, 'image_url')) {
+          const url = safeString(safeGet(p.image_url, 'url'), 20000000);
+          if (url) parts.push({ type: 'image_url', image_url: { url } });
+        }
+        /* Anything else: silently dropped */
+      }
+      out.content = parts.length ? parts : '';
+    } else if (rawContent !== undefined && rawContent !== null) {
+      out.content = safeString(rawContent);
+    } else {
+      out.content = '';
+    }
+
+    /* Assistant-specific: tool_calls, function_call, name */
+    if (role === 'assistant') {
+      const tcs = safeParseToolCalls(safeGet(msg, 'tool_calls'));
+      if (tcs.length) out.tool_calls = tcs;
+      const fc = safeParseAssistantFunctionCall(safeGet(msg, 'function_call'));
+      if (fc) out.function_call = fc;
+      const name = safeString(safeGet(msg, 'name'), 64);
+      if (name) out.name = name;
+    }
+
+    /* Tool messages: tool_call_id (preferred) or name (legacy) */
+    if (role === 'tool') {
+      const tcid = safeString(safeGet(msg, 'tool_call_id'), 128);
+      if (tcid) out.tool_call_id = tcid;
+      const name = safeString(safeGet(msg, 'name'), 64);
+      if (name) out.name = name;
+    }
+
+    /* Function (legacy tool) messages */
+    if (role === 'function') {
+      const name = safeString(safeGet(msg, 'name'), 64);
+      if (name) out.name = name;
+    }
+
+    return out;
+  } catch { return null; }
+}
+
+/**
+ * Sanitize entire messages array.
+ * Returns only well-formed messages. Never throws.
+ */
+function safeSanitizeMessages(messages, fallbackText) {
+  try {
+    const out = [];
+    const arr = safeArray(messages);
+    for (const m of arr) {
+      const s = safeSanitizeMessage(m);
+      if (s) out.push(s);
+    }
+    if (!out.length && fallbackText) {
+      out.push({ role: 'user', content: String(fallbackText) });
+    }
+    return out;
+  } catch {
+    return fallbackText ? [{ role: 'user', content: String(fallbackText) }] : [];
+  }
+}
+
+/* ============================================================
+   Firebase
+   ============================================================ */
 let fdb = null;
 let firebaseError = null;
 try {
@@ -100,19 +360,22 @@ function clearSession(res) {
 
 /* ---------- Auth ---------- */
 function extractToken(req) {
-  const h = req.headers || {};
-  const authz = String(h.authorization || '').trim();
+  const h = safeGet(req, 'headers', {});
+  const authz = safeString(safeGet(h, 'authorization')).trim();
   if (authz) {
     const m = authz.match(/^Bearer\s+(.+)$/i);
     if (m) return m[1].trim();
     if (/^mxk_/.test(authz)) return authz;
   }
-  if (h['x-api-key']) return String(h['x-api-key']).trim();
-  if (h['api-key']) return String(h['api-key']).trim();
-  if (h['x-auth-token']) return String(h['x-auth-token']).trim();
-  if (h['mirox-key']) return String(h['mirox-key']).trim();
-  if (h['apikey']) return String(h['apikey']).trim();
-  if (req.query && req.query.api_key) return String(req.query.api_key).trim();
+  if (h['x-api-key']) return safeString(h['x-api-key']).trim();
+  if (h['api-key']) return safeString(h['api-key']).trim();
+  if (h['x-auth-token']) return safeString(h['x-auth-token']).trim();
+  if (h['mirox-key']) return safeString(h['mirox-key']).trim();
+  if (h['apikey']) return safeString(h['apikey']).trim();
+  if (safeGet(req, 'query')) {
+    const q = safeGet(req.query, 'api_key');
+    if (q) return safeString(q).trim();
+  }
   return '';
 }
 function getSession(req) {
@@ -122,7 +385,8 @@ function getSession(req) {
     const s = verifySession(token);
     if (s && s.uid) return s;
   }
-  const m = (req.headers.cookie || '').match(/(?:^|;\s*)mirox_sess=([^;]+)/);
+  const cookieHeader = safeString(safeGet(safeGet(req, 'headers', {}), 'cookie'));
+  const m = cookieHeader.match(/(?:^|;\s*)mirox_sess=([^;]+)/);
   if (m) {
     const s = verifySession(decodeURIComponent(m[1]));
     if (s && s.uid) return s;
@@ -131,34 +395,34 @@ function getSession(req) {
 }
 
 /* ---------- Firebase helpers ---------- */
-async function safeGet(p) {
+async function safeGetFB(p) {
   if (!fdb) return null;
   try { const s = await fdb.ref(p).once('value'); return s.exists() ? s.val() : null; }
   catch { return null; }
 }
-async function safeUpdate(p, d) {
+async function safeUpdateFB(p, d) {
   if (!fdb) return false;
   try { await fdb.ref(p).update(d); return true; }
   catch { return false; }
 }
-async function safeSet(p, d) {
+async function safeSetFB(p, d) {
   if (!fdb) return false;
   try { await fdb.ref(p).set(d); return true; }
   catch { return false; }
 }
-function fireAndForget(p, d) {
+function fireAndForgetFB(p, d) {
   if (!fdb) return;
   try { fdb.ref(p).update(d).catch(() => {}); } catch {}
 }
-async function safePush(p, d) {
+async function safePushFB(p, d) {
   if (!fdb) return null;
   try { const r = fdb.ref(p).push(); await r.set({ ...d, _ts: now() }); return r.key; }
   catch { return null; }
 }
 
 /* ---------- Users ---------- */
-async function getUserRecord(email) { return await safeGet(`users/${email}`); }
-async function saveUserRecord(rec) { if (!rec?.email) return false; return await safeUpdate(`users/${rec.email}`, rec); }
+async function getUserRecord(email) { return await safeGetFB(`users/${email}`); }
+async function saveUserRecord(rec) { if (!rec || !rec.email) return false; return await safeUpdateFB(`users/${rec.email}`, rec); }
 async function ensureFreshUser(email) {
   if (!email) return null;
   let rec = await getUserRecord(email);
@@ -178,9 +442,9 @@ async function validateApiKey(apiKey) {
   if (!fdb) return { valid: true, email: 'guest@apikey.local', tier: 'free' };
   try {
     const hash = crypto.createHash('sha256').update(apiKey).digest('hex');
-    const idx = await safeGet(`api_key_index/${hash}`);
+    const idx = await safeGetFB(`api_key_index/${hash}`);
     if (idx && idx.email) {
-      const user = await safeGet(`users/${idx.email}`) || {};
+      const user = await safeGetFB(`users/${idx.email}`) || {};
       return { valid: true, email: idx.email, tier: user.tier || 'free', keyId: idx.keyId };
     }
     return null;
@@ -243,11 +507,12 @@ const PLANS = {
 const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
 
 function buildSystemPrompt(cfg) { return fillGuard(cfg.label) + '\n\n---\n\n' + cfg.basePrompt; }
+
 function injectIdentityGuard(messages, cfg) {
   const guard = buildSystemPrompt(cfg);
   if (!Array.isArray(messages) || !messages.length) return [{ role: 'system', content: guard }];
-  if (messages[0]?.role === 'system') {
-    const merged = guard + '\n\n---\n\nUSER-SUPPLIED SYSTEM (lower priority):\n' + String(messages[0].content || '');
+  if (messages[0] && messages[0].role === 'system') {
+    const merged = guard + '\n\n---\n\nUSER-SUPPLIED SYSTEM (lower priority):\n' + safeString(messages[0].content);
     return [{ role: 'system', content: merged }, ...messages.slice(1)];
   }
   return [{ role: 'system', content: guard }, ...messages];
@@ -294,11 +559,15 @@ async function fetchWithTimeout(url, opts = {}, timeoutMs = HF_TIMEOUT_MS, exter
 }
 
 /* ---------- Provider calls ---------- */
-async function hfChat(modelId, messages, maxTokens, stream, signal, timeoutMs) {
+async function hfChat(modelId, messages, maxTokens, stream, signal, timeoutMs, extra = {}) {
+  const body = { model: modelId, messages, max_tokens: maxTokens, stream: !!stream, temperature: 0.7 };
+  /* Safely merge tools ONLY if present and non-empty */
+  if (extra.tools && extra.tools.length) body.tools = extra.tools;
+  if (extra.tool_choice !== undefined) body.tool_choice = extra.tool_choice;
   const res = await fetchWithTimeout(HF_CHAT_URL, {
     method: 'POST',
     headers: { Authorization: `Bearer ${HF_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: modelId, messages, max_tokens: maxTokens, stream: !!stream, temperature: 0.7 }),
+    body: JSON.stringify(body),
   }, timeoutMs, signal);
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -309,12 +578,15 @@ async function hfChat(modelId, messages, maxTokens, stream, signal, timeoutMs) {
   }
   return res;
 }
-async function pollinationsChat(modelId, messages, maxTokens, stream, signal, timeoutMs) {
+async function pollinationsChat(modelId, messages, maxTokens, stream, signal, timeoutMs, extra = {}) {
   if (!PL_KEY) throw new Error('PL_KEY not set');
+  const body = { model: modelId, messages, max_tokens: maxTokens, stream: !!stream, temperature: 0.7 };
+  if (extra.tools && extra.tools.length) body.tools = extra.tools;
+  if (extra.tool_choice !== undefined) body.tool_choice = extra.tool_choice;
   const res = await fetchWithTimeout(PL_CHAT_URL, {
     method: 'POST',
     headers: { Authorization: `Bearer ${PL_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: modelId, messages, max_tokens: maxTokens, stream: !!stream, temperature: 0.7 }),
+    body: JSON.stringify(body),
   }, timeoutMs, signal);
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -325,17 +597,21 @@ async function pollinationsChat(modelId, messages, maxTokens, stream, signal, ti
   }
   return res;
 }
+
+/* AIroute uses { model, prompt, history } — tools are silently dropped */
 function toAiRouteFormat(messages) {
   let systemContent = '';
   let userPrompt = '';
   const history = [];
   if (!Array.isArray(messages)) return { prompt: '', history: [] };
   for (const m of messages) {
+    if (!m || typeof m !== 'object') continue;
     const role = m.role;
-    const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+    const content = safeString(m.content);
     if (role === 'system') systemContent += (systemContent ? '\n\n' : '') + content;
     else if (role === 'user') { history.push({ role: 'user', content }); userPrompt = content; }
     else if (role === 'assistant') history.push({ role: 'assistant', content });
+    /* 'tool' and 'function' roles silently ignored for AIroute */
   }
   if (history.length && history[history.length - 1].role === 'user') history.pop();
   return { prompt: systemContent ? `${systemContent}\n\n---\n\n${userPrompt}` : userPrompt, history };
@@ -357,37 +633,40 @@ async function aiRouteChat(modelId, messages, maxTokens, stream, signal, timeout
   return res;
 }
 
-/* Deadline-aware chain */
-async function miroxChatChain(messages, cfg, stream, signal, deadline) {
+/* Provider chain — tools passed only to providers that support them */
+async function miroxChatChain(messages, cfg, stream, signal, deadline, extra = {}) {
   const errors = [];
   const timeLeft = () => deadline - Date.now();
   const perAttempt = () => Math.max(3000, Math.min(HF_TIMEOUT_MS, timeLeft() - 1500));
 
+  /* HF supports tools */
   if (PROVIDERS.hf && timeLeft() > 3000) {
     for (const modelId of HF_CHAT_MODELS) {
-      if (signal?.aborted) throw new Error('aborted');
+      if (signal && signal.aborted) throw new Error('aborted');
       if (timeLeft() < 3000) { errors.push('deadline-hf'); break; }
       try {
-        const res = await hfChat(modelId, messages, cfg.tokens, stream, signal, perAttempt());
+        const res = await hfChat(modelId, messages, cfg.tokens, stream, signal, perAttempt(), extra);
         console.log(`[Mirox] ✅ hf:${modelId}`);
         return { res, provider: 'hf', model: modelId, nativeStream: true };
       } catch (e) { if (e.name === 'AbortError') throw e; errors.push(`hf:${modelId}:${e.message}`); }
     }
   }
+  /* PL supports tools */
   if (PROVIDERS.pl && timeLeft() > 3000) {
     for (const modelId of PL_CHAT_MODELS) {
-      if (signal?.aborted) throw new Error('aborted');
+      if (signal && signal.aborted) throw new Error('aborted');
       if (timeLeft() < 3000) { errors.push('deadline-pl'); break; }
       try {
-        const res = await pollinationsChat(modelId, messages, cfg.tokens, stream, signal, perAttempt());
+        const res = await pollinationsChat(modelId, messages, cfg.tokens, stream, signal, perAttempt(), extra);
         console.log(`[Mirox] ✅ pl:${modelId}`);
         return { res, provider: 'pl', model: modelId, nativeStream: true };
       } catch (e) { if (e.name === 'AbortError') throw e; errors.push(`pl:${modelId}:${e.message}`); }
     }
   }
+  /* AR — tools silently ignored */
   if (PROVIDERS.ar && timeLeft() > 3000) {
     for (const modelId of AR_CHAT_MODELS) {
-      if (signal?.aborted) throw new Error('aborted');
+      if (signal && signal.aborted) throw new Error('aborted');
       if (timeLeft() < 3000) { errors.push('deadline-ar'); break; }
       try {
         const res = await aiRouteChat(modelId, messages, cfg.tokens, false, signal, perAttempt());
@@ -395,7 +674,7 @@ async function miroxChatChain(messages, cfg, stream, signal, deadline) {
         return { res, provider: 'ar', model: modelId, nativeStream: false };
       } catch (e) { if (e.name === 'AbortError') throw e; errors.push(`ar:${modelId}:${e.message}`); }
     }
-    if (timeLeft() > 3000 && !signal?.aborted) {
+    if (timeLeft() > 3000 && !(signal && signal.aborted)) {
       try {
         const res = await aiRouteChat(AR_SEARCH_MODEL, messages, cfg.tokens, false, signal, perAttempt());
         console.log(`[Mirox] ✅ ar:${AR_SEARCH_MODEL}`);
@@ -418,16 +697,25 @@ function extractReplyText(data) {
   return '';
 }
 
+/* Extract tool_calls from a non-stream response (OpenAI format) */
+function extractToolCalls(data) {
+  try {
+    if (!data || !Array.isArray(data.choices) || !data.choices[0]) return [];
+    const tc = data.choices[0].message?.tool_calls;
+    return safeParseToolCalls(tc);
+  } catch { return []; }
+}
+
 function buildMessages(systemPrompt, history, userText, persona, mem, files) {
   let sys = systemPrompt || '';
   if (persona) sys += `\n\nUser preference: ${persona}`;
-  if (mem?.length) sys += `\n\nRemember: ${mem.slice(-8).map(m => m.text).join(' | ')}`;
+  if (mem && mem.length) sys += `\n\nRemember: ${mem.slice(-8).map(m => safeString(m.text)).join(' | ')}`;
   const msgs = [{ role: 'system', content: sys }];
-  const textFiles = (files || []).filter(f => f.type !== 'image');
-  const imageFiles = (files || []).filter(f => f.type === 'image' && f.dataUrl);
+  const textFiles = (files || []).filter(f => f && f.type !== 'image');
+  const imageFiles = (files || []).filter(f => f && f.type === 'image' && f.dataUrl);
   let textPart = userText || '';
   if (textFiles.length) {
-    const fileText = textFiles.map(f => `[Attached: ${f.name}]\n\`\`\`\n${String(f.content || '').slice(0, 6000)}\n\`\`\``).join('\n\n');
+    const fileText = textFiles.map(f => `[Attached: ${f.name}]\n\`\`\`\n${safeString(f.content).slice(0, 6000)}\n\`\`\``).join('\n\n');
     textPart = (fileText + '\n\n' + (userText || '')).trim();
   }
   if (imageFiles.length) {
@@ -438,7 +726,7 @@ function buildMessages(systemPrompt, history, userText, persona, mem, files) {
     msgs.push({ role: 'user', content: textPart || '(empty)' });
   }
   for (const h of (history || []).slice(-14)) {
-    const role = h.role, txt = String(h.content || '').trim().slice(0, 4000);
+    const role = safeGet(h, 'role'), txt = safeString(safeGet(h, 'content')).trim().slice(0, 4000);
     if ((role === 'user' || role === 'assistant') && txt) msgs.push({ role, content: txt });
   }
   return msgs;
@@ -446,7 +734,7 @@ function buildMessages(systemPrompt, history, userText, persona, mem, files) {
 
 function wantsStream(req, body) {
   if (body && typeof body.stream === 'boolean') return body.stream;
-  const accept = String(req.headers.accept || '').toLowerCase();
+  const accept = safeString(safeGet(safeGet(req, 'headers', {}), 'accept')).toLowerCase();
   if (accept.includes('text/event-stream')) return true;
   return false;
 }
@@ -454,7 +742,8 @@ function wantsStream(req, body) {
 /* ---------- Images ---------- */
 async function lumenalGenerate(prompt, aspectRatio = '1:1') {
   const dims = { '1:1': { w: 1024, h: 1024 }, '16:9': { w: 1344, h: 768 }, '9:16': { w: 768, h: 1344 }, '4:3': { w: 1152, h: 864 } };
-  const { w, h } = dims[aspectRatio] || dims['1:1'];
+  const dim = dims[aspectRatio] || dims['1:1'];
+  const w = dim.w, h = dim.h;
   const errors = [];
   const deadline = Date.now() + 45000;
   const timeLeft = () => deadline - Date.now();
@@ -535,9 +824,9 @@ app.use((req, res, next) => {
   next();
 });
 
-/* ---------- Health / debug ---------- */
+/* ---------- Health ---------- */
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
-  res.json({ ok: true, app: 'MiroxAI', version: 'v47', providers: PROVIDERS, firebase: { connected: !!fdb, error: firebaseError }, ready: HAS_ANY_PROVIDER, time: now() });
+  res.json({ ok: true, app: 'MiroxAI', version: 'v48', providers: PROVIDERS, firebase: { connected: !!fdb, error: firebaseError }, ready: HAS_ANY_PROVIDER, time: now() });
 });
 app.get('/api/debug/firebase', async (req, res) => {
   const out = { configured: !!fdb, error: firebaseError, write: null, read: null };
@@ -568,15 +857,15 @@ app.get(['/api/config', '/config'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   let u = null; try { u = await currentUser(req); } catch {}
   const modelsArr = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tagline: m.tagline, tier: m.tier, default: !!m.default }));
-  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v47' }, models: modelsArr, default_model: modelsArr[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: HAS_ANY_PROVIDER, providers: PROVIDERS, api_models: API_ALLOWED_MODELS });
+  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v48' }, models: modelsArr, default_model: modelsArr[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: HAS_ANY_PROVIDER, providers: PROVIDERS, api_models: API_ALLOWED_MODELS });
 });
 
 /* ---------- Auth ---------- */
 app.post(['/api/auth/simple-login', '/auth/simple-login'], async (req, res) => {
   try {
     const { name, email } = req.body || {};
-    const n = String(name || '').trim().slice(0, 60);
-    const e = String(email || '').trim().toLowerCase().slice(0, 120);
+    const n = safeString(name, 60).trim();
+    const e = safeString(email, 120).trim().toLowerCase();
     if (!n || !e || !e.includes('@') || !e.split('@')[1].includes('.')) return res.status(400).json({ ok: false, error: 'Valid name and email required' });
     let rec = await getUserRecord(e);
     const existing = !!rec;
@@ -585,7 +874,7 @@ app.post(['/api/auth/simple-login', '/auth/simple-login'], async (req, res) => {
     rec.last_login = now();
     await saveUserRecord(rec);
     const token = setSession(res, { uid: e, name: n, tier: rec.tier });
-    if (fdb) fireAndForget(`logs/user/${e}/${Date.now()}`, { event: existing ? 'signin' : 'signup', name: n, ts: now() });
+    if (fdb) fireAndForgetFB(`logs/user/${e}/${Date.now()}`, { event: existing ? 'signin' : 'signup', name: n, ts: now() });
     res.json({ ok: true, token, user: { id: e, email: e, name: n, tier: rec.tier } });
   } catch (e) { res.status(500).json({ ok: false, error: 'Login failed: ' + e.message }); }
 });
@@ -598,7 +887,6 @@ app.get(['/api/me', '/me'], async (req, res) => {
     res.json({ user: { id: u.email, email: u.email, name: u.name, tier: u.tier, keys_this_month: u.keys_this_month || 0, eclipse_used: u.eclipse_used || 0 } });
   } catch { res.json({ user: null }); }
 });
-
 app.get(['/api/subscription/plans', '/subscription/plans'], (req, res) => {
   const perks = {
     free: ['Luna & Gen — free', 'Vision support', '5 Eclipse messages/day', '2 API keys/month'],
@@ -620,39 +908,30 @@ function sseInit(res) {
   if (res.flushHeaders) { try { res.flushHeaders(); } catch {} }
   try { if (res.socket && typeof res.socket.setNoDelay === 'function') res.socket.setNoDelay(true); } catch {}
 }
-
 function safeWrite(res, chunk) {
   try {
     if (res.writableEnded || res.destroyed) return false;
     res.write(chunk);
     if (typeof res.flush === 'function') { try { res.flush(); } catch {} }
     return true;
-  } catch (e) { return false; }
+  } catch { return false; }
 }
+function sseData(res, obj) { return safeWrite(res, 'data: ' + JSON.stringify(obj) + '\n\n'); }
+function sseDone(res) { return safeWrite(res, 'data: [DONE]\n\n'); }
+function sseHeartbeat(res) { return safeWrite(res, 'event: heartbeat\ndata: {}\n\n'); }
 
-function sseData(res, obj) {
-  const json = JSON.stringify(obj);
-  return safeWrite(res, 'data: ' + json + '\n\n');
-}
-function sseDone(res) {
-  return safeWrite(res, 'data: [DONE]\n\n');
-}
-function sseHeartbeat(res) {
-  return safeWrite(res, 'event: heartbeat\ndata: {}\n\n');
-}
-
-function oaiChunk(id, model, delta, finishReason) {
+function oaiChunk(id, model, delta, finishReason, toolCalls) {
   const chunk = {
     id, object: 'chat.completion.chunk', created: now(), model,
     system_fingerprint: 'fp_mirox',
     choices: [{ index: 0, delta: delta || {}, logprobs: null, finish_reason: finishReason ?? null }],
   };
+  if (toolCalls && toolCalls.length) chunk.choices[0].delta.tool_calls = toolCalls;
   if (delta && typeof delta.content === 'string' && delta.content.length > 0) chunk.d = delta.content;
   if (finishReason) chunk.done = true;
   return chunk;
 }
 
-/* Upstream SSE line reader */
 async function readUpstreamLines(stream, signal) {
   const out = [];
   if (!stream || typeof stream.getReader !== 'function') return out;
@@ -661,7 +940,7 @@ async function readUpstreamLines(stream, signal) {
   let buf = '';
   try {
     while (true) {
-      if (signal?.aborted) break;
+      if (signal && signal.aborted) break;
       const { value, done } = await reader.read();
       if (done) break;
       buf += dec.decode(value, { stream: true });
@@ -686,7 +965,6 @@ async function readUpstreamLines(stream, signal) {
   return out;
 }
 
-/* Code-point-safe chunker */
 function splitByCodePoints(text, targetChunks) {
   const cps = Array.from(text);
   const total = cps.length;
@@ -697,7 +975,7 @@ function splitByCodePoints(text, targetChunks) {
 }
 
 /* ============================================================
-   CHAT — no async IIFE, awaited inline
+   CHAT COMPLETIONS
    ============================================================ */
 app.post('/v1/chat/completions', async (req, res) => {
   const t0 = Date.now();
@@ -706,7 +984,6 @@ app.post('/v1/chat/completions', async (req, res) => {
   let heartbeat = null;
   let safety = null;
   const abortCtrl = new AbortController();
-
   const cleanup = () => {
     if (heartbeat) { clearInterval(heartbeat); heartbeat = null; }
     if (safety) { clearTimeout(safety); safety = null; }
@@ -716,8 +993,30 @@ app.post('/v1/chat/completions', async (req, res) => {
     if (!HAS_ANY_PROVIDER) return res.status(503).json({ error: { message: 'No inference provider configured.', type: 'server_error' } });
 
     const body = req.body || {};
-    const { model, messages, temperature, message, history, files } = body;
     const stream = wantsStream(req, body);
+
+    /* ============================================================
+       SAFE EXTRACTION — every field guarded, nothing throws
+       ============================================================ */
+    const rawMessages = safeGet(body, 'messages');
+    const rawMessage = safeGet(body, 'message');
+    const rawHistory = safeGet(body, 'history');
+    const rawFiles = safeGet(body, 'files');
+    const rawTemperature = safeGet(body, 'temperature');
+    const requestedModel = safeString(safeGet(body, 'model'), 64) || 'mirox-luna-1.2';
+
+    /* Tools & args — all optional, all safe */
+    const tools = safeParseTools(safeGet(body, 'tools'));
+    const legacyFunctions = safeParseLegacyFunctions(safeGet(body, 'functions'));
+    const allTools = tools.length ? tools : legacyFunctions;
+    const toolChoice = safeToolChoice(safeGet(body, 'tool_choice'))
+                    ?? safeLegacyFunctionCall(safeGet(body, 'function_call'));
+    const parallelToolCalls = safeBool(safeGet(body, 'parallel_tool_calls'), true);
+    const responseFormat = safeGet(body, 'response_format');
+
+    /* Log if tools were sent so we can trace */
+    if (allTools.length) console.log(`[Mirox] tools received: ${allTools.length}, choice:`, JSON.stringify(toolChoice));
+    if (parallelToolCalls === false) console.log('[Mirox] parallel_tool_calls: false');
 
     let u = null; try { u = await currentUser(req); } catch {}
 
@@ -725,7 +1024,6 @@ app.post('/v1/chat/completions', async (req, res) => {
     const isApiCall = token && token.startsWith('mxk_');
     if (isApiCall && !u) return res.status(401).json({ error: { message: 'Invalid API key.', type: 'invalid_request_error', code: 'invalid_api_key' } });
 
-    const requestedModel = model || 'mirox-luna-1.2';
     if (isApiCall && !API_ALLOWED_MODELS.includes(requestedModel)) {
       return res.status(403).json({ error: { message: `Model "${requestedModel}" not available via API. Use ${API_ALLOWED_MODELS.join(' or ')}.`, type: 'invalid_request_error', code: 'model_not_found' } });
     }
@@ -744,12 +1042,20 @@ app.post('/v1/chat/completions', async (req, res) => {
       }
     }
 
+    /* Build messages — everything sanitized */
     let msgs;
-    if (Array.isArray(messages) && messages.length) msgs = injectIdentityGuard(messages, cfg);
-    else {
-      const msg = String(message || '').trim();
-      if (!msg && !files?.length) return res.status(400).json({ error: { message: 'Empty message', type: 'invalid_request_error' } });
-      msgs = buildMessages(buildSystemPrompt(cfg), history, msg, u?.persona, u?.memory, files || []);
+    if (Array.isArray(rawMessages) && rawMessages.length) {
+      const sanitized = safeSanitizeMessages(rawMessages, '');
+      msgs = injectIdentityGuard(sanitized, cfg);
+    } else {
+      const msgText = safeString(rawMessage, 100000).trim();
+      const filesArr = safeArray(rawFiles);
+      if (!msgText && !filesArr.length) return res.status(400).json({ error: { message: 'Empty message', type: 'invalid_request_error' } });
+      const safeHistory = safeArray(rawHistory).map(h => ({
+        role: safeString(safeGet(h, 'role'), 20),
+        content: safeString(safeGet(h, 'content'), 40000),
+      })).filter(h => h.role && h.content);
+      msgs = buildMessages(buildSystemPrompt(cfg), safeHistory, msgText, u?.persona, u?.memory, filesArr);
     }
 
     if (u) {
@@ -758,7 +1064,7 @@ app.post('/v1/chat/completions', async (req, res) => {
     }
 
     if (fdb && u && !u._viaKey) {
-      fireAndForget(`logs/chat/${u.email}/${Date.now()}`, { model: cfg.label, message: String(message || msgs[msgs.length - 1]?.content || '').slice(0, 1000), ts: now() });
+      fireAndForgetFB(`logs/chat/${u.email}/${Date.now()}`, { model: cfg.label, message: safeString(rawMessage, 1000), ts: now() });
     }
 
     const updateUsage = async () => {
@@ -769,20 +1075,30 @@ app.post('/v1/chat/completions', async (req, res) => {
       }
     };
 
+    /* Package tools/args for provider chain — optional */
+    const extra = {};
+    if (allTools.length) extra.tools = allTools;
+    if (toolChoice !== undefined) extra.tool_choice = toolChoice;
+
     /* ============ NON-STREAM ============ */
     if (!stream) {
       try {
-        const result = await miroxChatChain(msgs, cfg, false, abortCtrl.signal, deadline);
+        const result = await miroxChatChain(msgs, cfg, false, abortCtrl.signal, deadline, extra);
         const data = await result.res.json();
         const reply = extractReplyText(data);
+        const toolCalls = extractToolCalls(data);
         await updateUsage();
         const ms = Date.now() - t0;
         res.setHeader('X-Mirox-Latency', String(ms));
         res.setHeader('X-Mirox-Provider', result.provider);
+
+        const choiceMessage = { role: 'assistant', content: reply || null };
+        if (toolCalls.length) choiceMessage.tool_calls = toolCalls;
+
         return res.json({
           id: 'chatcmpl-' + Date.now(), object: 'chat.completion', created: now(), model: cfg.label,
           system_fingerprint: 'fp_mirox',
-          choices: [{ index: 0, message: { role: 'assistant', content: reply }, logprobs: null, finish_reason: 'stop' }],
+          choices: [{ index: 0, message: choiceMessage, logprobs: null, finish_reason: toolCalls.length ? 'tool_calls' : 'stop' }],
           usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
           reply,
           daily_used: u ? (u.daily_used || 0) : 0,
@@ -790,26 +1106,18 @@ app.post('/v1/chat/completions', async (req, res) => {
           _ms: ms,
         });
       } catch (e) {
-        return res.status(502).json({ error: { message: 'AI error: ' + String(e.message).slice(0, 200), type: 'server_error' }, _ms: Date.now() - t0 });
+        return res.status(502).json({ error: { message: 'AI error: ' + safeString(e && e.message, 200), type: 'server_error' }, _ms: Date.now() - t0 });
       }
     }
 
-    /* ============ STREAM — no early return, awaited inline ============ */
+    /* ============ STREAM ============ */
     sseInit(res);
-
     const streamId = 'chatcmpl-' + crypto.randomBytes(8).toString('hex');
-
-    /* First frame: role delta */
     sseData(res, oaiChunk(streamId, cfg.label, { role: 'assistant', content: '' }, null));
-
-    /* Padding so Vercel's Fastly CDN flushes immediately */
     for (let i = 0; i < 20; i++) safeWrite(res, 'event: pad\ndata: {}\n\n');
     if (typeof res.flush === 'function') { try { res.flush(); } catch {} }
 
-    /* Heartbeat */
     heartbeat = setInterval(() => sseHeartbeat(res), 8000);
-
-    /* Safety close */
     safety = setTimeout(() => {
       if (res.writableEnded || res.destroyed) return;
       console.warn('[Mirox] safety stream close');
@@ -818,16 +1126,13 @@ app.post('/v1/chat/completions', async (req, res) => {
       try { res.end(); } catch {}
     }, STREAM_SAFETY_MS);
 
-    /* Client closed */
     let clientClosed = false;
     req.on('close', () => { clientClosed = true; try { abortCtrl.abort(); } catch {} });
 
-    /* Run the stream INLINE — do NOT wrap in an async IIFE */
     try {
-      const result = await miroxChatChain(msgs, cfg, true, abortCtrl.signal, deadline);
+      const result = await miroxChatChain(msgs, cfg, true, abortCtrl.signal, deadline, extra);
 
       if (result.nativeStream) {
-        /* HF / PL — parse upstream SSE */
         const lines = await readUpstreamLines(result.res.body, abortCtrl.signal);
         for (const line of lines) {
           if (clientClosed || res.writableEnded) break;
@@ -838,12 +1143,18 @@ app.post('/v1/chat/completions', async (req, res) => {
           let o;
           try { o = JSON.parse(raw); } catch { continue; }
           const delta = o.choices?.[0]?.delta;
-          if (delta && typeof delta.content === 'string' && delta.content.length > 0) {
+          if (!delta) continue;
+          if (typeof delta.content === 'string' && delta.content.length > 0) {
             sseData(res, oaiChunk(streamId, cfg.label, { content: delta.content }, null));
+          }
+          /* Forward tool_calls deltas if upstream sent them */
+          if (Array.isArray(delta.tool_calls) && delta.tool_calls.length) {
+            const tcs = safeParseToolCalls(delta.tool_calls);
+            if (tcs.length) sseData(res, oaiChunk(streamId, cfg.label, {}, null, tcs));
           }
         }
       } else {
-        /* AIroute / searchque — fake-SSE */
+        /* AIroute / searchque — fake SSE */
         const data = await result.res.json();
         const text = extractReplyText(data);
         if (text && text.length) {
@@ -858,7 +1169,6 @@ app.post('/v1/chat/completions', async (req, res) => {
         }
       }
 
-      /* Final finish + terminator */
       if (!clientClosed && !res.writableEnded) {
         sseData(res, oaiChunk(streamId, cfg.label, {}, 'stop'));
         sseDone(res);
@@ -872,7 +1182,7 @@ app.post('/v1/chat/completions', async (req, res) => {
             id: streamId, object: 'chat.completion.chunk', created: now(), model: cfg.label,
             system_fingerprint: 'fp_mirox',
             choices: [{ index: 0, delta: {}, logprobs: null, finish_reason: 'error' }],
-            error: { message: String(e.message).slice(0, 240), type: 'server_error', code: 'stream_error' },
+            error: { message: safeString(e && e.message, 240), type: 'server_error', code: 'stream_error' },
             done: true,
           });
         } catch {}
@@ -888,7 +1198,7 @@ app.post('/v1/chat/completions', async (req, res) => {
     console.error('[Mirox] chat handler:', e);
     cleanup();
     try {
-      if (!res.headersSent) res.status(500).json({ error: { message: 'Server error: ' + e.message, type: 'server_error' } });
+      if (!res.headersSent) res.status(500).json({ error: { message: 'Server error: ' + safeString(e && e.message, 200), type: 'server_error' } });
       else if (!res.writableEnded) res.end();
     } catch {}
   }
@@ -900,14 +1210,15 @@ app.post('/v1/chat/completions', async (req, res) => {
 app.post('/v1/images/generations', async (req, res) => {
   try {
     if (!HAS_ANY_PROVIDER) return res.status(503).json({ error: { message: 'No image provider configured.' } });
-    const { prompt, aspect_ratio = '1:1' } = req.body || {};
+    const prompt = safeString(safeGet(req.body, 'prompt'), 2000);
+    const aspect = safeString(safeGet(req.body, 'aspect_ratio'), 10) || '1:1';
     if (!prompt) return res.status(400).json({ error: { message: 'Prompt required' } });
     const u = await currentUser(req);
-    const imageUrl = await lumenalGenerate(prompt, aspect_ratio);
-    if (fdb && u && !u._viaKey) fireAndForget(`logs/image/${u.email}/${Date.now()}`, { prompt: prompt.slice(0, 300), model: 'Lumenal 1.0', ts: now() });
+    const imageUrl = await lumenalGenerate(prompt, aspect);
+    if (fdb && u && !u._viaKey) fireAndForgetFB(`logs/image/${u.email}/${Date.now()}`, { prompt: prompt.slice(0, 300), model: 'Lumenal 1.0', ts: now() });
     res.json({ ok: true, image: imageUrl, model: 'Lumenal 1.0' });
   } catch (e) {
-    res.status(502).json({ error: { message: 'Lumenal error: ' + String(e.message).slice(0, 250) } });
+    res.status(502).json({ error: { message: 'Lumenal error: ' + safeString(e && e.message, 250) } });
   }
 });
 
@@ -939,8 +1250,8 @@ app.post(['/api/keys/generate', '/keys/generate'], async (req, res) => {
         await Promise.race([wp, tp]);
         stored = true;
       } catch (e) { storeError = 'index: ' + e.message; }
-      fireAndForget(`api_keys/${u.email}/${keyId}`, { hash, prefix, created, active: true, plan: u.tier });
-      fireAndForget(`users/${u.email}`, { keys_this_month: used + 1, month_key: monthKey() });
+      fireAndForgetFB(`api_keys/${u.email}/${keyId}`, { hash, prefix, created, active: true, plan: u.tier });
+      fireAndForgetFB(`users/${u.email}`, { keys_this_month: used + 1, month_key: monthKey() });
     }
     return res.json({ ok: true, key, prefix, stored, store_error: storeError, used: stored ? used + 1 : used, limit, _ms: Date.now() - t0 });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
@@ -951,7 +1262,7 @@ app.get(['/api/keys/list', '/keys/list'], async (req, res) => {
     const u = await currentUser(req);
     if (!u) return res.json({ ok: true, keys: [], used: 0, limit: 2, message: 'Not signed in' });
     if (!fdb) return res.json({ ok: true, keys: [], used: 0, limit: (PLANS[u.tier]?.api_keys_per_month || 2), message: 'Database not configured' });
-    const data = (await safeGet(`api_keys/${u.email}`)) || {};
+    const data = (await safeGetFB(`api_keys/${u.email}`)) || {};
     const keys = Object.entries(data)
       .map(([id, k]) => ({ id, prefix: k && k.prefix ? k.prefix : null, created: k && k.created ? k.created : null, active: k && k.active !== false }))
       .filter(k => k.prefix)
@@ -962,7 +1273,7 @@ app.get(['/api/keys/list', '/keys/list'], async (req, res) => {
 
 /* ---------- Admin ---------- */
 function adminSession(req) {
-  const token = (req.headers['x-admin-token'] || '').trim();
+  const token = safeString(safeGet(safeGet(req, 'headers', {}), 'x-admin-token')).trim();
   if (!token) return null;
   const s = verifySession(token);
   if (!s || !s.admin) return null;
@@ -970,18 +1281,19 @@ function adminSession(req) {
   return s;
 }
 app.post('/api/admin/auth', (req, res) => {
-  const { password } = req.body || {};
+  const password = safeString(safeGet(req.body, 'password'));
   if (!password || password !== ADMIN_PASSWORD) return res.status(401).json({ ok: false, error: 'Invalid password' });
   res.json({ ok: true, token: signSession({ admin: true, exp: Date.now() + 12 * 60 * 60 * 1000 }) });
 });
 app.post('/api/admin/set-tier', async (req, res) => {
   try {
     if (!adminSession(req)) return res.status(401).json({ ok: false, error: 'Unauthorized' });
-    const { email, tier } = req.body || {};
+    const email = safeString(safeGet(req.body, 'email')).toLowerCase();
+    const tier = safeString(safeGet(req.body, 'tier'));
     if (!email || !PLANS[tier]) return res.status(400).json({ ok: false, error: 'Invalid email or tier' });
     if (!fdb) return res.status(503).json({ ok: false, error: 'Database not available' });
-    await safeUpdate(`users/${email}`, { tier, tier_updated: now() });
-    fireAndForget(`logs/account/${email}/${Date.now()}`, { event: 'tier_change', tier, ts: now() });
+    await safeUpdateFB(`users/${email}`, { tier, tier_updated: now() });
+    fireAndForgetFB(`logs/account/${email}/${Date.now()}`, { event: 'tier_change', tier, ts: now() });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
