@@ -1,8 +1,7 @@
 /* ============================================================
-   MiroxAI Backend v27
-   - Chat: GPT-OSS (fast) + DeepSeek-V4-Pro (deep) via HF router
-   - Images: Lumenal 1.0 (internally served via Mirox Inference)
-   - Never crashes on cold start
+   MiroxAI Backend v31
+   - Chat: GPT-OSS + DeepSeek via HF router
+   - Images: openai/gpt-image-1 via HF router
    ============================================================ */
 
 let express, crypto, firebaseAdmin;
@@ -97,51 +96,33 @@ async function safePush(path, data) {
 }
 
 /* ============================================================
-   Mirox Models — internal mapping
-   Public label  →  internal HF router model ID
-   The user only ever sees the public label.
+   Mirox Models — internal mapping (never exposed to UI)
    ============================================================ */
 const MIROX_MODELS = {
   'mirox-luna-1.2': {
-    label: 'Luna',
-    tagline: 'Fast · warm · free',
-    tier: 'free',
-    default: true,
-    tokens: 800,
+    label: 'Luna', tagline: 'Fast · warm · free', tier: 'free', default: true, tokens: 800,
     internal: 'openai/gpt-oss-120b:cerebras',
-    prompt: 'You are Luna, a warm assistant by OpenSurr. Keep replies concise. Use fenced code blocks with the language name.',
+    prompt: 'You are Luna, a warm assistant by OpenSurr. Keep replies concise. Use fenced code blocks with the language name. Never wrap your entire response in a code block unless the user asked for code. Use markdown for structure.',
   },
   'mirox-gen-1': {
-    label: 'Gen',
-    tagline: 'Ultra concise',
-    tier: 'free',
-    tokens: 600,
+    label: 'Gen', tagline: 'Ultra concise', tier: 'free', tokens: 600,
     internal: 'openai/gpt-oss-20b:cerebras',
-    prompt: 'You are Gen from OpenSurr. Ultra-concise. Code only inside fenced blocks with the language name.',
+    prompt: 'You are Gen from OpenSurr. Ultra-concise. Never wrap your entire response in a code block unless the user asked for code.',
   },
   'mirox-pro-5': {
-    label: 'Pro',
-    tagline: 'Balanced · deeper',
-    tier: 'pro',
-    tokens: 1000,
+    label: 'Pro', tagline: 'Balanced · deeper', tier: 'pro', tokens: 1000,
     internal: 'openai/gpt-oss-120b:fireworks-ai',
-    prompt: 'You are Pro from OpenSurr. Balanced depth.',
+    prompt: 'You are Pro from OpenSurr. Balanced depth. Never wrap your entire response in a code block unless the user asked for code.',
   },
   'mirox-ultra-10': {
-    label: 'Ultra',
-    tagline: 'Deep reasoning',
-    tier: 'pro',
-    tokens: 1400,
+    label: 'Ultra', tagline: 'Deep reasoning', tier: 'pro', tokens: 1400,
     internal: 'deepseek-ai/DeepSeek-V4-Pro:novita',
-    prompt: 'You are Ultra from OpenSurr. Deep reasoning.',
+    prompt: 'You are Ultra from OpenSurr. Deep reasoning. Never wrap your entire response in a code block unless the user asked for code.',
   },
   'mirox-eclipse-2.0': {
-    label: 'Eclipse',
-    tagline: 'Best quality',
-    tier: 'ultimate',
-    tokens: 1800,
+    label: 'Eclipse', tagline: 'Best quality', tier: 'ultimate', tokens: 1800,
     internal: 'deepseek-ai/DeepSeek-V4-Pro:novita',
-    prompt: 'You are Eclipse from OpenSurr. Best quality.',
+    prompt: 'You are Eclipse from OpenSurr. Best quality. Never wrap your entire response in a code block unless the user asked for code.',
   },
 };
 const API_ALLOWED_MODELS = ['mirox-luna-1.2', 'mirox-gen-1'];
@@ -176,14 +157,13 @@ async function currentUser(req) {
 }
 
 /* ============================================================
-   Mirox Inference — powered by Mirox Cloud
-   All requests go through a unified routing layer.
+   Mirox Inference Layer
    ============================================================ */
 const MIROX_CHAT_URL = 'https://router.huggingface.co/v1/chat/completions';
 const MIROX_IMAGE_URL = 'https://router.huggingface.co/v1/images/generations';
 
-/* Lumenal 1.0 — internal serving model (never exposed to UI) */
-const LUMENAL_INTERNAL_MODEL = 'black-forest-labs/FLUX.1-schnell';
+/* Lumenal 1.0 — served via GPT image engine */
+const LUMENAL_INTERNAL_MODEL = 'openai/gpt-image-1';
 
 async function miroxChat(modelId, messages, maxTokens, stream = false, signal) {
   const res = await fetch(MIROX_CHAT_URL, {
@@ -216,9 +196,9 @@ async function miroxChat(modelId, messages, maxTokens, stream = false, signal) {
 async function lumenalGenerate(prompt, aspectRatio = '1:1') {
   const sizeMap = {
     '1:1': '1024x1024',
-    '16:9': '1344x768',
-    '9:16': '768x1344',
-    '4:3': '1152x864',
+    '16:9': '1536x1024',
+    '9:16': '1024x1536',
+    '4:3': '1344x1024',
   };
   const size = sizeMap[aspectRatio] || '1024x1024';
 
@@ -234,7 +214,6 @@ async function lumenalGenerate(prompt, aspectRatio = '1:1') {
       size,
       n: 1,
       response_format: 'url',
-      num_inference_steps: 4,
     }),
   });
   if (!res.ok) {
@@ -242,7 +221,7 @@ async function lumenalGenerate(prompt, aspectRatio = '1:1') {
     throw new Error(`Lumenal error ${res.status}: ${t.slice(0, 180)}`);
   }
   const data = await res.json();
-  return data.data?.[0]?.url || data.images?.[0]?.url || data.url || null;
+  return data.data?.[0]?.url || data.data?.[0]?.b64_json ? `data:image/png;base64,${data.data[0].b64_json}` : (data.images?.[0]?.url || data.url || null);
 }
 
 function buildMessages(systemPrompt, history, userText, persona, mem, files) {
@@ -288,7 +267,7 @@ app.use((req, res, next) => {
 
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
   res.json({
-    ok: true, app: 'MiroxAI', version: 'v27',
+    ok: true, app: 'MiroxAI', version: 'v31',
     inference: !!HF_API_KEY,
     database: !!fdb,
     admin_password_set: ADMIN_PASSWORD !== '2010',
@@ -305,7 +284,7 @@ app.get(['/api/config', '/config'], async (req, res) => {
     id, label: m.label, tagline: m.tagline, tier: m.tier, default: !!m.default,
   }));
   res.json({
-    app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v27' },
+    app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v31' },
     models: modelsArr,
     default_model: modelsArr[0].id,
     plans: PLANS,
