@@ -1,6 +1,8 @@
 /* ============================================================
-   MiroxAI — Frontend v27
-   Fixed: send button, model picker, image generation, streaming
+   MiroxAI — Frontend Script v29
+   - Minimalist Claude-style rendering
+   - Send button works, Enter sends, model picker works
+   - Lumenal 1.0 image generation
    ============================================================ */
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
@@ -37,13 +39,13 @@ let synth = window.speechSynthesis;
 let callActive = false, callMuted = false;
 let activeStreamController = null;
 
-const LS_KEY = 'miroxai_conversations_v12';
+const LS_KEY = 'miroxai_conversations_v13';
 const TOKEN_KEY = 'mirox_token';
-const USER_SETTINGS_KEY = 'miroxai_user_settings_v12';
+const USER_SETTINGS_KEY = 'miroxai_user_settings_v13';
 const DEVICE_ID_KEY = 'mirox_device_id';
-const APPEARANCE_KEY = 'miroxai_appearance_v12';
-const BG_KEY = 'miroxai_bg_v12';
-const MCP_KEY = 'miroxai_mcp_v12';
+const APPEARANCE_KEY = 'miroxai_appearance_v13';
+const BG_KEY = 'miroxai_bg_v13';
+const MCP_KEY = 'miroxai_mcp_v13';
 
 function killLoader() {
   const l = document.getElementById('loadingScreen');
@@ -83,10 +85,12 @@ function closeModal(id) { document.getElementById(id)?.classList.remove('open');
 function openSidebar() { $('#sidebar')?.classList.add('open'); $('#sidebarScrim')?.classList.add('open'); }
 function closeSidebar() { $('#sidebar')?.classList.remove('open'); $('#sidebarScrim')?.classList.remove('open'); }
 
+/* ---------- Settings ---------- */
 let userSettings = { soundOn: true, notifOn: true, highlightOn: true, lineNumbers: false, language: 'en-US', voiceRate: 1 };
 function loadUserSettings() { try { userSettings = { ...userSettings, ...JSON.parse(localStorage.getItem(USER_SETTINGS_KEY) || '{}') }; } catch {} }
 function saveUserSettings() { try { localStorage.setItem(USER_SETTINGS_KEY, JSON.stringify(userSettings)); } catch {} }
 
+/* ---------- Appearance ---------- */
 function loadAppearance() {
   let prefs = {};
   try { prefs = JSON.parse(localStorage.getItem(APPEARANCE_KEY) || '{}'); } catch {}
@@ -107,6 +111,7 @@ function applyAppearance(prefs) {
   $$('[data-corner]').forEach(b => b.classList.toggle('active', b.dataset.corner === corner));
 }
 
+/* ---------- Background ---------- */
 function loadBgPrefs() { try { bgState = { ...bgState, ...JSON.parse(localStorage.getItem(BG_KEY) || '{}') }; } catch {}; applyBackground(); }
 function applyBackground() {
   if (bgState.url) {
@@ -123,6 +128,7 @@ function applyBackground() {
 }
 function saveBgPrefs() { try { localStorage.setItem(BG_KEY, JSON.stringify(bgState)); } catch {} }
 
+/* ---------- MCP ---------- */
 function loadMcp() {
   let servers = [];
   try { servers = JSON.parse(localStorage.getItem(MCP_KEY) || '[]'); } catch {}
@@ -145,6 +151,7 @@ function renderMcp(servers) {
     </div>`).join('');
 }
 
+/* ---------- Markdown ---------- */
 function renderMarkdown(text) {
   if (!text) return '';
   const src = String(text);
@@ -167,7 +174,8 @@ function renderCodeBlock(lang, code) {
   const codeHtml = lines.map(l => escapeHtml(l)).join('\n');
   let gutter = '';
   if (userSettings.lineNumbers) {
-    let g = ''; for (let i = 1; i <= lines.length; i++) g += i + '\n';
+    let g = '';
+    for (let i = 1; i <= lines.length; i++) g += i + '\n';
     gutter = `<div class="code-gutter">${g}</div>`;
   }
   return `<div class="code-block">
@@ -179,18 +187,33 @@ function renderCodeBlock(lang, code) {
 }
 function renderTextBlock(text) {
   const lines = String(text).split('\n');
-  let out = '', buf = [];
+  let out = '', buf = [], listMode = null;
   const flush = () => { if (buf.length) { out += `<p>${inlineFmt(buf.join(' ').trim())}</p>`; buf = []; } };
+  const closeList = () => { if (listMode) { out += listMode === 'ul' ? '</ul>' : '</ol>'; listMode = null; } };
   for (const raw of lines) {
     const t = raw.trim();
-    if (!t) { flush(); continue; }
+    if (!t) { flush(); closeList(); continue; }
     const hm = t.match(/^(#{1,4})\s+(.+)$/);
-    if (hm) { flush(); out += `<h${Math.min(4, hm[1].length)}>${inlineFmt(hm[2])}</h${Math.min(4, hm[1].length)}>`; continue; }
+    if (hm) { flush(); closeList(); const lvl = Math.min(4, hm[1].length); out += `<h${lvl}>${inlineFmt(hm[2])}</h${lvl}>`; continue; }
     const um = t.match(/^[-*+]\s+(.+)$/);
-    if (um) { flush(); out += `<li>${inlineFmt(um[1])}</li>`; continue; }
+    if (um) {
+      flush();
+      if (listMode !== 'ul') { closeList(); out += '<ul>'; listMode = 'ul'; }
+      out += `<li>${inlineFmt(um[1])}</li>`;
+      continue;
+    }
+    const om = t.match(/^(\d+)\.\s+(.+)$/);
+    if (om) {
+      flush();
+      if (listMode !== 'ol') { closeList(); out += '<ol>'; listMode = 'ol'; }
+      out += `<li>${inlineFmt(om[2])}</li>`;
+      continue;
+    }
+    closeList();
     buf.push(t);
   }
   flush();
+  closeList();
   return out;
 }
 function inlineFmt(t) {
@@ -221,7 +244,8 @@ function highlightCode(scope) {
       const r = (m && window.hljs.getLanguage(m[1]))
         ? window.hljs.highlight(raw, { language: m[1], ignoreIllegals: true })
         : window.hljs.highlightAuto(raw);
-      el.innerHTML = r.value; el.classList.add('hljs');
+      el.innerHTML = r.value;
+      el.classList.add('hljs');
     } catch {}
     el.dataset.hl = '1';
   });
@@ -237,12 +261,14 @@ function wireCodeButtons(scope) {
         if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(text);
         else { const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.top = '-1000px'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); }
         btn.innerHTML = '<i class="ri-check-line"></i> Copied';
-        setTimeout(() => { btn.innerHTML = '<i class="ri-file-copy-line"></i> Copy'; }, 1400);
+        btn.classList.add('copied');
+        setTimeout(() => { btn.innerHTML = '<i class="ri-file-copy-line"></i> Copy'; btn.classList.remove('copied'); }, 1400);
       } catch {}
     });
   });
 }
 
+/* ---------- Conversations ---------- */
 function currentConvo() { return __conversations.find(c => c.id === currentConversationId) || null; }
 function saveChatsToLS() {
   try { localStorage.setItem(LS_KEY, JSON.stringify(__conversations)); } catch {}
@@ -312,22 +338,25 @@ function renderHistory() {
       <button class="history-delete icon-btn"><i class="ri-delete-bin-line"></i></button>
     </li>`).join('');
 }
-function scrollToBottom() { const c = $('#chatMessages'); if (c) c.scrollTop = c.scrollHeight; }
+function scrollToBottom() {
+  const c = $('#chatMessages');
+  if (c) c.scrollTop = c.scrollHeight;
+}
 function addMessageToDOM(role, content, ts, animate = true) {
   const container = $('#chatMessages');
   if (!container) return null;
   const welcome = container.querySelector('.welcome-screen');
   if (welcome) welcome.remove();
+
   const msgEl = document.createElement('div');
   msgEl.className = `message ${role === 'user' ? 'user' : 'ai'}`;
-  const avatar = role === 'user' ? '<i class="ri-user-line"></i>' : '<i class="ri-sparkling-2-fill"></i>';
   msgEl.innerHTML = `
-    <div class="message-avatar">${avatar}</div>
     <div class="message-content">
       <div class="bubble"></div>
       <div class="message-time">${ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</div>
     </div>`;
   container.appendChild(msgEl);
+
   const bubble = msgEl.querySelector('.bubble');
   if (role === 'user') bubble.textContent = content;
   else renderBubble(bubble, content);
@@ -339,10 +368,10 @@ function addThinkingBubble() {
   if (!container) return null;
   const welcome = container.querySelector('.welcome-screen');
   if (welcome) welcome.remove();
+
   const msgEl = document.createElement('div');
   msgEl.className = 'message ai';
   msgEl.innerHTML = `
-    <div class="message-avatar"><i class="ri-sparkling-2-fill"></i></div>
     <div class="message-content">
       <div class="bubble thinking"><span></span><span></span><span></span></div>
       <div class="message-time"></div>
@@ -352,6 +381,7 @@ function addThinkingBubble() {
   return msgEl;
 }
 
+/* ---------- Send button state ---------- */
 function updateSendButtonState() {
   const btn = $('#sendBtn');
   const inp = $('#messageInput');
@@ -367,6 +397,7 @@ function updateSendButtonState() {
   }
 }
 
+/* ---------- Send ---------- */
 function handleSend() {
   if (isReplying) return;
   const inp = $('#messageInput');
@@ -379,7 +410,10 @@ function handleSend() {
     __conversations.unshift({ id: currentConversationId, title: text.slice(0, 60) || 'New chat', messages: [], created: Date.now() });
   }
   const convo = currentConvo();
-  if (convo) { convo.messages.push({ role: 'user', content: text, ts: Date.now() }); convo.updated = Date.now(); }
+  if (convo) {
+    convo.messages.push({ role: 'user', content: text, ts: Date.now() });
+    convo.updated = Date.now();
+  }
 
   addMessageToDOM('user', text, Date.now());
   inp.value = '';
@@ -479,7 +513,10 @@ async function sendToAPI(text) {
     }
 
     bubble.classList.remove('streaming');
-    if (convo) { convo.messages.push({ role: 'assistant', content: full, ts: Date.now() }); convo.updated = Date.now(); }
+    if (convo) {
+      convo.messages.push({ role: 'assistant', content: full, ts: Date.now() });
+      convo.updated = Date.now();
+    }
     saveChatsToLS();
     if (__user) pushToFirebase(`logs/chat/${__user.email}`, { model, message: text.slice(0, 500), reply: full.slice(0, 1000), ts: Date.now(), device: getDeviceId() });
     if (timeEl) timeEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -496,7 +533,8 @@ async function sendToAPI(text) {
   } finally {
     isReplying = false;
     activeStreamController = null;
-    const st = $('#stopBtn'); if (st) st.style.display = 'none';
+    const st = $('#stopBtn');
+    if (st) st.style.display = 'none';
     pendingFiles = [];
     updatePreview();
     updateSendButtonState();
@@ -510,6 +548,7 @@ function stopStreaming() {
   updateSendButtonState();
 }
 
+/* ---------- Files ---------- */
 function handleFiles(files) {
   if (!files?.length) return;
   const arr = Array.from(files);
@@ -545,7 +584,11 @@ function updatePreview() {
     : `<div class="attach-chip"><i class="ri-file-line"></i>${escapeHtml(f.name)}</div>`).join('');
 }
 
-function getModelsList() { if (__config?.models?.length) return __config.models; return FALLBACK_MODELS; }
+/* ---------- Model picker ---------- */
+function getModelsList() {
+  if (__config?.models?.length) return __config.models;
+  return FALLBACK_MODELS;
+}
 function renderModelPicker() {
   const menu = $('#modelPickerMenu');
   if (!menu) return;
@@ -557,7 +600,11 @@ function renderModelPicker() {
       <span class="model-option-tag">${escapeHtml(m.tagline || '')}</span>
     </div>`).join('');
   menu.querySelectorAll('.model-option').forEach(opt => {
-    opt.onclick = (e) => { e.preventDefault(); e.stopPropagation(); selectModel(opt.dataset.modelId); };
+    opt.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      selectModel(opt.dataset.modelId);
+    };
   });
   const current = models.find(m => m.id === currentId) || models[0];
   if (current && $('#currentModelLabel')) $('#currentModelLabel').textContent = current.label;
@@ -571,8 +618,14 @@ function selectModel(id) {
   renderModelPicker();
   closeModelPicker();
 }
-function openModelPicker() { $('#modelPicker')?.classList.add('open'); $('#modelPickerMenu')?.classList.add('open'); }
-function closeModelPicker() { $('#modelPicker')?.classList.remove('open'); $('#modelPickerMenu')?.classList.remove('open'); }
+function openModelPicker() {
+  $('#modelPicker')?.classList.add('open');
+  $('#modelPickerMenu')?.classList.add('open');
+}
+function closeModelPicker() {
+  $('#modelPicker')?.classList.remove('open');
+  $('#modelPickerMenu')?.classList.remove('open');
+}
 function wireModelPicker() {
   const btn = $('#modelPickerBtn');
   if (!btn) return;
@@ -583,15 +636,26 @@ function wireModelPicker() {
     if (isOpen) closeModelPicker();
     else openModelPicker();
   });
-  document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#modelPicker')) closeModelPicker(); }, true);
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModelPicker(); });
+  document.addEventListener('pointerdown', (e) => {
+    if (!e.target.closest('#modelPicker')) closeModelPicker();
+  }, true);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeModelPicker();
+  });
 }
 
+/* ---------- Send button + Enter key ---------- */
 function wireSendButton() {
   const btn = $('#sendBtn');
   const inp = $('#messageInput');
   if (!btn || !inp) return;
-  btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); handleSend(); });
+
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    handleSend();
+  });
+
   inp.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
@@ -600,15 +664,19 @@ function wireSendButton() {
       return false;
     }
   });
+
   inp.addEventListener('input', () => {
     updateSendButtonState();
     inp.style.height = 'auto';
     inp.style.height = Math.min(inp.scrollHeight, 180) + 'px';
   });
+
   inp.addEventListener('paste', () => setTimeout(updateSendButtonState, 10));
+
   updateSendButtonState();
 }
 
+/* ---------- Auth ---------- */
 async function doLogin() {
   const name = $('#loginName')?.value.trim();
   const email = $('#loginEmail')?.value.trim().toLowerCase();
@@ -662,19 +730,23 @@ async function loadUser() {
   }
 }
 
+/* ---------- Config ---------- */
 async function loadConfig() {
   try {
     const res = await fetch('/api/config', { cache: 'no-store' });
     const data = await res.json();
     if (data?.models?.length) __config = data;
     else __config = { models: FALLBACK_MODELS };
-  } catch { __config = { models: FALLBACK_MODELS }; }
+  } catch {
+    __config = { models: FALLBACK_MODELS };
+  }
   const models = getModelsList();
   __model = models[0].id;
   renderModelPicker();
   if ($('#currentModelLabel')) $('#currentModelLabel').textContent = models[0].label;
 }
 
+/* ---------- Plans ---------- */
 async function loadPlans() {
   const grid = $('#plansGrid');
   if (!grid) return;
@@ -714,6 +786,7 @@ async function genKey() {
   finally { if (btn) { btn.disabled = false; btn.textContent = 'Generate key'; } }
 }
 
+/* ---------- Image ---------- */
 async function genImage() {
   const prompt = $('#imagePrompt')?.value.trim();
   if (!prompt) return alert('Please describe the image.');
@@ -741,12 +814,14 @@ async function genImage() {
   }
 }
 
+/* ---------- Voice ---------- */
 function startMic() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return alert('Speech recognition not supported.');
   recognition = new SR();
   recognition.lang = userSettings.language || 'en-US';
-  recognition.interimResults = false; recognition.continuous = false;
+  recognition.interimResults = false;
+  recognition.continuous = false;
   const micBtn = $('#micBtn');
   micBtn?.classList.add('active');
   recognition.onresult = e => {
@@ -770,14 +845,28 @@ function startCallRecognition() {
   callRecognition = new SR();
   callRecognition.lang = userSettings.language || 'en-US';
   callRecognition.continuous = true;
-  callRecognition.onresult = e => { if (callMuted) return; const text = e.results[e.results.length - 1][0].transcript; if ($('#callTranscript')) $('#callTranscript').textContent = 'You: ' + text; };
+  callRecognition.onresult = e => {
+    if (callMuted) return;
+    const text = e.results[e.results.length - 1][0].transcript;
+    if ($('#callTranscript')) $('#callTranscript').textContent = 'You: ' + text;
+  };
   callRecognition.onend = () => { if (callActive) setTimeout(startCallRecognition, 500); };
   try { callRecognition.start(); } catch {}
 }
-function endCall() { callActive = false; try { callRecognition?.stop(); } catch {} callRecognition = null; $('#callOverlay')?.classList.remove('open'); }
-function toggleMute() { callMuted = !callMuted; const b = $('#callMuteBtn'); if (b) b.innerHTML = callMuted ? '<i class="ri-mic-off-line"></i>' : '<i class="ri-mic-line"></i>'; }
+function endCall() {
+  callActive = false;
+  try { callRecognition?.stop(); } catch {}
+  callRecognition = null;
+  $('#callOverlay')?.classList.remove('open');
+}
+function toggleMute() {
+  callMuted = !callMuted;
+  const b = $('#callMuteBtn');
+  if (b) b.innerHTML = callMuted ? '<i class="ri-mic-off-line"></i>' : '<i class="ri-mic-line"></i>';
+}
 async function requestMic() { try { await navigator.mediaDevices.getUserMedia({ audio: true }); alert('Mic granted.'); } catch { alert('Denied.'); } }
 
+/* ---------- Memory / Persona ---------- */
 async function loadMemory() {
   const list = $('#memoryList'); if (!list || !__user) return;
   const res = await authJson('/api/memory', {}, null);
@@ -796,6 +885,7 @@ async function loadPersona() {
 }
 async function savePersona() { await authJson('/api/persona', { method: 'POST', body: JSON.stringify({ persona: $('#personaInput')?.value.trim() || '' }) }); }
 
+/* ---------- Support ---------- */
 async function submitReport() {
   const category = $('#supportCategory')?.value;
   const subject = $('#supportSubject')?.value.trim();
@@ -806,6 +896,7 @@ async function submitReport() {
   else alert(res?.error || 'Failed.');
 }
 
+/* ---------- Direct wiring ---------- */
 function wireToolButtons() {
   $('#talkModeBtn')?.addEventListener('click', startCall);
   $('#imageModeBtn')?.addEventListener('click', () => openModal('imageModal'));
@@ -859,7 +950,8 @@ function wireToolButtons() {
     if (nxt === null) return;
     const tr = nxt.trim(); if (!tr) return;
     $('#chatTitle').textContent = tr;
-    const c = currentConvo(); if (c) { c.title = tr; saveChatsToLS(); renderHistory(); }
+    const c = currentConvo();
+    if (c) { c.title = tr; saveChatsToLS(); renderHistory(); }
   });
   $('#hamburgerBtn')?.addEventListener('click', openSidebar);
   $('#sidebarCloseBtn')?.addEventListener('click', closeSidebar);
@@ -869,13 +961,16 @@ function wireToolButtons() {
   $('#userChip')?.addEventListener('click', () => { if (!__user) openModal('loginModal'); });
 }
 
+/* ---------- Delegated clicks ---------- */
 document.addEventListener('click', function(e) {
   const t = e.target;
   const closest = s => t.closest(s);
+
   const closer = closest('[data-close]');
   if (closer) { closeModal(closer.dataset.close); return; }
   if (t.classList.contains('modal-overlay')) { t.classList.remove('open'); return; }
   if (t.classList.contains('lightbox')) { t.classList.remove('open'); return; }
+
   const tab = closest('.settings-tab');
   if (tab) {
     document.querySelectorAll('.settings-tab').forEach(x => x.classList.remove('active'));
@@ -885,9 +980,11 @@ document.addEventListener('click', function(e) {
     if (tab.dataset.tab === 'mcp') loadMcp();
     return;
   }
+
   const mb = closest('[data-mode]'); if (mb && mb.closest('#modeOptions')) { applyAppearance({ mode: mb.dataset.mode }); return; }
   const sw = closest('.swatch'); if (sw?.dataset.theme) { applyAppearance({ theme: sw.dataset.theme }); return; }
   const cb = closest('[data-corner]'); if (cb && cb.closest('#cornerOptions')) { applyAppearance({ corner: cb.dataset.corner }); return; }
+
   const tg = closest('[data-toggle]');
   if (tg) {
     const k = tg.dataset.toggle;
@@ -897,6 +994,7 @@ document.addEventListener('click', function(e) {
     saveUserSettings();
     return;
   }
+
   const mt = closest('.mcp-toggle');
   if (mt) {
     let servers = [];
@@ -913,6 +1011,7 @@ document.addEventListener('click', function(e) {
     saveMcp(servers);
     return;
   }
+
   const hist = closest('.history-item');
   if (hist) {
     if (t.closest('.history-delete')) {
@@ -953,21 +1052,26 @@ document.addEventListener('change', function(e) {
   if (e.target?.id === 'langSelect') { userSettings.language = e.target.value; saveUserSettings(); }
 });
 
+/* ---------- INIT ---------- */
 async function init() {
   loadUserSettings();
   loadAppearance();
   loadBgPrefs();
+
   wireModelPicker();
   wireSendButton();
   wireToolButtons();
   renderModelPicker();
+
   await loadConfig();
   await loadUser();
+
   loadChatsFromLS();
   renderHistory();
   bindSuggestionClicks();
   updateUserUI();
   loadMcp();
+
   document.addEventListener('keydown', e => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
       e.preventDefault();
