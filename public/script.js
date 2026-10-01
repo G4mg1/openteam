@@ -1,4 +1,4 @@
-/* MiroxAI — Frontend v35 */
+/* MiroxAI — Frontend v36 */
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getDatabase, ref, set, get, update, push, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
 
@@ -9,12 +9,14 @@ const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
 
 const FALLBACK_MODELS = [
-  { id:'mirox-luna-1.2', label:'Luna', tagline:'Fast · warm · free', default:true },
-  { id:'mirox-gen-1', label:'Gen', tagline:'Ultra concise' },
-  { id:'mirox-pro-5', label:'Pro', tagline:'Balanced · deeper' },
-  { id:'mirox-ultra-10', label:'Ultra', tagline:'Deep reasoning' },
-  { id:'mirox-eclipse-2.0', label:'Eclipse', tagline:'Best quality' },
+  { id:'mirox-luna-1.2', label:'Luna', tagline:'Fast · warm · free', tier:'free', default:true },
+  { id:'mirox-gen-1', label:'Gen', tagline:'Ultra concise', tier:'free' },
+  { id:'mirox-pro-5', label:'Pro', tagline:'Balanced · deeper', tier:'pro' },
+  { id:'mirox-ultra-10', label:'Ultra', tagline:'Deep reasoning', tier:'pro' },
+  { id:'mirox-eclipse-2.0', label:'Eclipse', tagline:'Best quality · Ultimate only', tier:'ultimate' },
 ];
+
+const TIER_RANK = { free:0, pro:1, ultimate:2 };
 
 let __config = null, __user = null, __tier = 'free', __model = 'mirox-luna-1.2';
 let currentConversationId = null, isReplying = false, __conversations = [], pendingFiles = [];
@@ -22,10 +24,10 @@ let bgState = { url:null, dim:45 };
 let recognition = null, callRecognition = null, synth = window.speechSynthesis;
 let callActive = false, callMuted = false, activeStreamController = null;
 
-const LS_KEY='miroxai_conversations_v17', TOKEN_KEY='mirox_token';
-const USER_SETTINGS_KEY='miroxai_user_settings_v17', DEVICE_ID_KEY='mirox_device_id';
-const APPEARANCE_KEY='miroxai_appearance_v17', BG_KEY='miroxai_bg_v17';
-const MCP_KEY='miroxai_mcp_v17', FEEDBACK_KEY='miroxai_feedback_v17';
+const LS_KEY='miroxai_conversations_v18', TOKEN_KEY='mirox_token';
+const USER_SETTINGS_KEY='miroxai_user_settings_v18', DEVICE_ID_KEY='mirox_device_id';
+const APPEARANCE_KEY='miroxai_appearance_v18', BG_KEY='miroxai_bg_v18';
+const MCP_KEY='miroxai_mcp_v18', FEEDBACK_KEY='miroxai_feedback_v18';
 
 function killLoader(){ const l=document.getElementById('loadingScreen'); if(l){l.classList.add('hidden'); setTimeout(()=>l.style.display='none',400);} }
 killLoader(); setTimeout(killLoader,500); setTimeout(killLoader,1800);
@@ -80,7 +82,7 @@ function applyAppearance(prefs){
   $$('[data-corner]').forEach(b=>b.classList.toggle('active', b.dataset.corner===corner));
 }
 
-/* FIXED: Background with subtle gradient fallback (no ugly sector) */
+/* Background — NO gradient fallback, plain solid */
 function loadBgPrefs(){ try{bgState={...bgState,...JSON.parse(localStorage.getItem(BG_KEY)||'{}')};}catch{}; applyBackground(); }
 function applyBackground(){
   if(bgState.url){
@@ -89,11 +91,10 @@ function applyBackground(){
     document.body.style.backgroundPosition='center';
     document.body.style.backgroundAttachment='fixed';
   } else {
-    /* Subtle warm gradient — never looks "exposed" when no image */
-    document.body.style.backgroundImage = 'radial-gradient(circle at 20% 0%, rgba(201,100,66,0.05), transparent 45%), radial-gradient(circle at 80% 100%, rgba(201,100,66,0.04), transparent 45%)';
-    document.body.style.backgroundSize='cover, cover';
-    document.body.style.backgroundPosition='center';
-    document.body.style.backgroundAttachment='fixed';
+    document.body.style.backgroundImage = '';
+    document.body.style.backgroundSize = '';
+    document.body.style.backgroundPosition = '';
+    document.body.style.backgroundAttachment = '';
   }
 }
 function saveBgPrefs(){ try{localStorage.setItem(BG_KEY, JSON.stringify(bgState));}catch{} }
@@ -115,7 +116,7 @@ function renderMcp(servers){
     </div>`).join('');
 }
 
-/* Markdown renderer (with tables) */
+/* Markdown */
 function renderMarkdown(text){
   if(!text) return '';
   let src = String(text);
@@ -167,14 +168,12 @@ function renderTextBlock(text){
         if(right) return 'right';
         return 'left';
       });
-      const rows=[];
-      let j=i+2;
+      const rows=[]; let j=i+2;
       while(j < lines.length){
         const rt = lines[j].trim();
         if(!rt.startsWith('|')) break;
         if(isTableSeparator(rt)) break;
-        rows.push(parseTableRow(rt));
-        j++;
+        rows.push(parseTableRow(rt)); j++;
       }
       let tbl = '<div class="table-wrap"><table class="md-table"><thead><tr>';
       headers.forEach((h,k)=>{ tbl += `<th style="text-align:${aligns[k]||'left'}">${inlineFmt(h)}</th>`; });
@@ -185,8 +184,7 @@ function renderTextBlock(text){
         tbl += '</tr>';
       });
       tbl += '</tbody></table></div>';
-      out += tbl;
-      i = j; continue;
+      out += tbl; i = j; continue;
     }
     if(!t){ flush(); closeList(); i++; continue; }
     const hm = t.match(/^(#{1,4})\s+(.+)$/);
@@ -199,9 +197,7 @@ function renderTextBlock(text){
     if(om){ flush(); if(listMode!=='ol'){ closeList(); out+='<ol>'; listMode='ol'; } out += `<li>${inlineFmt(om[2])}</li>`; i++; continue; }
     const qm = t.match(/^>\s*(.+)$/);
     if(qm){ flush(); closeList(); out += `<blockquote>${inlineFmt(qm[1])}</blockquote>`; i++; continue; }
-    closeList();
-    buf.push(t);
-    i++;
+    closeList(); buf.push(t); i++;
   }
   flush(); closeList();
   return out;
@@ -242,8 +238,7 @@ function highlightCode(scope){
 }
 function wireCodeButtons(scope){
   (scope||document).querySelectorAll('.code-block .code-action-btn[data-copy]').forEach(btn=>{
-    if(btn.__wired) return;
-    btn.__wired = true;
+    if(btn.__wired) return; btn.__wired = true;
     btn.addEventListener('click', async e=>{
       e.preventDefault(); e.stopPropagation();
       const text = btn.closest('.code-block')?.querySelector('pre code')?.textContent||'';
@@ -280,8 +275,7 @@ function getWelcomeHTML(){
 function startNewChat(){ currentConversationId=null; $('#chatTitle').textContent='New chat'; $('#chatMessages').innerHTML=getWelcomeHTML(); bindSuggestionClicks(); renderHistory(); }
 function bindSuggestionClicks(){
   $$('.suggestion-card').forEach(card=>{
-    if(card.__wired) return;
-    card.__wired = true;
+    if(card.__wired) return; card.__wired = true;
     card.onclick = () => {
       const prompt = card.dataset.prompt;
       if(prompt && $('#messageInput')){ $('#messageInput').value = prompt; updateSendButtonState(); handleSend(); }
@@ -417,9 +411,8 @@ function applyStoredFeedback(msgEl){
   if(fb[id] === 'good') msgEl.querySelector('.action-btn[data-action="good"]')?.classList.add('active-good');
   else if(fb[id] === 'bad') msgEl.querySelector('.action-btn[data-action="bad"]')?.classList.add('active-bad');
 }
-function recordFeedback(id, kind){
-  if(__user) pushToFirebase(`logs/feedback/${__user.email}`, { msg_id:id, kind, ts:Date.now(), device:getDeviceId() });
-}
+function recordFeedback(id, kind){ if(__user) pushToFirebase(`logs/feedback/${__user.email}`, { msg_id:id, kind, ts:Date.now(), device:getDeviceId() }); }
+
 async function handleRetry(msgEl){
   if(isReplying) return;
   const id = msgEl.dataset.msgId;
@@ -522,10 +515,7 @@ async function sendToAPI(text, opts={}){
             bubble.classList.remove('streaming');
             if(__user){
               __user.daily_used = o.daily_used;
-              if(model === 'mirox-eclipse-2.0'){
-                __user.eclipse_credits = (__user.eclipse_credits ?? 10) - 1;
-                updateFirebase(`users/${__user.email}`, { eclipse_credits: __user.eclipse_credits });
-              }
+              __user.eclipse_used = o.eclipse_used;
             }
           }
         } catch {}
@@ -596,18 +586,38 @@ function updatePreview(){
     : `<div class="attach-chip"><i class="ri-file-line"></i>${escapeHtml(f.name)}</div>`).join('');
 }
 
+/* Model picker with tier gating */
 function getModelsList(){ if(__config?.models?.length) return __config.models; return FALLBACK_MODELS; }
+function canUseModel(modelTier){
+  if(modelTier === 'free') return true;
+  if(modelTier === 'ultimate' && __tier === 'free') return true; // trial
+  return TIER_RANK[__tier||'free'] >= TIER_RANK[modelTier];
+}
 function renderModelPicker(){
   const menu = $('#modelPickerMenu'); if(!menu) return;
   const models = getModelsList();
   const currentId = __model || models[0].id;
-  menu.innerHTML = models.map(m=>`
-    <div class="model-option${m.id===currentId?' active':''}" data-model-id="${m.id}">
-      <span class="model-option-label"><span class="dot"></span>${escapeHtml(m.label)}</span>
-      <span class="model-option-tag">${escapeHtml(m.tagline||'')}</span>
-    </div>`).join('');
+  menu.innerHTML = models.map(m=>{
+    const usable = canUseModel(m.tier);
+    const lockLabel = usable ? '' : (m.tier === 'ultimate' ? '🔒 Ultimate' : '🔒 Pro');
+    return `
+      <div class="model-option${m.id===currentId?' active':''}${usable?'':' locked'}" data-model-id="${m.id}" data-tier="${m.tier}" data-usable="${usable}">
+        <span class="model-option-label"><span class="dot"></span>${escapeHtml(m.label)}${lockLabel ? `<span class="model-lock">${lockLabel}</span>` : ''}</span>
+        <span class="model-option-tag">${escapeHtml(m.tagline||'')}</span>
+      </div>`;
+  }).join('');
   menu.querySelectorAll('.model-option').forEach(opt=>{
-    opt.onclick = (e)=>{ e.preventDefault(); e.stopPropagation(); selectModel(opt.dataset.modelId); };
+    opt.onclick = (e)=>{
+      e.preventDefault(); e.stopPropagation();
+      if(opt.dataset.usable === 'false'){
+        const tier = opt.dataset.tier;
+        if(tier === 'pro') alert('Pro and Ultra models require the Pro or Ultimate plan. Open Plans to upgrade.');
+        else if(tier === 'ultimate') alert('Eclipse requires the Ultimate plan.');
+        closeModelPicker();
+        return;
+      }
+      selectModel(opt.dataset.modelId);
+    };
   });
   const current = models.find(m=>m.id===currentId)||models[0];
   if(current && $('#currentModelLabel')) $('#currentModelLabel').textContent = current.label;
@@ -659,6 +669,7 @@ async function doLogin(){
     updateFirebase(`users/${email}`, { email, name, tier:res.user.tier||'free', last_login:Date.now() });
     pushToFirebase(`logs/user/${email}`, { event:'signin', name, ts:Date.now(), device:getDeviceId() });
     loadChatsFromFirebase();
+    renderModelPicker();
   } else { alert(res?.error||'Login failed'); }
 }
 async function doLogout(){
@@ -666,7 +677,7 @@ async function doLogout(){
   await authJson('/api/logout', { method:'POST' }, null);
   setToken(''); __user = null; __tier = 'free';
   if(email) pushToFirebase(`logs/user/${email}`, { event:'signout', ts:Date.now(), device:getDeviceId() });
-  updateUserUI(); closeModal('settingsModal');
+  updateUserUI(); closeModal('settingsModal'); renderModelPicker();
 }
 function updateUserUI(){
   const chip = $('#userChip'); if(!chip) return;
@@ -715,7 +726,6 @@ async function loadPlans(){
     </div>`).join('');
 }
 
-/* FIXED: keys shown inline, no alert popup */
 async function loadUserKeys(){
   const list = $('#apiKeysList'), counter = $('#apiKeyCounter');
   if(!list) return;
