@@ -4,45 +4,79 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Mirox Admin Console</title>
-  <link rel="icon" href="/logo.png" type="image/png">
   <link href="https://cdn.jsdelivr.net/npm/remixicon@4.9.0/fonts/remixicon.css" rel="stylesheet">
-  <link rel="stylesheet" href="/style.css">
   <style>
-    body { display:block; overflow-y:auto; padding:24px; background:var(--bg); background-image:none; }
-    .admin-wrap { max-width:1400px; margin:0 auto; }
-    .admin-header { display:flex; align-items:center; gap:12px; margin-bottom:24px; flex-wrap:wrap; }
-    .admin-header h1 { font-size:22px; font-weight:700; flex:1; }
-    .admin-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px; margin-bottom:24px; }
-    .stat-card { padding:18px; border-radius:var(--radius-lg); border:1px solid var(--border); background:var(--panel); }
-    .stat-card h3 { font-size:12px; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-faint); margin-bottom:6px; }
-    .stat-card .value { font-size:28px; font-weight:700; }
-    .admin-section { margin-bottom:28px; }
-    .admin-section h2 { font-size:16px; font-weight:600; margin-bottom:12px; }
-    .log-table { width:100%; border-collapse:collapse; font-size:13px; border:1px solid var(--border); border-radius:var(--radius-lg); overflow:hidden; }
-    .log-table th, .log-table td { text-align:left; padding:8px 12px; border-bottom:1px solid var(--border); }
-    .log-table th { font-weight:600; color:var(--text-faint); font-size:11px; text-transform:uppercase; background:var(--panel-2); }
-    .admin-input { padding:8px 12px; border-radius:var(--radius); border:1px solid var(--border); background:var(--panel-2); font-size:14px; width:100%; max-width:300px; }
-    .admin-btn { padding:8px 16px; border-radius:var(--radius); background:var(--accent); color:#fff; font-size:14px; font-weight:500; border:none; cursor:pointer; }
-    .admin-btn:hover { background:var(--accent-hover); }
-    .tab-bar { display:flex; gap:6px; margin-bottom:20px; flex-wrap:wrap; border-bottom:1px solid var(--border); padding-bottom:8px; }
-    .tab-btn { padding:8px 16px; border-radius:var(--radius); font-size:13px; font-weight:500; color:var(--text-muted); background:transparent; border:1px solid transparent; cursor:pointer; }
-    .tab-btn:hover { background:var(--panel-2); color:var(--text); }
-    .tab-btn.active { background:var(--accent-soft); color:var(--accent); border-color:var(--accent); }
-    .tab-pane { display:none; }
-    .tab-pane.active { display:block; }
-    .gate { position:fixed; inset:0; z-index:999; background:var(--bg); display:flex; align-items:center; justify-content:center; padding:20px; }
-    .gate.hidden { display:none; }
-    .gate-card { width:100%; max-width:380px; background:var(--panel); border:1px solid var(--border); border-radius:var(--radius-xl); padding:32px 28px; box-shadow:var(--shadow-lg); text-align:center; }
-    .gate-icon { width:56px; height:56px; border-radius:14px; background:var(--accent-soft); color:var(--accent); display:grid; place-items:center; font-size:26px; margin:0 auto 16px; }
-    .gate-title { font-size:20px; font-weight:700; margin-bottom:6px; }
-    .gate-sub { font-size:13.5px; color:var(--text-muted); margin-bottom:22px; }
-    .gate-input { width:100%; padding:12px 14px; border-radius:var(--radius); border:1px solid var(--border); background:var(--panel-2); font-size:15px; outline:none; }
-    .gate-btn { width:100%; margin-top:14px; padding:12px; border-radius:var(--radius); border:none; background:var(--accent); color:#fff; font-size:14.5px; font-weight:600; cursor:pointer; }
-    .gate-err { color:#dc2626; font-size:13px; margin-top:10px; min-height:18px; }
-    @media (max-width:640px){ body{padding:12px} .admin-header h1{font-size:18px} }
+    *,*::before,*::after{box-sizing:border-box}
+    :root{--bg:#fafafb;--panel:#fff;--panel-2:#f7f7fa;--border:#e8e8ef;--text:#0a0a0c;--text-muted:#64646f;--text-faint:#9494a0;--accent:#c4694b;--accent-hover:#a8503a;--accent-soft:rgba(196,105,75,.10);--radius:10px;--radius-lg:14px;--radius-xl:20px;--shadow-lg:0 8px 28px rgba(20,20,40,.09)}
+    :root[data-mode="dark"]{--bg:#0a0a0d;--panel:#15151b;--panel-2:#1d1d24;--border:#26262f;--text:#f4f4f8;--text-muted:#a0a0ab;--text-faint:#6a6a75}
+    html{min-height:100%;background:var(--bg)}
+    body{margin:0;min-height:100vh;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+    button,input,select{font:inherit;color:inherit}
+    img{max-width:100%;display:block}
+    :root[data-mode="dark"] .theme-aware-logo{filter:invert(1) brightness(1.15)}
+    body { display: block; overflow-y: auto; padding: 24px; }
+    .admin-wrap { max-width: 1200px; margin: 0 auto; }
+    .admin-header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+    .admin-header h1 { font-size: 22px; font-weight: 700; }
+    .admin-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .stat-card { padding: 18px; border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--panel); }
+    .stat-card h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); margin-bottom: 6px; }
+    .stat-card .value { font-size: 28px; font-weight: 700; }
+    .admin-section { margin-bottom: 28px; }
+    .admin-section h2 { font-size: 16px; font-weight: 600; margin-bottom: 12px; }
+    .log-table { width: 100%; border-collapse: collapse; font-size: 13px; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+    .log-table th, .log-table td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+    .log-table th { font-weight: 600; color: var(--text-faint); font-size: 11px; text-transform: uppercase; background: var(--panel-2); }
+    .admin-input { padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--panel-2); font-size: 14px; width: 100%; max-width: 300px; }
+    .admin-btn { padding: 8px 16px; border-radius: var(--radius); background: var(--accent); color: #fff; font-size: 14px; font-weight: 500; border: none; cursor: pointer; }
+    .admin-btn:hover { background: var(--accent-hover); }
+
+    /* Password gate */
+    .gate {
+      position: fixed; inset: 0; z-index: 999;
+      background: var(--bg);
+      display: flex; align-items: center; justify-content: center; padding: 20px;
+    }
+    .gate.hidden { display: none; }
+    .gate-card {
+      width: 100%; max-width: 380px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      padding: 32px 28px;
+      box-shadow: var(--shadow-lg);
+      text-align: center;
+    }
+    .gate-icon {
+      width: 56px; height: 56px; border-radius: 14px;
+      background: var(--accent-soft); color: var(--accent);
+      display: grid; place-items: center; font-size: 26px;
+      margin: 0 auto 16px;
+    }
+    .gate-title { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+    .gate-sub { font-size: 13.5px; color: var(--text-muted); margin-bottom: 22px; }
+    .gate-input {
+      width: 100%; padding: 12px 14px; border-radius: var(--radius);
+      border: 1px solid var(--border); background: var(--panel-2);
+      font-size: 15px; outline: none;
+      transition: border-color .15s;
+    }
+    .gate-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+    .gate-btn {
+      width: 100%; margin-top: 14px; padding: 12px;
+      border-radius: var(--radius); border: none;
+      background: var(--accent); color: #fff;
+      font-size: 14.5px; font-weight: 600; cursor: pointer;
+    }
+    .gate-btn:hover { background: var(--accent-hover); }
+    .gate-btn:disabled { opacity: .5; cursor: not-allowed; }
+    .gate-err { color: #dc2626; font-size: 13px; margin-top: 10px; min-height: 18px; }
+
+    @media (max-width:640px){body{padding:14px!important}.admin-header{flex-wrap:wrap}.admin-header h1{font-size:19px}.admin-grid{grid-template-columns:1fr 1fr}.stat-card .value{font-size:24px}}
   </style>
 </head>
 <body>
+  <!-- Password gate -->
   <div class="gate" id="gate">
     <div class="gate-card">
       <div class="gate-icon"><i class="ri-lock-2-line"></i></div>
@@ -56,10 +90,9 @@
 
   <div class="admin-wrap" id="adminWrap" style="display:none;">
     <div class="admin-header">
-      <img src="/logo.png" alt="MiroxAI" class="theme-aware-logo" style="width:32px;height:32px;border-radius:8px;" onerror="this.style.display='none'">
+      <img src="/logo.png" alt="MiroxAI" class="theme-aware-logo" style="width:32px;height:32px;border-radius:8px;">
       <h1>Mirox Admin Console</h1>
-      <button id="refreshBtn" class="admin-btn" style="background:transparent;color:var(--text-muted);border:1px solid var(--border);"><i class="ri-refresh-line"></i> Refresh</button>
-      <button id="adminLogout" class="admin-btn" style="background:transparent;color:var(--text-muted);border:1px solid var(--border);">Lock</button>
+      <button id="adminLogout" class="admin-btn" style="margin-left:auto;background:transparent;color:var(--text-muted);border:1px solid var(--border);">Lock</button>
     </div>
 
     <div class="admin-grid">
@@ -69,76 +102,22 @@
       <div class="stat-card"><h3>User Events</h3><div class="value" id="statEvents">—</div></div>
     </div>
 
-    <div class="tab-bar">
-      <button class="tab-btn active" data-tab="users">Users</button>
-      <button class="tab-btn" data-tab="chats">Chat Logs</button>
-      <button class="tab-btn" data-tab="images">Image Logs</button>
-      <button class="tab-btn" data-tab="events">User Events</button>
-      <button class="tab-btn" data-tab="manage">Manage Plans</button>
-    </div>
-
-    <div class="tab-pane active" id="pane-users">
-      <div class="admin-section">
-        <h2>All Users</h2>
-        <div style="overflow-x:auto;">
-          <table class="log-table" id="adminUserTable">
-            <thead><tr><th>Email</th><th>Name</th><th>Tier</th><th>Eclipse Used</th><th>Keys/Month</th><th>Last Login</th><th>Actions</th></tr></thead>
-            <tbody><tr><td colspan="7" style="color:var(--text-faint)">Loading…</td></tr></tbody>
-          </table>
-        </div>
+    <div class="admin-section">
+      <h2>User Management</h2>
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+        <input type="text" id="adminUserEmail" class="admin-input" placeholder="User email">
+        <select id="adminTierSelect" class="admin-input" style="max-width:160px;">
+          <option value="free">Free</option>
+          <option value="pro">Pro</option>
+          <option value="ultimate">Ultimate</option>
+        </select>
+        <button id="adminSetTierBtn" class="admin-btn">Set Tier</button>
       </div>
-    </div>
-
-    <div class="tab-pane" id="pane-chats">
-      <div class="admin-section">
-        <h2>Recent Chat Logs</h2>
-        <div style="overflow-x:auto;">
-          <table class="log-table" id="adminChatLogs">
-            <thead><tr><th>User</th><th>Model</th><th>Message</th><th>Time</th></tr></thead>
-            <tbody><tr><td colspan="4" style="color:var(--text-faint)">Loading…</td></tr></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <div class="tab-pane" id="pane-images">
-      <div class="admin-section">
-        <h2>Recent Image Logs</h2>
-        <div style="overflow-x:auto;">
-          <table class="log-table" id="adminImageLogs">
-            <thead><tr><th>User</th><th>Prompt</th><th>Model</th><th>Time</th></tr></thead>
-            <tbody><tr><td colspan="4" style="color:var(--text-faint)">Loading…</td></tr></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <div class="tab-pane" id="pane-events">
-      <div class="admin-section">
-        <h2>User Events</h2>
-        <div style="overflow-x:auto;">
-          <table class="log-table" id="adminEventLogs">
-            <thead><tr><th>User</th><th>Event</th><th>Details</th><th>Time</th></tr></thead>
-            <tbody><tr><td colspan="4" style="color:var(--text-faint)">Loading…</td></tr></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <div class="tab-pane" id="pane-manage">
-      <div class="admin-section">
-        <h2>Change User Plan</h2>
-        <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">Updates are saved instantly. Users see their new plan on next page load.</p>
-        <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
-          <input type="text" id="manageEmail" class="admin-input" placeholder="user@email.com">
-          <select id="manageTier" class="admin-input" style="max-width:200px;">
-            <option value="free">Free (Luna + Gen, 5 Eclipse/day)</option>
-            <option value="pro">Pro (+ Pro & Ultra models)</option>
-            <option value="ultimate">Ultimate (all models, unlimited Eclipse)</option>
-          </select>
-          <button id="manageTierBtn" class="admin-btn">Save Plan</button>
-        </div>
-        <div id="manageResult" style="font-size:13px;min-height:20px;"></div>
+      <div style="overflow-x:auto;">
+        <table class="log-table" id="adminUserTable">
+          <thead><tr><th>Email</th><th>Name</th><th>Tier</th><th>Eclipse</th><th>Last Login</th></tr></thead>
+          <tbody><tr><td colspan="5" style="color:var(--text-faint)">Loading…</td></tr></tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -147,134 +126,115 @@
     const API = '/api/admin';
     const TOKEN_KEY = 'mirox_admin_token';
     const $ = s => document.querySelector(s);
-    const $$ = s => document.querySelectorAll(s);
 
-    function getAdminToken(){ try { return sessionStorage.getItem(TOKEN_KEY)||''; } catch { return ''; } }
-    function setAdminToken(t){ try { t?sessionStorage.setItem(TOKEN_KEY,t):sessionStorage.removeItem(TOKEN_KEY); } catch {} }
-    async function adminFetch(path, opts={}){
-      const headers = { 'Content-Type':'application/json', ...(opts.headers||{}) };
+    function getAdminToken() { try { return sessionStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
+    function setAdminToken(t) { try { t ? sessionStorage.setItem(TOKEN_KEY, t) : sessionStorage.removeItem(TOKEN_KEY); } catch {} }
+
+    async function adminFetch(path, opts = {}) {
+      const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
       const t = getAdminToken();
-      if(t) headers['X-Admin-Token'] = t;
-      return fetch(API+path, { ...opts, headers, credentials:'same-origin' });
+      if (t) headers['X-Admin-Token'] = t;
+      return fetch(API + path, { ...opts, headers, credentials: 'same-origin' });
     }
-    function showGate(msg){ $('#gate').classList.remove('hidden'); $('#adminWrap').style.display='none'; if(msg) $('#gateErr').textContent = msg; }
-    function showAdmin(){ $('#gate').classList.add('hidden'); $('#adminWrap').style.display='block'; loadAll(); }
 
-    async function tryUnlock(){
+    function showGate() { $('#gate').classList.remove('hidden'); $('#adminWrap').style.display = 'none'; }
+    function showAdmin() { $('#gate').classList.add('hidden'); $('#adminWrap').style.display = 'block'; loadAll(); }
+
+    /* Password gate */
+    async function tryUnlock() {
       const pass = $('#gatePass').value;
-      const btn = $('#gateBtn'), err = $('#gateErr');
+      const btn = $('#gateBtn');
+      const err = $('#gateErr');
       err.textContent = '';
-      if(!pass){ err.textContent = 'Enter a password.'; return; }
+      if (!pass) { err.textContent = 'Enter a password.'; return; }
       btn.disabled = true; btn.textContent = 'Checking…';
       try {
-        const res = await fetch(API+'/auth', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ password:pass }) });
-        const data = await res.json().catch(()=>({}));
-        if(data.ok && data.token){ setAdminToken(data.token); showAdmin(); }
-        else err.textContent = data.error || 'Invalid password';
-      } catch(e){ err.textContent = 'Server error: '+e.message; }
-      finally { btn.disabled = false; btn.textContent = 'Unlock'; }
+        const res = await fetch(API + '/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: pass }),
+        });
+        const data = await res.json();
+        if (data.ok && data.token) {
+          setAdminToken(data.token);
+          showAdmin();
+        } else {
+          err.textContent = data.error || 'Invalid password';
+        }
+      } catch (e) {
+        err.textContent = 'Server error: ' + e.message;
+      } finally {
+        btn.disabled = false; btn.textContent = 'Unlock';
+      }
     }
-    $('#gateBtn').addEventListener('click', tryUnlock);
-    $('#gatePass').addEventListener('keydown', e => { if(e.key==='Enter') tryUnlock(); });
-    $('#adminLogout').addEventListener('click', () => { setAdminToken(''); showGate(''); $('#gatePass').value=''; });
-    $('#refreshBtn').addEventListener('click', () => loadAll());
 
-    $$('.tab-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        $$('.tab-btn').forEach(b => b.classList.remove('active'));
-        $$('.tab-pane').forEach(p => p.classList.remove('active'));
-        btn.classList.add('active');
-        document.getElementById('pane-'+btn.dataset.tab).classList.add('active');
-      });
+    $('#gateBtn')?.addEventListener('click', tryUnlock);
+    $('#gatePass')?.addEventListener('keydown', e => { if (e.key === 'Enter') tryUnlock(); });
+
+    $('#adminLogout')?.addEventListener('click', () => {
+      setAdminToken('');
+      showGate();
+      $('#gatePass').value = '';
+      $('#gateErr').textContent = '';
     });
 
-    async function loadAll(){
+    /* Data loading */
+    function countLogs(obj) {
+      if (!obj) return 0;
+      let n = 0;
+      Object.values(obj).forEach(v => {
+        if (Array.isArray(v)) n += v.length;
+        else if (v && typeof v === 'object') n += Object.keys(v).length;
+      });
+      return n;
+    }
+
+    async function loadAll() {
       try {
         const res = await adminFetch('/stats');
-        if(res.status === 401){ setAdminToken(''); showGate('Session expired.'); return; }
+        if (res.status === 401) { setAdminToken(''); showGate(); return; }
         const data = await res.json();
-        if(!data.ok) return;
+        if (!data.ok) return;
         $('#statUsers').textContent = data.users;
         $('#statChats').textContent = data.chats;
         $('#statImages').textContent = data.images;
         $('#statEvents').textContent = data.events;
 
         const users = data.users_data || {};
-        const utBody = $('#adminUserTable tbody');
-        const uRows = Object.entries(users).map(([email, u]) => `
+        const tbody = $('#adminUserTable tbody');
+        const rows = Object.entries(users).map(([email, u]) => `
           <tr>
             <td>${email}</td>
             <td>${u.name || '—'}</td>
-            <td><span style="padding:2px 8px;border-radius:99px;background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:600;">${u.tier||'free'}</span></td>
-            <td>${u.eclipse_used ?? 0}</td>
-            <td>${u.keys_this_month ?? 0}</td>
+            <td><span style="padding:2px 8px;border-radius:99px;background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:600;">${u.tier || 'free'}</span></td>
+            <td>${u.eclipse_credits ?? 10}</td>
             <td>${u.last_login ? new Date(u.last_login).toLocaleString() : '—'}</td>
-            <td><button class="admin-btn" style="padding:4px 10px;font-size:12px;" onclick="quickSet('${email}','${u.tier||'free'}')">Change</button></td>
           </tr>`).join('');
-        utBody.innerHTML = uRows || '<tr><td colspan="7" style="color:var(--text-faint)">No users yet</td></tr>';
-
-        const cBody = $('#adminChatLogs tbody');
-        cBody.innerHTML = (data.chats_data||[]).map(r => `
-          <tr>
-            <td>${r.email||'—'}</td>
-            <td>${r.model||'—'}</td>
-            <td style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${(r.message||'').replace(/</g,'&lt;')}</td>
-            <td>${r.ts ? new Date(r.ts).toLocaleString() : '—'}</td>
-          </tr>`).join('') || '<tr><td colspan="4" style="color:var(--text-faint)">No chat logs yet</td></tr>';
-
-        const iBody = $('#adminImageLogs tbody');
-        iBody.innerHTML = (data.images_data||[]).map(r => `
-          <tr>
-            <td>${r.email||'—'}</td>
-            <td style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${(r.prompt||'').replace(/</g,'&lt;')}</td>
-            <td>${r.model||'Lumenal 1.0'}</td>
-            <td>${r.ts ? new Date(r.ts).toLocaleString() : '—'}</td>
-          </tr>`).join('') || '<tr><td colspan="4" style="color:var(--text-faint)">No image logs yet</td></tr>';
-
-        const eBody = $('#adminEventLogs tbody');
-        eBody.innerHTML = (data.events_data||[]).map(r => `
-          <tr>
-            <td>${r.email||'—'}</td>
-            <td>${r.event||'—'}</td>
-            <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${JSON.stringify({name:r.name, tier:r.tier, prefix:r.prefix, model:r.model}).replace(/</g,'&lt;').slice(0,120)}</td>
-            <td>${r.ts ? new Date(r.ts).toLocaleString() : '—'}</td>
-          </tr>`).join('') || '<tr><td colspan="4" style="color:var(--text-faint)">No events yet</td></tr>';
-      } catch(e){ console.warn(e); }
+        tbody.innerHTML = rows || '<tr><td colspan="5" style="color:var(--text-faint)">No users yet</td></tr>';
+      } catch (e) {
+        console.warn(e);
+      }
     }
 
-    window.quickSet = (email, currentTier) => {
-      $('#manageEmail').value = email;
-      $('#manageTier').value = currentTier;
-      $$('.tab-btn').forEach(b => b.classList.remove('active'));
-      $$('.tab-pane').forEach(p => p.classList.remove('active'));
-      document.querySelector('[data-tab="manage"]').classList.add('active');
-      document.getElementById('pane-manage').classList.add('active');
-      $('#manageEmail').scrollIntoView({ behavior:'smooth' });
-    };
-
-    $('#manageTierBtn').addEventListener('click', async () => {
-      const email = $('#manageEmail').value.trim().toLowerCase();
-      const tier = $('#manageTier').value;
-      const result = $('#manageResult');
-      if(!email){ result.innerHTML = '<span style="color:#dc2626;">Enter a user email</span>'; return; }
-      result.innerHTML = '<span style="color:var(--text-muted);">Saving…</span>';
-      const res = await adminFetch('/set-tier', { method:'POST', body:JSON.stringify({ email, tier }) });
-      const data = await res.json().catch(()=>({}));
-      if(data.ok){
-        result.innerHTML = `<span style="color:#4ea82e;"><i class="ri-check-line"></i> Plan saved for ${email}: <strong>${tier}</strong></span>`;
-        loadAll();
-      } else {
-        result.innerHTML = `<span style="color:#dc2626;">${data.error || 'Failed'}</span>`;
-      }
+    $('#adminSetTierBtn')?.addEventListener('click', async () => {
+      const email = $('#adminUserEmail').value.trim().toLowerCase();
+      const tier = $('#adminTierSelect').value;
+      if (!email) return alert('Enter a user email');
+      const res = await adminFetch('/set-tier', { method: 'POST', body: JSON.stringify({ email, tier }) });
+      const data = await res.json();
+      if (data.ok) { alert(`Tier updated for ${email}: ${tier}`); loadAll(); }
+      else alert(data.error || 'Failed');
     });
 
-    (function boot(){
+    /* On load: if we already have a token, verify it */
+    (async function boot() {
       const t = getAdminToken();
-      if(!t){ showGate(''); return; }
-      adminFetch('/stats').then(res => {
-        if(res.status === 401){ setAdminToken(''); showGate('Session expired.'); }
+      if (!t) { showGate(); return; }
+      try {
+        const res = await adminFetch('/stats');
+        if (res.status === 401) { setAdminToken(''); showGate(); }
         else showAdmin();
-      }).catch(() => { setAdminToken(''); showGate('Could not reach server.'); });
+      } catch { showGate(); }
     })();
   </script>
 </body>
