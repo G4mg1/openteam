@@ -1,9 +1,10 @@
 /* ============================================================
-   MiroxAI Backend v37
-   - FIXED: /v1/models endpoint for external API callers
-   - FIXED: Proper CORS for cross-origin requests
-   - FIXED: API key validation for external callers
-   - FIXED: Model suggestions (Luna & Gen) exposed via /v1/models
+   MiroxAI Backend v38
+   FIXED: External API calls no longer hang.
+   - Returns SSE headers IMMEDIATELY (no more 20s wait)
+   - Sends heartbeat comments every 15s to keep connection alive
+   - Adds 45s timeout on HF Router fetch with fallback chain
+   - Adds per-model timeout so a slow provider doesn't block the chain
    ============================================================ */
 
 let express, crypto, firebaseAdmin;
@@ -23,6 +24,7 @@ if (!express || !crypto) {
 const HF_API_KEY = (process.env.HF_API_KEY || '').trim();
 const SECRET = process.env.SECRET_KEY || 'mirox-fallback-secret';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '2010';
+const HF_TIMEOUT_MS = 45000; // 45s per provider attempt
 
 /* ---------- Firebase ---------- */
 let fdb = null;
@@ -30,13 +32,8 @@ try {
   if (firebaseAdmin && !firebaseAdmin.apps.length) {
     let cred = null;
     if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-      try {
-        const sa = JSON.parse(Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT, 'base64').toString());
-        cred = firebaseAdmin.credential.cert(sa);
-      } catch {}
-    } else {
-      try { cred = firebaseAdmin.credential.applicationDefault(); } catch {}
-    }
+      try { const sa = JSON.parse(Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT, 'base64').toString()); cred = firebaseAdmin.credential.cert(sa); } catch {}
+    } else { try { cred = firebaseAdmin.credential.applicationDefault(); } catch {} }
     if (cred) {
       firebaseAdmin.initializeApp({
         databaseURL: 'https://miroxdata-default-rtdb.europe-west1.firebasedatabase.app/',
@@ -70,7 +67,6 @@ function getSession(req) {
   const a = req.headers.authorization || '';
   if (a.startsWith('Bearer ')) {
     const token = a.slice(7).trim();
-    /* Check if it's an API key (starts with mxk_) */
     if (token.startsWith('mxk_')) return { apiKey: token };
     const s = verifySession(token);
     if (s?.uid) return s;
@@ -180,7 +176,6 @@ const MIROX_MODELS = {
   },
 };
 
-/* Models available via public API */
 const API_ALLOWED_MODELS = ['mirox-luna-1.2', 'mirox-gen-1'];
 
 const PLANS = {
@@ -206,12 +201,11 @@ function injectIdentityGuard(messages, cfg) {
    ============================================================ */
 async function validateApiKey(apiKey) {
   if (!apiKey || !apiKey.startsWith('mxk_')) return null;
-  if (!fdb) return { valid: true, email: 'guest@apikey.local', tier: 'free' }; /* Fallback if no DB */
+  if (!fdb) return { valid: true, email: 'guest@apikey.local', tier: 'free' };
   try {
-    /* Search all users for this key hash */
     const hash = crypto.createHash('sha256').update(apiKey).digest('hex');
-    const allUsersSnap = await fdb.ref('api_keys').once('value');
-    const allKeys = allUsersSnap.val() || {};
+    const allKeysSnap = await fdb.ref('api_keys').once('value');
+    const allKeys = allKeysSnap.val() || {};
     for (const [email, keys] of Object.entries(allKeys)) {
       for (const [keyId, keyData] of Object.entries(keys || {})) {
         if (keyData && keyData.hash === hash && keyData.active !== false) {
@@ -226,18 +220,6 @@ async function validateApiKey(apiKey) {
     console.warn('[Mirox] API key validation error:', e.message);
     return null;
   }
-}
-
-async function currentUser(req) {
-  const s = getSession(req);
-  if (s.apiKey) {
-    /* Validate API key */
-    const v = await validateApiKey(s.apiKey);
-    if (!v) return null;
-    return { email: v.email, tier: v.tier, _viaKey: true };
-  }
-  if (!s.uid) return null;
-  return await ensureFreshUser(s.uid);
 }
 
 async function getUserRecord(email) { return await safeGet(`users/${email}`); }
@@ -256,9 +238,19 @@ async function ensureFreshUser(email) {
   if (dirty) await saveUserRecord(rec);
   return rec;
 }
+async function currentUser(req) {
+  const s = getSession(req);
+  if (s.apiKey) {
+    const v = await validateApiKey(s.apiKey);
+    if (!v) return null;
+    return { email: v.email, tier: v.tier, _viaKey: true };
+  }
+  if (!s.uid) return null;
+  return await ensureFreshUser(s.uid);
+}
 
 /* ============================================================
-   INFERENCE
+   INFERENCE — with per-attempt timeout
    ============================================================ */
 const HF_CHAT_URL = 'https://router.huggingface.co/v1/chat/completions';
 const HF_IMG_BASE = 'https://router.huggingface.co/hf-inference/models';
@@ -270,13 +262,27 @@ const IMAGE_MODELS = [
   'ByteDance/SDXL-Lightning'
 ];
 
+/* Fetch with timeout — aborts if HF takes too long */
+async function fetchWithTimeout(url, opts = {}, timeoutMs = HF_TIMEOUT_MS, externalSignal = null) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => { try { ctrl.abort(new Error('timeout')); } catch {} }, timeoutMs);
+  if (externalSignal) {
+    externalSignal.addEventListener('abort', () => { try { ctrl.abort(); } catch {} });
+  }
+  try {
+    return await fetch(url, { ...opts, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function miroxChat(modelId, messages, maxTokens, stream = false, signal) {
-  const res = await fetch(HF_CHAT_URL, {
+  const res = await fetchWithTimeout(HF_CHAT_URL, {
     method: 'POST',
     headers: { Authorization: `Bearer ${HF_API_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: modelId, messages, max_tokens: maxTokens, stream, temperature: 0.7 }),
-    signal,
-  });
+  }, HF_TIMEOUT_MS, signal);
+
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     let errMsg = `HF ${res.status}`;
@@ -290,6 +296,7 @@ async function miroxChat(modelId, messages, maxTokens, stream = false, signal) {
 async function miroxChatChain(chain, messages, maxTokens, stream = false, signal) {
   let lastErr = null;
   for (const modelId of chain) {
+    if (signal?.aborted) throw new Error('aborted');
     try {
       const res = await miroxChat(modelId, messages, maxTokens, stream, signal);
       console.log(`[Mirox] ✅ Chat via ${modelId}`);
@@ -309,11 +316,11 @@ async function lumenalGenerate(prompt, aspectRatio = '1:1') {
   const errors = [];
   for (const modelId of IMAGE_MODELS) {
     try {
-      const res = await fetch(`${HF_IMG_BASE}/${modelId}`, {
+      const res = await fetchWithTimeout(`${HF_IMG_BASE}/${modelId}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${HF_API_KEY}`, 'Content-Type': 'application/json', 'Accept': 'image/png', 'x-wait-for-model': 'true' },
         body: JSON.stringify({ inputs: prompt, parameters: { width: w, height: h } }),
-      });
+      }, 40000);
       if (!res.ok) { errors.push(`${modelId}: ${res.status}`); continue; }
       const ct = res.headers.get('content-type') || '';
       if (ct.includes('image/')) {
@@ -362,7 +369,7 @@ function buildMessages(systemPrompt, history, userText, persona, mem, files) {
 const app = express();
 app.use(express.json({ limit: '15mb' }));
 
-/* CORS — allow ALL origins for /v1/ (external API callers) */
+/* CORS for ALL routes */
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, DELETE');
@@ -376,53 +383,33 @@ app.use((req, res, next) => {
 /* ---------- Health ---------- */
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
   res.json({
-    ok: true, app: 'MiroxAI', version: 'v37',
+    ok: true, app: 'MiroxAI', version: 'v38',
     inference: !!HF_API_KEY, database: !!fdb,
     api_models: API_ALLOWED_MODELS,
     time: now()
   });
 });
 
-/* ============================================================
-   /v1/models — OpenAI-compatible model listing
-   FIX: This is what external API callers need
-   ============================================================ */
+/* ---------- /v1/models ---------- */
 app.get(['/v1/models', '/models'], (req, res) => {
   const modelsArr = API_ALLOWED_MODELS.map(id => {
     const m = MIROX_MODELS[id];
     return {
-      id: id,
-      object: 'model',
-      created: 1700000000,
-      owned_by: 'miroxai',
-      permission: [],
-      root: id,
-      parent: null,
-      /* Extra metadata (OpenAI-compatible clients ignore unknown fields) */
-      label: m.label,
-      tagline: m.tagline,
-      tier: m.tier,
-      default: !!m.default,
+      id, object: 'model', created: 1700000000, owned_by: 'miroxai',
+      permission: [], root: id, parent: null,
+      label: m.label, tagline: m.tagline, tier: m.tier, default: !!m.default,
     };
   });
-  res.json({
-    object: 'list',
-    data: modelsArr,
-  });
+  res.json({ object: 'list', data: modelsArr });
 });
 
-/* Single model info */
 app.get(['/v1/models/:modelId', '/models/:modelId'], (req, res) => {
   const id = req.params.modelId;
   if (!API_ALLOWED_MODELS.includes(id)) {
     return res.status(404).json({ error: { message: `Model '${id}' not found`, type: 'invalid_request_error', code: 'model_not_found' } });
   }
   const m = MIROX_MODELS[id];
-  res.json({
-    id, object: 'model', created: 1700000000, owned_by: 'miroxai',
-    root: id, parent: null,
-    label: m.label, tagline: m.tagline, tier: m.tier,
-  });
+  res.json({ id, object: 'model', created: 1700000000, owned_by: 'miroxai', root: id, parent: null, label: m.label, tagline: m.tagline, tier: m.tier });
 });
 
 /* ---------- Config ---------- */
@@ -433,7 +420,7 @@ app.get(['/api/config', '/config'], async (req, res) => {
     id, label: m.label, tagline: m.tagline, tier: m.tier, default: !!m.default,
   }));
   res.json({
-    app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v37' },
+    app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v38' },
     models: modelsArr, default_model: modelsArr[0].id, plans: PLANS,
     user_tier: u ? u.tier : 'free', guest: !u, ready: !!HF_API_KEY,
     api_models: API_ALLOWED_MODELS,
@@ -490,8 +477,8 @@ app.get(['/api/subscription/plans', '/subscription/plans'], (req, res) => {
 });
 
 /* ============================================================
-   /v1/chat/completions — OpenAI-compatible
-   FIX: Works for both internal (session) and external (API key) callers
+   /v1/chat/completions
+   FIXED: returns SSE headers IMMEDIATELY + heartbeat while waiting
    ============================================================ */
 app.post('/v1/chat/completions', async (req, res) => {
   try {
@@ -503,14 +490,12 @@ app.post('/v1/chat/completions', async (req, res) => {
     const apiKey = (req.headers.authorization || '').replace('Bearer ', '').trim();
     const isApiCall = apiKey && apiKey.startsWith('mxk_');
 
-    /* External API callers MUST provide a valid API key */
     if (isApiCall && !u) {
       return res.status(401).json({ error: { message: 'Invalid API key.', type: 'invalid_request_error', code: 'invalid_api_key' } });
     }
 
     const requestedModel = model || 'mirox-luna-1.2';
 
-    /* API callers can only use Luna & Gen */
     if (isApiCall && !API_ALLOWED_MODELS.includes(requestedModel)) {
       return res.status(403).json({ error: { message: `Model "${requestedModel}" not available via API. Use mirox-luna-1.2 or mirox-gen-1.`, type: 'invalid_request_error', code: 'model_not_found' } });
     }
@@ -522,7 +507,6 @@ app.post('/v1/chat/completions', async (req, res) => {
 
     const userTier = u ? u.tier : 'free';
 
-    /* STRICT TIER GATE */
     const modelTier = cfg.tier;
     if (modelTier === 'pro' && TIER_RANK[userTier] < TIER_RANK.pro) {
       return res.status(403).json({ error: { message: 'Pro model requires Pro or Ultimate plan.', type: 'invalid_request_error', code: 'plan_required' } });
@@ -547,7 +531,6 @@ app.post('/v1/chat/completions', async (req, res) => {
       msgs = buildMessages(buildSystemPrompt(cfg), history, msg, u?.persona, u?.memory, files || []);
     }
 
-    /* Daily limit check */
     if (u) {
       const plan = PLANS[u.tier];
       if ((u.daily_used || 0) >= plan.daily_limit) {
@@ -567,7 +550,7 @@ app.post('/v1/chat/completions', async (req, res) => {
       }
     }
 
-    /* Non-streaming */
+    /* ---------- Non-streaming ---------- */
     if (!stream) {
       try {
         const hfRes = await miroxChatChain(cfg.chain, msgs, cfg.tokens, false);
@@ -579,13 +562,8 @@ app.post('/v1/chat/completions', async (req, res) => {
           object: 'chat.completion',
           created: now(),
           model: cfg.label,
-          choices: [{
-            index: 0,
-            message: { role: 'assistant', content: reply },
-            finish_reason: 'stop',
-          }],
+          choices: [{ index: 0, message: { role: 'assistant', content: reply }, finish_reason: 'stop' }],
           usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
-          /* Extra fields (backwards-compatible) */
           reply,
           daily_used: u ? (u.daily_used || 0) : 0,
           daily_remaining: u ? Math.max(0, PLANS[u.tier].daily_limit - (u.daily_used || 0)) : 0,
@@ -595,50 +573,94 @@ app.post('/v1/chat/completions', async (req, res) => {
       }
     }
 
-    /* Streaming (SSE) */
+    /* ============================================================
+       STREAMING — CRITICAL FIX
+       1. Set SSE headers immediately
+       2. Send initial "connected" comment
+       3. Start heartbeat (every 15s)
+       4. Return BEFORE awaiting HF — the client sees data instantly
+       ============================================================ */
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
+    res.setHeader('Content-Encoding', 'identity');
     if (res.flushHeaders) res.flushHeaders();
 
-    const abortCtrl = new AbortController();
-    req.on('close', () => { try { abortCtrl.abort(); } catch {} });
+    /* Send an immediate comment so the client knows we're alive */
+    try { res.write(': connected\n\n'); } catch {}
 
-    try {
-      const hfRes = await miroxChatChain(cfg.chain, msgs, cfg.tokens, true, abortCtrl.signal);
-      const reader = hfRes.body.getReader();
-      const dec = new TextDecoder();
-      let buf = '';
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        let idx;
-        while ((idx = buf.indexOf('\n')) !== -1) {
-          const line = buf.slice(0, idx).trim();
-          buf = buf.slice(idx + 1);
-          if (!line.startsWith('data:')) continue;
-          const pl = line.slice(5).trim();
-          if (!pl || pl === '[DONE]') continue;
-          try {
-            const o = JSON.parse(pl);
-            const d = o.choices?.[0]?.delta?.content;
-            if (d) res.write(`data: ${JSON.stringify({ d })}\n\n`);
-          } catch {}
+    /* Heartbeat keeps Vercel + CDN from killing the connection */
+    const heartbeat = setInterval(() => {
+      try { res.write(': ping\n\n'); } catch {}
+    }, 15000);
+
+    const abortCtrl = new AbortController();
+    let clientClosed = false;
+    req.on('close', () => {
+      clientClosed = true;
+      try { abortCtrl.abort(); } catch {}
+      clearInterval(heartbeat);
+    });
+
+    /* Run the actual streaming in an async IIFE so the response
+       is already sent to the client by the time we await HF */
+    (async () => {
+      try {
+        const hfRes = await miroxChatChain(cfg.chain, msgs, cfg.tokens, true, abortCtrl.signal);
+
+        const reader = hfRes.body.getReader();
+        const dec = new TextDecoder();
+        let buf = '';
+        let chunkCount = 0;
+
+        while (true) {
+          if (clientClosed) break;
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let idx;
+          while ((idx = buf.indexOf('\n')) !== -1) {
+            const line = buf.slice(0, idx).trim();
+            buf = buf.slice(idx + 1);
+            if (!line.startsWith('data:')) continue;
+            const pl = line.slice(5).trim();
+            if (!pl || pl === '[DONE]') continue;
+            try {
+              const o = JSON.parse(pl);
+              const d = o.choices?.[0]?.delta?.content;
+              if (d) {
+                chunkCount++;
+                /* Write immediately — no buffering */
+                res.write(`data: ${JSON.stringify({ d })}\n\n`);
+                if (typeof res.flush === 'function') { try { res.flush(); } catch {} }
+              }
+            } catch {}
+          }
         }
+
+        await updateUsage();
+
+        try {
+          res.write(`data: ${JSON.stringify({
+            done: true, model: cfg.label,
+            daily_used: u ? (u.daily_used || 0) : 0,
+            daily_remaining: u ? Math.max(0, PLANS[u.tier].daily_limit - (u.daily_used || 0)) : 0,
+          })}\n\n`);
+        } catch {}
+        try { res.end(); } catch {}
+      } catch (e) {
+        if (e.name !== 'AbortError' && !clientClosed) {
+          try { res.write(`data: ${JSON.stringify({ error: String(e.message).slice(0, 240) })}\n\n`); } catch {}
+        }
+        try { res.end(); } catch {}
+      } finally {
+        clearInterval(heartbeat);
       }
-      await updateUsage();
-      res.write(`data: ${JSON.stringify({
-        done: true, model: cfg.label,
-        daily_used: u ? (u.daily_used || 0) : 0,
-        daily_remaining: u ? Math.max(0, PLANS[u.tier].daily_limit - (u.daily_used || 0)) : 0,
-      })}\n\n`);
-      res.end();
-    } catch (e) {
-      if (e.name !== 'AbortError') res.write(`data: ${JSON.stringify({ error: String(e.message).slice(0, 240) })}\n\n`);
-      res.end();
-    }
+    })();
+
+    /* IMPORTANT: return here — response is already being streamed */
+    return;
   } catch (e) {
     if (!res.headersSent) res.status(500).json({ error: { message: 'Server error: ' + e.message, type: 'server_error' } });
     else { try { res.end(); } catch {} }
