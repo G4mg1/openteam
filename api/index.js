@@ -1,12 +1,13 @@
 /* ============================================================
-   MiroxAI Backend v59
+   MiroxAI Backend v60
    FIXED:
-   - Chat chain is now SEQUENTIAL: HF first, then searchque.
-     No more parallel race, so searchque can never respond before HF.
+   - /api/admin/stats no longer hangs — server-side 8s timeout
+     around the Firebase read, returns empty stats with a
+     `warning: 'db_unavailable'` flag instead of timing out
    KEPT:
-   - Provider body content-type validation
+   - Sequential chain: HF first, searchque fallback
+   - Canned responses, content-type validation
    - All errors masked as "Mirox AI encountered an error"
-   - Canned responses, API keys, admin, images
    ============================================================ */
 
 process.on('unhandledRejection', (r) => { console.error('[Mirox] unhandledRejection:', r); });
@@ -35,6 +36,7 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '2010';
 const HF_ATTEMPT_TIMEOUT_MS = 20000;
 const AR_SEARCH_TIMEOUT_MS = 15000;
 const STREAM_SAFETY_MS = 52000;
+const FB_READ_TIMEOUT_MS = 8000;
 
 const GENERIC_ERR = 'Mirox AI encountered an error';
 
@@ -55,6 +57,13 @@ console.log('[Mirox] =================================');
 /* ============================================================
    SAFE HELPERS
    ============================================================ */
+function withTimeout(promise, ms, label = 'op') {
+  return Promise.race([
+    promise,
+    new Promise((_, rej) => setTimeout(() => rej(new Error(`${label}_timeout`)), ms)),
+  ]);
+}
+
 function safeGet(obj, key, defaultValue = undefined) {
   try {
     if (!obj || typeof obj !== 'object') return defaultValue;
@@ -305,7 +314,10 @@ function getSession(req) {
 /* ---------- Firebase helpers ---------- */
 async function safeGetFB(p) {
   if (!fdb) return null;
-  try { const s = await fdb.ref(p).once('value'); return s.exists() ? s.val() : null; }
+  try {
+    const s = await withTimeout(fdb.ref(p).once('value'), FB_READ_TIMEOUT_MS, 'fb_get');
+    return s.exists() ? s.val() : null;
+  }
   catch { return null; }
 }
 async function safeUpdateFB(p, d) {
@@ -415,7 +427,7 @@ function injectIdentityGuard(messages, cfg) {
 }
 
 /* ============================================================
-   Canned responses — offline answers that never touch a provider.
+   Canned responses
    ============================================================ */
 function normalizeText(t) {
   return String(t || '')
@@ -667,8 +679,6 @@ const HF_CHAT_MODELS = [
 ];
 const PL_CHAT_MODELS = ['openai', 'mistral'];
 
-/* keyless AIroute search+quotes — ultimate offline fallback.
-   Receives ONLY the raw user question, no system prompt, no history. */
 const AR_SEARCH_MODEL = 'airoute/searchque';
 
 const HF_IMG_MODELS = [
@@ -739,10 +749,6 @@ async function hfChat(modelId, messages, maxTokens, stream, signal, timeoutMs, e
   return res;
 }
 
-/* ============================================================
-   searchque — keyless web-search fallback.
-   STATELESS: no memory, no persona, no system prompt.
-   ============================================================ */
 async function searchqueChat(userQuestion, signal, timeoutMs) {
   const q = safeString(userQuestion, 1500).trim();
   if (!q) throw new Error('provider_failed');
@@ -770,7 +776,6 @@ async function miroxChatChain(messages, cfg, stream, signal, deadline, extra = {
   const startTime = Date.now();
   const userQuestion = extractLastUserQuestion(messages);
 
-  /* -------- Stage 1: Hugging Face — first successful model wins -------- */
   if (PROVIDERS.hf) {
     for (const modelId of HF_CHAT_MODELS) {
       if (signal && signal.aborted) throw new Error('aborted');
@@ -788,7 +793,6 @@ async function miroxChatChain(messages, cfg, stream, signal, deadline, extra = {
     console.log('[Mirox] HF_API_KEY not configured — going straight to searchque');
   }
 
-  /* -------- Stage 2: searchque — only reached if HF failed -------- */
   if (userQuestion && !(signal && signal.aborted)) {
     try {
       const res = await searchqueChat(userQuestion, signal, AR_SEARCH_TIMEOUT_MS);
@@ -929,7 +933,7 @@ app.use((req, res, next) => {
 });
 
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
-  res.json({ ok: true, app: 'MiroxAI', version: 'v59', providers: PROVIDERS, firebase: { connected: !!fdb, error: firebaseError }, time: now() });
+  res.json({ ok: true, app: 'MiroxAI', version: 'v60', providers: PROVIDERS, firebase: { connected: !!fdb, error: firebaseError }, time: now() });
 });
 
 app.get(['/v1/models', '/models'], (req, res) => {
@@ -944,7 +948,7 @@ app.get(['/api/config', '/config'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   let u = null; try { u = await currentUser(req); } catch {}
   const modelsArr = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tagline: m.tagline, tier: m.tier, default: !!m.default }));
-  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v59' }, models: modelsArr, default_model: modelsArr[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: true, providers: PROVIDERS, api_models: API_ALLOWED_MODELS });
+  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v60' }, models: modelsArr, default_model: modelsArr[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: true, providers: PROVIDERS, api_models: API_ALLOWED_MODELS });
 });
 
 app.get(['/api/privacy', '/privacy'], (req, res) => {
@@ -964,7 +968,7 @@ app.get(['/api/privacy', '/privacy'], (req, res) => {
       'We do not run any device-fingerprinting or tracking scripts in the app.',
     ],
     deletion: 'To delete your account and all logs, contact the OpenSurr team. We will remove your user record, chat logs, image logs, and API key records within 30 days.',
-    last_updated: 'v59',
+    last_updated: 'v60',
   });
 });
 
@@ -1172,7 +1176,6 @@ app.post('/v1/chat/completions', async (req, res) => {
     if (allTools.length) extra.tools = allTools;
     if (toolChoice !== undefined) extra.tool_choice = toolChoice;
 
-    /* ============ NON-STREAM ============ */
     if (!stream) {
       try {
         const result = await miroxChatChain(msgs, cfg, false, abortCtrl.signal, null, extra);
@@ -1203,7 +1206,6 @@ app.post('/v1/chat/completions', async (req, res) => {
       }
     }
 
-    /* ============ STREAM ============ */
     sseInit(res);
     const streamId = 'chatcmpl-' + crypto.randomBytes(8).toString('hex');
 
@@ -1408,11 +1410,13 @@ function adminSession(req) {
   if (s.exp < Date.now()) return null;
   return s;
 }
+
 app.post('/api/admin/auth', (req, res) => {
   const password = safeString(safeGet(req.body, 'password'));
   if (!password || password !== ADMIN_PASSWORD) return res.status(401).json({ ok: false, error: 'Invalid password' });
   res.json({ ok: true, token: signSession({ admin: true, exp: Date.now() + 12 * 60 * 60 * 1000 }) });
 });
+
 app.post('/api/admin/set-tier', async (req, res) => {
   try {
     if (!adminSession(req)) return res.status(401).json({ ok: false, error: 'Unauthorized' });
@@ -1424,13 +1428,50 @@ app.post('/api/admin/set-tier', async (req, res) => {
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ ok: false, error: 'Failed' }); }
 });
+
+/* ============================================================
+   /api/admin/stats — FIXED
+   The old version awaited 4 Firebase reads with no timeout, so
+   if Firebase was slow the request hung past the frontend's
+   limit. Now the whole read is wrapped in an 8s race, and on
+   timeout we return empty stats with warning:'db_unavailable'
+   so the admin page renders immediately instead of timing out.
+   ============================================================ */
 app.get('/api/admin/stats', async (req, res) => {
   try {
     if (!adminSession(req)) return res.status(401).json({ ok: false, error: 'Unauthorized' });
-    if (!fdb) return res.json({ ok: true, users: 0, chats: 0, images: 0, events: 0, users_data: {}, chats_data: [], images_data: [], events_data: [] });
-    const [uS, cS, iS, eS] = await Promise.all([
-      fdb.ref('users').once('value'), fdb.ref('logs/chat').once('value'), fdb.ref('logs/image').once('value'), fdb.ref('logs/user').once('value'),
-    ]);
+
+    const empty = {
+      ok: true,
+      users: 0, chats: 0, images: 0, events: 0,
+      users_data: {}, chats_data: [], images_data: [], events_data: [],
+    };
+
+    if (!fdb) {
+      return res.json({ ...empty, warning: 'firebase_not_configured', firebase_error: firebaseError });
+    }
+
+    let uV = null, cV = null, iV = null, eV = null;
+    try {
+      const reads = await withTimeout(
+        Promise.all([
+          fdb.ref('users').once('value'),
+          fdb.ref('logs/chat').once('value'),
+          fdb.ref('logs/image').once('value'),
+          fdb.ref('logs/user').once('value'),
+        ]),
+        FB_READ_TIMEOUT_MS,
+        'fb_stats'
+      );
+      uV = reads[0].exists() ? reads[0].val() : null;
+      cV = reads[1].exists() ? reads[1].val() : null;
+      iV = reads[2].exists() ? reads[2].val() : null;
+      eV = reads[3].exists() ? reads[3].val() : null;
+    } catch (e) {
+      console.warn('[Mirox] admin stats read failed:', e && e.message);
+      return res.json({ ...empty, warning: 'db_unavailable' });
+    }
+
     const flatten = (obj) => {
       const out = [];
       Object.entries(obj || {}).forEach(([email, list]) => {
@@ -1440,15 +1481,28 @@ app.get('/api/admin/stats', async (req, res) => {
       out.sort((a, b) => (b.ts || 0) - (a.ts || 0));
       return out.slice(0, 100);
     };
+
+    const countEntries = (obj) =>
+      Object.values(obj || {}).reduce(
+        (a, v) => a + (Array.isArray(v) ? v.length : Object.keys(v || {}).length),
+        0
+      );
+
     res.json({
       ok: true,
-      users: Object.keys(uS.val() || {}).length,
-      chats: Object.values(cS.val() || {}).reduce((a, v) => a + (Array.isArray(v) ? v.length : Object.keys(v || {}).length), 0),
-      images: Object.values(iS.val() || {}).reduce((a, v) => a + (Array.isArray(v) ? v.length : Object.keys(v || {}).length), 0),
-      events: Object.values(eS.val() || {}).reduce((a, v) => a + (Array.isArray(v) ? v.length : Object.keys(v || {}).length), 0),
-      users_data: uS.val() || {}, chats_data: flatten(cS.val()), images_data: flatten(iS.val()), events_data: flatten(eS.val()),
+      users: Object.keys(uV || {}).length,
+      chats: countEntries(cV),
+      images: countEntries(iV),
+      events: countEntries(eV),
+      users_data: uV || {},
+      chats_data: flatten(cV),
+      images_data: flatten(iV),
+      events_data: flatten(eV),
     });
-  } catch (e) { res.status(500).json({ ok: false, error: 'Failed' }); }
+  } catch (e) {
+    console.error('[Mirox] admin stats error:', e && e.message);
+    res.status(500).json({ ok: false, error: 'Failed' });
+  }
 });
 
 app.use((req, res) => { res.status(404).json({ error: { message: 'Not found: ' + req.path, type: 'invalid_request_error' } }); });
