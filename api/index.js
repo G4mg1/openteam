@@ -1,10 +1,12 @@
 /* ============================================================
-   MiroxAI Backend v58
-   - Removed all IP endpoints/functions
-   - Expanded offline canned-response layer with many topics
-   - HF + PL raced in parallel, searchque raw-question fallback
+   MiroxAI Backend v59
+   FIXED:
+   - Chat chain is now SEQUENTIAL: HF first, then searchque.
+     No more parallel race, so searchque can never respond before HF.
+   KEPT:
    - Provider body content-type validation
    - All errors masked as "Mirox AI encountered an error"
+   - Canned responses, API keys, admin, images
    ============================================================ */
 
 process.on('unhandledRejection', (r) => { console.error('[Mirox] unhandledRejection:', r); });
@@ -30,8 +32,7 @@ const AR_KEY = (process.env.AR_KEY || '').trim();
 const SECRET = process.env.SECRET_KEY || 'mirox-fallback-secret';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '2010';
 
-const HF_ATTEMPT_TIMEOUT_MS = 12000;
-const PL_ATTEMPT_TIMEOUT_MS = 12000;
+const HF_ATTEMPT_TIMEOUT_MS = 20000;
 const AR_SEARCH_TIMEOUT_MS = 15000;
 const STREAM_SAFETY_MS = 52000;
 
@@ -415,8 +416,6 @@ function injectIdentityGuard(messages, cfg) {
 
 /* ============================================================
    Canned responses — offline answers that never touch a provider.
-   Runs before the model chain so greetings, identity questions,
-   small talk, and FAQ answer instantly and always on-brand.
    ============================================================ */
 function normalizeText(t) {
   return String(t || '')
@@ -474,12 +473,9 @@ function getCannedResponse(userText, cfg) {
   if (!raw) return null;
   const t = normalizeText(raw);
   if (!t) return null;
-  if (t.length > 220) return null;      /* long messages go to the model */
+  if (t.length > 220) return null;
   const label = cfg && cfg.label ? cfg.label : 'Luna';
 
-  /* ============================
-     GREETINGS
-     ============================ */
   if (/^(hi|hey|hello|yo|sup|hiya|heya|howdy|hola|bonjour|hallo|good morning|good evening|good afternoon|good night)[!.\s]*$/.test(t)) {
     return `Hey! I'm Mirox ${label}, built by OpenSurr. What can I help you with?`;
   }
@@ -489,10 +485,6 @@ function getCannedResponse(userText, cfg) {
   if (/^greetings[!.\s]*$/.test(t)) {
     return `Greetings. I'm Mirox ${label}. How can I help?`;
   }
-
-  /* ============================
-     THANKS / PLEASANTRIES
-     ============================ */
   if (/^(thanks|thank you|thank u|thx|ty|cheers|appreciate it|much appreciated)[!.\s]*$/.test(t)) {
     return `Anytime.`;
   }
@@ -502,30 +494,18 @@ function getCannedResponse(userText, cfg) {
   if (/^(sorry|my bad|apologies|apologize)[!.\s]*$/.test(t)) {
     return `No worries at all.`;
   }
-
-  /* ============================
-     GOODBYES
-     ============================ */
   if (/^(bye|goodbye|see ya|see you|later|cya|good night|see you later|take care|catch you later)[!.\s]*$/.test(t)) {
     return `See you around.`;
   }
   if (/^(goodbye forever|i'?m leaving|i am leaving)[!.\s]*$/.test(t)) {
     return `Take care. I'll be here if you come back.`;
   }
-
-  /* ============================
-     ACKNOWLEDGEMENTS
-     ============================ */
   if (/^(ok|okay|k|cool|nice|great|awesome|sure|got it|alright|fine|yes|yep|yeah|no|nope)[!.\s]*$/.test(t)) {
     return `Got it. Anything else?`;
   }
   if (/^(interesting|makes sense|i see|right|true|fair)[!.\s]*$/.test(t)) {
     return `Anything else you'd like to dig into?`;
   }
-
-  /* ============================
-     LOVE / EMOTIONS TOWARD AI
-     ============================ */
   if (/^(i love you|love you|i like you|do you like me|do you love me|do you like humans)[!.\s]*$/.test(t)) {
     return `That's kind of you. I'm a Mirox model, so I don't have feelings — but I'm here to help.`;
   }
@@ -535,10 +515,6 @@ function getCannedResponse(userText, cfg) {
   if (/^(are you happy|are you sad|are you angry|are you excited|are you tired)[!.\s]*$/.test(t)) {
     return `I don't have feelings — I'm a Mirox model. But I'm ready to help.`;
   }
-
-  /* ============================
-     EXISTENCE / HUMAN-LIKE QUESTIONS
-     ============================ */
   if (/^(are|r) (you|u) (a )?(human|person|real|alive|sentient|conscious|self aware|self-aware)[?!.\s]*$/.test(t)) {
     return `No, I'm Mirox ${label} — an AI model built by OpenSurr. Not human, not alive.`;
   }
@@ -563,10 +539,6 @@ function getCannedResponse(userText, cfg) {
   if (/^(do you have feelings|do you have emotions|can you feel)[?!.\s]*$/.test(t)) {
     return `I don't have feelings — I'm a language model. But I try to respond thoughtfully.`;
   }
-
-  /* ============================
-     IDENTITY / CREATOR
-     ============================ */
   if (/^(who|what) (are|r) (you|u)[?!.\s]*$/.test(t)
       || /^what'?s your name[?!.\s]*$/.test(t)
       || /^what is your name[?!.\s]*$/.test(t)) {
@@ -593,10 +565,6 @@ function getCannedResponse(userText, cfg) {
   if (/\bwho (are|is) opensurr\b/.test(t) || /\bwhat (is|are) opensurr\b/.test(t) || /\btell me about opensurr\b/.test(t)) {
     return `OpenSurr is the team that built me and the Mirox family of models. They designed Luna, Gen, Pro, Ultra, and Eclipse.`;
   }
-
-  /* ============================
-     MODEL LIST & PLANS
-     ============================ */
   if (/\b(list|show|what|which|see|available).{0,20}(models|ais|mirox models|your models)\b/.test(t)
       || /\bwhat models (do you|can i|are)\b/.test(t)
       || /\bavailable models\b/.test(t)
@@ -608,10 +576,6 @@ function getCannedResponse(userText, cfg) {
       || /^(plans|pricing|tiers)[?!.\s]*$/.test(t)) {
     return formatPlans();
   }
-
-  /* ============================
-     CAPABILITIES / HELP
-     ============================ */
   if (/^(help|what can you do|commands|what do you do|capabilities|what are you capable of)[?!.\s]*$/.test(t)) {
     return formatHelp();
   }
@@ -630,10 +594,6 @@ function getCannedResponse(userText, cfg) {
   if (/^(do you have (internet|web|search)|can you search|can you browse)[?!.\s]*$/.test(t)) {
     return `Yes — if the main models are unavailable, I fall back to a web search engine that reads and cites sources.`;
   }
-
-  /* ============================
-     SMALL TALK / FUN
-     ============================ */
   if (/^(how are you|how'?s it going|how are things|how do you do|what'?s up|whats up|wassup)[?!.\s]*$/.test(t)) {
     return `Running fine, thanks. What can I help you with?`;
   }
@@ -667,22 +627,9 @@ function getCannedResponse(userText, cfg) {
   if (/^(favorite food|what'?s your favorite food)[?!.\s]*$/.test(t)) {
     return `I don't eat. But I hear pizza is popular.`;
   }
-
-  /* ============================
-     TIME / DATE (defer to model — the model knows the date)
-     ============================ */
-  /* Intentionally not canned — the live model has the real clock context. */
-
-  /* ============================
-     TEST / PING
-     ============================ */
   if (/^(test|testing|ping|are you there|hello\?|hey you|can you hear me|do you understand|do you read me)[?!.\s]*$/.test(t)) {
     return `Loud and clear. What do you need?`;
   }
-
-  /* ============================
-     API / TECHNICAL
-     ============================ */
   if (/^(api|api docs|api documentation|how do i use the api)[?!.\s]*$/.test(t)) {
     return [
       `Mirox offers an OpenAI-compatible API:`,
@@ -697,10 +644,6 @@ function getCannedResponse(userText, cfg) {
   if (/^(what models? are available via api|which models? can i use via api)[?!.\s]*$/.test(t)) {
     return `The API exposes two models: **Mirox Luna** (\`mirox-luna-1.2\`) and **Mirox Gen** (\`mirox-gen-1\`).`;
   }
-
-  /* ============================
-     FALLBACK FOR "WHO/WHAT" SHORT QUERIES
-     ============================ */
   if (/^who (are|r) (u|you)[?!.\s]*$/.test(t)) {
     return `I'm Mirox ${label}, built by the OpenSurr team.`;
   }
@@ -795,26 +738,10 @@ async function hfChat(modelId, messages, maxTokens, stream, signal, timeoutMs, e
   if (stream && !looksLikeChatStream(res)) throw new Error('provider_failed');
   return res;
 }
-async function pollinationsChat(modelId, messages, maxTokens, stream, signal, timeoutMs, extra = {}) {
-  if (!PL_KEY) throw new Error('provider_failed');
-  const body = { model: modelId, messages, max_tokens: maxTokens, stream: !!stream, temperature: 0.7 };
-  if (extra.tools && extra.tools.length) body.tools = extra.tools;
-  if (extra.tool_choice !== undefined) body.tool_choice = extra.tool_choice;
-  const res = await fetchWithTimeout(PL_CHAT_URL, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${PL_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  }, timeoutMs, signal);
-  if (!res.ok) throw new Error('provider_failed');
-  if (!stream && !looksLikeChatJson(res)) throw new Error('provider_failed');
-  if (stream && !looksLikeChatStream(res)) throw new Error('provider_failed');
-  return res;
-}
 
 /* ============================================================
    searchque — keyless web-search fallback.
    STATELESS: no memory, no persona, no system prompt.
-   Send it ONLY the raw user question as `prompt`.
    ============================================================ */
 async function searchqueChat(userQuestion, signal, timeoutMs) {
   const q = safeString(userQuestion, 1500).trim();
@@ -835,65 +762,33 @@ async function searchqueChat(userQuestion, signal, timeoutMs) {
 }
 
 /* ============================================================
-   Provider racing
-   ============================================================ */
-async function tryHfModels(modelList, messages, cfg, stream, signal, timeoutMs, extra) {
-  const promises = modelList.map(async (modelId) => {
-    const res = await hfChat(modelId, messages, cfg.tokens, stream, signal, timeoutMs, extra);
-    return { res, provider: 'hf', model: modelId, nativeStream: !!stream };
-  });
-  return await Promise.any(promises);
-}
-async function tryPlModels(modelList, messages, cfg, stream, signal, timeoutMs, extra) {
-  const promises = modelList.map(async (modelId) => {
-    const res = await pollinationsChat(modelId, messages, cfg.tokens, stream, signal, timeoutMs, extra);
-    return { res, provider: 'pl', model: modelId, nativeStream: !!stream };
-  });
-  return await Promise.any(promises);
-}
-
-/* ============================================================
-   Chat chain
-   1. HF + PL raced in parallel
-   2. searchque (keyless) — raw user question only
+   Chat chain — SEQUENTIAL
+   Stage 1: try every HF model in order.
+   Stage 2: only if every HF model failed, try searchque.
    ============================================================ */
 async function miroxChatChain(messages, cfg, stream, signal, deadline, extra = {}) {
   const startTime = Date.now();
   const userQuestion = extractLastUserQuestion(messages);
 
-  const hfCtrl = new AbortController();
-  const plCtrl = new AbortController();
-
-  if (signal) {
-    const prop = () => { try { hfCtrl.abort(); } catch {} try { plCtrl.abort(); } catch {} };
-    if (signal.aborted) prop();
-    else { try { signal.addEventListener('abort', prop); } catch {} }
-  }
-
-  const races = [];
+  /* -------- Stage 1: Hugging Face — first successful model wins -------- */
   if (PROVIDERS.hf) {
-    races.push(tryHfModels(HF_CHAT_MODELS, messages, cfg, stream, hfCtrl.signal, HF_ATTEMPT_TIMEOUT_MS, extra));
-  }
-  if (PROVIDERS.pl) {
-    races.push(tryPlModels(PL_CHAT_MODELS, messages, cfg, stream, plCtrl.signal, PL_ATTEMPT_TIMEOUT_MS, extra));
-  }
-
-  if (races.length > 0) {
-    let winner = null;
-    try { winner = await Promise.any(races); } catch { winner = null; }
-    if (winner) {
+    for (const modelId of HF_CHAT_MODELS) {
+      if (signal && signal.aborted) throw new Error('aborted');
       try {
-        if (winner.provider === 'hf') plCtrl.abort();
-        else if (winner.provider === 'pl') hfCtrl.abort();
-      } catch {}
-      console.log(`[Mirox] provider ok: ${winner.provider} (${Date.now() - startTime}ms)`);
-      return winner;
+        const res = await hfChat(modelId, messages, cfg.tokens, stream, signal, HF_ATTEMPT_TIMEOUT_MS, extra);
+        console.log(`[Mirox] provider ok: hf:${modelId} (${Date.now() - startTime}ms)`);
+        return { res, provider: 'hf', model: modelId, nativeStream: !!stream };
+      } catch (e) {
+        if (e.name === 'AbortError') throw e;
+        console.log(`[Mirox] hf:${modelId} failed, trying next HF model`);
+      }
     }
-    console.log(`[Mirox] HF+PL both failed (${Date.now() - startTime}ms), falling back to searchque`);
+    console.log(`[Mirox] All HF models failed (${Date.now() - startTime}ms), falling back to searchque`);
   } else {
-    console.log('[Mirox] No HF/PL keys configured — using searchque directly');
+    console.log('[Mirox] HF_API_KEY not configured — going straight to searchque');
   }
 
+  /* -------- Stage 2: searchque — only reached if HF failed -------- */
   if (userQuestion && !(signal && signal.aborted)) {
     try {
       const res = await searchqueChat(userQuestion, signal, AR_SEARCH_TIMEOUT_MS);
@@ -1034,7 +929,7 @@ app.use((req, res, next) => {
 });
 
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
-  res.json({ ok: true, app: 'MiroxAI', version: 'v58', providers: PROVIDERS, firebase: { connected: !!fdb, error: firebaseError }, time: now() });
+  res.json({ ok: true, app: 'MiroxAI', version: 'v59', providers: PROVIDERS, firebase: { connected: !!fdb, error: firebaseError }, time: now() });
 });
 
 app.get(['/v1/models', '/models'], (req, res) => {
@@ -1049,7 +944,7 @@ app.get(['/api/config', '/config'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   let u = null; try { u = await currentUser(req); } catch {}
   const modelsArr = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tagline: m.tagline, tier: m.tier, default: !!m.default }));
-  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v58' }, models: modelsArr, default_model: modelsArr[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: true, providers: PROVIDERS, api_models: API_ALLOWED_MODELS });
+  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v59' }, models: modelsArr, default_model: modelsArr[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: true, providers: PROVIDERS, api_models: API_ALLOWED_MODELS });
 });
 
 app.get(['/api/privacy', '/privacy'], (req, res) => {
@@ -1069,7 +964,7 @@ app.get(['/api/privacy', '/privacy'], (req, res) => {
       'We do not run any device-fingerprinting or tracking scripts in the app.',
     ],
     deletion: 'To delete your account and all logs, contact the OpenSurr team. We will remove your user record, chat logs, image logs, and API key records within 30 days.',
-    last_updated: 'v58',
+    last_updated: 'v59',
   });
 });
 
@@ -1215,7 +1110,6 @@ app.post('/v1/chat/completions', async (req, res) => {
       userQuestionForCanned = msgText;
     }
 
-    /* ---- Canned-response short-circuit ---- */
     const canned = getCannedResponse(userQuestionForCanned, cfg);
     if (canned) {
       if (fdb && u && !u._viaKey) {
