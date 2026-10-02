@@ -6,7 +6,7 @@
     "node": "22.x"
   },
   "dependencies": {
-    "express": "^4.19.2",
-    "firebase-admin": "^12.1.0"
+    "@libsql/client": "^0.14.0",
+    "express": "^4.19.2"
   }
 }
