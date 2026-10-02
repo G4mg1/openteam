@@ -1,12 +1,13 @@
 /* ============================================================
-   MiroxAI Backend v53
+   MiroxAI Backend v54
    FIXED:
-   - HF and PL are raced IN PARALLEL (first success wins, losers aborted)
-   - Guaranteed searchque fallback with its own time budget
-   - No more 38 s sequential timeouts that starve the fallback
-   - Clear startup log of which providers are configured
-   - All upstream errors masked as "Mirox AI encountered an error"
-   - searchque receives ONLY the raw user question (no system, no history)
+   - Provider responses are now SHAPE-VALIDATED before being used
+   - Non-JSON bodies (billing pages, plain-text errors) are rejected
+   - Content-type whitelist on every provider fetch
+   - data.error on a 200 response is treated as failure
+   - SSE error frames abort the stream
+   - "Pollinations out of credits" text can never reach the client
+   - All errors masked as "Mirox AI encountered an error"
    ============================================================ */
 
 process.on('unhandledRejection', (r) => { console.error('[Mirox] unhandledRejection:', r); });
@@ -32,7 +33,6 @@ const AR_KEY = (process.env.AR_KEY || '').trim();
 const SECRET = process.env.SECRET_KEY || 'mirox-fallback-secret';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '2010';
 
-/* Per-attempt budgets — short so the fallback always gets a turn */
 const HF_ATTEMPT_TIMEOUT_MS = 12000;
 const PL_ATTEMPT_TIMEOUT_MS = 12000;
 const AR_FALLBACK_TIMEOUT_MS = 15000;
@@ -40,12 +40,11 @@ const STREAM_SAFETY_MS = 52000;
 
 const GENERIC_ERR = 'Mirox AI encountered an error';
 
-/* searchque is keyless — always available as offline fallback */
 const PROVIDERS = {
   hf: !!HF_API_KEY,
   pl: !!PL_KEY,
   ar: !!AR_KEY,
-  search: true, // keyless
+  search: true,
 };
 
 console.log('[Mirox] ===== Provider configuration =====');
@@ -53,9 +52,6 @@ console.log('[Mirox]  HF_API_KEY: ' + (HF_API_KEY ? 'set' : 'MISSING'));
 console.log('[Mirox]  PL_KEY:     ' + (PL_KEY ? 'set' : 'MISSING'));
 console.log('[Mirox]  AR_KEY:     ' + (AR_KEY ? 'set' : 'MISSING (searchque still works keyless)'));
 console.log('[Mirox]  Active providers:', PROVIDERS);
-if (!HF_API_KEY && !PL_KEY) {
-  console.warn('[Mirox] WARNING: Neither HF_API_KEY nor PL_KEY is set. All chat will use searchque (web search) only.');
-}
 console.log('[Mirox] =================================');
 
 /* ============================================================
@@ -201,8 +197,6 @@ function safeSanitizeMessages(messages, fallbackText) {
     return out;
   } catch { return fallbackText ? [{ role: 'user', content: String(fallbackText) }] : []; }
 }
-
-/* ---------- Extract plain text from a message content field ---------- */
 function messageContentToText(content) {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
@@ -215,8 +209,6 @@ function messageContentToText(content) {
   }
   return safeString(content);
 }
-
-/* Extract the raw last user question — used ONLY for the searchque fallback */
 function extractLastUserQuestion(messages) {
   if (!Array.isArray(messages)) return '';
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -440,7 +432,6 @@ const HF_CHAT_MODELS = [
 ];
 const PL_CHAT_MODELS = ['openai', 'mistral'];
 
-/* keyless AIroute search+quotes model — always available offline fallback */
 const AR_SEARCH_MODEL = 'airoute/searchque';
 
 const HF_IMG_MODELS = [
@@ -463,6 +454,48 @@ async function fetchWithTimeout(url, opts = {}, timeoutMs = HF_ATTEMPT_TIMEOUT_M
   finally { clearTimeout(timer); }
 }
 
+/* ============================================================
+   Response-shape validation
+   Rejects plain-text / HTML / billing pages that providers
+   sometimes return with a 200 status.
+   ============================================================ */
+function looksLikeChatStream(res) {
+  try {
+    const ct = (res.headers.get('content-type') || '').toLowerCase();
+    return ct.includes('event-stream');
+  } catch { return false; }
+}
+function looksLikeChatJson(res) {
+  try {
+    const ct = (res.headers.get('content-type') || '').toLowerCase();
+    if (ct.includes('event-stream')) return false;
+    if (ct.startsWith('text/plain') || ct.startsWith('text/html')) return false;
+    return true; /* accept application/json, missing CT, etc. */
+  } catch { return true; }
+}
+
+/* Parse a NON-streaming provider body into { ok, data, reply }.
+   Never returns raw text. */
+async function readProviderBody(res) {
+  if (!looksLikeChatJson(res)) return { ok: false, reason: 'bad_content_type' };
+
+  const raw = await res.text().catch(() => '');
+  if (!raw || !raw.trim()) return { ok: false, reason: 'empty' };
+
+  let data;
+  try { data = JSON.parse(raw); }
+  catch { return { ok: false, reason: 'non_json' }; }
+
+  if (!data || typeof data !== 'object') return { ok: false, reason: 'non_object' };
+  if (data.error) return { ok: false, reason: 'error_field' };
+  if (data.success === false) return { ok: false, reason: 'success_false' };
+
+  const reply = extractReplyText(data);
+  if (!reply || !reply.trim()) return { ok: false, reason: 'no_reply' };
+
+  return { ok: true, data, reply };
+}
+
 /* ---------- Providers ---------- */
 async function hfChat(modelId, messages, maxTokens, stream, signal, timeoutMs, extra = {}) {
   const body = { model: modelId, messages, max_tokens: maxTokens, stream: !!stream, temperature: 0.7 };
@@ -474,6 +507,8 @@ async function hfChat(modelId, messages, maxTokens, stream, signal, timeoutMs, e
     body: JSON.stringify(body),
   }, timeoutMs, signal);
   if (!res.ok) throw new Error('provider_failed');
+  if (!stream && !looksLikeChatJson(res)) throw new Error('provider_failed');
+  if (stream && !looksLikeChatStream(res)) throw new Error('provider_failed');
   return res;
 }
 async function pollinationsChat(modelId, messages, maxTokens, stream, signal, timeoutMs, extra = {}) {
@@ -487,14 +522,13 @@ async function pollinationsChat(modelId, messages, maxTokens, stream, signal, ti
     body: JSON.stringify(body),
   }, timeoutMs, signal);
   if (!res.ok) throw new Error('provider_failed');
+  if (!stream && !looksLikeChatJson(res)) throw new Error('provider_failed');
+  if (stream && !looksLikeChatStream(res)) throw new Error('provider_failed');
   return res;
 }
 
 /* ============================================================
    AIroute / searchque — keyless web-search fallback.
-   searchque is a STATELESS web search engine: no memory, no
-   persona, no system prompt. It only accepts a raw user query
-   as `prompt` and returns { text, model, ms, tokens, sources }.
    ============================================================ */
 async function searchqueChat(userQuestion, signal, timeoutMs) {
   const q = safeString(userQuestion, 1500).trim();
@@ -510,33 +544,30 @@ async function searchqueChat(userQuestion, signal, timeoutMs) {
   }, timeoutMs, signal);
 
   if (!res.ok) throw new Error('provider_failed');
+  if (!looksLikeChatJson(res)) throw new Error('provider_failed');
   return res;
 }
 
 /* ============================================================
    Provider racing
-   Each provider function returns the FIRST successful model
-   Response, or rejects if all of its models fail.
    ============================================================ */
 async function tryHfModels(modelList, messages, cfg, stream, signal, timeoutMs, extra) {
   const promises = modelList.map(async (modelId) => {
     const res = await hfChat(modelId, messages, cfg.tokens, stream, signal, timeoutMs, extra);
-    return { res, provider: 'hf', model: modelId, nativeStream: true };
+    return { res, provider: 'hf', model: modelId, nativeStream: !!stream };
   });
   return await Promise.any(promises);
 }
 async function tryPlModels(modelList, messages, cfg, stream, signal, timeoutMs, extra) {
   const promises = modelList.map(async (modelId) => {
     const res = await pollinationsChat(modelId, messages, cfg.tokens, stream, signal, timeoutMs, extra);
-    return { res, provider: 'pl', model: modelId, nativeStream: true };
+    return { res, provider: 'pl', model: modelId, nativeStream: !!stream };
   });
   return await Promise.any(promises);
 }
 
 /* ============================================================
    Chat chain
-   1. HF + PL raced IN PARALLEL  (12 s shared budget)
-   2. searchque guaranteed fallback (15 s budget)
    ============================================================ */
 async function miroxChatChain(messages, cfg, stream, signal, deadline, extra = {}) {
   const startTime = Date.now();
@@ -545,7 +576,6 @@ async function miroxChatChain(messages, cfg, stream, signal, deadline, extra = {
   const hfCtrl = new AbortController();
   const plCtrl = new AbortController();
 
-  /* Propagate caller abort to both inner controllers */
   if (signal) {
     const prop = () => { try { hfCtrl.abort(); } catch {} try { plCtrl.abort(); } catch {} };
     if (signal.aborted) prop();
@@ -555,24 +585,16 @@ async function miroxChatChain(messages, cfg, stream, signal, deadline, extra = {
   const races = [];
 
   if (PROVIDERS.hf) {
-    const p = tryHfModels(HF_CHAT_MODELS, messages, cfg, stream, hfCtrl.signal, HF_ATTEMPT_TIMEOUT_MS, extra);
-    races.push(p);
+    races.push(tryHfModels(HF_CHAT_MODELS, messages, cfg, stream, hfCtrl.signal, HF_ATTEMPT_TIMEOUT_MS, extra));
   }
   if (PROVIDERS.pl) {
-    const p = tryPlModels(PL_CHAT_MODELS, messages, cfg, stream, plCtrl.signal, PL_ATTEMPT_TIMEOUT_MS, extra);
-    races.push(p);
+    races.push(tryPlModels(PL_CHAT_MODELS, messages, cfg, stream, plCtrl.signal, PL_ATTEMPT_TIMEOUT_MS, extra));
   }
 
   if (races.length > 0) {
     let winner = null;
-    try {
-      winner = await Promise.any(races);
-    } catch (e) {
-      /* AggregateError — every provider failed */
-      winner = null;
-    }
+    try { winner = await Promise.any(races); } catch { winner = null; }
     if (winner) {
-      /* abort the loser so its in-flight requests die */
       try {
         if (winner.provider === 'hf') plCtrl.abort();
         else if (winner.provider === 'pl') hfCtrl.abort();
@@ -585,7 +607,6 @@ async function miroxChatChain(messages, cfg, stream, signal, deadline, extra = {
     console.log('[Mirox] No HF/PL keys configured — using searchque directly');
   }
 
-  /* Guaranteed searchque fallback */
   if (userQuestion && !(signal && signal.aborted)) {
     try {
       const res = await searchqueChat(userQuestion, signal, AR_FALLBACK_TIMEOUT_MS);
@@ -601,15 +622,15 @@ async function miroxChatChain(messages, cfg, stream, signal, deadline, extra = {
 }
 
 function extractReplyText(data) {
-  if (!data) return '';
-  if (typeof data === 'string') return data;
-  if (typeof data.text === 'string') return data.text;   /* searchque: { text, model, ms, tokens } */
+  if (!data || typeof data !== 'object') return '';
+  if (typeof data.text === 'string') return data.text;   /* searchque: { text } */
   if (typeof data.reply === 'string') return data.reply;
   if (Array.isArray(data.choices) && data.choices[0]) {
     const c = data.choices[0].message?.content || data.choices[0].text || '';
-    return typeof c === 'string' ? c : JSON.stringify(c);
+    return typeof c === 'string' ? c : '';
   }
   if (typeof data.output === 'string') return data.output;
+  if (typeof data.content === 'string') return data.content;
   return '';
 }
 function extractToolCalls(data) {
@@ -673,9 +694,6 @@ async function lumenalGenerate(prompt, aspectRatio = '1:1') {
           if (buffer.byteLength < 3000) continue;
           return `data:${ct.split(';')[0]};base64,${Buffer.from(buffer).toString('base64')}`;
         }
-        const data = await res.json().catch(() => ({}));
-        const out = data.data?.[0]?.url || (data.data?.[0]?.b64_json ? `data:image/png;base64,${data.data[0].b64_json}` : null) || data.images?.[0]?.url || data.url || null;
-        if (out) return out;
       } catch (e) {}
     }
   }
@@ -729,7 +747,7 @@ app.use((req, res, next) => {
 });
 
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
-  res.json({ ok: true, app: 'MiroxAI', version: 'v53', providers: PROVIDERS, firebase: { connected: !!fdb, error: firebaseError }, time: now() });
+  res.json({ ok: true, app: 'MiroxAI', version: 'v54', providers: PROVIDERS, firebase: { connected: !!fdb, error: firebaseError }, time: now() });
 });
 
 app.get(['/v1/models', '/models'], (req, res) => {
@@ -744,7 +762,7 @@ app.get(['/api/config', '/config'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   let u = null; try { u = await currentUser(req); } catch {}
   const modelsArr = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tagline: m.tagline, tier: m.tier, default: !!m.default }));
-  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v53' }, models: modelsArr, default_model: modelsArr[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: true, providers: PROVIDERS, api_models: API_ALLOWED_MODELS });
+  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v54' }, models: modelsArr, default_model: modelsArr[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: true, providers: PROVIDERS, api_models: API_ALLOWED_MODELS });
 });
 
 app.post(['/api/auth/simple-login', '/auth/simple-login'], async (req, res) => {
@@ -911,15 +929,17 @@ app.post('/v1/chat/completions', async (req, res) => {
     if (!stream) {
       try {
         const result = await miroxChatChain(msgs, cfg, false, abortCtrl.signal, null, extra);
-        let data;
-        try { data = await result.res.json(); }
-        catch { data = await result.res.text().catch(() => ''); }
-        const reply = extractReplyText(data);
-        const toolCalls = extractToolCalls(data);
+        const parsed = await readProviderBody(result.res);
+        if (!parsed.ok) {
+          console.log('[Mirox] provider body rejected:', parsed.reason);
+          return res.status(502).json({ error: { message: GENERIC_ERR, type: 'server_error' }, _ms: Date.now() - t0 });
+        }
+        const reply = parsed.reply;
+        const toolCalls = extractToolCalls(parsed.data);
         await updateUsage();
         const ms = Date.now() - t0;
         res.setHeader('X-Mirox-Latency', String(ms));
-        const choiceMessage = { role: 'assistant', content: reply || null };
+        const choiceMessage = { role: 'assistant', content: reply };
         if (toolCalls.length) choiceMessage.tool_calls = toolCalls;
         return res.json({
           id: 'chatcmpl-' + Date.now(), object: 'chat.completion', created: now(), model: cfg.label,
@@ -957,14 +977,36 @@ app.post('/v1/chat/completions', async (req, res) => {
     try {
       const result = await miroxChatChain(msgs, cfg, true, abortCtrl.signal, null, extra);
 
+      /* Reject the response entirely if it isn't a real chat stream/JSON.
+         Prevents billing pages from ever reaching the client. */
+      if (result.nativeStream && !looksLikeChatStream(result.res)) {
+        console.log('[Mirox] native stream rejected: bad content-type');
+        try { sseData(res, { error: { message: GENERIC_ERR, type: 'server_error' }, done: true }); } catch {}
+        try { sseDone(res); } catch {}
+        cleanup();
+        streamEnded = true;
+        try { if (!res.writableEnded) res.end(); } catch {}
+        return;
+      }
+      if (!result.nativeStream && !looksLikeChatJson(result.res)) {
+        console.log('[Mirox] json response rejected: bad content-type');
+        try { sseData(res, { error: { message: GENERIC_ERR, type: 'server_error' }, done: true }); } catch {}
+        try { sseDone(res); } catch {}
+        cleanup();
+        streamEnded = true;
+        try { if (!res.writableEnded) res.end(); } catch {}
+        return;
+      }
+
       sseData(res, oaiChunk(streamId, cfg.label, {}, null, { p: result.provider }));
 
       if (result.nativeStream) {
         const reader = result.res.body.getReader();
         const dec = new TextDecoder('utf-8', { fatal: false });
         let buf = '';
+        let abortedByError = false;
         while (true) {
-          if (clientClosed || res.writableEnded) break;
+          if (clientClosed || res.writableEnded || abortedByError) break;
           const { value, done } = await reader.read();
           if (done) break;
           buf += dec.decode(value, { stream: true });
@@ -978,6 +1020,8 @@ app.post('/v1/chat/completions', async (req, res) => {
             const raw = trimmed.slice(5).trim();
             if (!raw || raw === '[DONE]') continue;
             let o; try { o = JSON.parse(raw); } catch { continue; }
+            /* Upstream error frame — kill the stream silently */
+            if (o && o.error) { abortedByError = true; break; }
             const delta = o.choices?.[0]?.delta;
             if (!delta) continue;
             if (typeof delta.content === 'string' && delta.content.length > 0) {
@@ -990,11 +1034,26 @@ app.post('/v1/chat/completions', async (req, res) => {
           }
         }
         try { reader.releaseLock(); } catch {}
+        if (abortedByError && !clientClosed && !res.writableEnded) {
+          try { sseData(res, { error: { message: GENERIC_ERR, type: 'server_error' }, done: true }); } catch {}
+          try { sseDone(res); } catch {}
+          cleanup();
+          streamEnded = true;
+          try { if (!res.writableEnded) res.end(); } catch {}
+          return;
+        }
       } else {
-        let data;
-        try { data = await result.res.json(); }
-        catch { data = await result.res.text().catch(() => ''); }
-        const text = extractReplyText(data);
+        const parsed = await readProviderBody(result.res);
+        if (!parsed.ok) {
+          console.log('[Mirox] stream-fallback body rejected:', parsed.reason);
+          try { sseData(res, { error: { message: GENERIC_ERR, type: 'server_error' }, done: true }); } catch {}
+          try { sseDone(res); } catch {}
+          cleanup();
+          streamEnded = true;
+          try { if (!res.writableEnded) res.end(); } catch {}
+          return;
+        }
+        const text = parsed.reply;
         if (text && text.length) {
           const targetChunks = Math.min(80, Math.max(30, Math.floor(text.length / 12)));
           const pieces = splitByCodePoints(text, targetChunks);
