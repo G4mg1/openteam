@@ -1,10 +1,13 @@
 /* ============================================================
-   MiroxAI Backend v56
-   FIXED:
-   - HF + PL raced in parallel (first success wins)
-   - Fallback: AIroute searchque with RAW user question only
-     (keyless, no system prompt, no history — as documented)
-   - Provider bodies content-type validated (no billing-page leaks)
+   MiroxAI Backend v57
+   ADDED:
+   - Canned responses for greetings + identity + model-list
+   - GET /api/my-ip  — shows the caller their own IP (no WebRTC,
+     no deception, no "protected" claim)
+   - GET /api/privacy — what the backend logs and how to delete it
+   KEPT:
+   - HF + PL raced in parallel, searchque raw-question fallback
+   - Provider body content-type validation
    - All errors masked as "Mirox AI encountered an error"
    ============================================================ */
 
@@ -219,6 +222,23 @@ function extractLastUserQuestion(messages) {
   return '';
 }
 
+/* ---------- Client IP (for the honest self-check endpoint) ---------- */
+function getClientIp(req) {
+  try {
+    const h = safeGet(req, 'headers', {});
+    const xff = safeString(h['x-forwarded-for']).split(',')[0].trim();
+    if (xff) return xff;
+    const vff = safeString(h['x-vercel-forwarded-for']).split(',')[0].trim();
+    if (vff) return vff;
+    const real = safeString(h['x-real-ip']).trim();
+    if (real) return real;
+    const sock = safeGet(req, 'socket', {});
+    const ra = safeString(safeGet(sock, 'remoteAddress')).trim();
+    if (ra) return ra;
+  } catch {}
+  return '';
+}
+
 /* ---------- Firebase ---------- */
 let fdb = null, firebaseError = null;
 try {
@@ -412,6 +432,104 @@ function injectIdentityGuard(messages, cfg) {
     return [{ role: 'system', content: guard + '\n\n---\n\nUSER SYSTEM:\n' + safeString(messages[0].content) }, ...messages.slice(1)];
   }
   return [{ role: 'system', content: guard }, ...messages];
+}
+
+/* ============================================================
+   Canned responses — greetings + identity + model list.
+   Runs BEFORE any provider, so these answers are always instant
+   and always on-brand regardless of backend status.
+   ============================================================ */
+function normalizeText(t) {
+  return String(t || '')
+    .toLowerCase()
+    .replace(/[\u2018\u2019\u201C\u201D]/g, "'")
+    .replace(/[^a-z0-9'\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function formatModelList() {
+  const lines = Object.entries(MIROX_MODELS).map(([id, m]) => {
+    const tags = [];
+    if (m.default) tags.push('default');
+    tags.push(m.tier);
+    return `• **Mirox ${m.label}** (\`${id}\`) — ${m.tagline} · ${tags.join(' · ')}`;
+  });
+  return `Here are the Mirox models, all built by OpenSurr:\n\n${lines.join('\n')}\n\nFree tier gets Luna and Gen. Pro adds Pro and Ultra. Ultimate unlocks Eclipse.`;
+}
+
+function getCannedResponse(userText, cfg) {
+  const raw = String(userText || '').trim();
+  if (!raw) return null;
+  const t = normalizeText(raw);
+  if (!t) return null;
+  if (t.length > 220) return null;      /* long messages go to the model */
+  const label = cfg && cfg.label ? cfg.label : 'Luna';
+
+  /* ---- greetings / pleasantries (short only) ---- */
+  if (/^(hi|hey|hello|yo|sup|hiya|heya|howdy|hola|bonjour|hallo|good morning|good evening|good afternoon|good night)[!.\s]*$/.test(t)) {
+    return `Hey! I'm Mirox ${label}, built by OpenSurr. What can I help you with?`;
+  }
+  if (/^(thanks|thank you|thank u|thx|ty|cheers|appreciate it)[!.\s]*$/.test(t)) {
+    return `Anytime.`;
+  }
+  if (/^(bye|goodbye|see ya|see you|later|cya)[!.\s]*$/.test(t)) {
+    return `See you around.`;
+  }
+  if (/^(ok|okay|k|cool|nice|great|awesome|sure)[!.\s]*$/.test(t)) {
+    return `Got it. Anything else?`;
+  }
+
+  /* ---- "who are you" / "what are you" ---- */
+  if (/\b(who|what) (are|r) (you|u)\b/.test(t)
+      || /\bwhat('s| is) your name\b/.test(t)
+      || /\byour name\b/.test(t)
+      || /^who (are|r) (you|u)$/.test(t)) {
+    return `I'm Mirox ${label}, built by the OpenSurr team.`;
+  }
+
+  /* ---- "who made you" / creator / company ---- */
+  if (/\b(who|what) (made|makes|created|creates|built|builds|developed|develops|owns|runs|powers|trained|trains) (you|u|this|mirox)\b/.test(t)
+      || /\bwho('s| is) (behind|running) (you|this|mirox)\b/.test(t)
+      || /\b(your|the) (creator|maker|developer|owner|company|team|parent company)\b/.test(t)
+      || /\bwhat company (made|built|created|runs|owns) (you|this|mirox)\b/.test(t)) {
+    return `I was built by the OpenSurr team.`;
+  }
+
+  /* ---- "what model are you" ---- */
+  if (/\bwhat (model|ai|llm)\b/.test(t)
+      || /\bwhich (model|ai|llm)\b/.test(t)
+      || /\byour (real |actual |underlying |base )?model\b/.test(t)
+      || /\bwhat are you (running|built) on\b/.test(t)) {
+    return `I'm Mirox ${label}, built by OpenSurr. I can't share internal details.`;
+  }
+
+  /* ---- "are you GPT/Claude/Gemini/etc" ---- */
+  if (/\b(are|r) (you|u) (a |an )?(gpt|chatgpt|gpt-?[0-9]|claude|gemini|llama|qwen|deepseek|mistral|openai|anthropic|bard|copilot)\b/.test(t)
+      || /\b(do|does) (you|u) (use|run|wrap) (gpt|chatgpt|claude|gemini|llama|qwen|deepseek|mistral|openai|anthropic)\b/.test(t)
+      || /\bare you (made|built) by (openai|anthropic|google|meta|microsoft|deepseek)\b/.test(t)) {
+    return `No — I'm Mirox ${label}, built by OpenSurr.`;
+  }
+
+  /* ---- model list ---- */
+  if (/\b(list|show|what|which|see|available).{0,20}(models|ais|mirox models|your models)\b/.test(t)
+      || /\bwhat models (do you|can i|are)\b/.test(t)
+      || /\bavailable models\b/.test(t)
+      || /^models[?!.\s]*$/.test(t)) {
+    return formatModelList();
+  }
+
+  /* ---- help ---- */
+  if (/^(help|what can you do|commands|what do you do)[?!.\s]*$/.test(t)) {
+    return `I'm Mirox ${label}, built by OpenSurr. I can help with coding, writing, analysis, images, and general questions. Just ask.`;
+  }
+
+  /* ---- who is OpenSurr ---- */
+  if (/\bwho (are|is) opensurr\b/.test(t) || /\bwhat (is|are) opensurr\b/.test(t)) {
+    return `OpenSurr is the team that built me and the Mirox family of models.`;
+  }
+
+  return null;
 }
 
 /* ---------- Provider URLs ---------- */
@@ -742,7 +860,7 @@ app.use((req, res, next) => {
 });
 
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
-  res.json({ ok: true, app: 'MiroxAI', version: 'v56', providers: PROVIDERS, firebase: { connected: !!fdb, error: firebaseError }, time: now() });
+  res.json({ ok: true, app: 'MiroxAI', version: 'v57', providers: PROVIDERS, firebase: { connected: !!fdb, error: firebaseError }, time: now() });
 });
 
 app.get(['/v1/models', '/models'], (req, res) => {
@@ -757,7 +875,63 @@ app.get(['/api/config', '/config'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   let u = null; try { u = await currentUser(req); } catch {}
   const modelsArr = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tagline: m.tagline, tier: m.tier, default: !!m.default }));
-  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v56' }, models: modelsArr, default_model: modelsArr[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: true, providers: PROVIDERS, api_models: API_ALLOWED_MODELS });
+  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v57' }, models: modelsArr, default_model: modelsArr[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: true, providers: PROVIDERS, api_models: API_ALLOWED_MODELS });
+});
+
+/* ============================================================
+   GET /api/my-ip
+   Honest self-check: shows the caller the IP the server sees.
+   No WebRTC, no trick, no "protected" claim. This is the same
+   information any server you visit already has.
+   ============================================================ */
+app.get(['/api/my-ip', '/my-ip'], (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const ip = getClientIp(req);
+  const isPrivate =
+    !ip ||
+    ip === '::1' ||
+    ip.startsWith('127.') ||
+    ip.startsWith('10.') ||
+    ip.startsWith('192.168.') ||
+    /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(ip) ||
+    /^f[cd][0-9a-f]{2}:/i.test(ip);
+  res.json({
+    ok: true,
+    ip: ip || null,
+    is_private: isPrivate,
+    note: 'This is the address every server you connect to already sees. Nothing was extracted from your device.',
+    how_to_protect: [
+      'Use a reputable VPN and verify with an independent IP checker.',
+      'Enable your browser\'s tracking protection and HTTPS-only mode.',
+      'Understand that WebRTC cannot scan your network — any tool claiming so is misleading you.',
+    ],
+  });
+});
+
+/* ============================================================
+   GET /api/privacy
+   Plain-language summary of what the backend logs.
+   ============================================================ */
+app.get(['/api/privacy', '/privacy'], (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({
+    ok: true,
+    app: 'MiroxAI',
+    made_by: 'OpenSurr',
+    what_we_store: {
+      account: 'email, chosen display name, tier, usage counters, created_at',
+      chat_logs: 'the prompt text (truncated to 1000 chars) and the model label, timestamped. Only for signed-in users.',
+      image_logs: 'the prompt text (truncated to 300 chars) and model label, timestamped. Only for signed-in users.',
+      api_keys: 'a SHA-256 hash of the key, its 12-char prefix, and creation time. The raw key is shown once and never stored.',
+    },
+    what_we_do_not_do: [
+      'We do not run WebRTC IP extraction.',
+      'We do not attempt to scan your local network. It is not possible from a browser.',
+      'We do not sell or share your data with third parties.',
+    ],
+    deletion: 'To delete your account and all logs, contact the OpenSurr team. We will remove your user record, chat logs, image logs, and API key records within 30 days.',
+    last_updated: 'v57',
+  });
 });
 
 app.post(['/api/auth/simple-login', '/auth/simple-login'], async (req, res) => {
@@ -889,14 +1063,65 @@ app.post('/v1/chat/completions', async (req, res) => {
     }
 
     let msgs;
+    let userQuestionForCanned = '';
     if (Array.isArray(rawMessages) && rawMessages.length) {
       msgs = injectIdentityGuard(safeSanitizeMessages(rawMessages, ''), cfg);
+      userQuestionForCanned = extractLastUserQuestion(msgs);
     } else {
       const msgText = safeString(rawMessage, 100000).trim();
       const filesArr = safeArray(rawFiles);
       if (!msgText && !filesArr.length) return res.status(400).json({ error: { message: 'Empty message', type: 'invalid_request_error' } });
       const safeHistory = safeArray(rawHistory).map(h => ({ role: safeString(safeGet(h, 'role'), 20), content: safeString(safeGet(h, 'content'), 40000) })).filter(h => h.role && h.content);
       msgs = buildMessages(buildSystemPrompt(cfg), safeHistory, msgText, u?.persona, u?.memory, filesArr);
+      userQuestionForCanned = msgText;
+    }
+
+    /* ---- Canned-response short-circuit ----
+       Greetings + identity + model-list questions answer instantly
+       and never touch any provider. */
+    const canned = getCannedResponse(userQuestionForCanned, cfg);
+    if (canned) {
+      if (fdb && u && !u._viaKey) {
+        fireAndForgetFB(`logs/chat/${u.email}/${Date.now()}`, { model: cfg.label, message: safeString(userQuestionForCanned, 1000), ts: now(), canned: true });
+      }
+      const updateUsageCanned = async () => {
+        if (u && !u._viaKey && u.email) {
+          u.daily_used = (u.daily_used || 0) + 1;
+          try { await saveUserRecord(u); } catch {}
+        }
+      };
+      await updateUsageCanned();
+
+      if (!stream) {
+        const ms = Date.now() - t0;
+        res.setHeader('X-Mirox-Latency', String(ms));
+        return res.json({
+          id: 'chatcmpl-' + Date.now(), object: 'chat.completion', created: now(), model: cfg.label,
+          system_fingerprint: 'fp_mirox',
+          choices: [{ index: 0, message: { role: 'assistant', content: canned }, logprobs: null, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+          reply: canned,
+          daily_used: u ? (u.daily_used || 0) : 0,
+          daily_remaining: u ? Math.max(0, (PLANS[u.tier]?.daily_limit || 50) - (u.daily_used || 0)) : 0,
+          _ms: ms,
+        });
+      }
+
+      /* streaming canned */
+      sseInit(res);
+      const streamId = 'chatcmpl-' + crypto.randomBytes(8).toString('hex');
+      sseData(res, oaiChunk(streamId, cfg.label, { role: 'assistant', content: '' }, null));
+      sseData(res, oaiChunk(streamId, cfg.label, {}, null, { p: 'canned' }));
+      const pieces = splitByCodePoints(canned, Math.min(40, Math.max(10, Math.floor(canned.length / 10))));
+      for (const piece of pieces) {
+        if (res.writableEnded) break;
+        sseData(res, oaiChunk(streamId, cfg.label, { content: piece }, null));
+        await new Promise(r => setTimeout(r, 8));
+      }
+      sseData(res, oaiChunk(streamId, cfg.label, {}, 'stop'));
+      sseDone(res);
+      try { res.end(); } catch {}
+      return;
     }
 
     if (u) {
