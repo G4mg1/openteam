@@ -104,7 +104,7 @@
 
       <div class="composer">
         <button type="button" id="attachBtn" class="icon-btn" aria-label="Attach"><i class="ri-attachment-2"></i></button>
-        <input type="file" id="fileInput" multiple accept="image/*,.txt,.md,.json,.csv,.log,.js,.ts,.jsx,.tsx,.py,.java,.c,.cpp,.h,.hpp,.css,.html,.xml,.yaml,.yml,.sql,.sh,.rs,.go,.php,.rb,.swift,.kt,.dart,.toml,.ini,.env" hidden>
+        <input type="file" id="fileInput" multiple hidden>
         <textarea id="messageInput" class="message-input" placeholder="How can I help you today?" rows="1" enterkeyhint="send"></textarea>
         <button type="button" id="micBtn" class="icon-btn mic-btn" aria-label="Voice"><i class="ri-mic-line"></i></button>
         <button type="button" id="stopBtn" class="icon-btn stop-btn" style="display:none;" aria-label="Stop"><i class="ri-stop-circle-line"></i></button>
@@ -270,8 +270,6 @@
         </div>
         <button id="generateImageBtn" class="modal-btn primary" type="button"><i class="ri-image-add-line"></i> Generate</button>
         <div id="imageResult" class="image-result"></div>
-        <div class="saved-images-head"><div><h3>Saved generated images</h3><p>Generated images are saved on this device.</p></div><button id="clearSavedImagesBtn" class="image-clear-btn" type="button">Clear</button></div>
-        <div id="savedImagesGrid" class="saved-images-grid"></div>
       </div>
     </div>
   </div>
