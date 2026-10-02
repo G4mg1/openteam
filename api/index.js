@@ -1,14 +1,3 @@
-/* ============================================================
-   MiroxAI Backend v61
-   FIXED:
-   - Admin page works reliably: stats endpoint always responds
-     within 8s thanks to withTimeout() wrapper
-   - All Firebase reads capped at 8s so nothing can hang
-   KEPT:
-   - Sequential chain: HF first, searchque fallback
-   - Canned responses, content-type validation
-   ============================================================ */
-
 process.on('unhandledRejection', (r) => { console.error('[Mirox] unhandledRejection:', r); });
 process.on('uncaughtException', (e) => { console.error('[Mirox] uncaughtException:', e && e.message); });
 
