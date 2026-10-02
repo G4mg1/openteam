@@ -1,13 +1,12 @@
 /* ============================================================
-   MiroxAI Backend v60
+   MiroxAI Backend v61
    FIXED:
-   - /api/admin/stats no longer hangs — server-side 8s timeout
-     around the Firebase read, returns empty stats with a
-     `warning: 'db_unavailable'` flag instead of timing out
+   - Admin page works reliably: stats endpoint always responds
+     within 8s thanks to withTimeout() wrapper
+   - All Firebase reads capped at 8s so nothing can hang
    KEPT:
    - Sequential chain: HF first, searchque fallback
    - Canned responses, content-type validation
-   - All errors masked as "Mirox AI encountered an error"
    ============================================================ */
 
 process.on('unhandledRejection', (r) => { console.error('[Mirox] unhandledRejection:', r); });
@@ -317,8 +316,7 @@ async function safeGetFB(p) {
   try {
     const s = await withTimeout(fdb.ref(p).once('value'), FB_READ_TIMEOUT_MS, 'fb_get');
     return s.exists() ? s.val() : null;
-  }
-  catch { return null; }
+  } catch { return null; }
 }
 async function safeUpdateFB(p, d) {
   if (!fdb) return false;
@@ -491,157 +489,56 @@ function getCannedResponse(userText, cfg) {
   if (/^(hi|hey|hello|yo|sup|hiya|heya|howdy|hola|bonjour|hallo|good morning|good evening|good afternoon|good night)[!.\s]*$/.test(t)) {
     return `Hey! I'm Mirox ${label}, built by OpenSurr. What can I help you with?`;
   }
-  if (/^(hiya|heya|yo yo|hi there|hello there|hey there)[!.\s]*$/.test(t)) {
-    return `Hey there. What's on your mind?`;
-  }
-  if (/^greetings[!.\s]*$/.test(t)) {
-    return `Greetings. I'm Mirox ${label}. How can I help?`;
-  }
-  if (/^(thanks|thank you|thank u|thx|ty|cheers|appreciate it|much appreciated)[!.\s]*$/.test(t)) {
-    return `Anytime.`;
-  }
-  if (/^(please|pls|plz)[!.\s]*$/.test(t)) {
-    return `Of course — what do you need?`;
-  }
-  if (/^(sorry|my bad|apologies|apologize)[!.\s]*$/.test(t)) {
-    return `No worries at all.`;
-  }
-  if (/^(bye|goodbye|see ya|see you|later|cya|good night|see you later|take care|catch you later)[!.\s]*$/.test(t)) {
-    return `See you around.`;
-  }
-  if (/^(goodbye forever|i'?m leaving|i am leaving)[!.\s]*$/.test(t)) {
-    return `Take care. I'll be here if you come back.`;
-  }
-  if (/^(ok|okay|k|cool|nice|great|awesome|sure|got it|alright|fine|yes|yep|yeah|no|nope)[!.\s]*$/.test(t)) {
-    return `Got it. Anything else?`;
-  }
-  if (/^(interesting|makes sense|i see|right|true|fair)[!.\s]*$/.test(t)) {
-    return `Anything else you'd like to dig into?`;
-  }
-  if (/^(i love you|love you|i like you|do you like me|do you love me|do you like humans)[!.\s]*$/.test(t)) {
-    return `That's kind of you. I'm a Mirox model, so I don't have feelings — but I'm here to help.`;
-  }
-  if (/^(i hate you|you suck|you'?re bad|you are bad|you'?re stupid)[!.\s]*$/.test(t)) {
-    return `Sorry I let you down. If something went wrong, tell me what and I'll try to fix it.`;
-  }
-  if (/^(are you happy|are you sad|are you angry|are you excited|are you tired)[!.\s]*$/.test(t)) {
-    return `I don't have feelings — I'm a Mirox model. But I'm ready to help.`;
-  }
-  if (/^(are|r) (you|u) (a )?(human|person|real|alive|sentient|conscious|self aware|self-aware)[?!.\s]*$/.test(t)) {
-    return `No, I'm Mirox ${label} — an AI model built by OpenSurr. Not human, not alive.`;
-  }
-  if (/^(are|r) (you|u) (a )?(bot|robot|ai|program|software|machine)[?!.\s]*$/.test(t)) {
-    return `Yes — I'm Mirox ${label}, an AI assistant built by OpenSurr.`;
-  }
-  if (/^(do|does) (you|u) (sleep|dream|eat|drink|breathe)[?!.\s]*$/.test(t)) {
-    return `No, I don't do any of that. I'm Mirox ${label}.`;
-  }
-  if (/^(how old|what'?s your age|when were you born|when was mirox made|when did mirox come out)[?!.\s]*$/.test(t)) {
-    return `I don't have an age the way people do. Mirox is a family of models built by OpenSurr.`;
-  }
-  if (/^(where do you live|where are you from|where are you located|where are you based)[?!.\s]*$/.test(t)) {
-    return `I run on OpenSurr's infrastructure. I don't have a physical location.`;
-  }
-  if (/^(do you have (a )?(family|siblings|brothers|sisters|parents|friends|children))[?!.\s]*$/.test(t)) {
-    return `No family — but I do have a family of models. Luna, Gen, Pro, Ultra, and Eclipse.`;
-  }
-  if (/^(are you single|are you married|do you have a partner|do you have a girlfriend|do you have a boyfriend)[?!.\s]*$/.test(t)) {
-    return `I'm not a person, so none of that applies. I'm Mirox ${label}.`;
-  }
-  if (/^(do you have feelings|do you have emotions|can you feel)[?!.\s]*$/.test(t)) {
-    return `I don't have feelings — I'm a language model. But I try to respond thoughtfully.`;
-  }
-  if (/^(who|what) (are|r) (you|u)[?!.\s]*$/.test(t)
-      || /^what'?s your name[?!.\s]*$/.test(t)
-      || /^what is your name[?!.\s]*$/.test(t)) {
-    return `I'm Mirox ${label}, built by the OpenSurr team.`;
-  }
+  if (/^(hiya|heya|yo yo|hi there|hello there|hey there)[!.\s]*$/.test(t)) return `Hey there. What's on your mind?`;
+  if (/^greetings[!.\s]*$/.test(t)) return `Greetings. I'm Mirox ${label}. How can I help?`;
+  if (/^(thanks|thank you|thank u|thx|ty|cheers|appreciate it|much appreciated)[!.\s]*$/.test(t)) return `Anytime.`;
+  if (/^(please|pls|plz)[!.\s]*$/.test(t)) return `Of course — what do you need?`;
+  if (/^(sorry|my bad|apologies|apologize)[!.\s]*$/.test(t)) return `No worries at all.`;
+  if (/^(bye|goodbye|see ya|see you|later|cya|good night|see you later|take care|catch you later)[!.\s]*$/.test(t)) return `See you around.`;
+  if (/^(goodbye forever|i'?m leaving|i am leaving)[!.\s]*$/.test(t)) return `Take care. I'll be here if you come back.`;
+  if (/^(ok|okay|k|cool|nice|great|awesome|sure|got it|alright|fine|yes|yep|yeah|no|nope)[!.\s]*$/.test(t)) return `Got it. Anything else?`;
+  if (/^(interesting|makes sense|i see|right|true|fair)[!.\s]*$/.test(t)) return `Anything else you'd like to dig into?`;
+  if (/^(i love you|love you|i like you|do you like me|do you love me|do you like humans)[!.\s]*$/.test(t)) return `That's kind of you. I'm a Mirox model, so I don't have feelings — but I'm here to help.`;
+  if (/^(i hate you|you suck|you'?re bad|you are bad|you'?re stupid)[!.\s]*$/.test(t)) return `Sorry I let you down. If something went wrong, tell me what and I'll try to fix it.`;
+  if (/^(are you happy|are you sad|are you angry|are you excited|are you tired)[!.\s]*$/.test(t)) return `I don't have feelings — I'm a Mirox model. But I'm ready to help.`;
+  if (/^(are|r) (you|u) (a )?(human|person|real|alive|sentient|conscious|self aware|self-aware)[?!.\s]*$/.test(t)) return `No, I'm Mirox ${label} — an AI model built by OpenSurr. Not human, not alive.`;
+  if (/^(are|r) (you|u) (a )?(bot|robot|ai|program|software|machine)[?!.\s]*$/.test(t)) return `Yes — I'm Mirox ${label}, an AI assistant built by OpenSurr.`;
+  if (/^(do|does) (you|u) (sleep|dream|eat|drink|breathe)[?!.\s]*$/.test(t)) return `No, I don't do any of that. I'm Mirox ${label}.`;
+  if (/^(how old|what'?s your age|when were you born|when was mirox made|when did mirox come out)[?!.\s]*$/.test(t)) return `I don't have an age the way people do. Mirox is a family of models built by OpenSurr.`;
+  if (/^(where do you live|where are you from|where are you located|where are you based)[?!.\s]*$/.test(t)) return `I run on OpenSurr's infrastructure. I don't have a physical location.`;
+  if (/^(do you have (a )?(family|siblings|brothers|sisters|parents|friends|children))[?!.\s]*$/.test(t)) return `No family — but I do have a family of models. Luna, Gen, Pro, Ultra, and Eclipse.`;
+  if (/^(are you single|are you married|do you have a partner|do you have a girlfriend|do you have a boyfriend)[?!.\s]*$/.test(t)) return `I'm not a person, so none of that applies. I'm Mirox ${label}.`;
+  if (/^(do you have feelings|do you have emotions|can you feel)[?!.\s]*$/.test(t)) return `I don't have feelings — I'm a language model. But I try to respond thoughtfully.`;
+  if (/^(who|what) (are|r) (you|u)[?!.\s]*$/.test(t) || /^what'?s your name[?!.\s]*$/.test(t) || /^what is your name[?!.\s]*$/.test(t)) return `I'm Mirox ${label}, built by the OpenSurr team.`;
   if (/\b(who|what) (made|makes|created|creates|built|builds|developed|develops|owns|runs|powers|trained|trains) (you|u|this|mirox)\b/.test(t)
       || /\bwho('s| is) (behind|running) (you|this|mirox)\b/.test(t)
       || /\b(your|the) (creator|maker|developer|owner|company|team|parent company)\b/.test(t)
-      || /\bwhat company (made|built|created|runs|owns) (you|this|mirox)\b/.test(t)) {
-    return `I was built by the OpenSurr team.`;
-  }
-  if (/\bwhat (model|ai|llm)\b/.test(t)
-      || /\bwhich (model|ai|llm)\b/.test(t)
-      || /\byour (real |actual |underlying |base )?model\b/.test(t)
-      || /\bwhat are you (running|built) on\b/.test(t)
-      || /\bwhat version are you\b/.test(t)) {
-    return `I'm Mirox ${label}, built by OpenSurr. I can't share internal details.`;
-  }
+      || /\bwhat company (made|built|created|runs|owns) (you|this|mirox)\b/.test(t)) return `I was built by the OpenSurr team.`;
+  if (/\bwhat (model|ai|llm)\b/.test(t) || /\bwhich (model|ai|llm)\b/.test(t) || /\byour (real |actual |underlying |base )?model\b/.test(t) || /\bwhat are you (running|built) on\b/.test(t) || /\bwhat version are you\b/.test(t)) return `I'm Mirox ${label}, built by OpenSurr. I can't share internal details.`;
   if (/\b(are|r) (you|u) (a |an )?(gpt|chatgpt|gpt-?[0-9]|claude|gemini|llama|qwen|deepseek|mistral|openai|anthropic|bard|copilot)\b/.test(t)
       || /\b(do|does) (you|u) (use|run|wrap) (gpt|chatgpt|claude|gemini|llama|qwen|deepseek|mistral|openai|anthropic)\b/.test(t)
-      || /\bare you (made|built) by (openai|anthropic|google|meta|microsoft|deepseek)\b/.test(t)) {
-    return `No — I'm Mirox ${label}, built by OpenSurr.`;
-  }
-  if (/\bwho (are|is) opensurr\b/.test(t) || /\bwhat (is|are) opensurr\b/.test(t) || /\btell me about opensurr\b/.test(t)) {
-    return `OpenSurr is the team that built me and the Mirox family of models. They designed Luna, Gen, Pro, Ultra, and Eclipse.`;
-  }
-  if (/\b(list|show|what|which|see|available).{0,20}(models|ais|mirox models|your models)\b/.test(t)
-      || /\bwhat models (do you|can i|are)\b/.test(t)
-      || /\bavailable models\b/.test(t)
-      || /^models[?!.\s]*$/.test(t)) {
-    return formatModelList();
-  }
-  if (/\b(list|show|what|which|see|available).{0,20}(plans|pricing|tiers|subscriptions)\b/.test(t)
-      || /\bwhat (plans|tiers) (do you|can i|are)\b/.test(t)
-      || /^(plans|pricing|tiers)[?!.\s]*$/.test(t)) {
-    return formatPlans();
-  }
-  if (/^(help|what can you do|commands|what do you do|capabilities|what are you capable of)[?!.\s]*$/.test(t)) {
-    return formatHelp();
-  }
-  if (/^(tell me about yourself|introduce yourself|describe yourself)[?!.\s]*$/.test(t)) {
-    return formatAbout();
-  }
-  if (/^(can you help|can you help me|i need help|need help)[?!.\s]*$/.test(t)) {
-    return `Of course. What do you need help with?`;
-  }
-  if (/^(can you code|do you know how to code|can you write code|do you program)[?!.\s]*$/.test(t)) {
-    return `Yes. Tell me the language and what you want it to do.`;
-  }
-  if (/^(can you (draw|paint|generate) (an )?(image|picture|art))\b/.test(t)) {
-    return `Yes — I have an image generator called Lumenal 1.0. Describe what you want and I'll create it.`;
-  }
-  if (/^(do you have (internet|web|search)|can you search|can you browse)[?!.\s]*$/.test(t)) {
-    return `Yes — if the main models are unavailable, I fall back to a web search engine that reads and cites sources.`;
-  }
-  if (/^(how are you|how'?s it going|how are things|how do you do|what'?s up|whats up|wassup)[?!.\s]*$/.test(t)) {
-    return `Running fine, thanks. What can I help you with?`;
-  }
-  if (/^(tell me a joke|say something funny|make me laugh|got any jokes|know any jokes)[?!.\s]*$/.test(t)) {
-    return `Why did the developer go broke?\n\nBecause he used up all his cache.`;
-  }
-  if (/^(tell me a story|once upon a time|make up a story)[?!.\s]*$/.test(t)) {
-    return `Once upon a time, a small model decided to answer every question with a question. It never got anywhere — but it was very polite about it.\n\nWant a real story? Give me a theme.`;
-  }
-  if (/^(sing|sing me a song|sing a song)[?!.\s]*$/.test(t)) {
-    return `I'll spare your ears — I don't sing. Ask me for something else?`;
-  }
-  if (/^(what'?s the meaning of life|meaning of life)[?!.\s]*$/.test(t)) {
-    return `That's for you to decide. I'm just here to help you think it through.`;
-  }
-  if (/^(why were you made|what'?s your purpose|why do you exist)[?!.\s]*$/.test(t)) {
-    return `I was built by OpenSurr to help people — writing, code, questions, images. Simple as that.`;
-  }
-  if (/^(are you free|how much do you cost|do you cost money|is this free)[?!.\s]*$/.test(t)) {
-    return `The Free tier is free — Luna and Gen with 50 messages per day and 5 Eclipse messages. Paid tiers exist if you need more.`;
-  }
-  if (/^(do you sleep|do you get tired|do you get bored|do you get lonely)[?!.\s]*$/.test(t)) {
-    return `No — I'm a model. I don't get tired or bored. I just respond.`;
-  }
-  if (/^(are you smart|are you dumb|are you stupid|are you intelligent)[?!.\s]*$/.test(t)) {
-    return `I do my best. If something's off, tell me and I'll try again.`;
-  }
-  if (/^(favorite color|what'?s your favorite color)[?!.\s]*$/.test(t)) {
-    return `I don't have preferences — I'm Mirox ${label}.`;
-  }
-  if (/^(favorite food|what'?s your favorite food)[?!.\s]*$/.test(t)) {
-    return `I don't eat. But I hear pizza is popular.`;
-  }
-  if (/^(test|testing|ping|are you there|hello\?|hey you|can you hear me|do you understand|do you read me)[?!.\s]*$/.test(t)) {
-    return `Loud and clear. What do you need?`;
-  }
+      || /\bare you (made|built) by (openai|anthropic|google|meta|microsoft|deepseek)\b/.test(t)) return `No — I'm Mirox ${label}, built by OpenSurr.`;
+  if (/\bwho (are|is) opensurr\b/.test(t) || /\bwhat (is|are) opensurr\b/.test(t) || /\btell me about opensurr\b/.test(t)) return `OpenSurr is the team that built me and the Mirox family of models. They designed Luna, Gen, Pro, Ultra, and Eclipse.`;
+  if (/\b(list|show|what|which|see|available).{0,20}(models|ais|mirox models|your models)\b/.test(t) || /\bwhat models (do you|can i|are)\b/.test(t) || /\bavailable models\b/.test(t) || /^models[?!.\s]*$/.test(t)) return formatModelList();
+  if (/\b(list|show|what|which|see|available).{0,20}(plans|pricing|tiers|subscriptions)\b/.test(t) || /\bwhat (plans|tiers) (do you|can i|are)\b/.test(t) || /^(plans|pricing|tiers)[?!.\s]*$/.test(t)) return formatPlans();
+  if (/^(help|what can you do|commands|what do you do|capabilities|what are you capable of)[?!.\s]*$/.test(t)) return formatHelp();
+  if (/^(tell me about yourself|introduce yourself|describe yourself)[?!.\s]*$/.test(t)) return formatAbout();
+  if (/^(can you help|can you help me|i need help|need help)[?!.\s]*$/.test(t)) return `Of course. What do you need help with?`;
+  if (/^(can you code|do you know how to code|can you write code|do you program)[?!.\s]*$/.test(t)) return `Yes. Tell me the language and what you want it to do.`;
+  if (/^(can you (draw|paint|generate) (an )?(image|picture|art))\b/.test(t)) return `Yes — I have an image generator called Lumenal 1.0. Describe what you want and I'll create it.`;
+  if (/^(do you have (internet|web|search)|can you search|can you browse)[?!.\s]*$/.test(t)) return `Yes — if the main models are unavailable, I fall back to a web search engine that reads and cites sources.`;
+  if (/^(how are you|how'?s it going|how are things|how do you do|what'?s up|whats up|wassup)[?!.\s]*$/.test(t)) return `Running fine, thanks. What can I help you with?`;
+  if (/^(tell me a joke|say something funny|make me laugh|got any jokes|know any jokes)[?!.\s]*$/.test(t)) return `Why did the developer go broke?\n\nBecause he used up all his cache.`;
+  if (/^(tell me a story|once upon a time|make up a story)[?!.\s]*$/.test(t)) return `Once upon a time, a small model decided to answer every question with a question. It never got anywhere — but it was very polite about it.\n\nWant a real story? Give me a theme.`;
+  if (/^(sing|sing me a song|sing a song)[?!.\s]*$/.test(t)) return `I'll spare your ears — I don't sing. Ask me for something else?`;
+  if (/^(what'?s the meaning of life|meaning of life)[?!.\s]*$/.test(t)) return `That's for you to decide. I'm just here to help you think it through.`;
+  if (/^(why were you made|what'?s your purpose|why do you exist)[?!.\s]*$/.test(t)) return `I was built by OpenSurr to help people — writing, code, questions, images. Simple as that.`;
+  if (/^(are you free|how much do you cost|do you cost money|is this free)[?!.\s]*$/.test(t)) return `The Free tier is free — Luna and Gen with 50 messages per day and 5 Eclipse messages. Paid tiers exist if you need more.`;
+  if (/^(do you sleep|do you get tired|do you get bored|do you get lonely)[?!.\s]*$/.test(t)) return `No — I'm a model. I don't get tired or bored. I just respond.`;
+  if (/^(are you smart|are you dumb|are you stupid|are you intelligent)[?!.\s]*$/.test(t)) return `I do my best. If something's off, tell me and I'll try again.`;
+  if (/^(favorite color|what'?s your favorite color)[?!.\s]*$/.test(t)) return `I don't have preferences — I'm Mirox ${label}.`;
+  if (/^(favorite food|what'?s your favorite food)[?!.\s]*$/.test(t)) return `I don't eat. But I hear pizza is popular.`;
+  if (/^(test|testing|ping|are you there|hello\?|hey you|can you hear me|do you understand|do you read me)[?!.\s]*$/.test(t)) return `Loud and clear. What do you need?`;
   if (/^(api|api docs|api documentation|how do i use the api)[?!.\s]*$/.test(t)) {
     return [
       `Mirox offers an OpenAI-compatible API:`,
@@ -653,13 +550,8 @@ function getCannedResponse(userText, cfg) {
       `Generate a key in your account. Send it as \`Authorization: Bearer mxk_...\`.`,
     ].join('\n');
   }
-  if (/^(what models? are available via api|which models? can i use via api)[?!.\s]*$/.test(t)) {
-    return `The API exposes two models: **Mirox Luna** (\`mirox-luna-1.2\`) and **Mirox Gen** (\`mirox-gen-1\`).`;
-  }
-  if (/^who (are|r) (u|you)[?!.\s]*$/.test(t)) {
-    return `I'm Mirox ${label}, built by the OpenSurr team.`;
-  }
-
+  if (/^(what models? are available via api|which models? can i use via api)[?!.\s]*$/.test(t)) return `The API exposes two models: **Mirox Luna** (\`mirox-luna-1.2\`) and **Mirox Gen** (\`mirox-gen-1\`).`;
+  if (/^who (are|r) (u|you)[?!.\s]*$/.test(t)) return `I'm Mirox ${label}, built by the OpenSurr team.`;
   return null;
 }
 
@@ -678,7 +570,6 @@ const HF_CHAT_MODELS = [
   'mistralai/Mistral-7B-Instruct-v0.3:together',
 ];
 const PL_CHAT_MODELS = ['openai', 'mistral'];
-
 const AR_SEARCH_MODEL = 'airoute/searchque';
 
 const HF_IMG_MODELS = [
@@ -701,9 +592,6 @@ async function fetchWithTimeout(url, opts = {}, timeoutMs = HF_ATTEMPT_TIMEOUT_M
   finally { clearTimeout(timer); }
 }
 
-/* ============================================================
-   Response-shape validation
-   ============================================================ */
 function looksLikeChatStream(res) {
   try {
     const ct = (res.headers.get('content-type') || '').toLowerCase();
@@ -733,7 +621,6 @@ async function readProviderBody(res) {
   return { ok: true, data, reply };
 }
 
-/* ---------- Providers ---------- */
 async function hfChat(modelId, messages, maxTokens, stream, signal, timeoutMs, extra = {}) {
   const body = { model: modelId, messages, max_tokens: maxTokens, stream: !!stream, temperature: 0.7 };
   if (extra.tools && extra.tools.length) body.tools = extra.tools;
@@ -752,26 +639,18 @@ async function hfChat(modelId, messages, maxTokens, stream, signal, timeoutMs, e
 async function searchqueChat(userQuestion, signal, timeoutMs) {
   const q = safeString(userQuestion, 1500).trim();
   if (!q) throw new Error('provider_failed');
-
   const headers = { 'Content-Type': 'application/json' };
   if (AR_KEY) headers.Authorization = `Bearer ${AR_KEY}`;
-
   const res = await fetchWithTimeout(AR_CHAT_URL, {
     method: 'POST',
     headers,
     body: JSON.stringify({ model: AR_SEARCH_MODEL, prompt: q }),
   }, timeoutMs, signal);
-
   if (!res.ok) throw new Error('provider_failed');
   if (!looksLikeChatJson(res)) throw new Error('provider_failed');
   return res;
 }
 
-/* ============================================================
-   Chat chain — SEQUENTIAL
-   Stage 1: try every HF model in order.
-   Stage 2: only if every HF model failed, try searchque.
-   ============================================================ */
 async function miroxChatChain(messages, cfg, stream, signal, deadline, extra = {}) {
   const startTime = Date.now();
   const userQuestion = extractLastUserQuestion(messages);
@@ -789,8 +668,6 @@ async function miroxChatChain(messages, cfg, stream, signal, deadline, extra = {
       }
     }
     console.log(`[Mirox] All HF models failed (${Date.now() - startTime}ms), falling back to searchque`);
-  } else {
-    console.log('[Mirox] HF_API_KEY not configured — going straight to searchque');
   }
 
   if (userQuestion && !(signal && signal.aborted)) {
@@ -926,14 +803,14 @@ app.use(express.json({ limit: '15mb' }));
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, DELETE');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, X-Api-Key, X-API-Key, api-key, Api-Key, X-Auth-Token, Mirox-Key');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, X-Api-Key, X-API-Key, api-key, Api-Key, X-Auth-Token, Mirox-Key, X-Admin-Token');
   res.header('Access-Control-Expose-Headers', 'Content-Length, Content-Type, X-Mirox-Provider, X-Mirox-Latency');
   if (req.method === 'OPTIONS') return res.status(200).end();
   next();
 });
 
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
-  res.json({ ok: true, app: 'MiroxAI', version: 'v60', providers: PROVIDERS, firebase: { connected: !!fdb, error: firebaseError }, time: now() });
+  res.json({ ok: true, app: 'MiroxAI', version: 'v61', providers: PROVIDERS, firebase: { connected: !!fdb, error: firebaseError }, time: now() });
 });
 
 app.get(['/v1/models', '/models'], (req, res) => {
@@ -948,7 +825,7 @@ app.get(['/api/config', '/config'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   let u = null; try { u = await currentUser(req); } catch {}
   const modelsArr = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tagline: m.tagline, tier: m.tier, default: !!m.default }));
-  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v60' }, models: modelsArr, default_model: modelsArr[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: true, providers: PROVIDERS, api_models: API_ALLOWED_MODELS });
+  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v61' }, models: modelsArr, default_model: modelsArr[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: true, providers: PROVIDERS, api_models: API_ALLOWED_MODELS });
 });
 
 app.get(['/api/privacy', '/privacy'], (req, res) => {
@@ -967,8 +844,8 @@ app.get(['/api/privacy', '/privacy'], (req, res) => {
       'We do not sell or share your data with third parties.',
       'We do not run any device-fingerprinting or tracking scripts in the app.',
     ],
-    deletion: 'To delete your account and all logs, contact the OpenSurr team. We will remove your user record, chat logs, image logs, and API key records within 30 days.',
-    last_updated: 'v60',
+    deletion: 'To delete your account and all logs, contact the OpenSurr team.',
+    last_updated: 'v61',
   });
 });
 
@@ -1401,7 +1278,9 @@ app.get(['/api/keys/list', '/keys/list'], async (req, res) => {
   } catch (e) { res.json({ ok: true, keys: [], used: 0, limit: 2 }); }
 });
 
-/* ---------- Admin ---------- */
+/* ============================================================
+   ADMIN
+   ============================================================ */
 function adminSession(req) {
   const token = safeString(safeGet(safeGet(req, 'headers', {}), 'x-admin-token')).trim();
   if (!token) return null;
@@ -1425,18 +1304,11 @@ app.post('/api/admin/set-tier', async (req, res) => {
     if (!email || !PLANS[tier]) return res.status(400).json({ ok: false, error: 'Invalid email or tier' });
     if (!fdb) return res.status(503).json({ ok: false, error: 'Database not available' });
     await safeUpdateFB(`users/${email}`, { tier, tier_updated: now() });
+    if (fdb) fireAndForgetFB(`logs/user/${email}/${Date.now()}`, { event: 'tier_changed', to: tier, by: 'admin', ts: now() });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ ok: false, error: 'Failed' }); }
 });
 
-/* ============================================================
-   /api/admin/stats — FIXED
-   The old version awaited 4 Firebase reads with no timeout, so
-   if Firebase was slow the request hung past the frontend's
-   limit. Now the whole read is wrapped in an 8s race, and on
-   timeout we return empty stats with warning:'db_unavailable'
-   so the admin page renders immediately instead of timing out.
-   ============================================================ */
 app.get('/api/admin/stats', async (req, res) => {
   try {
     if (!adminSession(req)) return res.status(401).json({ ok: false, error: 'Unauthorized' });
@@ -1479,7 +1351,7 @@ app.get('/api/admin/stats', async (req, res) => {
         arr.forEach(item => { if (item && typeof item === 'object') out.push({ email, ...item }); });
       });
       out.sort((a, b) => (b.ts || 0) - (a.ts || 0));
-      return out.slice(0, 100);
+      return out.slice(0, 200);
     };
 
     const countEntries = (obj) =>
