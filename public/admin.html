@@ -30,6 +30,9 @@
     .admin-input { padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--panel-2); font-size: 14px; width: 100%; max-width: 300px; }
     .admin-btn { padding: 8px 16px; border-radius: var(--radius); background: var(--accent); color: #fff; font-size: 14px; font-weight: 500; border: none; cursor: pointer; }
     .admin-btn:hover { background: var(--accent-hover); }
+    .admin-btn:disabled { opacity: .55; cursor: not-allowed; }
+    .admin-btn.ghost { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+    .admin-btn.ghost:hover { background: var(--panel-2); color: var(--text); }
 
     /* Password gate */
     .gate {
@@ -72,6 +75,9 @@
     .gate-btn:disabled { opacity: .5; cursor: not-allowed; }
     .gate-err { color: #dc2626; font-size: 13px; margin-top: 10px; min-height: 18px; }
 
+    .row-error { color: #dc2626; }
+    .row-muted { color: var(--text-faint); }
+
     @media (max-width:640px){body{padding:14px!important}.admin-header{flex-wrap:wrap}.admin-header h1{font-size:19px}.admin-grid{grid-template-columns:1fr 1fr}.stat-card .value{font-size:24px}}
   </style>
 </head>
@@ -92,7 +98,8 @@
     <div class="admin-header">
       <img src="/logo.png" alt="MiroxAI" class="theme-aware-logo" style="width:32px;height:32px;border-radius:8px;">
       <h1>Mirox Admin Console</h1>
-      <button id="adminLogout" class="admin-btn" style="margin-left:auto;background:transparent;color:var(--text-muted);border:1px solid var(--border);">Lock</button>
+      <button id="adminRefresh" class="admin-btn ghost" style="margin-left:auto;">Refresh</button>
+      <button id="adminLogout" class="admin-btn ghost">Lock</button>
     </div>
 
     <div class="admin-grid">
@@ -104,7 +111,7 @@
 
     <div class="admin-section">
       <h2>User Management</h2>
-      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
         <input type="text" id="adminUserEmail" class="admin-input" placeholder="User email">
         <select id="adminTierSelect" class="admin-input" style="max-width:160px;">
           <option value="free">Free</option>
@@ -112,11 +119,12 @@
           <option value="ultimate">Ultimate</option>
         </select>
         <button id="adminSetTierBtn" class="admin-btn">Set Tier</button>
+        <span id="adminTierMsg" style="font-size:13px;color:var(--text-muted);"></span>
       </div>
       <div style="overflow-x:auto;">
         <table class="log-table" id="adminUserTable">
-          <thead><tr><th>Email</th><th>Name</th><th>Tier</th><th>Eclipse</th><th>Last Login</th></tr></thead>
-          <tbody><tr><td colspan="5" style="color:var(--text-faint)">Loading…</td></tr></tbody>
+          <thead><tr><th>Email</th><th>Name</th><th>Tier</th><th>Eclipse used</th><th>Last Login</th></tr></thead>
+          <tbody><tr><td colspan="5" class="row-muted">Loading…</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -125,22 +133,63 @@
   <script>
     const API = '/api/admin';
     const TOKEN_KEY = 'mirox_admin_token';
+    const DEFAULT_TIMEOUT_MS = 15000;
     const $ = s => document.querySelector(s);
+
+    let loading = false;
 
     function getAdminToken() { try { return sessionStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
     function setAdminToken(t) { try { t ? sessionStorage.setItem(TOKEN_KEY, t) : sessionStorage.removeItem(TOKEN_KEY); } catch {} }
 
-    async function adminFetch(path, opts = {}) {
+    /* HTML escape — user data goes straight into innerHTML */
+    function escapeHtml(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    /* Timestamps are stored in SECONDS (Math.floor(Date.now()/1000)).
+       Anything below 1e12 is treated as seconds and multiplied. */
+    function formatTs(v) {
+      if (v === undefined || v === null || v === '') return '—';
+      let n = Number(v);
+      if (!isFinite(n) || n <= 0) return '—';
+      if (n < 1e12) n *= 1000;
+      try { return new Date(n).toLocaleString(); } catch { return '—'; }
+    }
+
+    /* Fetch with hard timeout so we never hang on a stuck backend */
+    async function adminFetch(path, opts = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
       const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
       const t = getAdminToken();
       if (t) headers['X-Admin-Token'] = t;
-      return fetch(API + path, { ...opts, headers, credentials: 'same-origin' });
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => { try { ctrl.abort(); } catch {} }, timeoutMs);
+      try {
+        return await fetch(API + path, { ...opts, headers, credentials: 'same-origin', signal: ctrl.signal });
+      } finally {
+        clearTimeout(timer);
+      }
     }
 
-    function showGate() { $('#gate').classList.remove('hidden'); $('#adminWrap').style.display = 'none'; }
-    function showAdmin() { $('#gate').classList.add('hidden'); $('#adminWrap').style.display = 'block'; loadAll(); }
+    async function readJson(res) {
+      try { return await res.json(); }
+      catch { return null; }
+    }
 
-    /* Password gate */
+    function showGate() {
+      $('#gate').classList.remove('hidden');
+      $('#adminWrap').style.display = 'none';
+    }
+    function showAdminShell() {
+      $('#gate').classList.add('hidden');
+      $('#adminWrap').style.display = 'block';
+    }
+
+    /* ---- Password gate ---- */
     async function tryUnlock() {
       const pass = $('#gatePass').value;
       const btn = $('#gateBtn');
@@ -149,20 +198,20 @@
       if (!pass) { err.textContent = 'Enter a password.'; return; }
       btn.disabled = true; btn.textContent = 'Checking…';
       try {
-        const res = await fetch(API + '/auth', {
+        const res = await adminFetch('/auth', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ password: pass }),
-        });
-        const data = await res.json();
-        if (data.ok && data.token) {
+        }, 10000);
+        const data = await readJson(res);
+        if (data && data.ok && data.token) {
           setAdminToken(data.token);
-          showAdmin();
+          showAdminShell();
+          await refreshStats();
         } else {
-          err.textContent = data.error || 'Invalid password';
+          err.textContent = (data && data.error) || 'Invalid password';
         }
       } catch (e) {
-        err.textContent = 'Server error: ' + e.message;
+        err.textContent = e.name === 'AbortError' ? 'Request timed out' : 'Server error';
       } finally {
         btn.disabled = false; btn.textContent = 'Unlock';
       }
@@ -173,68 +222,136 @@
 
     $('#adminLogout')?.addEventListener('click', () => {
       setAdminToken('');
-      showGate();
       $('#gatePass').value = '';
       $('#gateErr').textContent = '';
+      showGate();
     });
 
-    /* Data loading */
-    function countLogs(obj) {
-      if (!obj) return 0;
-      let n = 0;
-      Object.values(obj).forEach(v => {
-        if (Array.isArray(v)) n += v.length;
-        else if (v && typeof v === 'object') n += Object.keys(v).length;
-      });
-      return n;
+    $('#adminRefresh')?.addEventListener('click', () => { refreshStats(); });
+
+    /* ---- Stats loading ---- */
+    function setStatsPlaceholder(text) {
+      $('#statUsers').textContent = text;
+      $('#statChats').textContent = text;
+      $('#statImages').textContent = text;
+      $('#statEvents').textContent = text;
     }
 
-    async function loadAll() {
-      try {
-        const res = await adminFetch('/stats');
-        if (res.status === 401) { setAdminToken(''); showGate(); return; }
-        const data = await res.json();
-        if (!data.ok) return;
-        $('#statUsers').textContent = data.users;
-        $('#statChats').textContent = data.chats;
-        $('#statImages').textContent = data.images;
-        $('#statEvents').textContent = data.events;
+    function renderTable(users) {
+      const tbody = $('#adminUserTable tbody');
+      const entries = Object.entries(users || {})
+        .filter(([_, u]) => u && typeof u === 'object');
+      if (!entries.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="row-muted">No users yet</td></tr>';
+        return;
+      }
+      tbody.innerHTML = entries.map(([email, u]) => `
+        <tr>
+          <td>${escapeHtml(email)}</td>
+          <td>${escapeHtml(u.name || '—')}</td>
+          <td><span style="padding:2px 8px;border-radius:99px;background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:600;">${escapeHtml(u.tier || 'free')}</span></td>
+          <td>${escapeHtml(u.eclipse_used ?? 0)}</td>
+          <td>${escapeHtml(formatTs(u.last_login))}</td>
+        </tr>`).join('');
+    }
 
-        const users = data.users_data || {};
-        const tbody = $('#adminUserTable tbody');
-        const rows = Object.entries(users).map(([email, u]) => `
-          <tr>
-            <td>${email}</td>
-            <td>${u.name || '—'}</td>
-            <td><span style="padding:2px 8px;border-radius:99px;background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:600;">${u.tier || 'free'}</span></td>
-            <td>${u.eclipse_credits ?? 10}</td>
-            <td>${u.last_login ? new Date(u.last_login).toLocaleString() : '—'}</td>
-          </tr>`).join('');
-        tbody.innerHTML = rows || '<tr><td colspan="5" style="color:var(--text-faint)">No users yet</td></tr>';
+    async function refreshStats() {
+      if (loading) return;
+      loading = true;
+      const tbody = $('#adminUserTable tbody');
+      const refreshBtn = $('#adminRefresh');
+      try {
+        if (refreshBtn) refreshBtn.disabled = true;
+        tbody.innerHTML = '<tr><td colspan="5" class="row-muted">Loading…</td></tr>';
+        setStatsPlaceholder('…');
+
+        const res = await adminFetch('/stats');
+        if (res.status === 401) {
+          setAdminToken('');
+          showGate();
+          return;
+        }
+        if (!res.ok) {
+          tbody.innerHTML = `<tr><td colspan="5" class="row-error">Server error (HTTP ${res.status})</td></tr>`;
+          setStatsPlaceholder('—');
+          return;
+        }
+        const data = await readJson(res);
+        if (!data || !data.ok) {
+          tbody.innerHTML = '<tr><td colspan="5" class="row-error">Invalid response from server</td></tr>';
+          setStatsPlaceholder('—');
+          return;
+        }
+
+        $('#statUsers').textContent  = data.users  ?? 0;
+        $('#statChats').textContent  = data.chats  ?? 0;
+        $('#statImages').textContent = data.images ?? 0;
+        $('#statEvents').textContent = data.events ?? 0;
+        renderTable(data.users_data);
       } catch (e) {
-        console.warn(e);
+        const msg = e && e.name === 'AbortError' ? 'Request timed out' : 'Failed to load stats';
+        tbody.innerHTML = `<tr><td colspan="5" class="row-error">${escapeHtml(msg)}</td></tr>`;
+        setStatsPlaceholder('—');
+      } finally {
+        loading = false;
+        if (refreshBtn) refreshBtn.disabled = false;
       }
     }
 
+    /* ---- Set tier ---- */
     $('#adminSetTierBtn')?.addEventListener('click', async () => {
       const email = $('#adminUserEmail').value.trim().toLowerCase();
       const tier = $('#adminTierSelect').value;
-      if (!email) return alert('Enter a user email');
-      const res = await adminFetch('/set-tier', { method: 'POST', body: JSON.stringify({ email, tier }) });
-      const data = await res.json();
-      if (data.ok) { alert(`Tier updated for ${email}: ${tier}`); loadAll(); }
-      else alert(data.error || 'Failed');
+      const msg = $('#adminTierMsg');
+      const btn = $('#adminSetTierBtn');
+      msg.textContent = '';
+      msg.style.color = 'var(--text-muted)';
+      if (!email) { msg.textContent = 'Enter a user email'; msg.style.color = '#dc2626'; return; }
+      btn.disabled = true;
+      msg.textContent = 'Updating…';
+      try {
+        const res = await adminFetch('/set-tier', {
+          method: 'POST',
+          body: JSON.stringify({ email, tier }),
+        }, 10000);
+        if (res.status === 401) { setAdminToken(''); showGate(); return; }
+        const data = await readJson(res);
+        if (data && data.ok) {
+          msg.textContent = `Updated ${email} → ${tier}`;
+          msg.style.color = 'var(--accent)';
+          await refreshStats();
+        } else {
+          msg.textContent = (data && data.error) || `Failed (HTTP ${res.status})`;
+          msg.style.color = '#dc2626';
+        }
+      } catch (e) {
+        msg.textContent = e && e.name === 'AbortError' ? 'Request timed out' : 'Server error';
+        msg.style.color = '#dc2626';
+      } finally {
+        btn.disabled = false;
+      }
     });
 
-    /* On load: if we already have a token, verify it */
+    /* ---- Boot ----
+       Single verify+render pass — no more double-fetch. */
     (async function boot() {
       const t = getAdminToken();
       if (!t) { showGate(); return; }
       try {
         const res = await adminFetch('/stats');
-        if (res.status === 401) { setAdminToken(''); showGate(); }
-        else showAdmin();
-      } catch { showGate(); }
+        if (res.status === 401) { setAdminToken(''); showGate(); return; }
+        if (!res.ok) { setAdminToken(''); showGate(); return; }
+        const data = await readJson(res);
+        if (!data || !data.ok) { setAdminToken(''); showGate(); return; }
+        showAdminShell();
+        $('#statUsers').textContent  = data.users  ?? 0;
+        $('#statChats').textContent  = data.chats  ?? 0;
+        $('#statImages').textContent = data.images ?? 0;
+        $('#statEvents').textContent = data.events ?? 0;
+        renderTable(data.users_data);
+      } catch {
+        showGate();
+      }
     })();
   </script>
 </body>
