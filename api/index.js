@@ -1,12 +1,10 @@
 /* ============================================================
-   MiroxAI Backend v54
+   MiroxAI Backend v56
    FIXED:
-   - Provider responses are now SHAPE-VALIDATED before being used
-   - Non-JSON bodies (billing pages, plain-text errors) are rejected
-   - Content-type whitelist on every provider fetch
-   - data.error on a 200 response is treated as failure
-   - SSE error frames abort the stream
-   - "Pollinations out of credits" text can never reach the client
+   - HF + PL raced in parallel (first success wins)
+   - Fallback: AIroute searchque with RAW user question only
+     (keyless, no system prompt, no history — as documented)
+   - Provider bodies content-type validated (no billing-page leaks)
    - All errors masked as "Mirox AI encountered an error"
    ============================================================ */
 
@@ -35,7 +33,7 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '2010';
 
 const HF_ATTEMPT_TIMEOUT_MS = 12000;
 const PL_ATTEMPT_TIMEOUT_MS = 12000;
-const AR_FALLBACK_TIMEOUT_MS = 15000;
+const AR_SEARCH_TIMEOUT_MS = 15000;
 const STREAM_SAFETY_MS = 52000;
 
 const GENERIC_ERR = 'Mirox AI encountered an error';
@@ -432,6 +430,8 @@ const HF_CHAT_MODELS = [
 ];
 const PL_CHAT_MODELS = ['openai', 'mistral'];
 
+/* keyless AIroute search+quotes — ultimate offline fallback.
+   Receives ONLY the raw user question, no system prompt, no history. */
 const AR_SEARCH_MODEL = 'airoute/searchque';
 
 const HF_IMG_MODELS = [
@@ -456,8 +456,6 @@ async function fetchWithTimeout(url, opts = {}, timeoutMs = HF_ATTEMPT_TIMEOUT_M
 
 /* ============================================================
    Response-shape validation
-   Rejects plain-text / HTML / billing pages that providers
-   sometimes return with a 200 status.
    ============================================================ */
 function looksLikeChatStream(res) {
   try {
@@ -470,29 +468,21 @@ function looksLikeChatJson(res) {
     const ct = (res.headers.get('content-type') || '').toLowerCase();
     if (ct.includes('event-stream')) return false;
     if (ct.startsWith('text/plain') || ct.startsWith('text/html')) return false;
-    return true; /* accept application/json, missing CT, etc. */
+    return true;
   } catch { return true; }
 }
-
-/* Parse a NON-streaming provider body into { ok, data, reply }.
-   Never returns raw text. */
 async function readProviderBody(res) {
   if (!looksLikeChatJson(res)) return { ok: false, reason: 'bad_content_type' };
-
   const raw = await res.text().catch(() => '');
   if (!raw || !raw.trim()) return { ok: false, reason: 'empty' };
-
   let data;
   try { data = JSON.parse(raw); }
   catch { return { ok: false, reason: 'non_json' }; }
-
   if (!data || typeof data !== 'object') return { ok: false, reason: 'non_object' };
   if (data.error) return { ok: false, reason: 'error_field' };
   if (data.success === false) return { ok: false, reason: 'success_false' };
-
   const reply = extractReplyText(data);
   if (!reply || !reply.trim()) return { ok: false, reason: 'no_reply' };
-
   return { ok: true, data, reply };
 }
 
@@ -528,7 +518,9 @@ async function pollinationsChat(modelId, messages, maxTokens, stream, signal, ti
 }
 
 /* ============================================================
-   AIroute / searchque — keyless web-search fallback.
+   searchque — keyless web-search fallback.
+   STATELESS: no memory, no persona, no system prompt.
+   Send it ONLY the raw user question as `prompt`.
    ============================================================ */
 async function searchqueChat(userQuestion, signal, timeoutMs) {
   const q = safeString(userQuestion, 1500).trim();
@@ -568,6 +560,8 @@ async function tryPlModels(modelList, messages, cfg, stream, signal, timeoutMs, 
 
 /* ============================================================
    Chat chain
+   1. HF + PL raced in parallel
+   2. searchque (keyless) — raw user question only
    ============================================================ */
 async function miroxChatChain(messages, cfg, stream, signal, deadline, extra = {}) {
   const startTime = Date.now();
@@ -582,8 +576,8 @@ async function miroxChatChain(messages, cfg, stream, signal, deadline, extra = {
     else { try { signal.addEventListener('abort', prop); } catch {} }
   }
 
+  /* -------- Stage 1: HF + PL parallel race -------- */
   const races = [];
-
   if (PROVIDERS.hf) {
     races.push(tryHfModels(HF_CHAT_MODELS, messages, cfg, stream, hfCtrl.signal, HF_ATTEMPT_TIMEOUT_MS, extra));
   }
@@ -607,9 +601,10 @@ async function miroxChatChain(messages, cfg, stream, signal, deadline, extra = {
     console.log('[Mirox] No HF/PL keys configured — using searchque directly');
   }
 
+  /* -------- Stage 2: searchque — raw question only -------- */
   if (userQuestion && !(signal && signal.aborted)) {
     try {
-      const res = await searchqueChat(userQuestion, signal, AR_FALLBACK_TIMEOUT_MS);
+      const res = await searchqueChat(userQuestion, signal, AR_SEARCH_TIMEOUT_MS);
       console.log(`[Mirox] provider ok: searchque (${Date.now() - startTime}ms)`);
       return { res, provider: 'fallback', model: AR_SEARCH_MODEL, nativeStream: false };
     } catch (e) {
@@ -623,7 +618,7 @@ async function miroxChatChain(messages, cfg, stream, signal, deadline, extra = {
 
 function extractReplyText(data) {
   if (!data || typeof data !== 'object') return '';
-  if (typeof data.text === 'string') return data.text;   /* searchque: { text } */
+  if (typeof data.text === 'string') return data.text;   /* searchque: { text, model, ms, tokens } */
   if (typeof data.reply === 'string') return data.reply;
   if (Array.isArray(data.choices) && data.choices[0]) {
     const c = data.choices[0].message?.content || data.choices[0].text || '';
@@ -747,7 +742,7 @@ app.use((req, res, next) => {
 });
 
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
-  res.json({ ok: true, app: 'MiroxAI', version: 'v54', providers: PROVIDERS, firebase: { connected: !!fdb, error: firebaseError }, time: now() });
+  res.json({ ok: true, app: 'MiroxAI', version: 'v56', providers: PROVIDERS, firebase: { connected: !!fdb, error: firebaseError }, time: now() });
 });
 
 app.get(['/v1/models', '/models'], (req, res) => {
@@ -762,7 +757,7 @@ app.get(['/api/config', '/config'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   let u = null; try { u = await currentUser(req); } catch {}
   const modelsArr = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tagline: m.tagline, tier: m.tier, default: !!m.default }));
-  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v54' }, models: modelsArr, default_model: modelsArr[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: true, providers: PROVIDERS, api_models: API_ALLOWED_MODELS });
+  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v56' }, models: modelsArr, default_model: modelsArr[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: true, providers: PROVIDERS, api_models: API_ALLOWED_MODELS });
 });
 
 app.post(['/api/auth/simple-login', '/auth/simple-login'], async (req, res) => {
@@ -977,23 +972,17 @@ app.post('/v1/chat/completions', async (req, res) => {
     try {
       const result = await miroxChatChain(msgs, cfg, true, abortCtrl.signal, null, extra);
 
-      /* Reject the response entirely if it isn't a real chat stream/JSON.
-         Prevents billing pages from ever reaching the client. */
       if (result.nativeStream && !looksLikeChatStream(result.res)) {
-        console.log('[Mirox] native stream rejected: bad content-type');
         try { sseData(res, { error: { message: GENERIC_ERR, type: 'server_error' }, done: true }); } catch {}
         try { sseDone(res); } catch {}
-        cleanup();
-        streamEnded = true;
+        cleanup(); streamEnded = true;
         try { if (!res.writableEnded) res.end(); } catch {}
         return;
       }
       if (!result.nativeStream && !looksLikeChatJson(result.res)) {
-        console.log('[Mirox] json response rejected: bad content-type');
         try { sseData(res, { error: { message: GENERIC_ERR, type: 'server_error' }, done: true }); } catch {}
         try { sseDone(res); } catch {}
-        cleanup();
-        streamEnded = true;
+        cleanup(); streamEnded = true;
         try { if (!res.writableEnded) res.end(); } catch {}
         return;
       }
@@ -1020,7 +1009,6 @@ app.post('/v1/chat/completions', async (req, res) => {
             const raw = trimmed.slice(5).trim();
             if (!raw || raw === '[DONE]') continue;
             let o; try { o = JSON.parse(raw); } catch { continue; }
-            /* Upstream error frame — kill the stream silently */
             if (o && o.error) { abortedByError = true; break; }
             const delta = o.choices?.[0]?.delta;
             if (!delta) continue;
@@ -1037,19 +1025,16 @@ app.post('/v1/chat/completions', async (req, res) => {
         if (abortedByError && !clientClosed && !res.writableEnded) {
           try { sseData(res, { error: { message: GENERIC_ERR, type: 'server_error' }, done: true }); } catch {}
           try { sseDone(res); } catch {}
-          cleanup();
-          streamEnded = true;
+          cleanup(); streamEnded = true;
           try { if (!res.writableEnded) res.end(); } catch {}
           return;
         }
       } else {
         const parsed = await readProviderBody(result.res);
         if (!parsed.ok) {
-          console.log('[Mirox] stream-fallback body rejected:', parsed.reason);
           try { sseData(res, { error: { message: GENERIC_ERR, type: 'server_error' }, done: true }); } catch {}
           try { sseDone(res); } catch {}
-          cleanup();
-          streamEnded = true;
+          cleanup(); streamEnded = true;
           try { if (!res.writableEnded) res.end(); } catch {}
           return;
         }
