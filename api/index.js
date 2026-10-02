@@ -1,11 +1,11 @@
 /* ============================================================
-   MiroxAI Backend v51
+   MiroxAI Backend v52
    FIXED:
    - All upstream errors masked as "Mirox AI encountered an error"
-   - AIroute / searchque is the designated offline fallback (HF → PL → searchque)
-   - AIroute body matches docs: { model, prompt, history } (no timeout_ms)
-   - Guarded JSON parse on searchque response
-   - No provider names leaked to client
+   - AIroute / searchque is the keyless offline fallback (HF → PL → searchque)
+   - searchque receives ONLY the raw user question (no system prompt, no history)
+   - AIroute body matches docs: { model, prompt } — no timeout_ms, no history for search
+   - Guarded JSON parse on searchque response; reads { text, model, ms, tokens }
    ============================================================ */
 
 process.on('unhandledRejection', (r) => { console.error('[Mirox] unhandledRejection:', r); });
@@ -190,6 +190,33 @@ function safeSanitizeMessages(messages, fallbackText) {
     if (!out.length && fallbackText) out.push({ role: 'user', content: String(fallbackText) });
     return out;
   } catch { return fallbackText ? [{ role: 'user', content: String(fallbackText) }] : []; }
+}
+
+/* ---------- Extract plain text from a message content field ---------- */
+function messageContentToText(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    const parts = [];
+    for (const p of content) {
+      if (!p || typeof p !== 'object') continue;
+      if (p.type === 'text' && typeof p.text === 'string') parts.push(p.text);
+    }
+    return parts.join('\n');
+  }
+  return safeString(content);
+}
+
+/* Extract the raw last user question — used ONLY for the searchque fallback */
+function extractLastUserQuestion(messages) {
+  if (!Array.isArray(messages)) return '';
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m && m.role === 'user') {
+      const txt = messageContentToText(m.content).trim();
+      if (txt) return txt.slice(0, 1500);
+    }
+  }
+  return '';
 }
 
 /* ---------- Firebase ---------- */
@@ -449,30 +476,32 @@ async function pollinationsChat(modelId, messages, maxTokens, stream, signal, ti
   if (!res.ok) throw new Error('provider_failed');
   return res;
 }
-function toAiRouteFormat(messages) {
-  let systemContent = '';
-  let userPrompt = '';
-  const history = [];
-  if (!Array.isArray(messages)) return { prompt: '', history: [] };
-  for (const m of messages) {
-    if (!m || typeof m !== 'object') continue;
-    const role = m.role;
-    const content = safeString(m.content);
-    if (role === 'system') systemContent += (systemContent ? '\n\n' : '') + content;
-    else if (role === 'user') { history.push({ role: 'user', content }); userPrompt = content; }
-    else if (role === 'assistant') history.push({ role: 'assistant', content });
-  }
-  if (history.length && history[history.length - 1].role === 'user') history.pop();
-  return { prompt: systemContent ? `${systemContent}\n\n---\n\n${userPrompt}` : userPrompt, history };
-}
-async function aiRouteChat(modelId, messages, maxTokens, stream, signal, timeoutMs) {
-  const { prompt, history } = toAiRouteFormat(messages);
+
+/* ============================================================
+   AIroute / searchque — keyless web-search fallback.
+   searchque is a STATELESS web search engine: it has no memory,
+   no persona, no system prompt. It only accepts a raw user query
+   as `prompt` and returns { text, model, ms, tokens }.
+   Sending it a system prompt / identity guard just makes it try
+   to literally search the web for those words.
+   ============================================================ */
+async function searchqueChat(userQuestion, signal, timeoutMs) {
+  const q = safeString(userQuestion, 1500).trim();
+  if (!q) throw new Error('provider_failed');
+
   const headers = { 'Content-Type': 'application/json' };
-  /* searchque is keyless; other AR models need the key. Send it if we have it. */
+  /* searchque itself is keyless, but send AR_KEY when present (docs allow it) */
   if (AR_KEY) headers.Authorization = `Bearer ${AR_KEY}`;
-  const body = { model: modelId, prompt };
-  if (history && history.length) body.history = history.slice(-40);
-  const res = await fetchWithTimeout(AR_CHAT_URL, { method: 'POST', headers, body: JSON.stringify(body) }, timeoutMs, signal);
+
+  const res = await fetchWithTimeout(AR_CHAT_URL, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model: AR_SEARCH_MODEL,
+      prompt: q,
+    }),
+  }, timeoutMs, signal);
+
   if (!res.ok) throw new Error('provider_failed');
   return res;
 }
@@ -488,7 +517,7 @@ async function miroxChatChain(messages, cfg, stream, signal, deadline, extra = {
       if (timeLeft() < 3000) break;
       try {
         const res = await hfChat(modelId, messages, cfg.tokens, stream, signal, perAttempt(), extra);
-        console.log(`[Mirox] provider ok: hf`);
+        console.log('[Mirox] provider ok: hf');
         return { res, provider: 'hf', model: modelId, nativeStream: true };
       } catch (e) { if (e.name === 'AbortError') throw e; }
     }
@@ -501,19 +530,22 @@ async function miroxChatChain(messages, cfg, stream, signal, deadline, extra = {
       if (timeLeft() < 3000) break;
       try {
         const res = await pollinationsChat(modelId, messages, cfg.tokens, stream, signal, perAttempt(), extra);
-        console.log(`[Mirox] provider ok: pl`);
+        console.log('[Mirox] provider ok: pl');
         return { res, provider: 'pl', model: modelId, nativeStream: true };
       } catch (e) { if (e.name === 'AbortError') throw e; }
     }
   }
 
-  /* 3. AIroute searchque — keyless offline fallback, always tried last */
+  /* 3. AIroute searchque — keyless, raw query only, no system prompt, no history */
   if (timeLeft() > 2000 && !(signal && signal.aborted)) {
-    try {
-      const res = await aiRouteChat(AR_SEARCH_MODEL, messages, cfg.tokens, false, signal, perAttempt());
-      console.log(`[Mirox] provider ok: searchque (fallback)`);
-      return { res, provider: 'fallback', model: AR_SEARCH_MODEL, nativeStream: false };
-    } catch (e) { if (e.name === 'AbortError') throw e; }
+    const userQuestion = extractLastUserQuestion(messages);
+    if (userQuestion) {
+      try {
+        const res = await searchqueChat(userQuestion, signal, perAttempt());
+        console.log('[Mirox] provider ok: searchque (fallback)');
+        return { res, provider: 'fallback', model: AR_SEARCH_MODEL, nativeStream: false };
+      } catch (e) { if (e.name === 'AbortError') throw e; }
+    }
   }
 
   throw new Error(GENERIC_ERR);
@@ -522,13 +554,13 @@ async function miroxChatChain(messages, cfg, stream, signal, deadline, extra = {
 function extractReplyText(data) {
   if (!data) return '';
   if (typeof data === 'string') return data;
-  if (typeof data.text === 'string') return data.text;
+  if (typeof data.text === 'string') return data.text;   /* searchque: { text, model, ms, tokens } */
+  if (typeof data.reply === 'string') return data.reply;
   if (Array.isArray(data.choices) && data.choices[0]) {
     const c = data.choices[0].message?.content || data.choices[0].text || '';
     return typeof c === 'string' ? c : JSON.stringify(c);
   }
   if (typeof data.output === 'string') return data.output;
-  if (typeof data.reply === 'string') return data.reply;
   return '';
 }
 function extractToolCalls(data) {
@@ -648,7 +680,7 @@ app.use((req, res, next) => {
 });
 
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
-  res.json({ ok: true, app: 'MiroxAI', version: 'v51', providers: PROVIDERS, firebase: { connected: !!fdb, error: firebaseError }, time: now() });
+  res.json({ ok: true, app: 'MiroxAI', version: 'v52', providers: PROVIDERS, firebase: { connected: !!fdb, error: firebaseError }, time: now() });
 });
 
 app.get(['/v1/models', '/models'], (req, res) => {
@@ -663,7 +695,7 @@ app.get(['/api/config', '/config'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   let u = null; try { u = await currentUser(req); } catch {}
   const modelsArr = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tagline: m.tagline, tier: m.tier, default: !!m.default }));
-  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v51' }, models: modelsArr, default_model: modelsArr[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: true, providers: PROVIDERS, api_models: API_ALLOWED_MODELS });
+  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v52' }, models: modelsArr, default_model: modelsArr[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: true, providers: PROVIDERS, api_models: API_ALLOWED_MODELS });
 });
 
 app.post(['/api/auth/simple-login', '/auth/simple-login'], async (req, res) => {
@@ -877,7 +909,7 @@ app.post('/v1/chat/completions', async (req, res) => {
     try {
       const result = await miroxChatChain(msgs, cfg, true, abortCtrl.signal, deadline, extra);
 
-      /* Provider hint (never exposes real provider name) */
+      /* Provider hint — never exposes real provider name */
       sseData(res, oaiChunk(streamId, cfg.label, {}, null, { p: result.provider }));
 
       if (result.nativeStream) {
