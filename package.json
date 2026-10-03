@@ -2,11 +2,14 @@
   "name": "mirox-ai",
   "version": "1.0.0",
   "private": true,
-  "engines": {
-    "node": "22.x"
+  "type": "module",
+  "engines": { "node": "22.x" },
+  "scripts": {
+    "start": "node backend.js"
   },
   "dependencies": {
-    "@libsql/client": "^0.14.0",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "cors": "^2.8.5",
+    "ollama": "^0.5.9"
   }
 }
