@@ -1,12 +1,12 @@
 /* ============================================================
-   MiroxAI Backend v67 — robust Ollama fallback
-   Chain: HF → Ollama (qwen2.5:0.5b) → AIroute searchque
-   Fixes:
-   - Ollama detection with retries (waits for service to come up)
-   - Auto-pull the model with streaming progress logs
-   - /api/ollama/status endpoint for debugging
-   - Clear error messages at every step
-   - Works locally; degrades gracefully on Vercel
+   MiroxAI Backend v68
+   Chain: HF → Pollinations (PL_KEY) → Ollama → AIroute searchque
+   NEW:
+   - Pollinations restored with proper auth + model fallback
+   - /api/providers/status — full diagnostic for every provider
+   - /api/providers/test?p=<name> — ping a single provider
+   - Verbose logging per attempt with the exact failure reason
+   - All provider errors masked to client as generic message
    ============================================================ */
 
 import express from 'express';
@@ -21,38 +21,44 @@ const __dirname = path.dirname(__filename);
 
 /* ---------- Env ---------- */
 const HF_API_KEY = (process.env.HF_API_KEY || '').trim();
-const AR_KEY = (process.env.AR_KEY || '').trim();
-const SECRET = process.env.SECRET_KEY || 'mirox-fallback-secret';
+const PL_KEY     = (process.env.PL_KEY || '').trim();
+const AR_KEY     = (process.env.AR_KEY || '').trim();
+const SECRET     = process.env.SECRET_KEY || 'mirox-fallback-secret';
 const ADMIN_PASS = (process.env.ADMIN_PASSWORD || '2010').trim();
-const DB_FILE = process.env.DB_FILE || path.join(__dirname, 'mirox-db.json');
-const PORT = process.env.PORT || 3000;
+const DB_FILE    = process.env.DB_FILE || path.join(__dirname, 'mirox-db.json');
+const PORT       = process.env.PORT || 3000;
 
-const OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://127.0.0.1:11434';
+const OLLAMA_HOST  = process.env.OLLAMA_HOST  || 'http://127.0.0.1:11434';
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:0.5b';
 
-const HF_ATTEMPT_MS = 20000;
-const OLLAMA_ATTEMPT_MS = 60000;
-const AR_SEARCH_MS = 15000;
-const MAX_LOGS = 500;
+const HF_ATTEMPT_MS       = 20000;
+const PL_ATTEMPT_MS       = 20000;
+const OLLAMA_ATTEMPT_MS   = 60000;
+const AR_SEARCH_MS        = 15000;
+const MAX_LOGS            = 500;
 
 const GENERIC_ERR = 'Mirox AI encountered an error';
 
 const PROVIDERS = {
-  hf: !!HF_API_KEY,
-  ollama: false,
-  ar: !!AR_KEY,
-  search: true,
+  hf:       !!HF_API_KEY,
+  pl:       !!PL_KEY,
+  ollama:   false,
+  ar:       !!AR_KEY,
+  search:   true,
 };
 
 console.log('[Mirox] ===== Provider configuration =====');
 console.log('[Mirox]  HF_API_KEY:    ' + (HF_API_KEY ? 'set' : 'MISSING'));
+console.log('[Mirox]  PL_KEY:        ' + (PL_KEY ? 'set' : 'MISSING'));
 console.log('[Mirox]  AR_KEY:        ' + (AR_KEY ? 'set' : 'MISSING'));
 console.log('[Mirox]  Ollama host:   ' + OLLAMA_HOST);
 console.log('[Mirox]  Ollama model:  ' + OLLAMA_MODEL);
 console.log('[Mirox]  DB file:       ' + DB_FILE);
 console.log('[Mirox] =================================');
 
-/* ---------- Safe helpers ---------- */
+/* ============================================================
+   Safe helpers
+   ============================================================ */
 const safe = (v, max = 100000) => {
   try {
     if (v == null) return '';
@@ -109,15 +115,16 @@ function looksLikeStream(res) {
 }
 
 async function readProviderBody(res) {
-  if (!looksLikeJson(res)) return { ok: false };
+  if (!looksLikeJson(res)) return { ok: false, reason: 'bad_content_type' };
   const raw = await res.text().catch(() => '');
-  if (!raw || !raw.trim()) return { ok: false };
+  if (!raw || !raw.trim()) return { ok: false, reason: 'empty' };
   let data;
-  try { data = JSON.parse(raw); } catch { return { ok: false }; }
-  if (!data || typeof data !== 'object') return { ok: false };
-  if (data.error || data.success === false) return { ok: false };
+  try { data = JSON.parse(raw); } catch { return { ok: false, reason: 'non_json' }; }
+  if (!data || typeof data !== 'object') return { ok: false, reason: 'non_object' };
+  if (data.error) return { ok: false, reason: 'error_field' };
+  if (data.success === false) return { ok: false, reason: 'success_false' };
   const reply = extractReplyText(data);
-  if (!reply.trim()) return { ok: false };
+  if (!reply.trim()) return { ok: false, reason: 'no_reply' };
   return { ok: true, data, reply };
 }
 
@@ -151,43 +158,37 @@ async function loadDb() {
     const parsed = JSON.parse(raw);
     db = Object.assign(emptyDb(), parsed);
     dbReady = true;
-    console.log('[Mirox] DB loaded from ' + DB_FILE);
   } catch (e) {
     if (e.code === 'ENOENT') {
       db = emptyDb();
       dbReady = true;
       try { await fs.writeFile(DB_FILE, JSON.stringify(db, null, 2), 'utf8'); } catch {}
-      console.log('[Mirox] DB created at ' + DB_FILE);
     } else {
       dbError = e.message;
       db = emptyDb();
       dbReady = false;
-      console.error('[Mirox] DB load failed:', dbError);
     }
   }
   return db;
 }
-
 function persist() {
   if (!db) return Promise.resolve();
   writeChain = writeChain.then(async () => {
     try { await fs.writeFile(DB_FILE, JSON.stringify(db, null, 2), 'utf8'); }
-    catch (e) { console.warn('[DB] write failed:', e.message); }
+    catch {}
   });
   return writeChain;
 }
 
-const now = () => Math.floor(Date.now() / 1000);
-const today = () => new Date().toISOString().slice(0, 10);
+const now      = () => Math.floor(Date.now() / 1000);
+const today    = () => new Date().toISOString().slice(0, 10);
 const monthKey = () => new Date().toISOString().slice(0, 7);
 
-/* ---------- Users ---------- */
 async function getUser(email) {
   await loadDb();
   const u = db.users[email];
   return u ? { ...u } : null;
 }
-
 async function saveUser(rec) {
   await loadDb();
   if (!rec || !rec.email) return false;
@@ -202,7 +203,6 @@ async function saveUser(rec) {
   await persist();
   return true;
 }
-
 async function ensureFreshUser(email) {
   if (!email) return null;
   let rec = await getUser(email);
@@ -217,7 +217,6 @@ async function ensureFreshUser(email) {
   if (dirty) await saveUser(rec);
   return rec;
 }
-
 async function validateApiKey(apiKey) {
   if (!apiKey || !apiKey.startsWith('mxk_')) return null;
   await loadDb();
@@ -385,32 +384,102 @@ function cannedResponse(userText, cfg) {
 }
 
 /* ============================================================
-   Provider URLs
+   Provider URLs + model lists
    ============================================================ */
-const HF_URL = 'https://router.huggingface.co/v1/chat/completions';
-const AR_CHAT_URL = 'https://route-ai-playground.lovable.app/api/public/v1/chat';
+const HF_URL          = 'https://router.huggingface.co/v1/chat/completions';
+const HF_IMG_BASE     = 'https://router.huggingface.co/hf-inference/models';
+const PL_URL          = 'https://gen.pollinations.ai/v1/chat/completions';
+const PL_IMG_BASE     = 'https://gen.pollinations.ai/image';
+const AR_CHAT_URL     = 'https://route-ai-playground.lovable.app/api/public/v1/chat';
+const AR_IMG_URL      = 'https://route-ai-playground.lovable.app/api/public/v1/images';
 
 const HF_CHAT_MODELS = [
   'meta-llama/Llama-3.3-70B-Instruct:together',
   'Qwen/Qwen2.5-72B-Instruct:together',
   'mistralai/Mistral-7B-Instruct-v0.3:together',
 ];
+/* Pollinations current models — gen.pollinations.ai takes these names */
+const PL_CHAT_MODELS = ['openai', 'openai-fast', 'mistral'];
 const AR_SEARCH_MODEL = 'airoute/searchque';
 
+const HF_IMG_MODELS = ['stabilityai/stable-diffusion-xl-base-1.0', 'black-forest-labs/FLUX.1-schnell'];
+const PL_IMG_MODELS = ['flux', 'turbo'];
+const AR_IMG_MODELS = ['black-forest-labs/FLUX.1-schnell'];
+
 /* ============================================================
-   Ollama — detection, auto-pull, and inference
+   Hugging Face
+   ============================================================ */
+async function hfChat(modelId, messages, maxTokens, stream, signal, ms, extra = {}) {
+  if (!HF_API_KEY) throw new Error('hf_no_key');
+  const body = { model: modelId, messages, max_tokens: maxTokens, stream: !!stream, temperature: 0.7 };
+  if (extra.tools?.length) body.tools = extra.tools;
+  const res = await fetchT(HF_URL, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${HF_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }, ms, signal);
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`hf_${res.status}: ${t.slice(0, 120)}`);
+  }
+  if (!stream && !looksLikeJson(res)) throw new Error('hf_bad_ct');
+  if (stream && !looksLikeStream(res)) throw new Error('hf_bad_ct');
+  return res;
+}
+
+/* ============================================================
+   Pollinations — PL_KEY required for gen.pollinations.ai
+   Docs: POST https://gen.pollinations.ai/v1/chat/completions
+         Authorization: Bearer <PL_KEY>
+   ============================================================ */
+async function plChat(modelId, messages, maxTokens, stream, signal, ms, extra = {}) {
+  if (!PL_KEY) throw new Error('pl_no_key');
+
+  const body = {
+    model: modelId,
+    messages,
+    max_tokens: maxTokens,
+    stream: !!stream,
+    temperature: 0.7,
+  };
+  if (extra.tools?.length) body.tools = extra.tools;
+
+  const res = await fetchT(PL_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${PL_KEY}`,
+      'Content-Type': 'application/json',
+      'Accept': stream ? 'text/event-stream' : 'application/json',
+    },
+    body: JSON.stringify(body),
+  }, ms, signal);
+
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`pl_${res.status}: ${t.slice(0, 160)}`);
+  }
+  if (!stream && !looksLikeJson(res)) {
+    const ct = res.headers.get('content-type') || '';
+    throw new Error(`pl_bad_ct: ${ct}`);
+  }
+  if (stream && !looksLikeStream(res)) {
+    const ct = res.headers.get('content-type') || '';
+    throw new Error(`pl_bad_ct: ${ct}`);
+  }
+  return res;
+}
+
+/* ============================================================
+   Ollama — fetch-based client
    ============================================================ */
 let ollamaReady = false;
 let ollamaStatus = { ready: false, host: OLLAMA_HOST, model: OLLAMA_MODEL, models: [], error: null, pulling: false };
 let ollamaPullPromise = null;
 
-/* Direct fetch-based Ollama client — avoids the `ollama` npm package
-   so we can point at 127.0.0.1 without the package's host restrictions. */
 async function ollamaFetch(pathname, opts = {}, ms = 10000) {
   return fetchT(`${OLLAMA_HOST}${pathname}`, opts, ms);
 }
 
-/* Check if Ollama is reachable and whether our model is present. */
 async function ollamaList() {
   try {
     const res = await ollamaFetch('/api/tags', {}, 5000);
@@ -423,7 +492,6 @@ async function ollamaList() {
   }
 }
 
-/* Pull the model with streaming progress. */
 async function ollamaPull(model) {
   console.log(`[Ollama] pulling ${model}...`);
   ollamaStatus.pulling = true;
@@ -454,13 +522,10 @@ async function ollamaPull(model) {
           const o = JSON.parse(line);
           if (o.total && o.completed) {
             const pct = Math.floor((o.completed / o.total) * 100);
-            if (pct !== lastPct && pct % 10 === 0) {
+            if (pct !== lastPct && pct % 20 === 0) {
               console.log(`[Ollama] ${model}: ${pct}%`);
               lastPct = pct;
             }
-          }
-          if (o.status) {
-            console.log(`[Ollama] ${o.status}`);
           }
         } catch {}
       }
@@ -475,31 +540,25 @@ async function ollamaPull(model) {
   }
 }
 
-/* Ensure Ollama is running and the model is available. */
 async function ensureOllama(attempt = 1) {
-  const MAX_ATTEMPTS = 5;
+  const MAX_ATTEMPTS = 4;
   console.log(`[Ollama] checking (attempt ${attempt}/${MAX_ATTEMPTS})...`);
-
   const list = await ollamaList();
   if (!list.ok) {
     ollamaStatus.ready = false;
     ollamaStatus.error = list.error;
     PROVIDERS.ollama = false;
     if (attempt < MAX_ATTEMPTS) {
-      const wait = 3000 * attempt;
-      console.log(`[Ollama] not reachable (${list.error}), retrying in ${wait / 1000}s`);
+      const wait = 2000 * attempt;
+      console.log(`[Ollama] not reachable (${list.error}), retrying in ${wait/1000}s`);
       await new Promise(r => setTimeout(r, wait));
       return ensureOllama(attempt + 1);
     }
-    console.error('[Ollama] unreachable after retries. Install & start:');
-    console.error('  sudo pacman -S ollama       # or ollama-cuda / ollama-rocm / ollama-vulkan');
-    console.error('  sudo systemctl enable --now ollama');
+    console.error('[Ollama] unreachable after retries');
     return false;
   }
-
   ollamaStatus.models = list.models;
-  console.log(`[Ollama] reachable, ${list.models.length} model(s): ${list.models.join(', ') || 'none'}`);
-
+  console.log(`[Ollama] reachable, models: ${list.models.join(', ') || 'none'}`);
   const has = list.models.some(n => n === OLLAMA_MODEL || n === OLLAMA_MODEL + ':latest' || n.startsWith(OLLAMA_MODEL.split(':')[0]));
   if (!has) {
     console.log(`[Ollama] model ${OLLAMA_MODEL} not found, pulling...`);
@@ -510,11 +569,9 @@ async function ensureOllama(attempt = 1) {
       PROVIDERS.ollama = false;
       return false;
     }
-    // Re-check
     const recheck = await ollamaList();
     if (recheck.ok) ollamaStatus.models = recheck.models;
   }
-
   ollamaStatus.ready = true;
   ollamaStatus.error = null;
   PROVIDERS.ollama = true;
@@ -523,7 +580,6 @@ async function ensureOllama(attempt = 1) {
   return true;
 }
 
-/* Chat via Ollama (non-stream). */
 async function ollamaChatNonStream(messages, cfg) {
   const body = {
     model: OLLAMA_MODEL,
@@ -543,7 +599,6 @@ async function ollamaChatNonStream(messages, cfg) {
   return reply;
 }
 
-/* Chat via Ollama (streaming) — calls sseWrite for each delta. */
 async function ollamaChatStream(messages, cfg, sseWrite, signal) {
   const body = {
     model: OLLAMA_MODEL,
@@ -574,10 +629,7 @@ async function ollamaChatStream(messages, cfg, sseWrite, signal) {
       try {
         const o = JSON.parse(line);
         const delta = o?.message?.content || '';
-        if (delta) {
-          full += delta;
-          sseWrite({ d: delta });
-        }
+        if (delta) { full += delta; sseWrite({ d: delta }); }
         if (o.done) break;
       } catch {}
     }
@@ -588,22 +640,8 @@ async function ollamaChatStream(messages, cfg, sseWrite, signal) {
 }
 
 /* ============================================================
-   Cloud providers
+   AIroute searchque
    ============================================================ */
-async function hfChat(modelId, messages, maxTokens, stream, signal, ms, extra = {}) {
-  const body = { model: modelId, messages, max_tokens: maxTokens, stream: !!stream, temperature: 0.7 };
-  if (extra.tools?.length) body.tools = extra.tools;
-  const res = await fetchT(HF_URL, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${HF_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  }, ms, signal);
-  if (!res.ok) throw new Error('hf_failed');
-  if (!stream && !looksLikeJson(res)) throw new Error('hf_bad_ct');
-  if (stream && !looksLikeStream(res)) throw new Error('hf_bad_ct');
-  return res;
-}
-
 async function searchqueChat(userQuestion, signal, ms) {
   const q = safe(userQuestion, 1500).trim();
   if (!q) throw new Error('bad_query');
@@ -613,32 +651,56 @@ async function searchqueChat(userQuestion, signal, ms) {
     method: 'POST', headers,
     body: JSON.stringify({ model: AR_SEARCH_MODEL, prompt: q }),
   }, ms, signal);
-  if (!res.ok) throw new Error('ar_failed');
+  if (!res.ok) throw new Error(`ar_${res.status}`);
   if (!looksLikeJson(res)) throw new Error('ar_bad_ct');
   return res;
 }
 
 /* ============================================================
-   Chat chain
+   Chat chain — HF → PL → Ollama → searchque
    ============================================================ */
 async function miroxChatChain({ messages, cfg, stream, signal, extra, sseData }) {
   const start = Date.now();
   const userQuestion = extractLastUserQuestion(messages);
+  const trace = [];
 
-  /* 1. HuggingFace */
+  /* 1. Hugging Face */
   if (PROVIDERS.hf) {
     for (const modelId of HF_CHAT_MODELS) {
       if (signal?.aborted) throw new Error('aborted');
       try {
         const res = await hfChat(modelId, messages, cfg.tokens, stream, signal, HF_ATTEMPT_MS, extra);
         console.log(`[Mirox] provider ok: hf:${modelId} (${Date.now() - start}ms)`);
-        return { res, provider: 'hf', nativeStream: !!stream };
-      } catch (e) { if (e.name === 'AbortError') throw e; }
+        return { res, provider: 'hf', nativeStream: !!stream, trace };
+      } catch (e) {
+        if (e.name === 'AbortError') throw e;
+        trace.push(`hf:${modelId}:${e.message}`);
+        console.log(`[Mirox] hf:${modelId} failed — ${e.message}`);
+      }
     }
-    console.log(`[Mirox] HF all models failed (${Date.now() - start}ms)`);
+  } else {
+    trace.push('hf:no_key');
   }
 
-  /* 2. Ollama local */
+  /* 2. Pollinations */
+  if (PROVIDERS.pl) {
+    for (const modelId of PL_CHAT_MODELS) {
+      if (signal?.aborted) throw new Error('aborted');
+      try {
+        const res = await plChat(modelId, messages, cfg.tokens, stream, signal, PL_ATTEMPT_MS, extra);
+        console.log(`[Mirox] provider ok: pl:${modelId} (${Date.now() - start}ms)`);
+        return { res, provider: 'pl', nativeStream: !!stream, trace };
+      } catch (e) {
+        if (e.name === 'AbortError') throw e;
+        trace.push(`pl:${modelId}:${e.message}`);
+        console.log(`[Mirox] pl:${modelId} failed — ${e.message}`);
+      }
+    }
+  } else {
+    trace.push('pl:no_key');
+  }
+
+  /* 3. Ollama local */
   if (ollamaReady && PROVIDERS.ollama) {
     try {
       console.log(`[Mirox] trying Ollama (${OLLAMA_MODEL})...`);
@@ -646,31 +708,36 @@ async function miroxChatChain({ messages, cfg, stream, signal, extra, sseData })
         sseData({ p: 'ollama' });
         const full = await ollamaChatStream(messages, cfg, sseData, signal);
         console.log(`[Mirox] provider ok: ollama (${Date.now() - start}ms)`);
-        return { provider: 'ollama', reply: full, nativeStream: false };
+        return { provider: 'ollama', reply: full, nativeStream: false, trace };
       } else {
         const reply = await ollamaChatNonStream(messages, cfg);
         console.log(`[Mirox] provider ok: ollama (${Date.now() - start}ms)`);
-        return { provider: 'ollama', reply, nativeStream: false };
+        return { provider: 'ollama', reply, nativeStream: false, trace };
       }
     } catch (e) {
       if (e.name === 'AbortError') throw e;
-      console.log(`[Mirox] ollama failed: ${e.message} (${Date.now() - start}ms)`);
+      trace.push(`ollama:${e.message}`);
+      console.log(`[Mirox] ollama failed — ${e.message}`);
       ollamaStatus.error = e.message;
     }
   } else {
-    console.log('[Mirox] Ollama not ready — skipping to searchque');
+    trace.push('ollama:not_ready');
   }
 
-  /* 3. AIroute searchque */
+  /* 4. AIroute searchque */
   if (userQuestion && !signal?.aborted) {
     try {
       const res = await searchqueChat(userQuestion, signal, AR_SEARCH_MS);
       console.log(`[Mirox] provider ok: searchque (${Date.now() - start}ms)`);
-      return { res, provider: 'fallback', nativeStream: false };
-    } catch (e) { if (e.name === 'AbortError') throw e; }
+      return { res, provider: 'fallback', nativeStream: false, trace };
+    } catch (e) {
+      if (e.name === 'AbortError') throw e;
+      trace.push(`ar:${e.message}`);
+      console.log(`[Mirox] searchque failed — ${e.message}`);
+    }
   }
 
-  throw new Error(GENERIC_ERR);
+  throw Object.assign(new Error(GENERIC_ERR), { trace });
 }
 
 /* ============================================================
@@ -712,7 +779,7 @@ app.use(async (req, res, next) => { try { await loadDb(); } catch {} next(); });
 app.get(['/api/health','/health','/ping'], async (req, res) => {
   await loadDb();
   res.json({
-    ok: true, app: 'MiroxAI', version: 'v67',
+    ok: true, app: 'MiroxAI', version: 'v68',
     providers: PROVIDERS,
     ollama: ollamaStatus,
     db: { driver: 'json-file', file: DB_FILE, ready: dbReady, error: dbError, users: db ? Object.keys(db.users).length : 0 },
@@ -720,39 +787,112 @@ app.get(['/api/health','/health','/ping'], async (req, res) => {
   });
 });
 
-/* Ollama debug endpoint — visit this to see exactly what's wrong */
-app.get('/api/ollama/status', async (req, res) => {
+/* Full diagnostic — shows exactly which providers are configured + reachable */
+app.get('/api/providers/status', async (req, res) => {
   const list = await ollamaList();
   res.json({
     ok: true,
-    host: OLLAMA_HOST,
-    model: OLLAMA_MODEL,
-    ready: ollamaReady,
-    reachable: list.ok,
-    installed_models: list.models || [],
-    status: ollamaStatus,
-    how_to_fix: list.ok ? (list.models.some(n => n.startsWith(OLLAMA_MODEL.split(':')[0]))
-      ? ['Ollama is running and the model is installed.']
-      : ['Ollama is running but the model is not installed. On the machine running this backend, run:',
-         `  ollama pull ${OLLAMA_MODEL}`])
-      : ['Ollama is not reachable from the backend. On the machine running this backend:',
-         '  sudo pacman -S ollama     # or ollama-cuda / ollama-rocm / ollama-vulkan',
-         '  sudo systemctl enable --now ollama',
-         '  ollama pull ' + OLLAMA_MODEL],
+    version: 'v68',
+    chain_order: ['hf', 'pl', 'ollama', 'searchque'],
+    providers: {
+      hf: {
+        configured: !!HF_API_KEY,
+        key_prefix: HF_API_KEY ? HF_API_KEY.slice(0, 6) + '...' : null,
+        url: HF_URL,
+        models: HF_CHAT_MODELS,
+        note: HF_API_KEY ? 'ready to try' : 'set HF_API_KEY env var',
+      },
+      pl: {
+        configured: !!PL_KEY,
+        key_prefix: PL_KEY ? PL_KEY.slice(0, 6) + '...' : null,
+        url: PL_URL,
+        models: PL_CHAT_MODELS,
+        note: PL_KEY ? 'ready to try' : 'set PL_KEY env var',
+      },
+      ollama: {
+        configured: true,
+        host: OLLAMA_HOST,
+        model: OLLAMA_MODEL,
+        reachable: list.ok,
+        ready: ollamaReady,
+        installed_models: list.models || [],
+        error: ollamaStatus.error,
+        note: list.ok
+          ? (list.models.some(n => n.startsWith(OLLAMA_MODEL.split(':')[0]))
+              ? 'ready to try'
+              : `model missing — run: ollama pull ${OLLAMA_MODEL}`)
+          : 'not reachable — is ollama running? (sudo systemctl enable --now ollama)',
+      },
+      searchque: {
+        configured: true,
+        url: AR_CHAT_URL,
+        model: AR_SEARCH_MODEL,
+        note: 'keyless ultimate fallback — always available',
+      },
+    },
   });
 });
 
-/* Force a pull now */
+/* Test a single provider by name */
+app.get('/api/providers/test', async (req, res) => {
+  const provider = String(req.query.p || '').toLowerCase();
+  const prompt = String(req.query.q || 'Say "ok" in one word.');
+  const msgs = [
+    { role: 'system', content: 'Reply in one short sentence.' },
+    { role: 'user', content: prompt },
+  ];
+  const t0 = Date.now();
+  try {
+    let reply = '', used = '';
+    if (provider === 'hf') {
+      const modelsToTry = HF_CHAT_MODELS;
+      let lastErr = null;
+      for (const m of modelsToTry) {
+        try {
+          const r = await hfChat(m, msgs, 50, false, null, HF_ATTEMPT_MS);
+          const parsed = await readProviderBody(r);
+          if (parsed.ok) { reply = parsed.reply; used = `hf:${m}`; break; }
+          lastErr = parsed.reason;
+        } catch (e) { lastErr = e.message; }
+      }
+      if (!reply) throw new Error('all hf models failed: ' + lastErr);
+    } else if (provider === 'pl') {
+      let lastErr = null;
+      for (const m of PL_CHAT_MODELS) {
+        try {
+          const r = await plChat(m, msgs, 50, false, null, PL_ATTEMPT_MS);
+          const parsed = await readProviderBody(r);
+          if (parsed.ok) { reply = parsed.reply; used = `pl:${m}`; break; }
+          lastErr = parsed.reason;
+        } catch (e) { lastErr = e.message; }
+      }
+      if (!reply) throw new Error('all pl models failed: ' + lastErr);
+    } else if (provider === 'ollama') {
+      if (!ollamaReady) throw new Error('ollama not ready — ' + (ollamaStatus.error || 'unknown'));
+      reply = await ollamaChatNonStream(msgs, { tokens: 50 });
+      used = `ollama:${OLLAMA_MODEL}`;
+    } else if (provider === 'searchque') {
+      const r = await searchqueChat(prompt, null, AR_SEARCH_MS);
+      const parsed = await readProviderBody(r);
+      if (!parsed.ok) throw new Error('searchque returned ' + parsed.reason);
+      reply = parsed.reply;
+      used = 'searchque';
+    } else {
+      return res.status(400).json({ ok: false, error: 'unknown provider. Use ?p=hf|pl|ollama|searchque' });
+    }
+    res.json({ ok: true, provider, used, reply: reply.slice(0, 300), ms: Date.now() - t0 });
+  } catch (e) {
+    res.status(500).json({ ok: false, provider, error: e.message, ms: Date.now() - t0 });
+  }
+});
+
+/* Force ollama pull */
 app.post('/api/ollama/pull', async (req, res) => {
   if (ollamaPullPromise) return res.json({ ok: true, message: 'Already pulling' });
   ollamaPullPromise = ollamaPull(OLLAMA_MODEL).finally(() => { ollamaPullPromise = null; });
   const result = await ollamaPullPromise;
-  if (result.ok) {
-    await ensureOllama();
-    res.json({ ok: true });
-  } else {
-    res.status(500).json({ ok: false, error: result.error });
-  }
+  if (result.ok) { await ensureOllama(); res.json({ ok: true }); }
+  else res.status(500).json({ ok: false, error: result.error });
 });
 
 /* Config */
@@ -763,7 +903,7 @@ app.get(['/api/config','/config'], async (req, res) => {
     id, label: m.label, tagline: m.tagline, tier: m.tier, default: !!m.default,
   }));
   res.json({
-    app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v67' },
+    app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v68' },
     models, default_model: models[0].id, plans: PLANS,
     user_tier: u ? u.tier : 'free', guest: !u, ready: true,
     providers: PROVIDERS, api_models: API_ALLOWED_MODELS,
@@ -849,7 +989,6 @@ app.post('/api/persona', async (req, res) => {
 
 /* Support ticket */
 app.post('/api/support/ticket', async (req, res) => {
-  const u = await currentUser(req);
   res.json({ ok: true });
 });
 
@@ -1026,6 +1165,7 @@ app.post('/v1/chat/completions', async (req, res) => {
           _ms: Date.now() - t0,
         });
       } catch (e) {
+        console.error('[Mirox] non-stream failed. Trace:', e.trace || []);
         return res.status(502).json({ error: { message: GENERIC_ERR, type: 'server_error' }, _ms: Date.now() - t0 });
       }
     }
@@ -1041,7 +1181,7 @@ app.post('/v1/chat/completions', async (req, res) => {
       try { sseDone(res); } catch {}
       try { res.end(); } catch {}
       streamEnded = true;
-    }, 90000);
+    }, 120000);
 
     try {
       const result = await miroxChatChain({
@@ -1071,6 +1211,59 @@ app.post('/v1/chat/completions', async (req, res) => {
         } else {
           try { sseWrite(res, { error: { message: GENERIC_ERR } }); } catch {}
           try { sseDone(res); } catch {}
+        }
+      } else if (result.provider === 'pl') {
+        /* Pollinations — check if it's real SSE or JSON */
+        if (result.nativeStream && looksLikeStream(result.res)) {
+          sseWrite(res, { p: 'pl' });
+          const reader = result.res.body.getReader();
+          const dec = new TextDecoder('utf-8', { fatal: false });
+          let buf = '', aborted = false;
+          while (true) {
+            if (clientClosed || res.writableEnded || aborted) break;
+            const { value, done } = await reader.read();
+            if (done) break;
+            buf += dec.decode(value, { stream: true });
+            let idx;
+            while ((idx = buf.indexOf('\n')) !== -1) {
+              let line = buf.slice(0, idx);
+              buf = buf.slice(idx + 1);
+              if (line.endsWith('\r')) line = line.slice(0, -1);
+              const trimmed = line.trim();
+              if (!trimmed.startsWith('data:')) continue;
+              const raw = trimmed.slice(5).trim();
+              if (!raw || raw === '[DONE]') continue;
+              let o; try { o = JSON.parse(raw); } catch { continue; }
+              if (o.error) { aborted = true; break; }
+              const delta = o.choices?.[0]?.delta;
+              if (!delta) continue;
+              if (typeof delta.content === 'string' && delta.content.length) sseWrite(res, { d: delta.content });
+            }
+          }
+          try { reader.releaseLock(); } catch {}
+          if (!clientClosed && !res.writableEnded) {
+            sseWrite(res, { done: true });
+            sseDone(res);
+          }
+        } else {
+          /* PL returned non-stream JSON */
+          const parsed = await readProviderBody(result.res);
+          if (parsed.ok) {
+            sseWrite(res, { p: 'pl' });
+            const pieces = chunkText(parsed.reply, Math.min(80, Math.max(30, Math.floor(parsed.reply.length / 12))));
+            for (const p of pieces) {
+              if (clientClosed || res.writableEnded) break;
+              sseWrite(res, { d: p });
+              await new Promise(r => setTimeout(r, 6));
+            }
+            if (!clientClosed && !res.writableEnded) {
+              sseWrite(res, { done: true });
+              sseDone(res);
+            }
+          } else {
+            try { sseWrite(res, { error: { message: GENERIC_ERR } }); } catch {}
+            try { sseDone(res); } catch {}
+          }
         }
       } else {
         /* HF native SSE passthrough */
@@ -1108,7 +1301,9 @@ app.post('/v1/chat/completions', async (req, res) => {
 
       await updateUsage();
     } catch (e) {
-      if (e.name !== 'AbortError') console.warn('[Mirox] stream error:', e.message);
+      if (e.name !== 'AbortError') {
+        console.warn('[Mirox] stream error:', e.message, 'Trace:', e.trace || []);
+      }
       if (!clientClosed && !res.writableEnded) {
         try { sseWrite(res, { error: { message: GENERIC_ERR } }); } catch {}
         try { sseDone(res); } catch {}
@@ -1145,8 +1340,8 @@ app.use((err, req, res, next) => {
   if (process.env.VERCEL !== '1') {
     app.listen(PORT, () => {
       console.log(`[Mirox] Server ready at http://localhost:${PORT}`);
-      console.log(`[Mirox] Fallback chain: HF → Ollama (${OLLAMA_MODEL}) → searchque`);
-      console.log(`[Mirox] Ollama status: http://localhost:${PORT}/api/ollama/status`);
+      console.log(`[Mirox] Chain: HF → Pollinations → Ollama → searchque`);
+      console.log(`[Mirox] Diagnose: http://localhost:${PORT}/api/providers/status`);
     });
   }
 })();
