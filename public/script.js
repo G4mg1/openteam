@@ -1,15 +1,14 @@
 /* ============================================================
-   MiroxAI — Frontend v51
-   - Fully separated from HTML
-   - Ollama local-model hint ("Running local model")
-   - Provider-aware thinking text
-   - All IDs match index.html
+   MiroxAI — Frontend v52
+   - Handles all providers: hf, ollama, fallback (searchque), canned
+   - Thinking text per provider
+   - Full chat, attachments, voice, settings, plans, MCP
    ============================================================ */
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getDatabase, ref, set, get, update, push, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
 
-/* ---------- Firebase (optional — used only for cross-device chat sync) ---------- */
+/* ---------- Firebase (optional — only used for cross-device chat sync) ---------- */
 const FIREBASE_CONFIG = { databaseURL: 'https://miroxdata-default-rtdb.europe-west1.firebasedatabase.app/' };
 let firebaseApp = null, db = null;
 try {
@@ -85,7 +84,7 @@ function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catc
 function setToken(t) { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch {} }
 
 /* ============================================================
-   API key cache (localStorage)
+   API key cache
    ============================================================ */
 function loadCachedKeys(email) {
   try { const all = JSON.parse(localStorage.getItem(KEYS_CACHE) || '{}'); return all[email] || []; }
