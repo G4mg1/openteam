@@ -14,7 +14,6 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <!-- Minimal loading screen -->
   <div id="loadingScreen" class="loading-screen">
     <div class="loading-brand">Mirox</div>
     <div class="loading-line"><div class="loading-line-fill"></div></div>
@@ -31,11 +30,31 @@
       </a>
       <button id="sidebarCloseBtn" class="icon-btn sidebar-close" type="button" aria-label="Close"><i class="ri-close-line"></i></button>
     </div>
+
     <button id="newChatBtn" class="new-chat-btn" type="button"><i class="ri-add-line"></i><span>New chat</span></button>
-    <div class="sidebar-section">
-      <h3 class="sidebar-label">Chats</h3>
+
+    <!-- Search -->
+    <div class="sidebar-search">
+      <i class="ri-search-line"></i>
+      <input id="sidebarSearchInput" type="search" placeholder="Search chats & images…" autocomplete="off">
+      <button id="sidebarSearchClear" class="icon-btn" type="button" style="display:none;" aria-label="Clear"><i class="ri-close-line"></i></button>
+    </div>
+
+    <!-- Tabs -->
+    <div class="sidebar-tabs">
+      <button class="sidebar-tab active" type="button" data-tab="chats"><i class="ri-chat-3-line"></i> Chats</button>
+      <button class="sidebar-tab" type="button" data-tab="images"><i class="ri-image-line"></i> Images</button>
+    </div>
+
+    <div class="sidebar-section" data-pane="chats">
       <ul id="historyList" class="history-list"><li class="history-empty">No conversations yet</li></ul>
     </div>
+    <div class="sidebar-section" data-pane="images" style="display:none;">
+      <div id="imageHistoryGrid" class="image-history-grid">
+        <div class="history-empty">No images yet</div>
+      </div>
+    </div>
+
     <div class="sidebar-footer">
       <div id="userChip" class="user-chip">
         <div class="user-avatar"><i class="ri-user-line"></i></div>
@@ -58,6 +77,20 @@
     <header class="chat-header">
       <button id="hamburgerBtn" class="icon-btn hamburger" type="button" aria-label="Menu"><i class="ri-menu-line"></i></button>
       <h2 id="chatTitle" class="chat-title">New chat</h2>
+
+      <!-- Credit bar (free users) -->
+      <div id="creditBar" class="credit-bar" style="display:none;" title="Daily credits">
+        <div class="credit-pill" data-credit="chat" title="Messages today">
+          <i class="ri-chat-3-line"></i><span id="creditChatText">5/5</span>
+        </div>
+        <div class="credit-pill" data-credit="vision" title="Image uploads today">
+          <i class="ri-eye-line"></i><span id="creditVisionText">10/10</span>
+        </div>
+        <div class="credit-pill" data-credit="image" title="Image generations today">
+          <i class="ri-image-line"></i><span id="creditImageText">10/10</span>
+        </div>
+      </div>
+
       <div class="chat-header-actions">
         <button id="readAloudBtn" class="icon-btn" type="button" aria-label="Read aloud" title="Read aloud"><i class="ri-volume-mute-line"></i></button>
         <div id="modelPicker" class="model-picker-wrap">
@@ -196,7 +229,10 @@
         <div class="setting-group">
           <h4>Custom character</h4>
           <textarea id="personaInput" class="modal-textarea" rows="3" placeholder="Describe how Mirox should behave…"></textarea>
-          <button id="savePersonaBtn" class="modal-btn" type="button">Save</button>
+          <div class="persona-actions">
+            <button id="savePersonaBtn" class="modal-btn primary" type="button"><i class="ri-save-line"></i> Save</button>
+            <span id="personaStatus" class="persona-status"></span>
+          </div>
         </div>
       </div>
       <div class="settings-pane" data-pane="memory">
@@ -228,7 +264,7 @@
     <div class="modal modal-wide">
       <button class="icon-btn modal-close" type="button" data-close="plansModal" aria-label="Close"><i class="ri-close-line"></i></button>
       <h2 class="modal-title">Plans</h2>
-      <p class="modal-sub">Free users get 5 Eclipse messages per day. Pro and Ultra require a plan. Eclipse requires Ultimate.</p>
+      <p class="modal-sub">Free users get 5 messages, 10 image uploads, and 10 image generations per day — refilled daily.</p>
       <div id="plansGrid" class="plans-grid"></div>
       <div class="plans-soon"><i class="ri-time-line"></i> More plans will be added soon in the future.</div>
       <div class="setting-group" style="margin-top:24px;">
@@ -306,7 +342,26 @@
     </div>
   </div>
 
-  <div id="lightbox" class="lightbox"><img src="" alt="Preview"></div>
+  <!-- Secure image viewer -->
+  <div id="imageViewer" class="image-viewer" role="dialog" aria-modal="true" aria-label="Image viewer">
+    <div class="image-viewer-backdrop" data-iv-close></div>
+    <div class="image-viewer-panel" oncontextmenu="return false;">
+      <div class="image-viewer-top">
+        <div class="image-viewer-title" id="ivTitle">Generated image</div>
+        <button class="icon-btn" type="button" data-iv-close aria-label="Close"><i class="ri-close-line"></i></button>
+      </div>
+      <div class="image-viewer-canvas-wrap" id="ivCanvasWrap">
+        <canvas id="ivCanvas"></canvas>
+        <div class="image-viewer-watermark">MiroxAI · OpenSurr</div>
+      </div>
+      <div class="image-viewer-prompt" id="ivPrompt"></div>
+      <div class="image-viewer-actions">
+        <button class="iv-btn" type="button" id="ivDownload"><i class="ri-download-2-line"></i> Download</button>
+        <button class="iv-btn" type="button" id="ivRegenerate"><i class="ri-refresh-line"></i> Regenerate</button>
+        <button class="iv-btn" type="button" id="ivCopyPrompt"><i class="ri-file-copy-line"></i> Copy prompt</button>
+      </div>
+    </div>
+  </div>
 
   <script type="module" src="/script.js"></script>
 </body>
