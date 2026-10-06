@@ -13,7 +13,7 @@
     { "source": "/admin", "destination": "/admin.html" },
     { "source": "/developers/", "destination": "/developers/index.html" },
     { "source": "/developers", "destination": "/developers/index.html" },
-    { "source": "/(.*)", "destination": "/$1" }
+    { "source": "/(.*)", "destination": "/api/index" }
   ],
   "headers": [
     {
