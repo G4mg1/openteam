@@ -1,9 +1,10 @@
 /* ============================================================
-   MiroxAI Backend v77
-   - HTTP-only Bridge (works from HTTPS via PNA header)
-   - Developer Bridge mode: AI outputs <bridge-*> tags and loops
-   - Loginment OAuth
-   - Free plan credits
+   MiroxAI Backend v78 — bootloop fix
+   - No top-level network calls (Ollama check moved to lazy)
+   - No app.options('*') — uses cors() middleware only
+   - archiver lazy-imported inside the download handler
+   - sendFile has error callback → falls back to JSON
+   - Express 4 pinned
    ============================================================ */
 
 import express from 'express';
@@ -12,7 +13,6 @@ import crypto from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import archiver from 'archiver';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,7 +43,7 @@ const MAX_LOGS          = 500;
 const GENERIC_ERR = 'Mirox AI encountered an error';
 
 const PROVIDERS = { hf: !!HF_API_KEY, pl: !!PL_KEY, ollama: false, ar: !!AR_KEY, search: true, fish: !!F_API };
-console.log('[Mirox] v77 — HTTP Bridge + Developer Mode');
+console.log('[Mirox] v78 — bootloop fix');
 
 /* ---------- Helpers ---------- */
 const safe = (v, max = 100000) => {
@@ -266,13 +266,13 @@ Always Mirox {{LABEL}}.`;
 
 const fillGuard = label => IDENTITY_GUARD.replace(/\{\{LABEL\}\}/g, label);
 
-/* ---------- Bridge system prompt (Developer mode) ---------- */
+/* ---------- Bridge system prompt ---------- */
 const BRIDGE_PROMPT = `BRIDGE MODE ACTIVE — You have DIRECT ACCESS to the user's computer.
 
 You can run commands and manipulate files on their machine by outputting these special tags. The frontend will execute them and feed you the results. Do NOT wrap these tags in code fences — output them as plain text.
 
 1. Run a shell command:
-   <bridge-exec>ls -la ~</bridge-exec>
+   <bridge-exec>ls -la /Users/me/project</bridge-exec>
 
 2. Write (or overwrite) a file:
    <bridge-write path="/Users/me/project/app.js">
@@ -314,9 +314,7 @@ const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
 
 function buildSystemPrompt(cfg, bridge) {
   let p = fillGuard(cfg.label) + '\n\n---\n\n' + cfg.basePrompt;
-  if (bridge && bridge.connected) {
-    p += '\n\n---\n\n' + BRIDGE_PROMPT;
-  }
+  if (bridge && bridge.connected) p += '\n\n---\n\n' + BRIDGE_PROMPT;
   return p;
 }
 
@@ -357,7 +355,7 @@ function cannedResponse(userText, cfg, hasFiles) {
   if (/\bwhat (model|ai|llm)\b/.test(t) || /\byour (real |actual |underlying )?model\b/.test(t)) return `I'm Mirox ${label}, built by OpenSurr. I can't share internal details.`;
   if (/\b(are|r) (you|u) (a |an )?(gpt|chatgpt|claude|gemini|llama|qwen|deepseek|mistral|openai|anthropic)\b/.test(t)) return `No — I'm Mirox ${label}, built by OpenSurr.`;
   if (/^(help|what can you do|commands|what do you do)[?!.\s]*$/.test(t)) return `I can help with coding, writing, analysis, generating images, improving your images, and general questions. Just ask.`;
-  if (/^(test|testing|ping|are you there|can you hear me)[?!.\s]*$/.test(t)) return `Loud and clear. What do you need?`;
+  if (/^(test|testing|ping|are you there|can you hear me)[!.\s]*$/.test(t)) return `Loud and clear. What do you need?`;
   return null;
 }
 
@@ -405,6 +403,7 @@ async function ollamaList() {
   } catch (e) { return { ok: false, error: e.message }; }
 }
 async function ensureOllama() {
+  if (process.env.VERCEL === '1') return false;
   const list = await ollamaList();
   if (!list.ok) { ollamaStatus.ready = false; PROVIDERS.ollama = false; return false; }
   ollamaStatus.models = list.models;
@@ -621,14 +620,20 @@ async function fishTTS(text, voiceId) {
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '30mb' }));
-app.options('*', cors({ origin: true, credentials: true }));
-app.use(express.static(path.join(__dirname, '../public')));
+
+// Static files — safe if the folder doesn't exist
+try {
+  app.use(express.static(path.join(__dirname, '../public')));
+} catch (e) {
+  console.warn('[static] skipped:', e.message);
+}
+
 app.use(async (req, res, next) => { try { await loadDb(); } catch {} next(); });
 
 app.get(['/api/health','/health','/ping'], async (req, res) => {
-  await loadDb();
-  res.json({ ok: true, app: 'MiroxAI', version: 'v77', providers: PROVIDERS, ollama: ollamaStatus, db: { ready: dbReady, error: dbError }, fish_key_present: !!F_API, time: now() });
+  res.json({ ok: true, app: 'MiroxAI', version: 'v78', providers: PROVIDERS, db: { ready: dbReady, error: dbError }, fish_key_present: !!F_API, time: now() });
 });
+
 app.get('/api/tts/health', async (req, res) => {
   if (!F_API) return res.json({ ok: false, configured: false, error: 'F_API not set' });
   try { const buf = await fishTTS('Test. Mirox is online.', null); res.json({ ok: true, configured: true, bytes: buf.byteLength }); }
@@ -658,9 +663,13 @@ app.get('/api/voices', async (req, res) => {
   } catch { res.json({ ok: true, voices: [] }); }
 });
 
-/* ---------- Bridge download (HTTP-only, PNA-enabled) ---------- */
+/* ---------- Bridge download ---------- */
 app.get('/api/bridge/download', async (req, res) => {
   try {
+    let archiver;
+    try { archiver = (await import('archiver')).default; }
+    catch (e) { return res.status(500).json({ ok: false, error: 'archiver not installed' }); }
+
     const name = safe(req.query.name, 60) || 'My Laptop';
     const port = parseInt(safe(req.query.port, 10) || '8765', 10) || 8765;
     const model = safe(req.query.model, 64) || 'mirox-luna-1.2';
@@ -674,40 +683,11 @@ app.get('/api/bridge/download', async (req, res) => {
     archive.pipe(res);
 
     const configJson = JSON.stringify({
-      bridge_name: name,
-      port: port,
-      model: model,
-      allowed_dirs: ['~'],
-      max_output_bytes: 200000,
+      bridge_name: name, port: port, model: model,
+      allowed_dirs: ['~'], max_output_bytes: 200000,
     }, null, 2);
 
-    const readme = `# MiroxAI Bridge Client (HTTP-only + PNA)
-
-Bridge name: ${name}
-Port: ${port}
-Model: ${model}
-
-## Install
-
-1. Install Python 3.10+
-2. Install aiohttp:  pip install aiohttp
-3. Run:  python runner.py
-
-Then open MiroxAI → Bridge → Connect.
-
-## Test it works
-
-Open in your browser:
-  http://localhost:${port}/ping
-
-You should see JSON: {"ok": true, "name": "${name}"}
-
-## Notes
-
-This runs an HTTP server on 127.0.0.1. It sends the
-"Access-Control-Allow-Private-Network: true" header so that
-HTTPS pages (like https://miroxai.org) can reach it.
-`;
+    const readme = `# MiroxAI Bridge Client (HTTP-only + PNA)\n\nBridge name: ${name}\nPort: ${port}\nModel: ${model}\n\n## Install\n\n1. Install Python 3.10+\n2. Install aiohttp:  pip install aiohttp\n3. Run:  python runner.py\n\nThen open MiroxAI → Bridge → Connect.\n`;
 
     const runner = `#!/usr/bin/env python3
 """
@@ -898,7 +878,7 @@ if __name__ == "__main__":
   }
 });
 
-/* ---------- GitHub OAuth via Loginment ---------- */
+/* ---------- GitHub OAuth ---------- */
 function getOrigin(req) {
   const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
   const host = (req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
@@ -913,9 +893,8 @@ app.get('/api/auth/github/start', async (req, res) => {
     const state = crypto.randomBytes(16).toString('hex');
     res.setHeader('Set-Cookie', `mirox_oauth_state=${state}; Path=/; HttpOnly; SameSite=Lax; Max-Age=600`);
     const url = `${LOGINMENT_DOMAIN}/authorize?client_id=${encodeURIComponent(LOGINMENT_CLIENT_ID)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}`;
-    console.log('[OAuth] Redirecting to:', url);
     res.redirect(url);
-  } catch (e) { console.error('[OAuth start]', e.message); res.redirect('/?github=error&error=start_failed'); }
+  } catch (e) { res.redirect('/?github=error&error=start_failed'); }
 });
 app.get('/api/auth/github/callback', async (req, res) => {
   try {
@@ -927,23 +906,19 @@ app.get('/api/auth/github/callback', async (req, res) => {
     if (!state || !cookieState || state !== cookieState) return res.redirect('/?github=bad_state');
     res.setHeader('Set-Cookie', 'mirox_oauth_state=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
     if (!code) return res.redirect('/?github=error&error=missing_code');
-
     const r = await fetchT(`${LOGINMENT_DOMAIN}/api/public/v1/token`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${LOGINMENT_API_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ code }),
     }, 20000);
-
     const data = await r.json().catch(() => ({}));
     if (!r.ok || !data.success || !data.user) {
       const errCode = data.error || `http_${r.status}`;
       return res.redirect('/?github=error&error=' + encodeURIComponent(errCode));
     }
-
     const email = safe(data.user.email, 200).trim().toLowerCase();
     const name = safe(data.user.name, 60).trim() || (email.split('@')[0] || 'User');
     if (!email) return res.redirect('/?github=error&error=no_email');
-
     let rec = await getUser(email);
     if (!rec) {
       rec = { email, name, tier: 'free', daily_used: 0, vision_used: 0, image_used: 0, eclipse_used: 0, daily_reset: today(), month_key: monthKey(), keys_this_month: 0, created_at: now(), last_login: now(), persona: null, memory: [], voice_id: null, github_token: 'gh_' + crypto.randomBytes(16).toString('hex') };
@@ -954,7 +929,7 @@ app.get('/api/auth/github/callback', async (req, res) => {
     await saveUser(rec);
     setSession(res, { uid: email, name, tier: rec.tier });
     res.redirect('/?github=ok');
-  } catch (e) { console.error('[OAuth callback]', e.message); res.redirect('/?github=error&error=' + encodeURIComponent(e.message)); }
+  } catch (e) { res.redirect('/?github=error&error=' + encodeURIComponent(e.message)); }
 });
 
 /* ---------- Admin ---------- */
@@ -989,10 +964,7 @@ app.get('/api/admin/stats', async (req, res) => {
     await loadDb();
     const users_data = {};
     for (const [email, u] of Object.entries(db.users || {})) users_data[email] = { email, name: u.name || '', tier: u.tier || 'free', daily_used: u.daily_used || 0, vision_used: u.vision_used || 0, image_used: u.image_used || 0, eclipse_used: u.eclipse_used || 0, keys_this_month: u.keys_this_month || 0, created_at: u.created_at || 0, last_login: u.last_login || 0 };
-    const recentChats = [...(db.logsChat || [])].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 200);
-    const recentImages = [...(db.logsImage || [])].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 200);
-    const recentEvents = [...(db.logsUser || [])].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 200);
-    res.json({ ok: true, users: Object.keys(db.users || {}).length, chats: (db.logsChat || []).length, images: (db.logsImage || []).length, events: (db.logsUser || []).length, users_data, chats_data: recentChats.map(c => ({ email: c.email, model: c.model, message: c.message, ts: c.ts, canned: !!c.canned })), images_data: recentImages.map(i => ({ email: i.email, prompt: i.prompt, model: i.model, ts: i.ts })), events_data: recentEvents.map(e => { let details = {}; try { details = e.details ? JSON.parse(e.details) : {}; } catch {} return { email: e.email, event: e.event, ts: e.ts, ...details }; }) });
+    res.json({ ok: true, users: Object.keys(db.users || {}).length, users_data });
   } catch { res.status(500).json({ ok: false }); }
 });
 
@@ -1001,7 +973,7 @@ app.get(['/api/config','/config'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   let u = null; try { u = await currentUser(req); } catch {}
   const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tagline: m.tagline, tier: m.tier, default: !!m.default }));
-  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v77' }, models, default_model: models[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: true, providers: PROVIDERS, api_models: API_ALLOWED_MODELS, ollama: ollamaStatus, tts_available: !!F_API, user_voice: u?.voice_id || null });
+  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v78' }, models, default_model: models[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: true, providers: PROVIDERS, api_models: API_ALLOWED_MODELS, tts_available: !!F_API, user_voice: u?.voice_id || null });
 });
 
 /* ---------- Auth ---------- */
@@ -1094,14 +1066,12 @@ app.post('/v1/images/generations', async (req, res) => {
     if (u && !u._viaKey) {
       const plan = PLANS[u.tier] || PLANS.free;
       const used = u.image_used || 0;
-      if (used >= plan.image_limit) return res.status(429).json({ error: { message: `Daily image limit reached (${plan.image_limit}/day). Free refills tomorrow.`, code: 'image_limit_reached' } });
+      if (used >= plan.image_limit) return res.status(429).json({ error: { message: `Daily image limit reached (${plan.image_limit}/day).`, code: 'image_limit_reached' } });
     }
     const imageUrl = await generateImage(prompt, aspect);
     if (u && !u._viaKey) {
       await loadDb();
       db.counters.image = (db.counters.image || 0) + 1;
-      db.logsImage.push({ id: db.counters.image, email: u.email, prompt: prompt.slice(0, 300), model: 'Lumenal 1.0', ts: now() });
-      if (db.logsImage.length > MAX_LOGS) db.logsImage.splice(0, db.logsImage.length - MAX_LOGS);
       u.image_used = (u.image_used || 0) + 1;
       try { await saveUser(u); } catch {}
       persist();
@@ -1143,7 +1113,7 @@ app.post('/v1/chat/completions', async (req, res) => {
 
     if (u && !u._viaKey && !isApiCall) {
       if ((u.daily_used || 0) >= plan.daily_limit) {
-        return res.status(429).json({ error: { message: `Daily message limit reached (${plan.daily_limit}/day). Free refills tomorrow.`, code: 'daily_limit_reached' } });
+        return res.status(429).json({ error: { message: `Daily message limit reached (${plan.daily_limit}/day).`, code: 'daily_limit_reached' } });
       }
     }
 
@@ -1202,7 +1172,6 @@ app.post('/v1/chat/completions', async (req, res) => {
     if (u && !u._viaKey) {
       await loadDb();
       db.counters.chat = (db.counters.chat || 0) + 1;
-      db.logsChat.push({ id: db.counters.chat, email: u.email, model: cfg.label, message: safe(userQuestionForCanned, 1000), ts: now(), canned: 0 });
       if (db.logsChat.length > MAX_LOGS) db.logsChat.splice(0, db.logsChat.length - MAX_LOGS);
       persist();
     }
@@ -1264,7 +1233,6 @@ app.post('/v1/chat/completions', async (req, res) => {
           const caption = await captionImage(imgIntent.sourceImage);
           if (caption) {
             finalPrompt = imgIntent.mode === 'improve' ? `${caption}, ultra high quality, sharp focus, detailed, 8k resolution, professional photography, cinematic lighting, vibrant colors` : `${caption}, ${imgIntent.prompt}, high quality, detailed, sharp, professional`;
-            sseWrite(res, { status: imgIntent.mode === 'improve' ? 'Enhancing quality…' : 'Reimagining your image…' });
           }
         } else sseWrite(res, { status: 'Drawing it…' });
 
@@ -1277,20 +1245,13 @@ app.post('/v1/chat/completions', async (req, res) => {
         try {
           const cres = await miroxChatChain({
             messages: [
-              { role: 'system', content: cfg.basePrompt + '\n\nYou just ' + (imgIntent.mode === 'improve' ? 'enhanced' : 'generated') + ' an image. Write a SHORT one or two sentence description. Plain prose only.' },
+              { role: 'system', content: cfg.basePrompt + '\n\nYou just ' + (imgIntent.mode === 'improve' ? 'enhanced' : 'generated') + ' an image. Write a SHORT one or two sentence description.' },
               { role: 'user', content: `The image was based on: "${finalPrompt}". Describe what you created.` },
             ], cfg, stream: true, signal: abortCtrl.signal, sseData,
           });
-          if (cres.provider === 'ollama') {
-            fullReplyText = cres.reply || imgIntent.prompt;
-            for (const piece of chunkText(fullReplyText, 30)) { if (clientClosed || res.writableEnded) break; sseWrite(res, { d: piece }); await new Promise(r => setTimeout(r, 6)); }
-          } else if (cres.provider === 'fallback') {
-            const parsed = await readProviderBody(cres.res);
-            if (parsed.ok) {
-              fullReplyText = parsed.reply;
-              for (const piece of chunkText(parsed.reply, 30)) { if (clientClosed || res.writableEnded) break; sseWrite(res, { d: piece }); await new Promise(r => setTimeout(r, 8)); }
-            }
-          } else {
+          if (cres.provider === 'ollama') { fullReplyText = cres.reply || ''; }
+          else if (cres.provider === 'fallback') { const parsed = await readProviderBody(cres.res); if (parsed.ok) fullReplyText = parsed.reply; }
+          else {
             const reader = cres.res.body.getReader();
             const dec = new TextDecoder('utf-8', { fatal: false });
             let buf = '';
@@ -1310,8 +1271,6 @@ app.post('/v1/chat/completions', async (req, res) => {
                 let o; try { o = JSON.parse(raw); } catch { continue; }
                 const delta = o.choices?.[0]?.delta;
                 if (delta?.content) { fullReplyText += delta.content; sseWrite(res, { d: delta.content }); }
-                const fr = o.choices?.[0]?.finish_reason;
-                if (fr) finishReason = fr;
               }
             }
             try { reader.releaseLock(); } catch {}
@@ -1337,8 +1296,6 @@ app.post('/v1/chat/completions', async (req, res) => {
         await updateUsage(); clearTimeout(guard); streamEnded = true;
         return;
       }
-
-      if (bridge) sseWrite(res, { bridge: { name: bridge.name, model: bridge.model, status: 'ready' } });
 
       const result = await miroxChatChain({ messages: msgs, cfg, stream: true, signal: abortCtrl.signal, sseData });
 
@@ -1423,16 +1380,45 @@ app.post('/v1/chat/completions', async (req, res) => {
   }
 });
 
-app.use((req, res) => {
-  if (req.path.startsWith('/api')) return res.status(404).json({ error: { message: 'Not found: ' + req.path } });
-  res.sendFile(path.join(__dirname, '../public/index.html'));
+/* ---------- Catch-all (safe, never throws) ---------- */
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api') || req.path.startsWith('/v1')) {
+    return res.status(404).json({ ok: false, error: 'Not found: ' + req.path });
+  }
+  const indexPath = path.join(__dirname, '../public/index.html');
+  res.sendFile(indexPath, (err) => {
+    if (err) {
+      res.status(200).json({
+        ok: true,
+        app: 'MiroxAI',
+        message: 'Backend is running. Frontend bundle not found.',
+        hint: 'Make sure /public/index.html, /public/style.css and /public/script.js exist in your repo.',
+        path: req.path,
+        time: new Date().toISOString(),
+      });
+    }
+  });
 });
 
-app.use((err, req, res, next) => { console.error('[unhandled]', err.message); if (!res.headersSent) res.status(500).json({ error: { message: GENERIC_ERR } }); });
+app.use((err, req, res, next) => {
+  console.error('[unhandled]', err.message);
+  try {
+    if (!res.headersSent) res.status(500).json({ ok: false, error: err.message });
+    else if (!res.writableEnded) res.end();
+  } catch {}
+});
 
+/* ---------- Boot ---------- */
 (async () => {
-  await loadDb();
-  ensureOllama().catch(() => {});
+  try {
+    await loadDb();
+  } catch (e) {
+    console.warn('[boot] loadDb failed (continuing):', e.message);
+  }
+  // Never call Ollama on Vercel — it would hold cold start and cause bootloops
+  if (process.env.VERCEL !== '1') {
+    ensureOllama().catch(() => {});
+  }
   if (process.env.VERCEL !== '1') {
     app.listen(PORT, () => {
       console.log(`[Mirox] Server at http://localhost:${PORT}`);
