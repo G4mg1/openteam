@@ -1,9 +1,10 @@
 /* ============================================================
-   MiroxAI — Frontend v57
-   - Code blocks themed to accent color
-   - Image re-imagining fixed (image preserved during description stream)
-   - Continue appends to same bubble (easy copy)
-   - Cool new loading screen
+   MiroxAI — Frontend v59
+   FIXED:
+   - Image bubbles no longer giant (max-width: 420px, max-height: 60vh)
+   - Continue button works — appends to same bubble via /v1/chat/completions
+     with full assistant prefix in history
+   - TTS: fetch TTS audio eagerly on readAloud toggle; user gesture unlocks
    ============================================================ */
 
 const $  = s => document.querySelector(s);
@@ -17,14 +18,14 @@ const FALLBACK_MODELS = [
   { id: 'mirox-eclipse-2.0', label: 'Eclipse', tagline: 'Best quality · Ultimate only', tier: 'ultimate' },
 ];
 const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
-const LS_KEY = 'miroxai_conversations_v22';
+const LS_KEY = 'miroxai_conversations_v23';
 const TOKEN_KEY = 'mirox_token';
-const USER_SETTINGS_KEY = 'miroxai_user_settings_v22';
+const USER_SETTINGS_KEY = 'miroxai_user_settings_v23';
 const DEVICE_ID_KEY = 'mirox_device_id';
-const APPEARANCE_KEY = 'miroxai_appearance_v22';
-const MCP_KEY = 'miroxai_mcp_v22';
-const FEEDBACK_KEY = 'miroxai_feedback_v22';
-const KEYS_CACHE = 'miroxai_keys_cache_v22';
+const APPEARANCE_KEY = 'miroxai_appearance_v23';
+const MCP_KEY = 'miroxai_mcp_v23';
+const FEEDBACK_KEY = 'miroxai_feedback_v23';
+const KEYS_CACHE = 'miroxai_keys_cache_v23';
 
 let __config = null, __user = null, __tier = 'free', __model = 'mirox-luna-1.2';
 let currentConversationId = null, isReplying = false, __conversations = [], pendingFiles = [];
@@ -48,9 +49,7 @@ const LANGUAGE_ICONS = {
 };
 const langIcon = l => LANGUAGE_ICONS[String(l || '').toLowerCase()] || 'ri-code-line';
 
-/* ============================================================
-   SELF-CONTAINED SYNTAX HIGHLIGHTER
-   ============================================================ */
+/* ---------- Syntax highlighter ---------- */
 const HL = (() => {
   const KW = {
     js: 'const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|new|this|class|extends|super|import|export|from|as|default|async|await|try|catch|finally|throw|typeof|instanceof|in|of|null|undefined|true|false|yield|delete|void|static|get|set',
@@ -64,16 +63,13 @@ const HL = (() => {
     sql: 'SELECT|FROM|WHERE|INSERT|INTO|VALUES|UPDATE|SET|DELETE|CREATE|TABLE|ALTER|DROP|INDEX|JOIN|LEFT|RIGHT|INNER|OUTER|ON|AS|AND|OR|NOT|NULL|IS|IN|LIKE|BETWEEN|GROUP|BY|ORDER|HAVING|LIMIT|OFFSET|UNION|DISTINCT|COUNT|SUM|AVG|MAX|MIN|PRIMARY|KEY|FOREIGN|REFERENCES',
   };
   function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-
   function highlight(code, lang) {
     const l = String(lang || '').toLowerCase();
     let src = esc(code);
-
     const strings = [];
     src = src.replace(/"((?:\\.|(?!").)*)"/g, (m) => { strings.push(m); return `\u0001S${strings.length - 1}\u0001`; });
     src = src.replace(/'((?:\\.|(?!').)*)'/g, (m) => { strings.push(m); return `\u0001S${strings.length - 1}\u0001`; });
     src = src.replace(/`((?:\\.|(?!`).)*)`/g, (m) => { strings.push(m); return `\u0001S${strings.length - 1}\u0001`; });
-
     const comments = [];
     if (['js','ts','java','cpp','go','rust','c'].includes(l)) {
       src = src.replace(/(\/\/[^\n]*)/g, (m) => { comments.push(m); return `\u0001C${comments.length - 1}\u0001`; });
@@ -83,29 +79,19 @@ const HL = (() => {
     } else if (l === 'sql') {
       src = src.replace(/(--[^\n]*)/g, (m) => { comments.push(m); return `\u0001C${comments.length - 1}\u0001`; });
     }
-
     src = src.replace(/\b(0x[0-9a-fA-F]+|\d+\.?\d*(?:[eE][+\-]?\d+)?)\b/g, '<span class="hl-num">$1</span>');
-
     const kw = KW[l];
     if (kw) src = src.replace(new RegExp(`\\b(${kw})\\b`, 'g'), '<span class="hl-kw">$1</span>');
-
     src = src.replace(/\b([A-Za-z_$][\w$]*)\s*\(/g, '<span class="hl-fn">$1</span>(');
-
     src = src.replace(/\u0001C(\d+)\u0001/g, (_, i) => `<span class="hl-cm">${comments[+i]}</span>`);
     src = src.replace(/\u0001S(\d+)\u0001/g, (_, i) => `<span class="hl-str">${strings[+i]}</span>`);
-
     return src;
   }
   return { highlight };
 })();
 
-/* ============================================================
-   LOADING SCREEN
-   ============================================================ */
-function killLoader() {
-  const l = document.getElementById('loadingScreen');
-  if (l) { l.classList.add('hidden'); setTimeout(() => l.style.display = 'none', 700); }
-}
+/* ---------- Loading ---------- */
+function killLoader() { const l = document.getElementById('loadingScreen'); if (l) { l.classList.add('hidden'); setTimeout(() => l.style.display = 'none', 700); } }
 setTimeout(killLoader, 900);
 setTimeout(killLoader, 2200);
 
@@ -114,7 +100,6 @@ const escapeHtml = s => { const d = document.createElement('div'); d.textContent
 function getDeviceId() { let id = localStorage.getItem(DEVICE_ID_KEY); if (!id) { id = 'dev_' + uid(); localStorage.setItem(DEVICE_ID_KEY, id); } return id; }
 function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
 function setToken(t) { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch {} }
-
 function loadCachedKeys(email) { try { const all = JSON.parse(localStorage.getItem(KEYS_CACHE) || '{}'); return all[email] || []; } catch { return []; } }
 function saveCachedKeys(email, keys) { try { const all = JSON.parse(localStorage.getItem(KEYS_CACHE) || '{}'); all[email] = keys; localStorage.setItem(KEYS_CACHE, JSON.stringify(all)); } catch {} }
 function addCachedKey(email, keyObj) { if (!email) return; const keys = loadCachedKeys(email); keys.unshift(keyObj); saveCachedKeys(email, keys.slice(0, 50)); }
@@ -168,9 +153,7 @@ function renderMcp(servers) {
   list.innerHTML = servers.map((s, i) => `<div class="mcp-item"><div class="mcp-item-status ${s.enabled ? 'on' : ''}"></div><div class="mcp-item-info"><div class="mcp-item-name">${escapeHtml(s.name || 'Unnamed')}</div><div class="mcp-item-url">${escapeHtml(s.url || '')}</div></div><button class="icon-btn mcp-toggle" data-idx="${i}"><i class="ri-${s.enabled ? 'pause-circle-line' : 'play-circle-line'}"></i></button><button class="icon-btn mcp-remove" data-idx="${i}"><i class="ri-delete-bin-line"></i></button></div>`).join('');
 }
 
-/* ============================================================
-   MARKDOWN
-   ============================================================ */
+/* ---------- Markdown ---------- */
 function renderMarkdown(text) {
   if (!text) return '';
   let src = String(text);
@@ -193,7 +176,6 @@ function renderMarkdown(text) {
   } else if (rest) parts.push({ type: 'text', content: rest });
   return parts.map(p => p.type === 'code' ? renderCodeBlock(p.lang, p.content, p.closed) : renderTextBlock(p.content)).join('');
 }
-
 function renderCodeBlock(lang, code, closed) {
   const cleanLang = (lang || '').trim().toLowerCase();
   const label = (cleanLang || 'Code').toUpperCase();
@@ -202,22 +184,10 @@ function renderCodeBlock(lang, code, closed) {
   const lines = raw.split('\n');
   const highlighted = HL.highlight(raw, cleanLang);
   let gutter = '';
-  if (userSettings.lineNumbers) {
-    let g = ''; for (let i = 1; i <= lines.length; i++) g += i + '\n';
-    gutter = `<div class="code-gutter">${g}</div>`;
-  }
-  const copyBtn = closed
-    ? `<button class="code-action-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button>`
-    : `<span class="code-streaming-hint"><i class="ri-loader-4-line"></i> writing</span>`;
-  return `<div class="code-block" data-lang="${escapeHtml(cleanLang)}">
-    <div class="code-block-header">
-      <span class="code-lang-label"><i class="${icon}"></i> ${escapeHtml(label)}</span>
-      ${copyBtn}
-    </div>
-    <div class="code-block-body">${gutter}<pre><code class="language-${escapeHtml(cleanLang)}">${highlighted}</code></pre></div>
-  </div>`;
+  if (userSettings.lineNumbers) { let g = ''; for (let i = 1; i <= lines.length; i++) g += i + '\n'; gutter = `<div class="code-gutter">${g}</div>`; }
+  const copyBtn = closed ? `<button class="code-action-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button>` : `<span class="code-streaming-hint"><i class="ri-loader-4-line"></i> writing</span>`;
+  return `<div class="code-block" data-lang="${escapeHtml(cleanLang)}"><div class="code-block-header"><span class="code-lang-label"><i class="${icon}"></i> ${escapeHtml(label)}</span>${copyBtn}</div><div class="code-block-body">${gutter}<pre><code class="language-${escapeHtml(cleanLang)}">${highlighted}</code></pre></div></div>`;
 }
-
 function isTableSeparator(line) { const t = line.trim(); if (!t.startsWith('|')) return false; return /^\|[\s:|-]+\|?\s*$/.test(t) && /-/.test(t); }
 function parseTableRow(line) { let s = line.trim(); if (s.startsWith('|')) s = s.slice(1); if (s.endsWith('|')) s = s.slice(0, -1); return s.split('|').map(c => c.trim()); }
 function renderTextBlock(text) {
@@ -263,7 +233,6 @@ function inlineFmt(t) {
   t = t.replace(/\u0001(\d+)\u0001/g, (_, i) => `<code>${escapeHtml(codes[+i])}</code>`);
   return t;
 }
-
 function wireCodeButtons(scope) {
   (scope || document).querySelectorAll('.code-block .code-action-btn[data-copy]').forEach(btn => {
     if (btn.__wired) return; btn.__wired = true;
@@ -280,9 +249,7 @@ function wireCodeButtons(scope) {
   });
 }
 
-/* ============================================================
-   TTS
-   ============================================================ */
+/* ---------- TTS ---------- */
 function unlockAudio() {
   if (audioUnlocked) return;
   try { const a = new Audio(); a.volume = 0; a.play().then(() => { a.pause(); audioUnlocked = true; }).catch(() => {}); } catch {}
@@ -294,32 +261,33 @@ document.addEventListener('touchstart', unlockAudio, { once: true });
 function stopSpeaking() {
   if (currentAudio) { try { currentAudio.pause(); currentAudio.currentTime = 0; } catch {} currentAudio = null; }
 }
-async function fetchTtsAudio(text, voiceId) {
-  const clean = stripForSpeech(text);
-  if (!clean) return null;
-  const r = await fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: clean.slice(0, 800), voice: voiceId || null }) });
-  if (!r.ok) return null;
-  const blob = await r.blob();
-  return URL.createObjectURL(blob);
-}
 async function speakText(text) {
-  if (!ttsAvailable) return false;
+  if (!ttsAvailable) { console.warn('[Mirox] TTS not configured (F_API missing on server).'); return false; }
+  const clean = stripForSpeech(text);
+  if (!clean) return false;
   stopSpeaking();
-  lastSpokenText = text;
+  lastSpokenText = clean;
   unlockAudio();
   try {
     const voiceId = userSettings.voice_id || __user?.voice_id || null;
-    const url = await fetchTtsAudio(text, voiceId);
-    if (!url) return false;
+    const r = await fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: clean.slice(0, 900), voice: voiceId || null }),
+    });
+    if (!r.ok) { console.warn('[Mirox] TTS failed HTTP', r.status); return false; }
+    const blob = await r.blob();
+    if (blob.size < 200) { console.warn('[Mirox] TTS returned empty audio'); return false; }
+    const url = URL.createObjectURL(blob);
     const a = new Audio(url);
     currentAudio = a;
     a.onended = () => { URL.revokeObjectURL(url); currentAudio = null; };
     await a.play();
     return true;
-  } catch { return false; }
+  } catch (e) { console.warn('[Mirox] TTS error:', e.message); return false; }
 }
 function playAudioDataUrl(dataUrl) {
-  if (!dataUrl) return;
+  if (!dataUrl) return false;
   stopSpeaking();
   unlockAudio();
   try {
@@ -327,29 +295,20 @@ function playAudioDataUrl(dataUrl) {
     currentAudio = a;
     a.onended = () => { currentAudio = null; };
     a.play().catch(() => {});
-  } catch {}
+    return true;
+  } catch { return false; }
 }
 function stripForSpeech(text) {
   return String(text || '').replace(/```[\s\S]*?```/g, ' code block ').replace(/`([^`]+)`/g, '$1').replace(/[#*_>~]/g, ' ').replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1').replace(/\s+/g, ' ').trim();
 }
 
-/* ============================================================
-   CONVERSATIONS
-   ============================================================ */
+/* ---------- Conversations ---------- */
 function currentConvo() { return __conversations.find(c => c.id === currentConversationId) || null; }
 function saveChatsToLS() { try { localStorage.setItem(LS_KEY, JSON.stringify(__conversations)); } catch {} }
 function loadChatsFromLS() { try { __conversations = JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch { __conversations = []; } }
-
-function getWelcomeHTML() {
-  return `<div class="welcome-screen"><img src="/logo.png" alt="MiroxAI" class="welcome-logo theme-aware-logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';"><div class="logo-fallback logo-fallback-lg" style="display:none;">M</div><h1 class="welcome-title">Hi, I'm Mirox</h1><p class="welcome-sub">Built by the OpenSurr team. Ask anything, attach images or files, or start a voice call.</p><div class="suggestion-grid"><button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span>Generate me an image of a cat</span></button><button class="suggestion-card" type="button" data-prompt="Help me write code"><i class="ri-code-line"></i><span>Help me write code</span></button><button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span>Explain a concept simply</span></button><button class="suggestion-card" type="button" data-prompt="What would you like to talk about?"><i class="ri-chat-3-line"></i><span>What would you like to talk about?</span></button></div></div>`;
-}
+function getWelcomeHTML() { return `<div class="welcome-screen"><img src="/logo.png" alt="MiroxAI" class="welcome-logo theme-aware-logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';"><div class="logo-fallback logo-fallback-lg" style="display:none;">M</div><h1 class="welcome-title">Hi, I'm Mirox</h1><p class="welcome-sub">Built by the OpenSurr team. Ask anything, attach images or files, or start a voice call.</p><div class="suggestion-grid"><button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span>Generate me an image of a cat</span></button><button class="suggestion-card" type="button" data-prompt="Help me write code"><i class="ri-code-line"></i><span>Help me write code</span></button><button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span>Explain a concept simply</span></button><button class="suggestion-card" type="button" data-prompt="What would you like to talk about?"><i class="ri-chat-3-line"></i><span>What would you like to talk about?</span></button></div></div>`; }
 function startNewChat() { currentConversationId = null; $('#chatTitle').textContent = 'New chat'; $('#chatMessages').innerHTML = getWelcomeHTML(); bindSuggestionClicks(); renderHistory(); }
-function bindSuggestionClicks() {
-  $$('.suggestion-card').forEach(card => {
-    if (card.__wired) return; card.__wired = true;
-    card.onclick = () => { const prompt = card.dataset.prompt; if (prompt && $('#messageInput')) { $('#messageInput').value = prompt; updateSendButtonState(); handleSend(); } };
-  });
-}
+function bindSuggestionClicks() { $$('.suggestion-card').forEach(card => { if (card.__wired) return; card.__wired = true; card.onclick = () => { const prompt = card.dataset.prompt; if (prompt && $('#messageInput')) { $('#messageInput').value = prompt; updateSendButtonState(); handleSend(); } }; }); }
 function openConversationLS(id) {
   const c = __conversations.find(x => x.id === id); if (!c) return;
   currentConversationId = id; $('#chatTitle').textContent = c.title || 'Chat';
@@ -364,9 +323,7 @@ function renderHistory() {
 }
 function scrollToBottom() { const c = $('#chatMessages'); if (c) c.scrollTop = c.scrollHeight; }
 
-/* ============================================================
-   MESSAGES
-   ============================================================ */
+/* ---------- Message rendering ---------- */
 function buildActions(role, msgId) {
   if (role === 'ai') return `<div class="message-actions" data-msg-id="${msgId}"><button class="action-btn" data-action="copy" title="Copy"><i class="ri-file-copy-line"></i></button><button class="action-btn" data-action="speak" title="Read aloud"><i class="ri-volume-up-line"></i></button><button class="action-btn" data-action="retry" title="Regenerate"><i class="ri-refresh-line"></i></button><button class="action-btn" data-action="good" title="Good"><i class="ri-thumb-up-line"></i></button><button class="action-btn" data-action="bad" title="Bad"><i class="ri-thumb-down-line"></i></button></div>`;
   return `<div class="message-actions" data-msg-id="${msgId}"><button class="action-btn" data-action="copy" title="Copy"><i class="ri-file-copy-line"></i></button><button class="action-btn" data-action="edit" title="Edit"><i class="ri-edit-line"></i></button></div>`;
@@ -377,17 +334,13 @@ function renderMessageAttachments(files) {
   return `<div class="bubble-attachments">${items}</div>`;
 }
 function renderGeneratedImage(dataUrl, alt) { if (!dataUrl) return ''; return `<div class="bubble-generated-image" data-lightbox="${escapeHtml(dataUrl)}"><img src="${dataUrl}" alt="${escapeHtml(alt || 'Generated image')}" loading="lazy"></div>`; }
-
-function buildContinueBar(msgId) {
-  return `<div class="continue-bar" data-continue-id="${msgId}"><button class="continue-btn" data-continue="${msgId}"><i class="ri-arrow-down-line"></i> Continue</button></div>`;
-}
+function buildContinueBar(msgId) { return `<div class="continue-bar" data-continue-id="${msgId}"><button class="continue-btn" data-continue="${msgId}"><i class="ri-arrow-down-line"></i> Continue</button></div>`; }
 function wireLightbox(el) {
   el.querySelectorAll('[data-lightbox]').forEach(el2 => el2.addEventListener('click', () => { const lb = $('#lightbox'); if (lb) { lb.querySelector('img').src = el2.dataset.lightbox; lb.classList.add('open'); } }));
 }
 function wireContinueBtn(msgEl) {
   msgEl.querySelectorAll('[data-continue]').forEach(btn => { if (btn.__wired) return; btn.__wired = true; btn.addEventListener('click', () => handleContinue(msgEl)); });
 }
-
 function addMessageToDOM(role, content, ts, animate = true, msgId = null, files = [], generatedImage = null, finishReason = null) {
   const container = $('#chatMessages'); if (!container) return null;
   const welcome = container.querySelector('.welcome-screen'); if (welcome) welcome.remove();
@@ -399,27 +352,12 @@ function addMessageToDOM(role, content, ts, animate = true, msgId = null, files 
   const attachmentsHtml = role === 'user' ? renderMessageAttachments(files) : '';
   const generatedHtml = role === 'ai' && generatedImage ? renderGeneratedImage(generatedImage, content) : '';
   const continueHtml = (role === 'ai' && finishReason === 'length') ? buildContinueBar(id) : '';
-  msgEl.innerHTML = `<div class="message-content">
-    <div class="bubble">
-      ${attachmentsHtml}
-      ${generatedHtml}
-      <div class="bubble-text"></div>
-    </div>
-    ${continueHtml}
-    ${buildActions(role, id)}
-    <div class="message-time">${ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</div>
-  </div>`;
+  msgEl.innerHTML = `<div class="message-content"><div class="bubble">${attachmentsHtml}${generatedHtml}<div class="bubble-text"></div></div>${continueHtml}${buildActions(role, id)}<div class="message-time">${ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</div></div>`;
   container.appendChild(msgEl);
   const bubble = msgEl.querySelector('.bubble');
   const bubbleText = msgEl.querySelector('.bubble-text');
   if (role === 'user') { bubbleText.textContent = content || ''; if (!content) bubbleText.style.display = 'none'; }
-  else {
-    bubble.dataset.rawText = content;
-    if (content) {
-      bubbleText.innerHTML = renderMarkdown(content || '');
-      wireCodeButtons(bubbleText);
-    }
-  }
+  else { bubble.dataset.rawText = content; if (content) { bubbleText.innerHTML = renderMarkdown(content || ''); wireCodeButtons(bubbleText); } }
   wireLightbox(msgEl);
   wireContinueBtn(msgEl);
   wireMessageActions(msgEl);
@@ -469,8 +407,7 @@ function wireMessageActions(msgEl) {
         const cur = bubble?.querySelector('.bubble-text')?.textContent || '';
         const next = prompt('Edit message', cur);
         if (next === null || !next.trim()) return;
-        const bt = bubble.querySelector('.bubble-text');
-        if (bt) { bt.textContent = next.trim(); bt.style.display = ''; }
+        const bt = bubble.querySelector('.bubble-text'); if (bt) { bt.textContent = next.trim(); bt.style.display = ''; }
         const c = currentConvo();
         if (c) { const m = (c.messages || []).find(x => x.id === id); if (m) { m.content = next.trim(); saveChatsToLS(); } }
         return;
@@ -492,9 +429,7 @@ function applyStoredFeedback(msgEl) {
   else if (fb[id] === 'bad') msgEl.querySelector('.action-btn[data-action="bad"]')?.classList.add('active-bad');
 }
 
-/* ============================================================
-   CONTINUE — appends to the SAME bubble
-   ============================================================ */
+/* ---------- Continue — appends into same bubble ---------- */
 async function handleContinue(msgEl) {
   if (isReplying) return;
   const convo = currentConvo(); if (!convo) return;
@@ -510,20 +445,18 @@ async function handleContinue(msgEl) {
   activeStreamController = new AbortController();
 
   const idx = convo.messages.findIndex(x => x.id === msgId);
-  const history = convo.messages.slice(Math.max(0, idx - 12), idx).map(x => ({ role: x.role, content: x.content }));
-  history.push({ role: 'assistant', content: m.content });
+  const priorHistory = convo.messages.slice(Math.max(0, idx - 12), idx).map(x => ({ role: x.role, content: x.content }));
+  /* Include the partial assistant message so the model knows what to continue from */
+  priorHistory.push({ role: 'assistant', content: m.content });
 
   const model = __model || 'mirox-luna-1.2';
   let full = m.content || '';
-  let firstChunk = true;
   let pendingTts = null;
   let finishReason = 'stop';
 
   const bubble = msgEl.querySelector('.bubble');
   let bubbleText = bubble.querySelector('.bubble-text');
   if (!bubbleText) { bubbleText = document.createElement('div'); bubbleText.className = 'bubble-text'; bubble.appendChild(bubbleText); }
-
-  /* Show inline continuation cursor */
   bubbleText.classList.add('streaming');
 
   try {
@@ -531,15 +464,21 @@ async function handleContinue(msgEl) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        message: 'continue from where you left off. do not repeat, do not add a preface, just continue the exact same text seamlessly.',
-        history: history.slice(-14),
+        message: 'continue from exactly where you stopped. do not repeat anything. do not add a preamble. output only the continuation.',
+        history: priorHistory.slice(-14),
         model, stream: true, files: [],
         voice_id: userSettings.voice_id || null,
-        tts: readAloudEnabled,
+        tts: false,
       }),
       signal: activeStreamController.signal,
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    if (!res.ok) {
+      const ct = (res.headers.get('content-type') || '').toLowerCase();
+      let errMsg = `HTTP ${res.status}`;
+      if (ct.includes('application/json')) { const err = await res.json().catch(() => ({})); errMsg = err.error?.message || err.error || errMsg; }
+      throw new Error(errMsg);
+    }
 
     const reader = res.body.getReader(); const dec = new TextDecoder();
     let buf = '';
@@ -561,7 +500,6 @@ async function handleContinue(msgEl) {
             bubbleText.innerHTML = renderMarkdown(full);
             wireCodeButtons(bubbleText);
             scrollToBottom();
-            firstChunk = false;
           }
           if (o.tts) pendingTts = o.tts;
           if (o.done) { if (o.finish_reason) finishReason = o.finish_reason; }
@@ -571,7 +509,6 @@ async function handleContinue(msgEl) {
 
     bubbleText.classList.remove('streaming');
     bubble.dataset.rawText = full;
-
     m.content = full;
     m.finish_reason = finishReason;
 
@@ -585,17 +522,26 @@ async function handleContinue(msgEl) {
     }
 
     saveChatsToLS();
-    if (readAloudEnabled) { if (pendingTts) playAudioDataUrl(pendingTts); else if (full) speakText(full); }
+    if (readAloudEnabled) {
+      if (pendingTts) playAudioDataUrl(pendingTts);
+      else if (full) speakText(full);
+    }
   } catch (e) {
     bubbleText.classList.remove('streaming');
     if (e.name !== 'AbortError') {
       const err = document.createElement('div');
-      err.style.color = 'var(--danger)';
-      err.style.fontSize = '13px';
-      err.style.marginTop = '8px';
+      err.style.cssText = 'color:var(--danger);font-size:13px;margin-top:8px;';
       err.textContent = 'Continue failed: ' + e.message;
       msgEl.querySelector('.message-time').before(err);
       setTimeout(() => err.remove(), 5000);
+      /* Re-add the button so they can try again */
+      if (!msgEl.querySelector('.continue-bar')) {
+        const cont = document.createElement('div');
+        cont.className = 'continue-bar';
+        cont.innerHTML = `<button class="continue-btn" data-continue="${msgId}"><i class="ri-arrow-down-line"></i> Continue</button>`;
+        msgEl.querySelector('.message-time').before(cont);
+        wireContinueBtn(msgEl);
+      }
     }
   } finally {
     isReplying = false;
@@ -649,9 +595,7 @@ function handleSend() {
   sendToAPI(text, filesToSend);
 }
 
-/* ============================================================
-   SEND TO API — with image preservation
-   ============================================================ */
+/* ---------- Send to API ---------- */
 async function sendToAPI(text, files = []) {
   isReplying = true; updateSendButtonState();
   const stopBtn = $('#stopBtn'); if (stopBtn) stopBtn.style.display = 'grid';
@@ -667,8 +611,8 @@ async function sendToAPI(text, files = []) {
   activeStreamController = new AbortController();
 
   let full = '', generatedImage = null, pendingTts = null, finishReason = 'stop';
-  let imageWasSet = false;         /* ← tracks whether the bubble already has an image */
-  let bubbleText = null;            /* ← holds the text sub-element when image is set */
+  let imageWasSet = false;
+  let bubbleText = null;
 
   try {
     const res = await fetch('/v1/chat/completions', {
@@ -699,7 +643,6 @@ async function sendToAPI(text, files = []) {
         if (!pl || pl === '[DONE]') continue;
         try {
           const o = JSON.parse(pl);
-
           if (o.p) {
             if (o.p === 'ar-search' || o.p === 'fallback') { if (thinkingText) thinkingText.textContent = 'Reading current data'; }
             else if (o.p === 'ollama') { if (thinkingText) thinkingText.textContent = 'Running local model'; }
@@ -709,7 +652,6 @@ async function sendToAPI(text, files = []) {
           }
           if (o.status && thinkingText) thinkingText.textContent = o.status;
 
-          /* Image event — replace bubble content, keep a .bubble-text child */
           if (o.img) {
             generatedImage = o.img;
             imageWasSet = true;
@@ -729,16 +671,11 @@ async function sendToAPI(text, files = []) {
             if (firstChunk) {
               bubble.classList.remove('thinking');
               bubble.classList.add('streaming');
-              if (!imageWasSet) {
-                /* No image — replace whole bubble with a text container */
-                bubble.innerHTML = '<div class="bubble-text"></div>';
-                bubbleText = bubble.querySelector('.bubble-text');
-              }
+              if (!imageWasSet) { bubble.innerHTML = '<div class="bubble-text"></div>'; bubbleText = bubble.querySelector('.bubble-text'); }
               firstChunk = false;
               const act = msgEl.querySelector('.message-actions');
               if (act) { act.style.opacity = ''; act.style.pointerEvents = ''; }
             }
-            /* Write into the text container, never overwrite the image */
             const target = bubbleText || bubble.querySelector('.bubble-text') || bubble;
             target.innerHTML = renderMarkdown(full);
             wireCodeButtons(target);
@@ -798,9 +735,7 @@ function stopStreaming() {
   updateSendButtonState();
 }
 
-/* ============================================================
-   FILES
-   ============================================================ */
+/* ---------- Files ---------- */
 function handleFiles(files) {
   if (!files?.length) return;
   const arr = Array.from(files);
@@ -828,9 +763,7 @@ function updatePreview() {
   list.innerHTML = pendingFiles.map(f => f.type === 'image' && f.dataUrl ? `<div class="attach-chip"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name)}</div>` : `<div class="attach-chip"><i class="ri-file-line"></i>${escapeHtml(f.name)}</div>`).join('');
 }
 
-/* ============================================================
-   MODEL PICKER
-   ============================================================ */
+/* ---------- Model picker ---------- */
 function getModelsList() { return __config?.models?.length ? __config.models : FALLBACK_MODELS; }
 function canUseModel(t) { if (t === 'free') return true; if (t === 'ultimate' && __tier === 'free') return true; return TIER_RANK[__tier || 'free'] >= TIER_RANK[t]; }
 function renderModelPicker() {
@@ -859,9 +792,7 @@ function wireSendButton() {
   updateSendButtonState();
 }
 
-/* ============================================================
-   READ ALOUD
-   ============================================================ */
+/* ---------- Read aloud ---------- */
 function updateReadAloudIcon() {
   const btn = $('#readAloudBtn'); if (!btn) return;
   btn.innerHTML = readAloudEnabled ? '<i class="ri-volume-up-line"></i>' : '<i class="ri-volume-mute-line"></i>';
@@ -886,9 +817,7 @@ function wireReadAloud() {
   });
 }
 
-/* ============================================================
-   AUTH
-   ============================================================ */
+/* ---------- Auth ---------- */
 async function doLogin() {
   const name = $('#loginName')?.value.trim();
   const email = $('#loginEmail')?.value.trim().toLowerCase();
@@ -920,9 +849,7 @@ async function loadConfig() {
   if ($('#currentModelLabel')) $('#currentModelLabel').textContent = models[0].label;
 }
 
-/* ============================================================
-   PLANS
-   ============================================================ */
+/* ---------- Plans ---------- */
 async function loadPlans() {
   const grid = $('#plansGrid'); if (!grid) return;
   const res = await authJson('/api/subscription/plans', {}, null);
@@ -931,17 +858,13 @@ async function loadPlans() {
     const isFree = p.id === 'free';
     const isCurrent = p.id === __tier;
     const priceDisplay = isFree ? '<div class="plan-price-free">Free</div>' : `<div class="plan-price-usd">$${p.price_usd.toFixed(2)}<span class="plan-price-period">/mo</span></div><div class="plan-price-afg">≈ ${p.price_afg} AFG</div>`;
-    const buyBtn = isFree
-      ? `<button class="plan-btn${isCurrent ? ' disabled' : ''}" ${isCurrent ? 'disabled' : ''}>${isCurrent ? 'Current plan' : 'Start free'}</button>`
-      : `<button class="plan-btn primary" data-buy="${escapeHtml(p.id)}">Buy ${escapeHtml(p.label)}</button>`;
+    const buyBtn = isFree ? `<button class="plan-btn${isCurrent ? ' disabled' : ''}" ${isCurrent ? 'disabled' : ''}>${isCurrent ? 'Current plan' : 'Start free'}</button>` : `<button class="plan-btn primary" data-buy="${escapeHtml(p.id)}">Buy ${escapeHtml(p.label)}</button>`;
     return `<div class="plan-card${isCurrent ? ' current' : ''}"><div class="plan-name">${escapeHtml(p.label)}</div><div class="plan-tagline">${escapeHtml(p.tagline || '')}</div><div class="plan-pricing">${priceDisplay}</div><ul class="plan-perks">${(p.perks || []).map(x => `<li><i class="ri-check-line"></i> ${escapeHtml(x)}</li>`).join('')}</ul>${buyBtn}</div>`;
   }).join('');
   grid.querySelectorAll('[data-buy]').forEach(btn => btn.addEventListener('click', () => openModal('paymentSoonModal')));
 }
 
-/* ============================================================
-   VOICE + KEYS
-   ============================================================ */
+/* ---------- Voice + Keys ---------- */
 async function loadVoices() {
   const sel = $('#voiceSelect'); if (!sel) return;
   const statusEl = $('#voiceStatus');
@@ -986,9 +909,7 @@ async function genImage() {
   finally { if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-image-add-line"></i> Generate'; } }
 }
 
-/* ============================================================
-   MIC + CALL
-   ============================================================ */
+/* ---------- Mic + Call ---------- */
 function startMic() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return alert('Speech recognition not supported.');
@@ -1066,18 +987,14 @@ function wirePttButton() {
 }
 async function requestMic() { try { await navigator.mediaDevices.getUserMedia({ audio: true }); alert('Mic granted.'); } catch { alert('Denied.'); } }
 
-/* ============================================================
-   MEMORY / PERSONA
-   ============================================================ */
+/* ---------- Memory / Persona ---------- */
 async function loadMemory() { const list = $('#memoryList'); if (!list || !__user) return; const res = await authJson('/api/memory', {}, null); if (res?.facts?.length) list.innerHTML = res.facts.map(f => `<div class="memory-item"><span>${escapeHtml(f.text)}</span></div>`).join(''); else list.innerHTML = '<p style="font-size:13px;color:var(--text-faint);">No memories yet.</p>'; }
 async function addMemory() { const input = $('#memoryInput'); if (!input?.value.trim()) return; await authJson('/api/memory', { method: 'POST', body: JSON.stringify({ fact: input.value.trim() }) }); input.value = ''; loadMemory(); }
 async function loadPersona() { if (!__user) return; const res = await authJson('/api/persona', {}, null); if (res?.persona && $('#personaInput')) $('#personaInput').value = res.persona; }
 async function savePersona() { await authJson('/api/persona', { method: 'POST', body: JSON.stringify({ persona: $('#personaInput')?.value.trim() || '' }) }); }
 async function submitReport() { const category = $('#supportCategory')?.value; const subject = $('#supportSubject')?.value.trim(); const message = $('#supportMessage')?.value.trim(); if (!subject || !message) return alert('Please fill subject and message.'); const res = await authJson('/api/support/ticket', { method: 'POST', body: JSON.stringify({ category, subject, message }) }, null); if (res?.ok) { alert('Ticket submitted!'); closeModal('supportModal'); } }
 
-/* ============================================================
-   WIRE BUTTONS
-   ============================================================ */
+/* ---------- Wire everything ---------- */
 function wireToolButtons() {
   $('#talkModeBtn')?.addEventListener('click', startCall);
   $('#imageModeBtn')?.addEventListener('click', () => openModal('imageModal'));
@@ -1156,9 +1073,7 @@ document.addEventListener('click', function (e) {
 document.addEventListener('submit', function (e) { e.preventDefault(); if (e.target?.id === 'simpleLoginForm') doLogin(); }, true);
 document.addEventListener('change', function (e) { if (e.target?.id === 'fileInput') { handleFiles(e.target.files); e.target.value = ''; } if (e.target?.id === 'langSelect') { userSettings.language = e.target.value; saveUserSettings(); } });
 
-/* ============================================================
-   INIT
-   ============================================================ */
+/* ---------- Init ---------- */
 async function init() {
   loadUserSettings(); loadAppearance();
   wireModelPicker(); wireSendButton(); wireToolButtons(); wireReadAloud(); wirePttButton();
