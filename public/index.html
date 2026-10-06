@@ -15,8 +15,19 @@
 </head>
 <body>
   <div id="loadingScreen" class="loading-screen">
-    <img src="/logo.png" alt="MiroxAI" class="loading-logo theme-aware-logo" onerror="this.style.display='none'; this.parentElement.querySelector('.logo-fallback').style.display='grid';">
-    <div class="logo-fallback logo-fallback-lg" style="display:none;">M</div>
+    <div class="loading-scene">
+      <div class="loading-orb">
+        <div class="loading-orb-inner"></div>
+        <div class="loading-orb-glow"></div>
+      </div>
+      <div class="loading-rings">
+        <span></span><span></span><span></span>
+      </div>
+    </div>
+    <div class="loading-wordmark">
+      <span>M</span><span>i</span><span>r</span><span>o</span><span>x</span>
+    </div>
+    <div class="loading-tagline">Waking up the mind</div>
     <div class="loading-bar"><div class="loading-bar-fill"></div></div>
   </div>
 
@@ -308,22 +319,6 @@
 
   <div id="lightbox" class="lightbox"><img src="" alt="Preview"></div>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/javascript.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/typescript.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/css.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/xml.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/sql.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/rust.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/java.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/cpp.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/php.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/ruby.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/yaml.min.js"></script>
   <script type="module" src="/script.js"></script>
 </body>
 </html>
