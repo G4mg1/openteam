@@ -44,6 +44,7 @@
     <div class="sidebar-tabs">
       <button class="sidebar-tab active" type="button" data-tab="chats"><i class="ri-chat-3-line"></i> Chats</button>
       <button class="sidebar-tab" type="button" data-tab="images"><i class="ri-image-line"></i> Images</button>
+      <button class="sidebar-tab" type="button" data-tab="bridge"><i class="ri-link"></i> Bridge</button>
     </div>
 
     <div class="sidebar-section" data-pane="chats">
@@ -52,6 +53,32 @@
     <div class="sidebar-section" data-pane="images" style="display:none;">
       <div id="imageHistoryGrid" class="image-history-grid">
         <div class="history-empty">No images yet</div>
+      </div>
+    </div>
+    <div class="sidebar-section" data-pane="bridge" style="display:none;">
+      <div class="bridge-panel">
+        <div class="bridge-status" id="bridgeStatus">
+          <div class="bridge-status-dot offline"></div>
+          <span>Disconnected</span>
+        </div>
+        <div class="bridge-info">
+          <label>Bridge name</label>
+          <input id="bridgeNameInput" class="modal-input" type="text" placeholder="My Laptop" maxlength="60">
+          <label>AI model for Bridge</label>
+          <select id="bridgeModelSelect" class="modal-select">
+            <option value="mirox-luna-1.2">Luna</option>
+            <option value="mirox-gen-1">Gen</option>
+            <option value="mirox-pro-5">Pro</option>
+          </select>
+          <label>Listening port</label>
+          <input id="bridgePortInput" class="modal-input" type="number" placeholder="8765" value="8765" min="1024" max="65535">
+          <div class="bridge-actions">
+            <button id="bridgeStartBtn" class="modal-btn primary" type="button"><i class="ri-play-line"></i> Start Bridge</button>
+            <button id="bridgeStopBtn" class="modal-btn danger" type="button" style="display:none;"><i class="ri-stop-line"></i> Stop</button>
+          </div>
+          <button id="bridgeDownloadBtn" class="modal-btn" type="button" style="margin-top:10px;"><i class="ri-download-2-line"></i> Download client package</button>
+        </div>
+        <div class="bridge-log" id="bridgeLog"></div>
       </div>
     </div>
 
@@ -131,6 +158,7 @@
       <div class="tools-row">
         <button id="talkModeBtn" class="tool-btn" type="button"><i class="ri-mic-line"></i><span>Call</span></button>
         <button id="imageModeBtn" class="tool-btn" type="button"><i class="ri-image-line"></i><span>Lumenal</span></button>
+        <button id="bridgeModeBtn" class="tool-btn" type="button"><i class="ri-link"></i><span>Bridge</span></button>
         <button id="plansModeBtn" class="tool-btn" type="button"><i class="ri-vip-crown-line"></i><span>Plans</span></button>
         <button id="supportModeBtn2" class="tool-btn" type="button"><i class="ri-question-line"></i><span>Help</span></button>
       </div>
@@ -150,7 +178,13 @@
     <div class="modal">
       <button class="icon-btn modal-close" type="button" data-close="loginModal" aria-label="Close"><i class="ri-close-line"></i></button>
       <h2 class="modal-title">Sign in</h2>
-      <p class="modal-sub">Sign in to save your chats. Guests can still chat.</p>
+      <p class="modal-sub">Sign in with Google, Apple, or email to save your chats and connect GitHub.</p>
+      <div class="oauth-buttons">
+        <button id="oauthGoogleBtn" class="oauth-btn" type="button"><i class="ri-google-fill"></i> Continue with Google</button>
+        <button id="oauthAppleBtn" class="oauth-btn" type="button"><i class="ri-apple-fill"></i> Continue with Apple</button>
+        <button id="oauthEmailBtn" class="oauth-btn" type="button"><i class="ri-mail-line"></i> Continue with Email</button>
+      </div>
+      <div class="oauth-divider"><span>or sign in with name</span></div>
       <form id="simpleLoginForm" class="modal-form">
         <input type="text" id="loginName" class="modal-input" placeholder="Name" required maxlength="60">
         <input type="email" id="loginEmail" class="modal-input" placeholder="Email" required>
@@ -171,6 +205,8 @@
         <button class="settings-tab" type="button" data-tab="personal">Personal</button>
         <button class="settings-tab" type="button" data-tab="memory">Memory</button>
         <button class="settings-tab" type="button" data-tab="mcp">MCP</button>
+        <button class="settings-tab" type="button" data-tab="github">GitHub</button>
+        <button class="settings-tab" type="button" data-tab="bridge">Bridge</button>
       </div>
       <div class="settings-pane active" data-pane="general">
         <div class="setting-group">
@@ -255,6 +291,28 @@
             <input type="url" id="mcpUrlInput" class="modal-input" placeholder="https://mcp.example.com/sse">
             <button id="addMcpBtn" class="modal-btn primary" type="button"><i class="ri-add-line"></i></button>
           </div>
+        </div>
+      </div>
+      <div class="settings-pane" data-pane="github">
+        <div class="setting-group">
+          <h4>GitHub</h4>
+          <p class="setting-desc">Connect your GitHub account to let Mirox edit your repositories.</p>
+          <div id="githubStatus" class="msg muted" style="font-size:13px;margin-bottom:10px;">Not connected</div>
+          <button id="githubConnectBtn" class="modal-btn primary" type="button"><i class="ri-github-fill"></i> Connect GitHub</button>
+        </div>
+      </div>
+      <div class="settings-pane" data-pane="bridge">
+        <div class="setting-group">
+          <h4>Bridge</h4>
+          <p class="setting-desc">Let Mirox control your laptop. Download the client, run it, and control it from chat.</p>
+          <div class="setting-row"><span>Bridge name</span><input id="settingsBridgeName" class="modal-input" style="max-width:200px;" type="text" placeholder="My Laptop"></div>
+          <div class="setting-row"><span>AI model</span><select id="settingsBridgeModel" class="modal-select" style="max-width:200px;">
+            <option value="mirox-luna-1.2">Luna</option>
+            <option value="mirox-gen-1">Gen</option>
+            <option value="mirox-pro-5">Pro</option>
+          </select></div>
+          <button id="settingsBridgeDownload" class="modal-btn" type="button" style="margin-top:10px;"><i class="ri-download-2-line"></i> Download client package</button>
+          <div id="bridgeAnalysis" class="bridge-analysis"></div>
         </div>
       </div>
     </div>
@@ -342,7 +400,6 @@
     </div>
   </div>
 
-  <!-- Secure image viewer -->
   <div id="imageViewer" class="image-viewer" role="dialog" aria-modal="true" aria-label="Image viewer">
     <div class="image-viewer-backdrop" data-iv-close></div>
     <div class="image-viewer-panel" oncontextmenu="return false;">
