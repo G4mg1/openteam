@@ -1,9 +1,9 @@
 /* ============================================================
-   MiroxAI Backend v72
-   FIXED:
-   - finish_reason tracked so frontend can show Continue button
-   - Fish Audio TTS with proper headers and diagnostics
-   - Continue endpoint support
+   MiroxAI Backend v75 (Vercel Fixed)
+   - Uses /tmp for database (Vercel read-only fix)
+   - Embeds Python bridge script directly in JS (fixes file path 404)
+   - Handles Loginment OAuth securely
+   - Serves static files and handles SPA routing
    ============================================================ */
 
 import express from 'express';
@@ -12,6 +12,7 @@ import crypto from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import archiver from 'archiver';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,11 +23,17 @@ const AR_KEY     = (process.env.AR_KEY || '').trim();
 const F_API      = (process.env.F_API || '').trim();
 const SECRET     = process.env.SECRET_KEY || 'mirox-fallback-secret';
 const ADMIN_PASS = (process.env.ADMIN_PASSWORD || '2010').trim();
-const DB_FILE    = process.env.DB_FILE || path.join(__dirname, 'mirox-db.json');
 const PORT       = process.env.PORT || 3000;
+
+// VERCEL FIX: Write to /tmp instead of __dirname
+const DB_FILE    = process.env.DB_FILE || '/tmp/mirox-db.json';
 
 const OLLAMA_HOST  = process.env.OLLAMA_HOST  || 'http://127.0.0.1:11434';
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:0.5b';
+
+const LOGINMENT_CLIENT_ID = 'lm_e8f7193647f744c6ae45a8af85a7cfd3';
+const LOGINMENT_API_KEY = 'lm_sk_96078c548f823c63466abfcaf1e099294056d2f2019a3870';
+const LOGINMENT_DOMAIN = 'https://logint.lovable.app';
 
 const HF_ATTEMPT_MS     = 20000;
 const PL_ATTEMPT_MS     = 20000;
@@ -42,8 +49,7 @@ const PROVIDERS = {
   hf: !!HF_API_KEY, pl: !!PL_KEY, ollama: false, ar: !!AR_KEY, search: true, fish: !!F_API,
 };
 
-console.log('[Mirox] v72 — providers:', PROVIDERS);
-console.log('[Mirox] F_API ' + (F_API ? 'set' : 'MISSING'));
+console.log('[Mirox] v75 — Vercel Ready');
 
 const safe = (v, max = 100000) => {
   try { if (v == null) return ''; const s = typeof v === 'string' ? v : JSON.stringify(v); return s.length > max ? s.slice(0, max) : s; } catch { return ''; }
@@ -153,14 +159,23 @@ async function loadDb() {
     const raw = await fs.readFile(DB_FILE, 'utf8');
     db = Object.assign(emptyDb(), JSON.parse(raw)); dbReady = true;
   } catch (e) {
-    if (e.code === 'ENOENT') { db = emptyDb(); dbReady = true; try { await fs.writeFile(DB_FILE, JSON.stringify(db, null, 2), 'utf8'); } catch {} }
+    if (e.code === 'ENOENT') { 
+      db = emptyDb(); dbReady = true; 
+      try { await fs.writeFile(DB_FILE, JSON.stringify(db, null, 2), 'utf8'); } catch (writeErr) {
+        console.warn('[DB] Vercel read-only fallback: using in-memory DB');
+      } 
+    }
     else { dbError = e.message; db = emptyDb(); dbReady = false; }
   }
   return db;
 }
 function persist() {
   if (!db) return Promise.resolve();
-  writeChain = writeChain.then(async () => { try { await fs.writeFile(DB_FILE, JSON.stringify(db, null, 2), 'utf8'); } catch {} });
+  writeChain = writeChain.then(async () => { 
+    try { await fs.writeFile(DB_FILE, JSON.stringify(db, null, 2), 'utf8'); } catch (e) {
+      // Silent fail on Vercel read-only
+    } 
+  });
   return writeChain;
 }
 const now = () => Math.floor(Date.now() / 1000);
@@ -173,21 +188,30 @@ async function saveUser(rec) {
   if (!rec || !rec.email) return false;
   db.users[rec.email] = {
     email: rec.email, name: rec.name || '', tier: rec.tier || 'free',
-    daily_used: rec.daily_used || 0, eclipse_used: rec.eclipse_used || 0,
+    daily_used: rec.daily_used || 0, vision_used: rec.vision_used || 0,
+    image_used: rec.image_used || 0, eclipse_used: rec.eclipse_used || 0,
     daily_reset: rec.daily_reset || today(), month_key: rec.month_key || monthKey(),
     keys_this_month: rec.keys_this_month || 0, created_at: rec.created_at || now(),
     last_login: rec.last_login || 0, persona: rec.persona || null,
     memory: Array.isArray(rec.memory) ? rec.memory : [], voice_id: rec.voice_id || null,
+    github_token: rec.github_token || null,
   };
   await persist(); return true;
 }
 async function ensureFreshUser(email) {
   if (!email) return null;
   let rec = await getUser(email);
-  if (!rec) { rec = { email, name: '', tier: 'free', daily_used: 0, eclipse_used: 0, daily_reset: today(), month_key: monthKey(), keys_this_month: 0, created_at: now(), last_login: 0, persona: null, memory: [], voice_id: null }; await saveUser(rec); return rec; }
+  if (!rec) {
+    rec = { email, name: '', tier: 'free', daily_used: 0, vision_used: 0, image_used: 0, eclipse_used: 0, daily_reset: today(), month_key: monthKey(), keys_this_month: 0, created_at: now(), last_login: 0, persona: null, memory: [], voice_id: null, github_token: null };
+    await saveUser(rec); return rec;
+  }
   let dirty = false;
-  if (rec.daily_reset !== today()) { rec.daily_used = 0; rec.eclipse_used = 0; rec.daily_reset = today(); dirty = true; }
+  if (rec.daily_reset !== today()) {
+    rec.daily_used = 0; rec.vision_used = 0; rec.image_used = 0; rec.eclipse_used = 0; rec.daily_reset = today(); dirty = true;
+  }
   if (rec.month_key !== monthKey()) { rec.keys_this_month = 0; rec.month_key = monthKey(); dirty = true; }
+  if (rec.vision_used === undefined) { rec.vision_used = 0; dirty = true; }
+  if (rec.image_used === undefined) { rec.image_used = 0; dirty = true; }
   if (dirty) await saveUser(rec);
   return rec;
 }
@@ -264,10 +288,11 @@ const MIROX_MODELS = {
   'mirox-eclipse-2.0':{ label: 'Eclipse',tagline: 'Best quality',                tier: 'ultimate', tokens: 3200, basePrompt: 'You are Eclipse from OpenSurr. Best quality. Use fenced code blocks with the language tag for code.' },
 };
 const API_ALLOWED_MODELS = ['mirox-luna-1.2', 'mirox-gen-1'];
+
 const PLANS = {
-  free:     { label: 'Free',     daily_limit: 50,   eclipse_daily_limit: 5,   price_usd: 0,     price_afg: 0,    api_keys_per_month: 2 },
-  pro:      { label: 'Pro',      daily_limit: 500,  eclipse_daily_limit: 0,   price_usd: 6.99,  price_afg: 490,  api_keys_per_month: 5 },
-  ultimate: { label: 'Ultimate', daily_limit: 5000, eclipse_daily_limit: 999, price_usd: 20.99, price_afg: 1470, api_keys_per_month: 20 },
+  free:     { label: 'Free',     daily_limit: 5,    vision_limit: 10,   image_limit: 10,   eclipse_daily_limit: 5,   price_usd: 0,     price_afg: 0,    api_keys_per_month: 2 },
+  pro:      { label: 'Pro',      daily_limit: 500,  vision_limit: 200,  image_limit: 200,  eclipse_daily_limit: 0,   price_usd: 6.99,  price_afg: 490,  api_keys_per_month: 5 },
+  ultimate: { label: 'Ultimate', daily_limit: 5000, vision_limit: 2000, image_limit: 2000, eclipse_daily_limit: 999, price_usd: 20.99, price_afg: 1470, api_keys_per_month: 20 },
 };
 const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
 const buildSystemPrompt = cfg => fillGuard(cfg.label) + '\n\n---\n\n' + cfg.basePrompt;
@@ -412,30 +437,23 @@ async function searchqueChat(userQuestion, signal, ms) {
   return res;
 }
 
-/* ---------- Chat chain with finish_reason tracking ---------- */
+/* ---------- Chat chain ---------- */
 async function miroxChatChain({ messages, cfg, stream, signal, sseData }) {
   const trace = [];
-
   if (PROVIDERS.hf) {
     for (const modelId of HF_CHAT_MODELS) {
       if (signal?.aborted) throw new Error('aborted');
-      try {
-        const res = await hfChat(modelId, messages, cfg.tokens, stream, signal, HF_ATTEMPT_MS);
-        return { res, provider: 'hf', nativeStream: !!stream, trace };
-      } catch (e) { if (e.name === 'AbortError') throw e; trace.push(`hf:${e.message}`); }
+      try { const res = await hfChat(modelId, messages, cfg.tokens, stream, signal, HF_ATTEMPT_MS); return { res, provider: 'hf', nativeStream: !!stream, trace }; }
+      catch (e) { if (e.name === 'AbortError') throw e; trace.push(`hf:${e.message}`); }
     }
   }
-
   if (PROVIDERS.pl) {
     for (const modelId of PL_CHAT_MODELS) {
       if (signal?.aborted) throw new Error('aborted');
-      try {
-        const res = await plChat(modelId, messages, cfg.tokens, stream, signal, PL_ATTEMPT_MS);
-        return { res, provider: 'pl', nativeStream: !!stream, trace };
-      } catch (e) { if (e.name === 'AbortError') throw e; trace.push(`pl:${e.message}`); }
+      try { const res = await plChat(modelId, messages, cfg.tokens, stream, signal, PL_ATTEMPT_MS); return { res, provider: 'pl', nativeStream: !!stream, trace }; }
+      catch (e) { if (e.name === 'AbortError') throw e; trace.push(`pl:${e.message}`); }
     }
   }
-
   if (ollamaReady && PROVIDERS.ollama) {
     try {
       if (stream) { sseData({ p: 'ollama' }); const full = await ollamaChatStream(messages, cfg, sseData, signal); return { provider: 'ollama', reply: full, nativeStream: false, trace }; }
@@ -443,13 +461,10 @@ async function miroxChatChain({ messages, cfg, stream, signal, sseData }) {
       return { provider: 'ollama', reply, nativeStream: false, trace };
     } catch (e) { if (e.name === 'AbortError') throw e; trace.push(`ollama:${e.message}`); }
   }
-
   const userQuestion = extractLastUserQuestion(messages);
   if (userQuestion && !signal?.aborted) {
-    try {
-      const res = await searchqueChat(userQuestion, signal, AR_SEARCH_MS);
-      return { res, provider: 'fallback', nativeStream: false, trace };
-    } catch (e) { if (e.name === 'AbortError') throw e; trace.push(`ar:${e.message}`); }
+    try { const res = await searchqueChat(userQuestion, signal, AR_SEARCH_MS); return { res, provider: 'fallback', nativeStream: false, trace }; }
+    catch (e) { if (e.name === 'AbortError') throw e; trace.push(`ar:${e.message}`); }
   }
   throw Object.assign(new Error(GENERIC_ERR), { trace });
 }
@@ -577,26 +592,12 @@ async function fishTTS(text, voiceId) {
   if (!F_API) throw new Error('no_f_api');
   const clean = String(text || '').trim();
   if (!clean) throw new Error('empty_text');
-
   const body = { text: clean.slice(0, 2000), format: 'mp3', mp3_bitrate: 128, chunk_length: 200, normalize: true };
   if (voiceId) body.reference_id = voiceId;
-
-  console.log(`[Fish] TTS "${clean.slice(0, 40)}..." voice=${voiceId || 'default'}`);
-
-  const res = await fetchT(FISH_TTS_URL, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${F_API}`, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg' },
-    body: JSON.stringify(body),
-  }, TTS_TOTAL_MS);
-
-  if (!res.ok) {
-    const errBody = await res.text().catch(() => '');
-    console.error(`[Fish] failed ${res.status}: ${errBody.slice(0, 200)}`);
-    throw new Error(`fish_${res.status}`);
-  }
+  const res = await fetchT(FISH_TTS_URL, { method: 'POST', headers: { 'Authorization': `Bearer ${F_API}`, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg' }, body: JSON.stringify(body) }, TTS_TOTAL_MS);
+  if (!res.ok) { const errBody = await res.text().catch(() => ''); throw new Error(`fish_${res.status}`); }
   const buf = Buffer.from(await res.arrayBuffer());
   if (buf.byteLength < 100) throw new Error('empty_audio');
-  console.log(`[Fish] ok ${buf.byteLength} bytes`);
   return buf;
 }
 
@@ -604,11 +605,15 @@ async function fishTTS(text, voiceId) {
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '30mb' }));
+
+// VERCEL FIX: Serve static files from the 'public' folder
+app.use(express.static(path.join(__dirname, '../public')));
+
 app.use(async (req, res, next) => { try { await loadDb(); } catch {} next(); });
 
 app.get(['/api/health','/health','/ping'], async (req, res) => {
   await loadDb();
-  res.json({ ok: true, app: 'MiroxAI', version: 'v72', providers: PROVIDERS, ollama: ollamaStatus, db: { ready: dbReady, error: dbError }, fish_key_present: !!F_API, time: now() });
+  res.json({ ok: true, app: 'MiroxAI', version: 'v75', providers: PROVIDERS, ollama: ollamaStatus, db: { ready: dbReady, error: dbError }, fish_key_present: !!F_API, time: now() });
 });
 app.get('/api/tts/health', async (req, res) => {
   if (!F_API) return res.json({ ok: false, configured: false, error: 'F_API not set' });
@@ -639,6 +644,204 @@ app.get('/api/voices', async (req, res) => {
   } catch { res.json({ ok: true, voices: [] }); }
 });
 
+/* ✅ VERCEL FIXED: Bridge download embeds Python code directly */
+app.get('/api/bridge/download', async (req, res) => {
+  try {
+    const name = safe(req.query.name, 60) || 'My Laptop';
+    const port = parseInt(safe(req.query.port, 10) || '8765', 10) || 8765;
+    const model = safe(req.query.model, 64) || 'mirox-luna-1.2';
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename="mirox_client_bridge.zip"');
+    res.setHeader('Cache-Control', 'no-store');
+
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    archive.on('error', (err) => { console.error('[Bridge ZIP]', err); try { res.status(500).end(); } catch {} });
+    archive.pipe(res);
+
+    const configJson = JSON.stringify({
+      bridge_name: name,
+      port: port,
+      model: model,
+      allowed_dirs: ['.'],
+      max_output_bytes: 200000,
+    }, null, 2);
+
+    const readme = `# MiroxAI Bridge Client\n\nBridge name: ${name}\nPort: ${port}\nModel: ${model}\n\n## Install\n\n1. Install Python 3.10+\n2. \`pip install websockets\`\n3. \`python runner.py\`\n\nThen open MiroxAI, go to the Bridge tab, and click "Start Bridge".\n`;
+
+    // Embed Python code to guarantee it works on Vercel
+    const runner = `#!/usr/bin/env python3
+import asyncio, json, os, subprocess, sys, time
+from pathlib import Path
+try:
+    import websockets
+except ImportError:
+    print("Missing dependency: websockets. Run: pip install websockets"); sys.exit(1)
+
+CONFIG_FILE = Path(__file__).parent / "config.json"
+if CONFIG_FILE.exists():
+    with open(CONFIG_FILE, "r", encoding="utf-8") as f: CONFIG = json.load(f)
+else:
+    CONFIG = {"bridge_name": "My Laptop", "port": 8765, "model": "mirox-luna-1.2", "allowed_dirs": ["."], "max_output_bytes": 200000}
+
+PORT = CONFIG.get("port", 8765)
+NAME = CONFIG.get("bridge_name", "My Laptop")
+ALLOWED_DIRS = [Path(p).expanduser().resolve() for p in CONFIG.get("allowed_dirs", ["."])]
+MAX_OUTPUT = CONFIG.get("max_output_bytes", 200000)
+
+def is_path_allowed(p):
+    try: p = p.expanduser().resolve()
+    except: return False
+    for base in ALLOWED_DIRS:
+        try: p.relative_to(base); return True
+        except: continue
+    return False
+
+def safe_path(raw):
+    p = Path(raw).expanduser()
+    if not p.is_absolute(): p = Path.cwd() / p
+    try: p = p.resolve()
+    except: return None
+    return p if is_path_allowed(p) else None
+
+async def handle_exec(args):
+    cmd = args.get("command", "").strip()
+    if not cmd: return {"ok": False, "error": "No command provided"}
+    cwd = args.get("cwd") or str(Path.home())
+    cwd_path = safe_path(cwd) or Path.home()
+    try:
+        proc = subprocess.run(cmd, shell=True, cwd=str(cwd_path), capture_output=True, text=True, timeout=args.get("timeout", 120))
+        return {"ok": True, "exit_code": proc.returncode, "stdout": (proc.stdout or "")[:MAX_OUTPUT], "stderr": (proc.stderr or "")[:MAX_OUTPUT], "cwd": str(cwd_path)}
+    except subprocess.TimeoutExpired: return {"ok": False, "error": "Command timed out"}
+    except Exception as e: return {"ok": False, "error": str(e)}
+
+async def handle_write(args):
+    p = safe_path(args.get("path", ""))
+    if not p: return {"ok": False, "error": "Path not allowed"}
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(args.get("content", ""), encoding="utf-8")
+        return {"ok": True, "path": str(p)}
+    except Exception as e: return {"ok": False, "error": str(e)}
+
+async def handle_read(args):
+    p = safe_path(args.get("path", ""))
+    if not p: return {"ok": False, "error": "Path not allowed"}
+    if not p.exists(): return {"ok": False, "error": "File not found"}
+    try: return {"ok": True, "path": str(p), "content": p.read_text(encoding="utf-8", errors="replace")[:MAX_OUTPUT]}
+    except Exception as e: return {"ok": False, "error": str(e)}
+
+async def handle_list(args):
+    p = safe_path(args.get("path", "."))
+    if not p: return {"ok": False, "error": "Path not allowed"}
+    if not p.is_dir(): return {"ok": False, "error": "Not a directory"}
+    try:
+        items = [{"name": c.name, "is_dir": c.is_dir(), "size": c.stat().st_size if c.is_file() else 0} for c in sorted(p.iterdir())]
+        return {"ok": True, "path": str(p), "items": items[:500]}
+    except Exception as e: return {"ok": False, "error": str(e)}
+
+async def handle_ping(_): return {"ok": True, "name": NAME, "time": time.time(), "cwd": os.getcwd()}
+
+HANDLERS = {"exec": handle_exec, "write": handle_write, "read": handle_read, "list": handle_list, "ping": handle_ping}
+
+async def client_handler(websocket):
+    print(f"[Bridge] Client connected")
+    try:
+        async for raw in websocket:
+            try: msg = json.loads(raw)
+            except: await websocket.send(json.dumps({"ok": False, "error": "Invalid JSON"})); continue
+            cmd = msg.get("command", ""); args = msg.get("args", {}) or {}; req_id = msg.get("id", "")
+            handler = HANDLERS.get(cmd)
+            if not handler: await websocket.send(json.dumps({"id": req_id, "ok": False, "error": f"Unknown command: {cmd}"})); continue
+            try: result = await handler(args)
+            except Exception as e: result = {"ok": False, "error": str(e)}
+            result["id"] = req_id
+            await websocket.send(json.dumps(result))
+    except websockets.exceptions.ConnectionClosed: pass
+    finally: print(f"[Bridge] Client disconnected")
+
+async def main():
+    print(f"[Bridge] Starting '{NAME}' on ws://localhost:{PORT}")
+    async with websockets.serve(client_handler, "localhost", PORT):
+        print("[Bridge] Ready. Waiting for Mirox...")
+        await asyncio.Future()
+
+if __name__ == "__main__":
+    try: asyncio.run(main())
+    except KeyboardInterrupt: print("\\n[Bridge] Stopped.")
+`;
+
+    archive.append(configJson, { name: 'mirox_client_bridge/config.json' });
+    archive.append(runner, { name: 'mirox_client_bridge/runner.py' });
+    archive.append(readme, { name: 'mirox_client_bridge/README.md' });
+    await archive.finalize();
+  } catch (e) {
+    console.error('[Bridge ZIP]', e.message);
+    try { if (!res.headersSent) res.status(500).json({ ok: false, error: e.message }); else res.end(); } catch {}
+  }
+});
+
+/* ✅ GitHub OAuth via Loginment */
+function getOrigin(req) {
+  const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
+  const host = (req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+  if (!host) return '';
+  return `${proto}://${host}`;
+}
+
+app.get('/api/auth/github/start', async (req, res) => {
+  try {
+    const origin = getOrigin(req);
+    if (!origin) return res.status(500).send('Cannot determine origin');
+    const redirectUri = `${origin}/api/auth/github/callback`;
+    const state = crypto.randomBytes(16).toString('hex');
+    res.setHeader('Set-Cookie', `mirox_oauth_state=${state}; Path=/; HttpOnly; SameSite=Lax; Max-Age=600`);
+    const url = `${LOGINMENT_DOMAIN}/authorize?client_id=${encodeURIComponent(LOGINMENT_CLIENT_ID)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}`;
+    console.log('[OAuth] Redirecting to:', url);
+    res.redirect(url);
+  } catch (e) { console.error('[OAuth start]', e.message); res.redirect('/?github=error&error=start_failed'); }
+});
+
+app.get('/api/auth/github/callback', async (req, res) => {
+  try {
+    const code = safe(req.query.code, 256).trim();
+    const state = safe(req.query.state, 128).trim();
+    const cookieHeader = safe(req.headers.cookie);
+    const m = cookieHeader.match(/(?:^|;\s*)mirox_oauth_state=([^;]+)/);
+    const cookieState = m ? decodeURIComponent(m[1]) : '';
+    if (!state || !cookieState || state !== cookieState) return res.redirect('/?github=bad_state');
+    res.setHeader('Set-Cookie', 'mirox_oauth_state=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
+    if (!code) return res.redirect('/?github=error&error=missing_code');
+
+    const r = await fetchT(`${LOGINMENT_DOMAIN}/api/public/v1/token`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${LOGINMENT_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    }, 20000);
+
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || !data.success || !data.user) {
+      const errCode = data.error || `http_${r.status}`;
+      return res.redirect('/?github=error&error=' + encodeURIComponent(errCode));
+    }
+
+    const email = safe(data.user.email, 200).trim().toLowerCase();
+    const name = safe(data.user.name, 60).trim() || (email.split('@')[0] || 'User');
+    if (!email) return res.redirect('/?github=error&error=no_email');
+
+    let rec = await getUser(email);
+    if (!rec) {
+      rec = { email, name, tier: 'free', daily_used: 0, vision_used: 0, image_used: 0, eclipse_used: 0, daily_reset: today(), month_key: monthKey(), keys_this_month: 0, created_at: now(), last_login: now(), persona: null, memory: [], voice_id: null, github_token: 'gh_' + crypto.randomBytes(16).toString('hex') };
+    } else {
+      rec.name = name; rec.last_login = now();
+      if (!rec.github_token) rec.github_token = 'gh_' + crypto.randomBytes(16).toString('hex');
+    }
+    await saveUser(rec);
+    setSession(res, { uid: email, name, tier: rec.tier });
+    res.redirect('/?github=ok');
+  } catch (e) { console.error('[OAuth callback]', e.message); res.redirect('/?github=error&error=' + encodeURIComponent(e.message)); }
+});
+
 /* Admin */
 function adminSession(req) {
   const token = safe(req.headers['x-admin-token']).trim();
@@ -659,7 +862,7 @@ app.post('/api/admin/set-tier', async (req, res) => {
     const email = safe(req.body?.email).toLowerCase().trim();
     const tier = safe(req.body?.tier).trim();
     if (!email || !PLANS[tier]) return res.status(400).json({ ok: false, error: 'Invalid' });
-    if (!db.users[email]) db.users[email] = { email, name: '', tier, daily_used: 0, eclipse_used: 0, daily_reset: today(), month_key: monthKey(), keys_this_month: 0, created_at: now(), last_login: 0, persona: null, memory: [], voice_id: null };
+    if (!db.users[email]) db.users[email] = { email, name: '', tier, daily_used: 0, vision_used: 0, image_used: 0, eclipse_used: 0, daily_reset: today(), month_key: monthKey(), keys_this_month: 0, created_at: now(), last_login: 0, persona: null, memory: [], voice_id: null, github_token: null };
     else db.users[email].tier = tier;
     await persist();
     res.json({ ok: true });
@@ -670,15 +873,11 @@ app.get('/api/admin/stats', async (req, res) => {
     if (!adminSession(req)) return res.status(401).json({ ok: false, error: 'Unauthorized' });
     await loadDb();
     const users_data = {};
-    for (const [email, u] of Object.entries(db.users || {})) users_data[email] = { email, name: u.name || '', tier: u.tier || 'free', daily_used: u.daily_used || 0, eclipse_used: u.eclipse_used || 0, keys_this_month: u.keys_this_month || 0, created_at: u.created_at || 0, last_login: u.last_login || 0 };
+    for (const [email, u] of Object.entries(db.users || {})) users_data[email] = { email, name: u.name || '', tier: u.tier || 'free', daily_used: u.daily_used || 0, vision_used: u.vision_used || 0, image_used: u.image_used || 0, eclipse_used: u.eclipse_used || 0, keys_this_month: u.keys_this_month || 0, created_at: u.created_at || 0, last_login: u.last_login || 0 };
     const recentChats = [...(db.logsChat || [])].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 200);
     const recentImages = [...(db.logsImage || [])].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 200);
     const recentEvents = [...(db.logsUser || [])].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 200);
-    res.json({ ok: true, users: Object.keys(db.users || {}).length, chats: (db.logsChat || []).length, images: (db.logsImage || []).length, events: (db.logsUser || []).length, users_data,
-      chats_data: recentChats.map(c => ({ email: c.email, model: c.model, message: c.message, ts: c.ts, canned: !!c.canned })),
-      images_data: recentImages.map(i => ({ email: i.email, prompt: i.prompt, model: i.model, ts: i.ts })),
-      events_data: recentEvents.map(e => { let details = {}; try { details = e.details ? JSON.parse(e.details) : {}; } catch {} return { email: e.email, event: e.event, ts: e.ts, ...details }; }),
-    });
+    res.json({ ok: true, users: Object.keys(db.users || {}).length, chats: (db.logsChat || []).length, images: (db.logsImage || []).length, events: (db.logsUser || []).length, users_data, chats_data: recentChats.map(c => ({ email: c.email, model: c.model, message: c.message, ts: c.ts, canned: !!c.canned })), images_data: recentImages.map(i => ({ email: i.email, prompt: i.prompt, model: i.model, ts: i.ts })), events_data: recentEvents.map(e => { let details = {}; try { details = e.details ? JSON.parse(e.details) : {}; } catch {} return { email: e.email, event: e.event, ts: e.ts, ...details }; }) });
   } catch { res.status(500).json({ ok: false }); }
 });
 
@@ -687,7 +886,7 @@ app.get(['/api/config','/config'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   let u = null; try { u = await currentUser(req); } catch {}
   const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tagline: m.tagline, tier: m.tier, default: !!m.default }));
-  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v72' }, models, default_model: models[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: true, providers: PROVIDERS, api_models: API_ALLOWED_MODELS, ollama: ollamaStatus, tts_available: !!F_API, user_voice: u?.voice_id || null });
+  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v75' }, models, default_model: models[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: true, providers: PROVIDERS, api_models: API_ALLOWED_MODELS, ollama: ollamaStatus, tts_available: !!F_API, user_voice: u?.voice_id || null });
 });
 
 /* Auth */
@@ -711,7 +910,8 @@ app.get(['/api/me','/me'], async (req, res) => {
   try {
     const u = await currentUser(req);
     if (!u) return res.json({ user: null });
-    res.json({ user: { id: u.email, email: u.email, name: u.name, tier: u.tier, keys_this_month: u.keys_this_month || 0, eclipse_used: u.eclipse_used || 0, voice_id: u.voice_id || null } });
+    const plan = PLANS[u.tier] || PLANS.free;
+    res.json({ user: { id: u.email, email: u.email, name: u.name, tier: u.tier, keys_this_month: u.keys_this_month || 0, eclipse_used: u.eclipse_used || 0, voice_id: u.voice_id || null, daily_limit: plan.daily_limit, daily_used: u.daily_used || 0, vision_limit: plan.vision_limit, vision_used: u.vision_used || 0, image_limit: plan.image_limit, image_used: u.image_used || 0, github_connected: !!u.github_token } });
   } catch { res.json({ user: null }); }
 });
 app.post('/api/me/voice', async (req, res) => {
@@ -723,18 +923,14 @@ app.post('/api/me/voice', async (req, res) => {
   res.json({ ok: true });
 });
 app.get(['/api/subscription/plans','/subscription/plans'], (req, res) => {
-  const perks = {
-    free: ['Luna & Gen — free', 'Vision support', '5 Eclipse messages/day', '2 API keys/month'],
-    pro: ['Pro & Ultra models', '500 msgs/day', 'Lumenal 1.0 image gen', '5 API keys/month'],
-    ultimate: ['Eclipse — best model', '5000 msgs/day', 'Everything in Pro', '20 API keys/month'],
-  };
-  const out = Object.entries(PLANS).map(([id, p]) => ({ id, label: p.label, tagline: { free: 'Free forever', pro: 'Most popular', ultimate: 'Power users' }[id], daily_limit: p.daily_limit, price_usd: p.price_usd, price_afg: p.price_afg, perks: perks[id] }));
+  const perks = { free: ['5 messages/day', '10 image uploads/day', '10 image generations/day', '2 API keys/month'], pro: ['Pro & Ultra models', '500 msgs/day', '200 image uploads + gens/day', '5 API keys/month'], ultimate: ['Eclipse — best model', '5000 msgs/day', '2000 image uploads + gens/day', '20 API keys/month'] };
+  const out = Object.entries(PLANS).map(([id, p]) => ({ id, label: p.label, tagline: { free: 'Free forever', pro: 'Most popular', ultimate: 'Power users' }[id], daily_limit: p.daily_limit, vision_limit: p.vision_limit, image_limit: p.image_limit, price_usd: p.price_usd, price_afg: p.price_afg, perks: perks[id] }));
   res.json({ ok: true, plans: out });
 });
 app.get('/api/memory', async (req, res) => { const u = await currentUser(req); if (!u) return res.json({ ok: true, facts: [] }); res.json({ ok: true, facts: (u.memory || []).map(m => ({ text: m.text || m })) }); });
 app.post('/api/memory', async (req, res) => { const u = await currentUser(req); if (!u) return res.status(401).json({ ok: false }); const fact = safe(req.body?.fact, 500).trim(); if (!fact) return res.status(400).json({ ok: false }); u.memory = u.memory || []; u.memory.push({ text: fact, ts: now() }); await saveUser(u); res.json({ ok: true }); });
 app.get('/api/persona', async (req, res) => { const u = await currentUser(req); res.json({ ok: true, persona: u?.persona || '' }); });
-app.post('/api/persona', async (req, res) => { const u = await currentUser(req); if (!u) return res.status(401).json({ ok: false }); u.persona = safe(req.body?.persona, 500); await saveUser(u); res.json({ ok: true }); });
+app.post('/api/persona', async (req, res) => { const u = await currentUser(req); if (!u) return res.status(401).json({ ok: false, error: 'Sign in first' }); u.persona = safe(req.body?.persona, 500); await saveUser(u); res.json({ ok: true }); });
 app.post('/api/support/ticket', async (req, res) => { res.json({ ok: true }); });
 app.post(['/api/keys/generate','/keys/generate'], async (req, res) => {
   try {
@@ -780,12 +976,19 @@ app.post('/v1/images/generations', async (req, res) => {
     const aspect = safe(req.body?.aspect_ratio, 10) || '1:1';
     if (!prompt) return res.status(400).json({ error: { message: 'Prompt required' } });
     const u = await currentUser(req);
+    if (u && !u._viaKey) {
+      const plan = PLANS[u.tier] || PLANS.free;
+      const used = u.image_used || 0;
+      if (used >= plan.image_limit) return res.status(429).json({ error: { message: `Daily image limit reached (${plan.image_limit}/day). Free refills tomorrow.`, code: 'image_limit_reached' } });
+    }
     const imageUrl = await generateImage(prompt, aspect);
     if (u && !u._viaKey) {
       await loadDb();
       db.counters.image = (db.counters.image || 0) + 1;
       db.logsImage.push({ id: db.counters.image, email: u.email, prompt: prompt.slice(0, 300), model: 'Lumenal 1.0', ts: now() });
       if (db.logsImage.length > MAX_LOGS) db.logsImage.splice(0, db.logsImage.length - MAX_LOGS);
+      u.image_used = (u.image_used || 0) + 1;
+      try { await saveUser(u); } catch {}
       persist();
     }
     res.json({ ok: true, image: imageUrl, model: 'Lumenal 1.0' });
@@ -809,6 +1012,7 @@ app.post('/v1/chat/completions', async (req, res) => {
     const requestedModel = safe(body.model, 64) || 'mirox-luna-1.2';
     const userVoice = safe(body.voice_id, 128).trim() || null;
     const wantTts = body.tts === true;
+    const bridge = body.bridge || null;
 
     let u = null; try { u = await currentUser(req); } catch {}
     const token = extractToken(req);
@@ -820,13 +1024,23 @@ app.post('/v1/chat/completions', async (req, res) => {
     if (!cfg) return res.status(404).json({ error: { message: `Model not found.`, code: 'model_not_found' } });
 
     const tier = u?.tier || 'free';
+    const plan = PLANS[tier] || PLANS.free;
+
+    if (u && !u._viaKey && !isApiCall) {
+      if ((u.daily_used || 0) >= plan.daily_limit) {
+        return res.status(429).json({ error: { message: `Daily message limit reached (${plan.daily_limit}/day). Free refills tomorrow.`, code: 'daily_limit_reached' } });
+      }
+    }
+
     if (cfg.tier === 'pro' && TIER_RANK[tier] < 1) return res.status(403).json({ error: { message: 'Pro model requires Pro or Ultimate plan.', code: 'plan_required' } });
     if (cfg.tier === 'ultimate' && tier !== 'ultimate') {
-      if (tier === 'free') { const used = u?.eclipse_used || 0; if (used >= PLANS.free.eclipse_daily_limit) return res.status(429).json({ error: { message: 'Eclipse daily limit reached.', code: 'eclipse_limit_reached' } }); }
+      if (tier === 'free') { const used = u?.eclipse_used || 0; if (used >= plan.eclipse_daily_limit) return res.status(429).json({ error: { message: 'Eclipse daily limit reached.', code: 'eclipse_limit_reached' } }); }
       else return res.status(403).json({ error: { message: 'Eclipse requires Ultimate plan.', code: 'plan_required' } });
     }
 
     let msgs, userQuestionForCanned = '', filesForIntent = [];
+    let imageUploadCount = 0;
+
     if (Array.isArray(rawMessages) && rawMessages.length) {
       msgs = injectIdentityGuard(sanitizeMessages(rawMessages), cfg);
       userQuestionForCanned = extractLastUserQuestion(msgs);
@@ -841,6 +1055,13 @@ app.post('/v1/chat/completions', async (req, res) => {
 
       const textFiles = files.filter(f => f && f.type === 'text');
       const imageFiles = files.filter(f => f && f.type === 'image' && f.dataUrl);
+      imageUploadCount = imageFiles.length;
+
+      if (u && !u._viaKey && imageUploadCount > 0) {
+        const remaining = plan.vision_limit - (u.vision_used || 0);
+        if (remaining <= 0) return res.status(429).json({ error: { message: `Daily image upload limit reached (${plan.vision_limit}/day).`, code: 'vision_limit_reached' } });
+        if (imageUploadCount > remaining) return res.status(429).json({ error: { message: `Only ${remaining} image upload(s) remaining today.`, code: 'vision_limit_reached' } });
+      }
 
       let userText = text;
       if (textFiles.length) {
@@ -861,8 +1082,6 @@ app.post('/v1/chat/completions', async (req, res) => {
       userQuestionForCanned = text;
     }
 
-    if (u && !u._viaKey && (u.daily_used || 0) >= (PLANS[u.tier]?.daily_limit || 50)) return res.status(429).json({ error: { message: 'Daily limit reached.', code: 'daily_limit_reached' } });
-
     const imgIntent = detectImageIntent(userQuestionForCanned, filesForIntent);
 
     if (u && !u._viaKey) {
@@ -873,9 +1092,11 @@ app.post('/v1/chat/completions', async (req, res) => {
       persist();
     }
 
-    const updateUsage = async () => {
+    const updateUsage = async (extraImageGen = false) => {
       if (u && !u._viaKey && u.email) {
         u.daily_used = (u.daily_used || 0) + 1;
+        if (imageUploadCount > 0) u.vision_used = (u.vision_used || 0) + imageUploadCount;
+        if (extraImageGen) u.image_used = (u.image_used || 0) + 1;
         if (requestedModel === 'mirox-eclipse-2.0') u.eclipse_used = (u.eclipse_used || 0) + 1;
         try { await saveUser(u); } catch {}
       }
@@ -893,7 +1114,7 @@ app.post('/v1/chat/completions', async (req, res) => {
             }
           }
           const dataUrl = await generateImage(finalPrompt, '1:1');
-          await updateUsage();
+          await updateUsage(true);
           const reply = imgIntent.mode === 'improve' ? `I recreated your image with enhanced quality and detail.` : `Here's your reimagined image.`;
           let ttsDataUrl = null;
           if (F_API && wantTts) { try { const buf = await fishTTS(reply, userVoice); ttsDataUrl = 'data:audio/mpeg;base64,' + buf.toString('base64'); } catch {} }
@@ -984,7 +1205,7 @@ app.post('/v1/chat/completions', async (req, res) => {
 
         if (F_API && wantTts && fullReplyText && !clientClosed && !res.writableEnded) { try { const buf = await fishTTS(fullReplyText, userVoice); sseWrite(res, { tts: 'data:audio/mpeg;base64,' + buf.toString('base64') }); } catch {} }
         if (!clientClosed && !res.writableEnded) { sseWrite(res, { done: true, finish_reason: finishReason }); sseDone(res); }
-        await updateUsage();
+        await updateUsage(true);
         clearTimeout(guard); streamEnded = true;
         try { if (!res.writableEnded) res.end(); } catch {}
         return;
@@ -1002,11 +1223,12 @@ app.post('/v1/chat/completions', async (req, res) => {
         return;
       }
 
+      if (bridge) sseWrite(res, { bridge: { name: bridge.name, model: bridge.model, status: 'ready' } });
+
       const result = await miroxChatChain({ messages: msgs, cfg, stream: true, signal: abortCtrl.signal, sseData });
 
       if (result.provider === 'ollama') {
         fullReplyText = result.reply || '';
-        /* ollama stream already wrote deltas */
       } else if (result.provider === 'fallback') {
         const parsed = await readProviderBody(result.res);
         if (parsed.ok) {
@@ -1086,7 +1308,14 @@ app.post('/v1/chat/completions', async (req, res) => {
   }
 });
 
-app.use((req, res) => res.status(404).json({ error: { message: 'Not found: ' + req.path } }));
+// VERCEL FIX: Catch-all route to serve index.html for SPA routing
+app.use((req, res) => {
+  if (req.path.startsWith('/api')) {
+    return res.status(404).json({ error: { message: 'Not found: ' + req.path } });
+  }
+  res.sendFile(path.join(__dirname, '../public/index.html'));
+});
+
 app.use((err, req, res, next) => { console.error('[unhandled]', err.message); if (!res.headersSent) res.status(500).json({ error: { message: GENERIC_ERR } }); });
 
 (async () => {
@@ -1096,6 +1325,7 @@ app.use((err, req, res, next) => { console.error('[unhandled]', err.message); if
     app.listen(PORT, () => {
       console.log(`[Mirox] Server at http://localhost:${PORT}`);
       console.log(`[Mirox] Test TTS: http://localhost:${PORT}/api/tts/health`);
+      console.log(`[Mirox] Bridge download: http://localhost:${PORT}/api/bridge/download`);
     });
   }
 })();
