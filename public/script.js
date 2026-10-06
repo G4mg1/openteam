@@ -1,9 +1,7 @@
 (function () {
   'use strict';
 
-  /* ============================================================
-     Loader failsafe — always kills the boot screen
-     ============================================================ */
+  /* Loader failsafe */
   function killLoader() {
     const el = document.getElementById('loadingScreen');
     if (!el) return;
@@ -19,9 +17,7 @@
   const $$ = (s) => document.querySelectorAll(s);
   const on = (sel, ev, fn) => { const el = $(sel); if (el) el.addEventListener(ev, fn); };
 
-  /* ============================================================
-     Config
-     ============================================================ */
+  /* Config */
   const FALLBACK_MODELS = [
     { id: 'mirox-luna-1.2', label: 'Luna', tagline: 'Fast · warm · unlimited', tier: 'free', default: true },
     { id: 'mirox-gen-1', label: 'Gen', tagline: 'Ultra concise · unlimited', tier: 'free' },
@@ -35,11 +31,11 @@
   const APPEARANCE_KEY = 'miroxai_appearance_v23';
   const BRIDGE_KEY = 'miroxai_bridge_v23';
   const MAX_BRIDGE_QUESTIONS = 6;
-  const MAX_BRIDGE_ITER = 25;
+  const MAX_BRIDGE_ITER = 40;
+  const MAX_AUTO_CONTINUES = 3;
+  const MAX_DUP_COMMANDS = 1;
 
-  /* ============================================================
-     State
-     ============================================================ */
+  /* State */
   let __config = null;
   let __user = null;
   let __tier = 'free';
@@ -50,15 +46,22 @@
   let pendingFiles = [];
   let activeStreamController = null;
   let __usage = null;
-  let __bridge = { name: 'My Laptop', model: 'mirox-luna-1.2', port: 8765, connected: false, baseUrl: null };
+
+  let __bridge = {
+    name: 'My Laptop',
+    model: 'mirox-luna-1.2',
+    port: 8765,
+    connected: false,
+    baseUrl: null,
+    env: null,
+  };
   let bridgeConversation = [];
   let bridgeRunning = false;
   let bridgeQuestionCount = 0;
   let bridgeProgress = 0;
+  let bridgeTurn = null;
 
-  /* ============================================================
-     Utilities
-     ============================================================ */
+  /* Utilities */
   const uid = () => 'c_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
   const escapeHtml = (s) => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
   function safeGet(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } }
@@ -78,17 +81,12 @@
     } catch { return fallback; }
   }
 
-  /* ============================================================
-     Modals / Sidebar helpers
-     ============================================================ */
   const openModal = (id) => { const el = document.getElementById(id); if (el) el.classList.add('open'); };
   const closeModal = (id) => { const el = document.getElementById(id); if (el) el.classList.remove('open'); };
   const openSidebar = () => { $('#sidebar')?.classList.add('open'); $('#sidebarScrim')?.classList.add('open'); };
   const closeSidebar = () => { $('#sidebar')?.classList.remove('open'); $('#sidebarScrim')?.classList.remove('open'); };
 
-  /* ============================================================
-     Appearance
-     ============================================================ */
+  /* Appearance */
   function applyAppearance(prefs) {
     const root = document.documentElement;
     const mode = prefs.mode || 'light';
@@ -105,9 +103,7 @@
     applyAppearance(prefs);
   }
 
-  /* ============================================================
-     Markdown renderer
-     ============================================================ */
+  /* Markdown */
   function renderMarkdown(text) {
     if (!text) return '';
     let src = String(text);
@@ -164,8 +160,7 @@
   }
   function wireCopyButtons(scope) {
     (scope || document).querySelectorAll('.code-action-btn[data-copy]').forEach(btn => {
-      if (btn.__wired) return;
-      btn.__wired = true;
+      if (btn.__wired) return; btn.__wired = true;
       btn.onclick = async () => {
         const code = btn.closest('.code-block')?.querySelector('pre code')?.textContent || '';
         try {
@@ -177,9 +172,7 @@
     });
   }
 
-  /* ============================================================
-     Conversations
-     ============================================================ */
+  /* Conversations */
   function currentConvo() { return __conversations.find(c => c.id === currentConversationId) || null; }
   function saveChats() { safeSet(LS_KEY, __conversations); }
   function loadChats() { __conversations = safeGet(LS_KEY, []); }
@@ -207,8 +200,7 @@
   }
   function bindSuggestionClicks() {
     $$('.suggestion-card').forEach(card => {
-      if (card.__wired) return;
-      card.__wired = true;
+      if (card.__wired) return; card.__wired = true;
       card.onclick = () => {
         const p = card.dataset.prompt;
         if (p === 'Open the Bridge workspace') { openBridgeWorkspace(); return; }
@@ -234,9 +226,7 @@
   }
   function scrollToBottom() { const c = $('#chatMessages'); if (c) c.scrollTop = c.scrollHeight; }
 
-  /* ============================================================
-     Message rendering
-     ============================================================ */
+  /* Message rendering */
   function addMessageToDOM(role, content, ts, msgId, files, image) {
     const container = $('#chatMessages'); if (!container) return null;
     const welcome = container.querySelector('.welcome-screen'); if (welcome) welcome.remove();
@@ -270,7 +260,6 @@
     container.appendChild(el);
     const bt = el.querySelector('.bubble-text');
     const bubble = el.querySelector('.bubble');
-
     if (role === 'user') {
       bt.textContent = content || '';
       if (!content) bt.style.display = 'none';
@@ -301,8 +290,7 @@
   }
   function wireMessageActions(el) {
     el.querySelectorAll('.action-btn').forEach(btn => {
-      if (btn.__wired) return;
-      btn.__wired = true;
+      if (btn.__wired) return; btn.__wired = true;
       btn.onclick = async () => {
         const action = btn.dataset.action;
         const bubble = el.querySelector('.bubble');
@@ -338,9 +326,6 @@
     sendToAPI(userMsg.content, userMsg.files || []);
   }
 
-  /* ============================================================
-     Send button state
-     ============================================================ */
   function updateSendButtonState() {
     const btn = $('#sendBtn'), inp = $('#messageInput');
     if (!btn || !inp) return;
@@ -349,10 +334,6 @@
     btn.classList.toggle('is-disabled', !enable);
     btn.setAttribute('aria-disabled', String(!enable));
   }
-
-  /* ============================================================
-     Send flow
-     ============================================================ */
   function handleSend() {
     if (isReplying) return;
     const inp = $('#messageInput'); if (!inp) return;
@@ -381,7 +362,6 @@
     renderHistory();
     sendToAPI(text, files);
   }
-
   async function sendToAPI(text, files) {
     isReplying = true;
     updateSendButtonState();
@@ -412,7 +392,7 @@
           stream: true,
           files,
           bridge: __bridge.connected
-            ? { connected: true, name: __bridge.name, model: __bridge.model }
+            ? { connected: true, name: __bridge.name, model: __bridge.model, env: __bridge.env }
             : null,
         }),
         signal: activeStreamController.signal,
@@ -460,10 +440,7 @@
                 firstChunk = false;
               }
               const target = bubbleText || bubble.querySelector('.bubble-text');
-              if (target) {
-                target.innerHTML = renderMarkdown(full);
-                wireCopyButtons(target);
-              }
+              if (target) { target.innerHTML = renderMarkdown(full); wireCopyButtons(target); }
               scrollToBottom();
             }
             if (o.error) throw new Error(o.error.message || o.error);
@@ -474,12 +451,8 @@
       const bt = bubble.querySelector('.bubble-text');
       if (bt) { bt.innerHTML = renderMarkdown(full); wireCopyButtons(bt); }
       if (convo) convo.messages.push({
-        id: aiMsgId,
-        role: 'assistant',
-        content: full,
-        ts: Date.now(),
-        image: generatedImage,
-        finish_reason: finishReason
+        id: aiMsgId, role: 'assistant', content: full, ts: Date.now(),
+        image: generatedImage, finish_reason: finishReason
       });
       saveChats();
       if (timeEl) timeEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -494,20 +467,13 @@
       updateSendButtonState();
     }
   }
-
   function stopStreaming() {
-    if (activeStreamController) {
-      try { activeStreamController.abort(); } catch {}
-      activeStreamController = null;
-    }
+    if (activeStreamController) { try { activeStreamController.abort(); } catch {} activeStreamController = null; }
     isReplying = false;
     const s = $('#stopBtn'); if (s) s.style.display = 'none';
     updateSendButtonState();
   }
 
-  /* ============================================================
-     File attachments
-     ============================================================ */
   function handleFiles(fileList) {
     if (!fileList || !fileList.length) return;
     const arr = Array.from(fileList);
@@ -517,17 +483,11 @@
       const isImg = (f.type || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(f.name);
       const r = new FileReader();
       if (isImg) {
-        r.onload = () => {
-          newFiles.push({ name: f.name, size: f.size, type: 'image', dataUrl: r.result, order: idx });
-          done++; if (done === arr.length) finish();
-        };
+        r.onload = () => { newFiles.push({ name: f.name, size: f.size, type: 'image', dataUrl: r.result, order: idx }); done++; if (done === arr.length) finish(); };
         r.onerror = () => { done++; if (done === arr.length) finish(); };
         r.readAsDataURL(f);
       } else {
-        r.onload = () => {
-          newFiles.push({ name: f.name, size: f.size, type: 'text', content: String(r.result).slice(0, 60000), order: idx });
-          done++; if (done === arr.length) finish();
-        };
+        r.onload = () => { newFiles.push({ name: f.name, size: f.size, type: 'text', content: String(r.result).slice(0, 60000), order: idx }); done++; if (done === arr.length) finish(); };
         r.onerror = () => { done++; if (done === arr.length) finish(); };
         r.readAsText(f);
       }
@@ -542,56 +502,39 @@
   function updatePreview() {
     const p = $('#attachmentPreview'), list = $('#attachmentList');
     if (!p || !list) return;
-    if (!pendingFiles.length) {
-      p.style.display = 'none';
-      list.innerHTML = '';
-      return;
-    }
+    if (!pendingFiles.length) { p.style.display = 'none'; list.innerHTML = ''; return; }
     p.style.display = 'flex';
-    list.innerHTML = pendingFiles.map(f =>
-      f.type === 'image' && f.dataUrl
-        ? `<div class="attach-chip"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name)}</div>`
-        : `<div class="attach-chip"><i class="ri-file-line"></i>${escapeHtml(f.name)}</div>`
+    list.innerHTML = pendingFiles.map(f => f.type === 'image' && f.dataUrl
+      ? `<div class="attach-chip"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name)}</div>`
+      : `<div class="attach-chip"><i class="ri-file-line"></i>${escapeHtml(f.name)}</div>`
     ).join('');
   }
 
-  /* ============================================================
-     Image viewer
-     ============================================================ */
   let __ivDataUrl = '';
   function openImageViewer(url) {
     if (!url) return;
     __ivDataUrl = url;
-    const iv = $('#imageViewer');
-    if (!iv) return;
+    const iv = $('#imageViewer'); if (!iv) return;
     iv.classList.add('open');
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
-      const c = $('#ivCanvas');
-      if (!c) return;
-      c.width = img.naturalWidth;
-      c.height = img.naturalHeight;
+      const c = $('#ivCanvas'); if (!c) return;
+      c.width = img.naturalWidth; c.height = img.naturalHeight;
       c.getContext('2d').drawImage(img, 0, 0);
     };
     img.src = url;
   }
   function closeImageViewer() { $('#imageViewer')?.classList.remove('open'); }
 
-  /* ============================================================
-     Model picker
-     ============================================================ */
-  function getModelsList() {
-    return __config?.models?.length ? __config.models : FALLBACK_MODELS;
-  }
+  function getModelsList() { return __config?.models?.length ? __config.models : FALLBACK_MODELS; }
   function canUseModel(tier) {
     if (tier === 'free') return true;
     if (tier === 'ultimate') return true;
     return TIER_RANK[__tier] >= TIER_RANK[tier];
   }
   function renderModelPicker() {
-    const menu = $('#modelPickerMenu');
-    if (!menu) return;
+    const menu = $('#modelPickerMenu'); if (!menu) return;
     const models = getModelsList();
     const cur = __model || models[0].id;
     menu.innerHTML = models.map(m => {
@@ -608,10 +551,7 @@
     menu.querySelectorAll('.model-option').forEach(opt => {
       opt.onclick = (e) => {
         e.stopPropagation();
-        if (opt.dataset.usable === 'false') {
-          alert('This model requires the Pro plan.');
-          return;
-        }
+        if (opt.dataset.usable === 'false') { alert('This model requires the Pro plan.'); return; }
         selectModel(opt.dataset.modelId);
       };
     });
@@ -629,17 +569,13 @@
   function openModelPicker() { $('#modelPicker')?.classList.add('open'); $('#modelPickerMenu')?.classList.add('open'); }
   function closeModelPicker() { $('#modelPicker')?.classList.remove('open'); $('#modelPickerMenu')?.classList.remove('open'); }
 
-  /* ============================================================
-     Credit bar
-     ============================================================ */
   function renderCreditBar() {
     const bar = $('#creditBar');
     if (!bar) return;
     if (!__usage || __tier !== 'free') { bar.style.display = 'none'; return; }
     bar.style.display = 'flex';
     const setPill = (sel, used, limit) => {
-      const pill = bar.querySelector(sel);
-      if (!pill) return;
+      const pill = bar.querySelector(sel); if (!pill) return;
       const txt = pill.querySelector('span');
       const rem = Math.max(0, limit - used);
       if (txt) txt.textContent = `${rem}/${limit}`;
@@ -650,13 +586,10 @@
     setPill('[data-credit="image"]', __usage.image_used || 0, __usage.image_limit || 10);
     setPill('[data-credit="eclipse"]', __usage.eclipse_used || 0, __usage.eclipse_limit || 5);
   }
-
   async function refreshUsage() {
     const res = await authJson('/api/me', {}, null);
     if (!res?.user) {
-      __user = null;
-      __usage = null;
-      __tier = 'free';
+      __user = null; __usage = null; __tier = 'free';
       renderCreditBar();
       const chip = $('#userChip');
       if (chip) {
@@ -668,12 +601,9 @@
     __user = res.user;
     __tier = res.user.tier || 'free';
     __usage = {
-      vision_limit: res.user.vision_limit ?? 10,
-      vision_used: res.user.vision_used ?? 0,
-      image_limit: res.user.image_limit ?? 10,
-      image_used: res.user.image_used ?? 0,
-      eclipse_limit: res.user.eclipse_limit ?? 5,
-      eclipse_used: res.user.eclipse_used ?? 0,
+      vision_limit: res.user.vision_limit ?? 10, vision_used: res.user.vision_used ?? 0,
+      image_limit: res.user.image_limit ?? 10, image_used: res.user.image_used ?? 0,
+      eclipse_limit: res.user.eclipse_limit ?? 5, eclipse_used: res.user.eclipse_used ?? 0,
     };
     renderCreditBar();
     const chip = $('#userChip');
@@ -683,10 +613,6 @@
     }
     renderModelPicker();
   }
-
-  /* ============================================================
-     Config loading
-     ============================================================ */
   async function loadConfig() {
     try {
       const res = await fetch('/api/config', { cache: 'no-store' });
@@ -697,26 +623,14 @@
     __model = getModelsList()[0].id;
     renderModelPicker();
   }
-
-  /* ============================================================
-     Auth
-     ============================================================ */
   async function doLogin(e) {
     if (e) e.preventDefault();
     const name = $('#loginName')?.value.trim();
     const email = $('#loginEmail')?.value.trim().toLowerCase();
     if (!name || !email) return;
-    const res = await authJson('/api/auth/simple-login', {
-      method: 'POST',
-      body: JSON.stringify({ name, email })
-    }, null);
-    if (res?.ok) {
-      setToken(res.token);
-      closeModal('loginModal');
-      await refreshUsage();
-    } else {
-      alert(res?.error || 'Login failed');
-    }
+    const res = await authJson('/api/auth/simple-login', { method: 'POST', body: JSON.stringify({ name, email }) }, null);
+    if (res?.ok) { setToken(res.token); closeModal('loginModal'); await refreshUsage(); }
+    else alert(res?.error || 'Login failed');
   }
   async function doLogout() {
     await authJson('/api/logout', { method: 'POST' }, null);
@@ -724,18 +638,10 @@
     await refreshUsage();
     closeModal('settingsModal');
   }
-
-  /* ============================================================
-     Plans
-     ============================================================ */
   async function loadPlans() {
-    const grid = $('#plansGrid');
-    if (!grid) return;
+    const grid = $('#plansGrid'); if (!grid) return;
     const res = await authJson('/api/subscription/plans', {}, null);
-    if (!res?.plans) {
-      grid.innerHTML = '<div class="history-empty">Could not load.</div>';
-      return;
-    }
+    if (!res?.plans) { grid.innerHTML = '<div class="history-empty">Could not load.</div>'; return; }
     grid.innerHTML = res.plans.map(p => {
       const isCurrent = p.id === __tier;
       const price = p.id === 'free'
@@ -751,10 +657,6 @@
       </div>`;
     }).join('');
   }
-
-  /* ============================================================
-     Persona
-     ============================================================ */
   async function loadPersona() {
     if (!__user) return;
     const res = await authJson('/api/persona', {}, null);
@@ -763,54 +665,26 @@
   }
   async function savePersona() {
     const status = $('#personaStatus');
-    if (!__user) {
-      if (status) { status.textContent = 'Sign in first.'; status.className = 'persona-status err'; }
-      return;
-    }
-    const inp = $('#personaInput');
-    if (!inp) return;
+    if (!__user) { if (status) { status.textContent = 'Sign in first.'; status.className = 'persona-status err'; } return; }
+    const inp = $('#personaInput'); if (!inp) return;
     if (status) { status.textContent = 'Saving…'; status.className = 'persona-status'; }
-    const res = await authJson('/api/persona', {
-      method: 'POST',
-      body: JSON.stringify({ persona: inp.value.trim() })
-    }, null);
-    if (res?.ok) {
-      if (status) { status.textContent = 'Saved ✓'; status.className = 'persona-status ok'; }
-      setTimeout(() => { if (status) status.textContent = ''; }, 2000);
-    } else {
-      if (status) { status.textContent = 'Failed.'; status.className = 'persona-status err'; }
-    }
+    const res = await authJson('/api/persona', { method: 'POST', body: JSON.stringify({ persona: inp.value.trim() }) }, null);
+    if (res?.ok) { if (status) { status.textContent = 'Saved ✓'; status.className = 'persona-status ok'; } setTimeout(() => { if (status) status.textContent = ''; }, 2000); }
+    else { if (status) { status.textContent = 'Failed.'; status.className = 'persona-status err'; } }
   }
-
-  /* ============================================================
-     Image generation
-     ============================================================ */
   async function genImage() {
-    const inp = $('#imagePrompt');
-    const prompt = inp?.value.trim();
+    const inp = $('#imagePrompt'); const prompt = inp?.value.trim();
     if (!prompt) return alert('Describe the image first.');
-    const btn = $('#generateImageBtn');
-    const result = $('#imageResult');
+    const btn = $('#generateImageBtn'), result = $('#imageResult');
     if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
     if (result) result.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);">Generating…</div>';
     try {
-      const res = await fetch('/v1/images/generations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, aspect_ratio: '1:1' })
-      });
+      const res = await fetch('/v1/images/generations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, aspect_ratio: '1:1' }) });
       const data = await res.json().catch(() => ({}));
-      if (res.ok && data.ok && data.image) {
-        if (result) result.innerHTML = `<img src="${data.image}" alt="${escapeHtml(prompt)}">`;
-        refreshUsage();
-      } else if (result) {
-        result.innerHTML = `<div style="color:#dc2626;font-size:13px;">Failed: ${escapeHtml(data.error?.message || 'Unknown')}</div>`;
-      }
-    } catch (e) {
-      if (result) result.innerHTML = `<div style="color:#dc2626;font-size:13px;">Error: ${escapeHtml(e.message)}</div>`;
-    } finally {
-      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-image-add-line"></i> Generate'; }
-    }
+      if (res.ok && data.ok && data.image) { if (result) result.innerHTML = `<img src="${data.image}" alt="${escapeHtml(prompt)}">`; refreshUsage(); }
+      else if (result) result.innerHTML = `<div style="color:#dc2626;font-size:13px;">Failed: ${escapeHtml(data.error?.message || 'Unknown')}</div>`;
+    } catch (e) { if (result) result.innerHTML = `<div style="color:#dc2626;font-size:13px;">Error: ${escapeHtml(e.message)}</div>`; }
+    finally { if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-image-add-line"></i> Generate'; } }
   }
 
   /* ============================================================
@@ -818,21 +692,15 @@
      ============================================================ */
   function loadBridgeLS() {
     const b = safeGet(BRIDGE_KEY, {});
-    __bridge = { ...__bridge, ...b, connected: false, baseUrl: null };
+    __bridge = { ...__bridge, ...b, connected: false, baseUrl: null, env: null };
   }
   function saveBridgeLS() {
-    safeSet(BRIDGE_KEY, {
-      name: __bridge.name,
-      model: __bridge.model,
-      port: __bridge.port
-    });
+    safeSet(BRIDGE_KEY, { name: __bridge.name, model: __bridge.model, port: __bridge.port });
   }
-
   function renderBridgeStatus() {
     [['#bridgeStatus', '.bridge-status-dot'], ['#bwStatusPill', '.bridge-status-dot'], ['#bwStatusBox', '.bridge-status-dot']]
       .forEach(([sel, dotSel]) => {
-        const wrap = document.querySelector(sel);
-        if (!wrap) return;
+        const wrap = document.querySelector(sel); if (!wrap) return;
         const dot = wrap.querySelector(dotSel);
         const txt = wrap.querySelector('span');
         if (dot) {
@@ -846,7 +714,6 @@
     if (d) d.style.display = __bridge.connected ? 'flex' : 'none';
     updateBridgeSendBtn();
   }
-
   async function testBridge(port) {
     for (const host of ['localhost', '127.0.0.1']) {
       try {
@@ -854,84 +721,72 @@
         const t = setTimeout(() => ctrl.abort(), 4000);
         const r = await fetch(`http://${host}:${port}/ping`, { signal: ctrl.signal, mode: 'cors' });
         clearTimeout(t);
-        if (r.ok) {
-          const d = await r.json();
-          if (d && d.ok) return { ok: true, data: d, base: `http://${host}:${port}` };
-        }
+        if (r.ok) { const d = await r.json(); if (d && d.ok) return { ok: true, data: d, base: `http://${host}:${port}` }; }
       } catch {}
     }
     return { ok: false };
   }
-
+  async function fetchEnv(base) {
+    try {
+      const r = await fetch(`${base}/env`, { mode: 'cors' });
+      if (!r.ok) return null;
+      const d = await r.json();
+      if (d && d.ok) return d;
+    } catch {}
+    return null;
+  }
   async function startBridge() {
     const name = ($('#bwNameInput')?.value || __bridge.name).trim();
     const model = $('#bwModelSelect')?.value || __bridge.model;
     const port = parseInt($('#bwPortInput')?.value || __bridge.port, 10);
-    __bridge.name = name;
-    __bridge.model = model;
-    __bridge.port = port;
-    saveBridgeLS();
-    renderBridgeStatus();
+    __bridge.name = name; __bridge.model = model; __bridge.port = port;
+    saveBridgeLS(); renderBridgeStatus();
     setBwHint('Connecting…', '');
     const res = await testBridge(port);
     if (res.ok) {
       __bridge.connected = true;
       __bridge.baseUrl = res.base;
+      __bridge.env = await fetchEnv(res.base);
       renderBridgeStatus();
-      const empty = $('#bridgeEmpty');
-      if (empty) empty.remove();
-      setBwHint('Connected. Ready.', 'ok');
-      addBridgeSystemMsg('Connected to ' + res.data.name);
+      const empty = $('#bridgeEmpty'); if (empty) empty.remove();
+      const home = __bridge.env?.home || '(unknown)';
+      const os = __bridge.env?.platform || '(unknown)';
+      setBwHint(`Connected · Home: ${home} · OS: ${os}`, 'ok');
+      addBridgeSystemMsg(`Connected to ${res.data.name} · Home directory: ${home} · OS: ${os}`);
     } else {
       __bridge.connected = false;
       __bridge.baseUrl = null;
+      __bridge.env = null;
       renderBridgeStatus();
-      setBwHint(
-        `Could not reach the bridge on port ${port}.\n\n1. Make sure you ran "python runner.py".\n2. Test in browser: http://localhost:${port}/ping`,
-        'err'
-      );
+      setBwHint(`Could not reach the bridge on port ${port}.\n\n1. Make sure you ran "python runner.py".\n2. Test in browser: http://localhost:${port}/ping`, 'err');
     }
   }
-
   function stopBridge() {
-    __bridge.connected = false;
-    __bridge.baseUrl = null;
-    renderBridgeStatus();
-    setBwHint('', '');
+    __bridge.connected = false; __bridge.baseUrl = null; __bridge.env = null;
+    renderBridgeStatus(); setBwHint('', '');
   }
-
   async function bridgeCall(endpoint, payload) {
     if (!__bridge.connected || !__bridge.baseUrl) throw new Error('Bridge not connected');
     const r = await fetch(__bridge.baseUrl + endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload || {})
+      body: JSON.stringify(payload || {}),
     });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return await r.json();
   }
-
   function downloadBridgeClient() {
-    const params = new URLSearchParams({
-      name: __bridge.name,
-      port: String(__bridge.port),
-      model: __bridge.model
-    });
+    const params = new URLSearchParams({ name: __bridge.name, port: String(__bridge.port), model: __bridge.model });
     const a = document.createElement('a');
     a.href = '/api/bridge/download?' + params.toString();
     a.download = 'mirox_client_bridge.zip';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
   }
-
   function setBwHint(text, cls = '') {
-    const el = $('#bwConnectHint');
-    if (!el) return;
+    const el = $('#bwConnectHint'); if (!el) return;
     el.textContent = text;
     el.className = 'bw-hint' + (cls ? ' ' + cls : '');
   }
-
   function updateBridgeSendBtn() {
     const btn = $('#bridgeSendBtn'), inp = $('#bridgeInput');
     if (!btn || !inp) return;
@@ -940,7 +795,16 @@
     btn.classList.toggle('is-disabled', !enabled);
     btn.setAttribute('aria-disabled', String(!enabled));
   }
-
+  function showContinueBar(text) {
+    const bar = $('#bwContinueBar');
+    const t = $('#bwContinueText');
+    if (t && text) t.textContent = text;
+    if (bar) bar.style.display = 'flex';
+  }
+  function hideContinueBar() {
+    const bar = $('#bwContinueBar');
+    if (bar) bar.style.display = 'none';
+  }
   function openBridgeWorkspace() {
     $('#bridgeWorkspace')?.classList.add('open');
     document.body.style.overflow = 'hidden';
@@ -951,26 +815,20 @@
     document.body.style.overflow = '';
   }
   function clearBridgeChat() {
-    const m = $('#bridgeMessages');
-    if (m) m.innerHTML = '';
+    const m = $('#bridgeMessages'); if (m) m.innerHTML = '';
     bridgeConversation = [];
     bridgeQuestionCount = 0;
     bridgeProgress = 0;
+    bridgeTurn = null;
     updateBridgeProgress(0, 'Ready');
-    const w = $('#bwProgress');
-    if (w) w.style.display = 'none';
+    const w = $('#bwProgress'); if (w) w.style.display = 'none';
+    hideContinueBar();
   }
-
-  function scrollBridgeBottom() {
-    const c = $('#bridgeMessages');
-    if (c) c.scrollTop = c.scrollHeight;
-  }
+  function scrollBridgeBottom() { const c = $('#bridgeMessages'); if (c) c.scrollTop = c.scrollHeight; }
 
   function addBridgeUserMsg(text) {
-    const container = $('#bridgeMessages');
-    if (!container) return;
-    const empty = $('#bridgeEmpty');
-    if (empty) empty.remove();
+    const container = $('#bridgeMessages'); if (!container) return;
+    const empty = $('#bridgeEmpty'); if (empty) empty.remove();
     const el = document.createElement('div');
     el.className = 'bridge-msg user';
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -978,13 +836,10 @@
     container.appendChild(el);
     scrollBridgeBottom();
   }
-
   function addBridgeAiMsg(text) {
     if (!text || !text.trim()) return null;
-    const container = $('#bridgeMessages');
-    if (!container) return null;
-    const empty = $('#bridgeEmpty');
-    if (empty) empty.remove();
+    const container = $('#bridgeMessages'); if (!container) return null;
+    const empty = $('#bridgeEmpty'); if (empty) empty.remove();
     const el = document.createElement('div');
     el.className = 'bridge-msg ai';
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -994,34 +849,26 @@
     scrollBridgeBottom();
     return el;
   }
-
   function addBridgeSystemMsg(text) {
-    const container = $('#bridgeMessages');
-    if (!container) return;
-    const empty = $('#bridgeEmpty');
-    if (empty) empty.remove();
+    const container = $('#bridgeMessages'); if (!container) return;
+    const empty = $('#bridgeEmpty'); if (empty) empty.remove();
     const el = document.createElement('div');
     el.className = 'bridge-msg system';
     el.innerHTML = `<div class="bridge-bubble">${escapeHtml(text)}</div>`;
     container.appendChild(el);
     scrollBridgeBottom();
   }
-
   function addBridgeSuccessMsg(text) {
-    const container = $('#bridgeMessages');
-    if (!container) return;
+    const container = $('#bridgeMessages'); if (!container) return;
     const el = document.createElement('div');
     el.className = 'bridge-msg ai';
     el.innerHTML = `<div class="bridge-success"><i class="ri-checkbox-circle-fill"></i><span>${escapeHtml(text)}</span></div>`;
     container.appendChild(el);
     scrollBridgeBottom();
   }
-
   function addBridgeThinkingBubble() {
-    const container = $('#bridgeMessages');
-    if (!container) return null;
-    const empty = $('#bridgeEmpty');
-    if (empty) empty.remove();
+    const container = $('#bridgeMessages'); if (!container) return null;
+    const empty = $('#bridgeEmpty'); if (empty) empty.remove();
     const el = document.createElement('div');
     el.className = 'bridge-msg ai';
     el.innerHTML = `<div class="bridge-thinking"><span>Thinking</span><span class="thinking-dots"><span></span><span></span><span></span></span></div>`;
@@ -1029,10 +876,8 @@
     scrollBridgeBottom();
     return el;
   }
-
   function addBridgeQuestionBubble(question) {
-    const container = $('#bridgeMessages');
-    if (!container) return null;
+    const container = $('#bridgeMessages'); if (!container) return null;
     const el = document.createElement('div');
     el.className = 'bridge-msg ai';
     el.innerHTML = `<div class="bridge-question-bubble"><div class="qb-head"><i class="ri-question-line"></i> Question for you</div><div class="qb-text">${escapeHtml(question)}</div></div>`;
@@ -1040,49 +885,49 @@
     scrollBridgeBottom();
     return el;
   }
-
+  function addBridgePlanBubble(plannedFiles) {
+    const container = $('#bridgeMessages'); if (!container) return;
+    const empty = $('#bridgeEmpty'); if (empty) empty.remove();
+    const el = document.createElement('div');
+    el.className = 'bridge-msg ai';
+    el.dataset.planId = 'plan-' + Date.now();
+    el.innerHTML = `<div class="bridge-plan-bubble">
+      <div class="bp-head"><i class="ri-list-check-2"></i> Project plan (${plannedFiles.length} file${plannedFiles.length === 1 ? '' : 's'})</div>
+      <div class="bp-list">
+        ${plannedFiles.map(f => `<div class="bp-file" data-path="${escapeHtml(f)}"><i class="ri-file-add-line"></i> ${escapeHtml(f)}</div>`).join('')}
+      </div>
+    </div>`;
+    container.appendChild(el);
+    scrollBridgeBottom();
+    return el;
+  }
+  function markPlanFileDone(path) {
+    const container = $('#bridgeMessages'); if (!container) return;
+    container.querySelectorAll('.bp-file').forEach(f => {
+      if (f.dataset.path === path) {
+        f.classList.add('done');
+        const ic = f.querySelector('i');
+        if (ic) ic.className = 'ri-check-line';
+      }
+    });
+  }
   function getActionData(cmd) {
-    if (cmd.type === 'write') {
-      return {
-        icon: 'ri-file-add-line',
-        iconClass: 'write',
-        label: `Writing <code>${escapeHtml(getBaseName(cmd.path))}</code>`
-      };
-    }
+    if (cmd.type === 'write') return { icon: 'ri-file-add-line', iconClass: 'write', label: `Writing <code>${escapeHtml(getBaseName(cmd.path))}</code>` };
     if (cmd.type === 'exec') {
       const short = cmd.command.length > 55 ? cmd.command.slice(0, 55) + '…' : cmd.command;
-      return {
-        icon: 'ri-play-line',
-        iconClass: 'exec',
-        label: `Running <code>${escapeHtml(short)}</code>`
-      };
+      return { icon: 'ri-play-line', iconClass: 'exec', label: `Running <code>${escapeHtml(short)}</code>` };
     }
-    if (cmd.type === 'read') {
-      return {
-        icon: 'ri-file-text-line',
-        iconClass: 'read',
-        label: `Reading <code>${escapeHtml(getBaseName(cmd.path))}</code>`
-      };
-    }
-    if (cmd.type === 'list') {
-      return {
-        icon: 'ri-folder-line',
-        iconClass: 'list',
-        label: `Listing <code>${escapeHtml(getBaseName(cmd.path) || cmd.path)}</code>`
-      };
-    }
+    if (cmd.type === 'read') return { icon: 'ri-file-text-line', iconClass: 'read', label: `Reading <code>${escapeHtml(getBaseName(cmd.path))}</code>` };
+    if (cmd.type === 'list') return { icon: 'ri-folder-line', iconClass: 'list', label: `Listing <code>${escapeHtml(getBaseName(cmd.path) || cmd.path)}</code>` };
     return { icon: 'ri-terminal-line', iconClass: '', label: cmd.type };
   }
-
   function getBaseName(p) {
     if (!p) return '';
     const parts = String(p).split('/');
     return parts[parts.length - 1] || p;
   }
-
   function addBridgeActionBubble(cmd) {
-    const container = $('#bridgeMessages');
-    if (!container) return null;
+    const container = $('#bridgeMessages'); if (!container) return null;
     const el = document.createElement('div');
     el.className = 'bridge-msg ai';
     const data = getActionData(cmd);
@@ -1098,7 +943,6 @@
     scrollBridgeBottom();
     return el;
   }
-
   function updateBridgeActionBubble(el, cmd, result) {
     if (!el) return;
     const status = el.querySelector('.bridge-action-status');
@@ -1116,19 +960,11 @@
     if (ok) {
       if (cmd.type === 'exec') {
         body = (result.stdout || '').trim();
-        if (result.stderr && result.stderr.trim()) {
-          body += (body ? '\n' : '') + '[stderr]\n' + result.stderr.trim();
-        }
+        if (result.stderr && result.stderr.trim()) body += (body ? '\n' : '') + '[stderr]\n' + result.stderr.trim();
         if (!body) body = `exit ${result.exit_code}`;
-      } else if (cmd.type === 'write') {
-        body = `Wrote ${result.bytes} bytes`;
-      } else if (cmd.type === 'read') {
-        body = (result.content || '').slice(0, 500) || '(empty)';
-      } else if (cmd.type === 'list') {
-        body = (result.items || []).slice(0, 20)
-          .map(i => (i.is_dir ? '📁 ' : '📄 ') + i.name)
-          .join('\n');
-      }
+      } else if (cmd.type === 'write') body = `Wrote ${result.bytes} bytes`;
+      else if (cmd.type === 'read') body = (result.content || '').slice(0, 500) || '(empty)';
+      else if (cmd.type === 'list') body = (result.items || []).slice(0, 20).map(i => (i.is_dir ? '📁 ' : '📄 ') + i.name).join('\n');
     } else {
       body = (result && result.error) || 'Unknown error';
     }
@@ -1139,28 +975,16 @@
     }
     scrollBridgeBottom();
   }
-
   function updateBridgeProgress(pct, text) {
     bridgeProgress = Math.max(0, Math.min(100, Math.round(pct)));
-    const bar = $('#bwProgress');
-    const fill = $('#bwProgressFill');
-    const pctEl = $('#bwProgressPct');
-    const txtEl = $('#bwProgressText');
+    const bar = $('#bwProgress'); const fill = $('#bwProgressFill'); const pctEl = $('#bwProgressPct'); const txtEl = $('#bwProgressText');
     if (bar) bar.style.display = 'block';
-    if (fill) {
-      fill.style.width = bridgeProgress + '%';
-      fill.classList.toggle('done', bridgeProgress >= 100);
-    }
-    if (pctEl) {
-      pctEl.textContent = bridgeProgress + '%';
-      pctEl.classList.toggle('done', bridgeProgress >= 100);
-    }
+    if (fill) { fill.style.width = bridgeProgress + '%'; fill.classList.toggle('done', bridgeProgress >= 100); }
+    if (pctEl) { pctEl.textContent = bridgeProgress + '%'; pctEl.classList.toggle('done', bridgeProgress >= 100); }
     if (txtEl && text) txtEl.textContent = text;
   }
-
   function extractBridgeCommands(text) {
-    const cmds = [];
-    let m;
+    const cmds = []; let m;
     const execRe = /<bridge-exec>([\s\S]*?)<\/bridge-exec>/g;
     while ((m = execRe.exec(text)) !== null) cmds.push({ type: 'exec', command: m[1].trim(), index: m.index });
     const writeRe = /<bridge-write\s+path="([^"]+)">([\s\S]*?)<\/bridge-write>/g;
@@ -1172,11 +996,20 @@
     cmds.sort((a, b) => a.index - b.index);
     return cmds;
   }
-
+  function extractBridgePlan(text) {
+    const m = /<bridge-plan>([\s\S]*?)<\/bridge-plan>/.exec(text);
+    if (!m) return null;
+    const body = m[1];
+    const files = [];
+    for (const line of body.split('\n')) {
+      const l = line.trim().replace(/^[-*+]\s*/, '').replace(/^["']|["']$/g, '');
+      if (!l) continue;
+      if (l.includes('/') || /\.\w{1,8}$/.test(l)) files.push(l);
+    }
+    return files.length ? files : null;
+  }
   function extractBridgeQuestions(text) {
-    const qs = [];
-    const re = /<bridge-ask>([\s\S]*?)<\/bridge-ask>/g;
-    let m;
+    const qs = []; const re = /<bridge-ask>([\s\S]*?)<\/bridge-ask>/g; let m;
     while ((m = re.exec(text)) !== null) {
       const body = m[1].trim();
       const lines = body.split('\n').map(l => l.trim()).filter(Boolean);
@@ -1185,21 +1018,17 @@
       const options = [];
       for (let i = 1; i < lines.length; i++) {
         const l = lines[i];
-        if (l.startsWith('-') || l.startsWith('*')) {
-          options.push(l.replace(/^[-*]\s*/, '').trim());
-        }
+        if (l.startsWith('-') || l.startsWith('*')) options.push(l.replace(/^[-*]\s*/, '').trim());
       }
       qs.push({ question, options });
     }
     return qs;
   }
-
   function extractProgressTag(text) {
     const m = /<bridge-progress\s+step="(\d+)"\s+total="(\d+)"(?:\s+label="([^"]*)")?\s*\/>/.exec(text);
     if (!m) return null;
     return { step: parseInt(m[1], 10), total: parseInt(m[2], 10), label: m[3] || '' };
   }
-
   function getNarrationText(text) {
     let t = String(text || '');
     t = t.replace(/<bridge-exec>[\s\S]*?<\/bridge-exec>/g, '');
@@ -1207,13 +1036,13 @@
     t = t.replace(/<bridge-read\s+[^>]*\/>/g, '');
     t = t.replace(/<bridge-list\s+[^>]*\/>/g, '');
     t = t.replace(/<bridge-ask>[\s\S]*?<\/bridge-ask>/g, '');
+    t = t.replace(/<bridge-plan>[\s\S]*?<\/bridge-plan>/g, '');
     t = t.replace(/<bridge-progress[^>]*\/>/g, '');
     t = t.replace(/```[\s\S]*?```/g, '');
     t = t.replace(/\bDONE\b/g, '');
     t = t.replace(/\s+/g, ' ').trim();
     return t;
   }
-
   async function executeBridgeCommand(cmd) {
     if (cmd.type === 'exec') return bridgeCall('/exec', { command: cmd.command });
     if (cmd.type === 'write') return bridgeCall('/write', { path: cmd.path, content: cmd.content });
@@ -1221,7 +1050,6 @@
     if (cmd.type === 'list') return bridgeCall('/list', { path: cmd.path });
     return { ok: false, error: 'Unknown' };
   }
-
   function formatResultForAI(cmd, result) {
     const ok = result && result.ok;
     if (!ok) return `[${cmd.type}] ERROR: ${(result && result.error) || 'unknown'}`;
@@ -1231,20 +1059,23 @@
     if (cmd.type === 'list') return `[list] path=${result.path}\n` + (result.items || []).map(i => (i.is_dir ? 'D ' : 'F ') + i.name).join('\n');
     return '[unknown]';
   }
-
+  function cmdSignature(cmd) {
+    if (cmd.type === 'exec') return 'exec:' + cmd.command.trim();
+    if (cmd.type === 'write') return 'write:' + cmd.path + ':' + (cmd.content || '').length;
+    if (cmd.type === 'read') return 'read:' + cmd.path;
+    if (cmd.type === 'list') return 'list:' + cmd.path;
+    return 'unknown';
+  }
   let __bqResolver = null;
   let __bqSelected = null;
-
   function showBridgeQuestionModal(q, counterText) {
     return new Promise((resolve) => {
       __bqResolver = resolve;
       __bqSelected = null;
-      const modal = $('#bridgeQuestionModal');
-      if (!modal) { resolve(''); return; }
+      const modal = $('#bridgeQuestionModal'); if (!modal) { resolve(''); return; }
       const txt = $('#bqText'); if (txt) txt.textContent = q.question || '';
       const ctr = $('#bqCounter'); if (ctr) ctr.textContent = counterText;
-      const optsWrap = $('#bqOptions');
-      if (!optsWrap) { resolve(''); return; }
+      const optsWrap = $('#bqOptions'); if (!optsWrap) { resolve(''); return; }
       optsWrap.innerHTML = '';
       const cw = $('#bqCustomWrap');
       if (q.options && q.options.length) {
@@ -1261,19 +1092,13 @@
           };
           optsWrap.appendChild(b);
         });
-      } else {
-        if (cw) cw.style.display = 'block';
-      }
+      } else { if (cw) cw.style.display = 'block'; }
       const ci = $('#bqCustomInput'); if (ci) ci.value = '';
       modal.classList.add('open');
       setTimeout(() => { $('#bqCustomInput')?.focus(); }, 100);
     });
   }
-
-  function closeBridgeQuestionModal() {
-    $('#bridgeQuestionModal')?.classList.remove('open');
-  }
-
+  function closeBridgeQuestionModal() { $('#bridgeQuestionModal')?.classList.remove('open'); }
   function submitBridgeQuestion() {
     const custom = $('#bqCustomInput')?.value.trim();
     const answer = custom || __bqSelected || '';
@@ -1281,8 +1106,8 @@
     closeBridgeQuestionModal();
     if (__bqResolver) { __bqResolver(answer); __bqResolver = null; }
   }
-
   async function fetchBridgeReply(history) {
+    const env = __bridge.env || {};
     const res = await fetch('/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1291,28 +1116,61 @@
         history: history.slice(0, -1).map(h => ({ role: h.role, content: h.content })),
         model: __bridge.model,
         stream: false,
-        bridge: { connected: true, name: __bridge.name, model: __bridge.model, mode: 'developer' }
+        bridge: {
+          connected: true,
+          name: __bridge.name,
+          model: __bridge.model,
+          mode: 'developer',
+          env,
+          filesWritten: bridgeTurn ? [...bridgeTurn.writtenFiles] : [],
+          plannedFiles: bridgeTurn ? [...bridgeTurn.plannedFiles] : [],
+          failedSignatures: bridgeTurn ? [...bridgeTurn.failedSignatures] : [],
+          commandsRun: bridgeTurn ? bridgeTurn.commandsRun : 0,
+        },
       })
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
     return data.reply || data.choices?.[0]?.message?.content || '';
   }
-
-  async function runBridgeTurn(userText) {
+  function shouldBlockSignature(sig) {
+    if (!bridgeTurn) return false;
+    const count = bridgeTurn.commandLog.get(sig) || 0;
+    if (bridgeTurn.failedSignatures.has(sig)) return true;
+    if (count >= MAX_DUP_COMMANDS) return true;
+    return false;
+  }
+  async function runBridgeTurn(userText, isResume = false) {
     if (!__bridge.connected) { setBwHint('Bridge is not connected.', 'err'); return; }
     if (bridgeRunning) return;
     bridgeRunning = true;
-    bridgeQuestionCount = 0;
+    hideContinueBar();
     updateBridgeSendBtn();
-    updateBridgeProgress(2, 'Starting…');
 
-    addBridgeUserMsg(userText);
-    bridgeConversation.push({ role: 'user', content: userText });
+    if (!isResume) {
+      bridgeQuestionCount = 0;
+      bridgeTurn = {
+        runs: 0,
+        plannedFiles: new Set(),
+        writtenFiles: new Set(),
+        commandLog: new Map(),
+        failedSignatures: new Set(),
+        commandsRun: 0,
+      };
+      updateBridgeProgress(2, 'Starting…');
+      addBridgeUserMsg(userText);
+      bridgeConversation.push({ role: 'user', content: userText });
+    } else {
+      updateBridgeProgress(Math.max(20, bridgeProgress - 15), 'Resuming…');
+    }
 
     let iter = 0;
+    let autoContinues = 0;
+    let endedNormally = false;
+
     try {
       while (iter++ < MAX_BRIDGE_ITER) {
+        bridgeTurn.runs++;
         const thinkingEl = addBridgeThinkingBubble();
         let reply = '';
         try {
@@ -1323,23 +1181,36 @@
           break;
         }
         if (thinkingEl) thinkingEl.remove();
-        if (!reply || !reply.trim()) break;
-
+        if (!reply || !reply.trim()) {
+          if (autoContinues < MAX_AUTO_CONTINUES) {
+            autoContinues++;
+            addBridgeSystemMsg(`Empty response — asking AI to continue (${autoContinues}/${MAX_AUTO_CONTINUES})`);
+            bridgeConversation.push({ role: 'user', content: '[System] You returned an empty response. Continue building.' });
+            continue;
+          }
+          break;
+        }
         const prog = extractProgressTag(reply);
         if (prog && prog.total > 0) {
           const pct = Math.min(98, Math.round((prog.step / prog.total) * 100));
           updateBridgeProgress(pct, prog.label || `Step ${prog.step} of ${prog.total}`);
         } else {
-          const pct = Math.min(90, 5 + iter * 6);
-          updateBridgeProgress(pct, `Working… (step ${iter})`);
+          const pct = Math.min(90, 5 + iter * 4);
+          const doneCount = bridgeTurn.writtenFiles.size;
+          const totalPlanned = bridgeTurn.plannedFiles.size;
+          let text = `Working… (step ${iter})`;
+          if (totalPlanned > 0) text = `Files written: ${doneCount} / ${totalPlanned}`;
+          updateBridgeProgress(pct, text);
         }
-
+        const plan = extractBridgePlan(reply);
+        if (plan && plan.length) {
+          for (const f of plan) bridgeTurn.plannedFiles.add(f);
+          addBridgePlanBubble(plan);
+        }
         const narration = getNarrationText(reply);
         if (narration) addBridgeAiMsg(narration);
-
         bridgeConversation.push({ role: 'assistant', content: reply });
-        if (bridgeConversation.length > 30) bridgeConversation = bridgeConversation.slice(-30);
-
+        if (bridgeConversation.length > 40) bridgeConversation = bridgeConversation.slice(-40);
         const questions = extractBridgeQuestions(reply);
         if (questions.length > 0 && bridgeQuestionCount < MAX_BRIDGE_QUESTIONS) {
           const q = questions[0];
@@ -1353,102 +1224,152 @@
         }
         if (questions.length > 0 && bridgeQuestionCount >= MAX_BRIDGE_QUESTIONS) {
           addBridgeSystemMsg(`Question limit (${MAX_BRIDGE_QUESTIONS}) reached.`);
-          bridgeConversation.push({
-            role: 'user',
-            content: `[System] Question limit reached. Continue with best-effort defaults.`
-          });
+          bridgeConversation.push({ role: 'user', content: `[System] Question limit reached. Continue with best-effort defaults.` });
           continue;
         }
-
         const cmds = extractBridgeCommands(reply);
         if (cmds.length > 0) {
           const resultLines = [];
+          let blockedAny = false;
           for (let i = 0; i < cmds.length; i++) {
             const cmd = cmds[i];
+            const sig = cmdSignature(cmd);
+            if (shouldBlockSignature(sig)) {
+              const wasFail = bridgeTurn.failedSignatures.has(sig);
+              const reason = wasFail
+                ? 'Already failed earlier — do not retry this exact command. Try a different approach.'
+                : 'Already executed successfully — do not run again.';
+              addBridgeSystemMsg(`Blocked duplicate: ${sig} — ${reason}`);
+              resultLines.push(`[${cmd.type}] BLOCKED: ${sig}\nREASON: ${reason}`);
+              blockedAny = true;
+              continue;
+            }
+            bridgeTurn.commandLog.set(sig, (bridgeTurn.commandLog.get(sig) || 0) + 1);
+            bridgeTurn.commandsRun++;
             const bubble = addBridgeActionBubble(cmd);
             let result;
-            try {
-              result = await executeBridgeCommand(cmd);
-            } catch (e) {
-              result = { ok: false, error: e.message };
-            }
+            try { result = await executeBridgeCommand(cmd); }
+            catch (e) { result = { ok: false, error: e.message }; }
             updateBridgeActionBubble(bubble, cmd, result);
+            if (result && result.ok) {
+              if (cmd.type === 'write') {
+                bridgeTurn.writtenFiles.add(cmd.path);
+                markPlanFileDone(cmd.path);
+              }
+            } else {
+              bridgeTurn.failedSignatures.add(sig);
+            }
             resultLines.push(formatResultForAI(cmd, result));
           }
+          const env = __bridge.env || {};
+          const doneCount = bridgeTurn.writtenFiles.size;
+          const totalPlanned = bridgeTurn.plannedFiles.size;
+          const progressLine = totalPlanned > 0
+            ? `Progress: ${doneCount}/${totalPlanned} planned files written.`
+            : `Progress: ${doneCount} file(s) written.`;
+          const bridgeResults = [
+            `[Bridge environment] home=${env.home || '?'} platform=${env.platform || '?'}`,
+            `[Bridge progress] ${progressLine}`,
+            blockedAny ? `[Note] Some commands were blocked as duplicates. Use different approaches.` : '',
+            `[Bridge results]`,
+            resultLines.join('\n\n'),
+            '',
+            `Continue with the next step. If ALL planned files are written AND verified, reply with exactly: DONE.`,
+            `Otherwise, output the next batch of <bridge-*> tags to keep building.`,
+          ].filter(Boolean).join('\n');
+          bridgeConversation.push({ role: 'user', content: bridgeResults });
+          continue;
+        }
+        const saidDone = /\bDONE\b/i.test(reply);
+        const hasPlan = bridgeTurn.plannedFiles.size > 0;
+        const allFilesWritten = hasPlan && bridgeTurn.writtenFiles.size >= bridgeTurn.plannedFiles.size;
+        if (saidDone && (allFilesWritten || !hasPlan)) {
+          updateBridgeProgress(100, 'Complete');
+          addBridgeSuccessMsg('Project complete');
+          endedNormally = true;
+          break;
+        }
+        if (saidDone && hasPlan && !allFilesWritten) {
+          const remaining = [...bridgeTurn.plannedFiles].filter(f => !bridgeTurn.writtenFiles.has(f));
+          addBridgeSystemMsg(`AI said DONE but ${remaining.length} planned file(s) are missing. Asking it to finish.`);
           bridgeConversation.push({
             role: 'user',
-            content: `[Bridge results]\n${resultLines.join('\n\n')}\n\nContinue with the next step. If done, reply with exactly "DONE".`
+            content: `[System] You said DONE but these files are still missing:\n${remaining.map(r => '- ' + r).join('\n')}\n\nWrite them all using <bridge-write> tags, then verify. Do NOT say DONE until every file exists.`
           });
           continue;
         }
-
-        if (/\bDONE\b/i.test(reply)) {
-          updateBridgeProgress(100, 'Complete');
-          addBridgeSuccessMsg('Task complete');
+        if (!saidDone) {
+          if (autoContinues < MAX_AUTO_CONTINUES) {
+            autoContinues++;
+            const remaining = hasPlan ? [...bridgeTurn.plannedFiles].filter(f => !bridgeTurn.writtenFiles.has(f)) : [];
+            const msg = remaining.length
+              ? `Continue. Still missing: ${remaining.slice(0, 5).join(', ')}${remaining.length > 5 ? ' …' : ''}`
+              : 'Continue. Output more <bridge-write> or <bridge-exec> tags to keep building.';
+            addBridgeSystemMsg(`Auto-continue (${autoContinues}/${MAX_AUTO_CONTINUES}): ${msg}`);
+            bridgeConversation.push({ role: 'user', content: `[System] ${msg}` });
+            continue;
+          }
           break;
         }
-        break;
       }
-      if (iter >= MAX_BRIDGE_ITER) {
-        updateBridgeProgress(100, 'Iteration limit');
-        addBridgeSystemMsg('Reached iteration limit.');
+      const hasPlan = bridgeTurn.plannedFiles.size > 0;
+      const allFilesWritten = hasPlan && bridgeTurn.writtenFiles.size >= bridgeTurn.plannedFiles.size;
+      const missing = hasPlan ? [...bridgeTurn.plannedFiles].filter(f => !bridgeTurn.writtenFiles.has(f)) : [];
+      if (endedNormally && (allFilesWritten || !hasPlan)) {
+        // good
+      } else if (missing.length > 0 || !endedNormally) {
+        updateBridgeProgress(Math.min(95, bridgeProgress), `Paused at ${bridgeTurn.writtenFiles.size}/${bridgeTurn.plannedFiles.size || '?'} files`);
+        showContinueBar(
+          missing.length > 0
+            ? `Paused — ${missing.length} file${missing.length === 1 ? '' : 's'} left to write`
+            : 'Paused — AI ran out of turns'
+        );
       }
     } finally {
       bridgeRunning = false;
       updateBridgeSendBtn();
     }
   }
-
   function handleBridgeSend() {
-    const inp = $('#bridgeInput');
-    if (!inp) return;
+    const inp = $('#bridgeInput'); if (!inp) return;
     const text = inp.value.trim();
     if (!text || bridgeRunning || !__bridge.connected) return;
-    inp.value = '';
-    inp.style.height = 'auto';
+    inp.value = ''; inp.style.height = 'auto';
     updateBridgeSendBtn();
-    runBridgeTurn(text);
+    runBridgeTurn(text, false);
+  }
+  function handleBridgeContinue() {
+    if (bridgeRunning || !__bridge.connected) return;
+    if (!bridgeTurn) return;
+    const hasPlan = bridgeTurn.plannedFiles.size > 0;
+    const missing = hasPlan ? [...bridgeTurn.plannedFiles].filter(f => !bridgeTurn.writtenFiles.has(f)) : [];
+    const msg = missing.length
+      ? `Continue. Still missing these files:\n${missing.map(m => '- ' + m).join('\n')}\n\nWrite them with <bridge-write> tags.`
+      : `Continue. Output the next batch of <bridge-write> or <bridge-exec> tags to keep building.`;
+    bridgeConversation.push({ role: 'user', content: `[System] ${msg}` });
+    runBridgeTurn('', true);
   }
 
-  /* ============================================================
-     Wire everything
-     ============================================================ */
   function wireAll() {
-    /* Sidebar */
     on('#hamburgerBtn', 'click', openSidebar);
     on('#sidebarCloseBtn', 'click', closeSidebar);
     on('#sidebarScrim', 'click', closeSidebar);
-    on('#brandLogo', 'click', (e) => {
-      e.preventDefault();
-      startNewChat();
-      if (window.innerWidth <= 860) closeSidebar();
-    });
-    on('#newChatBtn', 'click', () => {
-      startNewChat();
-      if (window.innerWidth <= 860) closeSidebar();
-    });
-
-    /* Sidebar tabs */
+    on('#brandLogo', 'click', (e) => { e.preventDefault(); startNewChat(); if (window.innerWidth <= 860) closeSidebar(); });
+    on('#newChatBtn', 'click', () => { startNewChat(); if (window.innerWidth <= 860) closeSidebar(); });
     $$('.sidebar-tab').forEach(tab => {
       tab.onclick = () => {
         const t = tab.dataset.tab;
         $$('.sidebar-tab').forEach(x => x.classList.toggle('active', x.dataset.tab === t));
-        $$('.sidebar-section').forEach(s => {
-          s.style.display = s.dataset.pane === t ? '' : 'none';
-        });
+        $$('.sidebar-section').forEach(s => { s.style.display = s.dataset.pane === t ? '' : 'none'; });
       };
     });
-
-    /* History click handling */
     on('#historyList', 'click', (e) => {
-      const item = e.target.closest('.history-item');
-      if (!item) return;
+      const item = e.target.closest('.history-item'); if (!item) return;
       if (e.target.closest('.history-delete')) {
         const id = item.dataset.id;
         __conversations = __conversations.filter(c => c.id !== id);
         if (currentConversationId === id) startNewChat();
-        saveChats();
-        renderHistory();
+        saveChats(); renderHistory();
         return;
       }
       const id = item.dataset.id;
@@ -1457,15 +1378,11 @@
       currentConversationId = id;
       const t = $('#chatTitle'); if (t) t.textContent = convo.title || 'Chat';
       const c = $('#chatMessages'); if (c) c.innerHTML = '';
-      for (const m of convo.messages || []) {
-        addMessageToDOM(m.role, m.content, m.ts, m.id, m.files || [], m.image);
-      }
+      for (const m of convo.messages || []) addMessageToDOM(m.role, m.content, m.ts, m.id, m.files || [], m.image);
       renderHistory();
       scrollToBottom();
       if (window.innerWidth <= 860) closeSidebar();
     });
-
-    /* Composer */
     const inp = $('#messageInput');
     if (inp) {
       inp.addEventListener('input', () => {
@@ -1474,49 +1391,27 @@
         updateSendButtonState();
       });
       inp.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-          e.preventDefault();
-          handleSend();
-        }
+        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); handleSend(); }
       });
     }
     on('#sendBtn', 'click', handleSend);
     on('#attachBtn', 'click', () => $('#fileInput')?.click());
-    on('#fileInput', 'change', (e) => {
-      handleFiles(e.target.files);
-      e.target.value = '';
-    });
-    on('#removeAttachmentBtn', 'click', () => {
-      pendingFiles = [];
-      updatePreview();
-      updateSendButtonState();
-    });
+    on('#fileInput', 'change', (e) => { handleFiles(e.target.files); e.target.value = ''; });
+    on('#removeAttachmentBtn', 'click', () => { pendingFiles = []; updatePreview(); updateSendButtonState(); });
     on('#stopBtn', 'click', stopStreaming);
-
-    /* Model picker */
     on('#modelPickerBtn', 'click', (e) => {
       e.stopPropagation();
       const menu = $('#modelPickerMenu');
-      if (menu?.classList.contains('open')) closeModelPicker();
-      else openModelPicker();
+      if (menu?.classList.contains('open')) closeModelPicker(); else openModelPicker();
     });
-    document.addEventListener('click', (e) => {
-      if (!e.target.closest('#modelPicker')) closeModelPicker();
-    });
-
-    /* Tool buttons */
+    document.addEventListener('click', (e) => { if (!e.target.closest('#modelPicker')) closeModelPicker(); });
     on('#imageModeBtn', 'click', () => openModal('imageModal'));
-    on('#plansModeBtn', 'click', () => {
-      openModal('plansModal');
-      loadPlans();
-    });
+    on('#plansModeBtn', 'click', () => { openModal('plansModal'); loadPlans(); });
     on('#supportModeBtn', 'click', () => openModal('supportModal'));
     on('#supportModeBtn2', 'click', () => openModal('supportModal'));
     on('#bridgeModeBtn', 'click', openBridgeWorkspace);
     on('#bridgeOpenBtn', 'click', openBridgeWorkspace);
     on('#generateImageBtn', 'click', genImage);
-
-    /* Support submit */
     on('#submitReportBtn', 'click', () => {
       const s = $('#supportSubject')?.value.trim();
       const m = $('#supportMessage')?.value.trim();
@@ -1524,12 +1419,7 @@
       alert('Ticket submitted!');
       closeModal('supportModal');
     });
-
-    /* Settings */
-    on('#settingsBtn', 'click', () => {
-      openModal('settingsModal');
-      loadPersona();
-    });
+    on('#settingsBtn', 'click', () => { openModal('settingsModal'); loadPersona(); });
     on('#logoutBtn', 'click', doLogout);
     on('#savePersonaBtn', 'click', savePersona);
     $$('.settings-tab').forEach(tab => {
@@ -1539,60 +1429,34 @@
         $$('.settings-pane').forEach(p => p.classList.toggle('active', p.dataset.pane === t));
       };
     });
-
-    /* Appearance */
-    $$('[data-mode]').forEach(b => b.onclick = () => applyAppearance({
-      mode: b.dataset.mode,
-      theme: document.documentElement.getAttribute('data-theme') || 'default'
-    }));
-    $$('.swatch').forEach(b => b.onclick = () => applyAppearance({
-      mode: document.documentElement.getAttribute('data-mode') || 'light',
-      theme: b.dataset.theme
-    }));
-
-    /* Modal close */
+    $$('[data-mode]').forEach(b => b.onclick = () => applyAppearance({ mode: b.dataset.mode, theme: document.documentElement.getAttribute('data-theme') || 'default' }));
+    $$('.swatch').forEach(b => b.onclick = () => applyAppearance({ mode: document.documentElement.getAttribute('data-mode') || 'light', theme: b.dataset.theme }));
     document.addEventListener('click', (e) => {
       const cb = e.target.closest('[data-close]');
       if (cb) { closeModal(cb.dataset.close); return; }
-      if (e.target.classList.contains('modal-overlay') && e.target.id !== 'bridgeQuestionModal') {
-        e.target.classList.remove('open');
-      }
+      if (e.target.classList.contains('modal-overlay') && e.target.id !== 'bridgeQuestionModal') e.target.classList.remove('open');
     });
-
-    /* User chip / upgrade */
-    on('#userChip', 'click', () => {
-      if (!__user) openModal('loginModal');
-    });
+    on('#userChip', 'click', () => { if (!__user) openModal('loginModal'); });
     on('#upgradeBtn', 'click', (e) => {
       e.stopPropagation();
       if (!__user) openModal('loginModal');
       else { openModal('plansModal'); loadPlans(); }
     });
-
-    /* Login form */
     on('#simpleLoginForm', 'submit', doLogin);
-
-    /* Image viewer */
-    document.addEventListener('click', (e) => {
-      if (e.target.closest('[data-iv-close]')) closeImageViewer();
-    });
+    document.addEventListener('click', (e) => { if (e.target.closest('[data-iv-close]')) closeImageViewer(); });
     on('#ivDownload', 'click', () => {
       if (!__ivDataUrl) return;
       const a = document.createElement('a');
-      a.href = __ivDataUrl;
-      a.download = `mirox-${Date.now()}.png`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      a.href = __ivDataUrl; a.download = `mirox-${Date.now()}.png`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
     });
-
-    /* Bridge */
     on('#bwCloseBtn', 'click', closeBridgeWorkspace);
     on('#bwNewBtn', 'click', clearBridgeChat);
     on('#bwDownloadBtn', 'click', downloadBridgeClient);
     on('#bridgeDownloadBtn', 'click', downloadBridgeClient);
     on('#bwConnectBtn', 'click', startBridge);
     on('#bwDisconnectBtn', 'click', stopBridge);
+    on('#bwContinueBtn', 'click', handleBridgeContinue);
     const bwInp = $('#bridgeInput');
     if (bwInp) {
       bwInp.addEventListener('input', () => {
@@ -1601,10 +1465,7 @@
         updateBridgeSendBtn();
       });
       bwInp.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-          e.preventDefault();
-          handleBridgeSend();
-        }
+        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); handleBridgeSend(); }
       });
     }
     on('#bridgeSendBtn', 'click', handleBridgeSend);
@@ -1616,48 +1477,23 @@
         handleBridgeSend();
       };
     });
-
-    /* Bridge question modal */
     on('#bqCustomToggle', 'click', () => {
       const cw = $('#bqCustomWrap');
-      if (cw) {
-        cw.style.display = cw.style.display === 'none' ? 'block' : 'none';
-        if (cw.style.display === 'block') $('#bqCustomInput')?.focus();
-      }
+      if (cw) { cw.style.display = cw.style.display === 'none' ? 'block' : 'none'; if (cw.style.display === 'block') $('#bqCustomInput')?.focus(); }
     });
     on('#bqSubmit', 'click', submitBridgeQuestion);
-    on('#bqCustomInput', 'keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        submitBridgeQuestion();
-      }
-    });
-
-    /* Suggestion cards */
+    on('#bqCustomInput', 'keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitBridgeQuestion(); } });
     bindSuggestionClicks();
-
-    /* Keyboard shortcuts */
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
-        closeImageViewer();
-        closeModelPicker();
+        closeImageViewer(); closeModelPicker();
         if ($('#bridgeWorkspace')?.classList.contains('open')) closeBridgeWorkspace();
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-        e.preventDefault();
-        $('#messageInput')?.focus();
-      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); $('#messageInput')?.focus(); }
     });
-
-    /* Auto-close sidebar on desktop resize */
-    window.addEventListener('resize', () => {
-      if (window.innerWidth > 860) closeSidebar();
-    });
+    window.addEventListener('resize', () => { if (window.innerWidth > 860) closeSidebar(); });
   }
 
-  /* ============================================================
-     Init
-     ============================================================ */
   async function init() {
     try {
       loadAppearance();
@@ -1670,16 +1506,10 @@
       loadChats();
       renderHistory();
       await refreshUsage();
-    } catch (e) {
-      console.error('[Mirox init]', e);
-    } finally {
-      killLoader();
-    }
+    } catch (e) { console.error('[Mirox init]', e); }
+    finally { killLoader(); }
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
 })();
