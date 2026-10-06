@@ -105,7 +105,6 @@
       <button class="tab" data-tab="events">User Events</button>
     </div>
 
-    <!-- USERS -->
     <div class="tab-content active" id="tab-users">
       <div class="section">
         <div class="toolbar">
@@ -127,7 +126,6 @@
       </div>
     </div>
 
-    <!-- CHATS -->
     <div class="tab-content" id="tab-chats">
       <div class="section">
         <h2>Recent chat activity</h2>
@@ -140,7 +138,6 @@
       </div>
     </div>
 
-    <!-- IMAGES -->
     <div class="tab-content" id="tab-images">
       <div class="section">
         <h2>Recent image prompts</h2>
@@ -154,7 +151,6 @@
       </div>
     </div>
 
-    <!-- EVENTS -->
     <div class="tab-content" id="tab-events">
       <div class="section">
         <h2>Recent user events</h2>
@@ -221,7 +217,6 @@
       $('#adminWrap').style.display = 'block';
     }
 
-    /* ---- Gate ---- */
     async function tryUnlock() {
       const pass = $('#gatePass').value;
       const btn = $('#gateBtn');
@@ -257,22 +252,16 @@
 
     $('#adminRefresh')?.addEventListener('click', () => refreshStats());
 
-    /* ---- Tabs ---- */
     $$('.tab').forEach(t => t.addEventListener('click', () => {
       const target = t.dataset.tab;
       $$('.tab').forEach(x => x.classList.toggle('active', x === t));
       $$('.tab-content').forEach(c => c.classList.toggle('active', c.id === 'tab-' + target));
     }));
 
-    /* ---- Renderers ---- */
-    function renderWarning(warning, fbErr) {
+    function renderWarning(warning) {
       const box = $('#warningBox');
       if (!warning) { box.innerHTML = ''; return; }
-      let msg = '';
-      if (warning === 'db_unavailable') msg = 'Database is slow or unreachable. Data shown may be empty or stale.';
-      else if (warning === 'firebase_not_configured') msg = 'Firebase is not configured on the server. ' + (fbErr || '');
-      else msg = 'Warning: ' + warning;
-      box.innerHTML = `<div class="warn"><b>Heads up:</b> ${esc(msg)}</div>`;
+      box.innerHTML = `<div class="warn"><b>Heads up:</b> ${esc(warning)}</div>`;
     }
 
     function setStatsPlaceholder(text) {
@@ -410,7 +399,6 @@
       }).join('');
     }
 
-    /* ---- Stats load ---- */
     async function refreshStats() {
       if (loading) return;
       loading = true;
@@ -427,8 +415,7 @@
         if (res.status === 401) { setAdminToken(''); showGate(); return; }
         if (!res.ok) {
           setStatsPlaceholder('—');
-          const errRow = `<tr><td colspan="7" class="err">Server error (HTTP ${res.status})</td></tr>`;
-          $('#userTable tbody').innerHTML = errRow;
+          $('#userTable tbody').innerHTML = `<tr><td colspan="7" class="err">Server error (HTTP ${res.status})</td></tr>`;
           return;
         }
         const data = await readJson(res);
@@ -439,7 +426,7 @@
         }
 
         lastStats = data;
-        renderWarning(data.warning, data.firebase_error);
+        renderWarning(data.warning);
 
         $('#statUsers').textContent  = data.users  ?? 0;
         $('#statChats').textContent  = data.chats  ?? 0;
@@ -460,7 +447,6 @@
       }
     }
 
-    /* ---- Top toolbar set tier ---- */
     $('#setTierBtn')?.addEventListener('click', async () => {
       const email = $('#newUserEmail').value.trim().toLowerCase();
       const tier = $('#newUserTier').value;
@@ -492,7 +478,6 @@
       }
     });
 
-    /* ---- Boot ---- */
     (async function boot() {
       const t = getAdminToken();
       if (!t) { showGate(); return; }
@@ -504,7 +489,7 @@
         if (!data || !data.ok) { setAdminToken(''); showGate(); return; }
         showAdminShell();
         lastStats = data;
-        renderWarning(data.warning, data.firebase_error);
+        renderWarning(data.warning);
         $('#statUsers').textContent  = data.users  ?? 0;
         $('#statChats').textContent  = data.chats  ?? 0;
         $('#statImages').textContent = data.images ?? 0;
