@@ -1,4 +1,4 @@
-/* MiroxAI v50 — Full Styles */
+/* MiroxAI v53 — Full Styles */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
@@ -68,7 +68,6 @@ html, body {
   height: 100%;
   font-family: var(--font-family);
   background: var(--bg);
-  background-image: none;
   color: var(--text);
   font-size: var(--base-font-size);
   line-height: 1.55;
@@ -83,8 +82,6 @@ body {
   padding-bottom: var(--safe-bottom);
   padding-left: var(--safe-left);
   padding-right: var(--safe-right);
-  background: var(--bg);
-  background-image: none;
 }
 
 button { font: inherit; cursor: pointer; background: none; border: none; color: inherit; }
@@ -212,7 +209,7 @@ a { color: inherit; text-decoration: none; }
 @keyframes bubbleIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 .message-content { width: 100%; max-width: 100%; display: flex; flex-direction: column; }
 .message.user .message-content { align-items: flex-end; }
-.message.user .bubble { max-width: 80%; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 18px; padding: 10px 16px; font-size: 15px; line-height: 1.55; box-shadow: var(--shadow-sm); word-wrap: break-word; overflow-wrap: anywhere; white-space: pre-wrap; }
+.message.user .bubble { max-width: 80%; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 18px; padding: 10px 16px; font-size: 15px; line-height: 1.55; box-shadow: var(--shadow-sm); word-wrap: break-word; overflow-wrap: anywhere; }
 .message.ai .message-content { align-items: flex-start; }
 .message.ai .bubble { background: transparent; border: none; padding: 0; max-width: 100%; font-size: 15px; line-height: 1.7; color: var(--text); word-wrap: break-word; overflow-wrap: anywhere; }
 .message-time { font-size: 11.5px; color: var(--text-faint); margin-top: 6px; padding: 0 6px; opacity: 0.7; }
@@ -461,4 +458,61 @@ a { color: inherit; text-decoration: none; }
 @media (min-width: 3840px) {
   :root { --content-max: 1600px; --base-font-size: 22px; --sidebar-width: 400px; }
   .message.ai .bubble, .message.user .bubble { font-size: 20px; }
+}
+
+/* ============================================================
+   v53 — Attachments inside chat bubbles
+   ============================================================ */
+.bubble-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.bubble-attachments:last-child { margin-bottom: 0; }
+.message.ai .bubble-attachments { display: none; }
+
+.bubble-attach {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+  max-width: 100%;
+}
+.bubble-attach:hover { transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+
+.bubble-attach-img img {
+  max-width: 320px;
+  max-height: 320px;
+  width: auto;
+  height: auto;
+  display: block;
+  object-fit: cover;
+}
+@media (max-width: 640px) {
+  .bubble-attach-img img { max-width: 220px; max-height: 220px; }
+}
+
+.bubble-attach-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--panel-2);
+  font-size: 13px;
+  color: var(--text);
+  max-width: 280px;
+}
+.bubble-attach-file i { font-size: 18px; color: var(--accent); flex-shrink: 0; }
+.bubble-attach-file span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message.user .bubble .bubble-text {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
 }
