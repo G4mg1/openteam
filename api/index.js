@@ -1,12 +1,11 @@
 /* ============================================================
-   MiroxAI Backend v68
+   MiroxAI Backend v69
    Chain: HF → Pollinations (PL_KEY) → Ollama → AIroute searchque
-   NEW:
-   - Pollinations restored with proper auth + model fallback
-   - /api/providers/status — full diagnostic for every provider
-   - /api/providers/test?p=<name> — ping a single provider
-   - Verbose logging per attempt with the exact failure reason
-   - All provider errors masked to client as generic message
+   FIXED:
+   - /api/admin/stats restored (was missing → admin page never loaded)
+   - Image generation with proper fallback + content-type handling
+   - Image captioning endpoint for text-only models
+   - Full admin endpoints for the console
    ============================================================ */
 
 import express from 'express';
@@ -35,6 +34,7 @@ const HF_ATTEMPT_MS       = 20000;
 const PL_ATTEMPT_MS       = 20000;
 const OLLAMA_ATTEMPT_MS   = 60000;
 const AR_SEARCH_MS        = 15000;
+const IMG_TOTAL_MS        = 45000;
 const MAX_LOGS            = 500;
 
 const GENERIC_ERR = 'Mirox AI encountered an error';
@@ -342,7 +342,7 @@ function sanitizeMessages(raw) {
     const role = safe(m.role, 20);
     if (!['system','user','assistant','tool','function'].includes(role)) continue;
     const c = m.content;
-    let content = '';
+    let content;
     if (typeof c === 'string') content = c;
     else if (Array.isArray(c)) content = c.filter(p => p?.type === 'text').map(p => p.text).join('\n');
     else content = safe(c);
@@ -384,7 +384,7 @@ function cannedResponse(userText, cfg) {
 }
 
 /* ============================================================
-   Provider URLs + model lists
+   Provider URLs
    ============================================================ */
 const HF_URL          = 'https://router.huggingface.co/v1/chat/completions';
 const HF_IMG_BASE     = 'https://router.huggingface.co/hf-inference/models';
@@ -398,11 +398,10 @@ const HF_CHAT_MODELS = [
   'Qwen/Qwen2.5-72B-Instruct:together',
   'mistralai/Mistral-7B-Instruct-v0.3:together',
 ];
-/* Pollinations current models — gen.pollinations.ai takes these names */
 const PL_CHAT_MODELS = ['openai', 'openai-fast', 'mistral'];
 const AR_SEARCH_MODEL = 'airoute/searchque';
 
-const HF_IMG_MODELS = ['stabilityai/stable-diffusion-xl-base-1.0', 'black-forest-labs/FLUX.1-schnell'];
+const HF_IMG_MODELS = ['black-forest-labs/FLUX.1-schnell', 'stabilityai/stable-diffusion-xl-base-1.0'];
 const PL_IMG_MODELS = ['flux', 'turbo'];
 const AR_IMG_MODELS = ['black-forest-labs/FLUX.1-schnell'];
 
@@ -428,20 +427,11 @@ async function hfChat(modelId, messages, maxTokens, stream, signal, ms, extra = 
 }
 
 /* ============================================================
-   Pollinations — PL_KEY required for gen.pollinations.ai
-   Docs: POST https://gen.pollinations.ai/v1/chat/completions
-         Authorization: Bearer <PL_KEY>
+   Pollinations
    ============================================================ */
 async function plChat(modelId, messages, maxTokens, stream, signal, ms, extra = {}) {
   if (!PL_KEY) throw new Error('pl_no_key');
-
-  const body = {
-    model: modelId,
-    messages,
-    max_tokens: maxTokens,
-    stream: !!stream,
-    temperature: 0.7,
-  };
+  const body = { model: modelId, messages, max_tokens: maxTokens, stream: !!stream, temperature: 0.7 };
   if (extra.tools?.length) body.tools = extra.tools;
 
   const res = await fetchT(PL_URL, {
@@ -458,19 +448,11 @@ async function plChat(modelId, messages, maxTokens, stream, signal, ms, extra = 
     const t = await res.text().catch(() => '');
     throw new Error(`pl_${res.status}: ${t.slice(0, 160)}`);
   }
-  if (!stream && !looksLikeJson(res)) {
-    const ct = res.headers.get('content-type') || '';
-    throw new Error(`pl_bad_ct: ${ct}`);
-  }
-  if (stream && !looksLikeStream(res)) {
-    const ct = res.headers.get('content-type') || '';
-    throw new Error(`pl_bad_ct: ${ct}`);
-  }
   return res;
 }
 
 /* ============================================================
-   Ollama — fetch-based client
+   Ollama
    ============================================================ */
 let ollamaReady = false;
 let ollamaStatus = { ready: false, host: OLLAMA_HOST, model: OLLAMA_MODEL, models: [], error: null, pulling: false };
@@ -487,9 +469,7 @@ async function ollamaList() {
     const data = await res.json();
     const names = (data.models || []).map(m => m.name);
     return { ok: true, models: names };
-  } catch (e) {
-    return { ok: false, error: e.message };
-  }
+  } catch (e) { return { ok: false, error: e.message }; }
 }
 
 async function ollamaPull(model) {
@@ -501,14 +481,10 @@ async function ollamaPull(model) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: model, stream: true }),
     }, 600000);
-    if (!res.ok || !res.body) {
-      ollamaStatus.pulling = false;
-      return { ok: false, error: `HTTP ${res.status}` };
-    }
+    if (!res.ok || !res.body) { ollamaStatus.pulling = false; return { ok: false, error: `HTTP ${res.status}` }; }
     const reader = res.body.getReader();
     const dec = new TextDecoder();
     let buf = '';
-    let lastPct = -1;
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
@@ -522,17 +498,13 @@ async function ollamaPull(model) {
           const o = JSON.parse(line);
           if (o.total && o.completed) {
             const pct = Math.floor((o.completed / o.total) * 100);
-            if (pct !== lastPct && pct % 20 === 0) {
-              console.log(`[Ollama] ${model}: ${pct}%`);
-              lastPct = pct;
-            }
+            if (pct % 20 === 0) console.log(`[Ollama] ${model}: ${pct}%`);
           }
         } catch {}
       }
     }
     try { reader.releaseLock(); } catch {}
     ollamaStatus.pulling = false;
-    console.log(`[Ollama] ${model} pulled successfully`);
     return { ok: true };
   } catch (e) {
     ollamaStatus.pulling = false;
@@ -541,27 +513,22 @@ async function ollamaPull(model) {
 }
 
 async function ensureOllama(attempt = 1) {
-  const MAX_ATTEMPTS = 4;
-  console.log(`[Ollama] checking (attempt ${attempt}/${MAX_ATTEMPTS})...`);
+  const MAX_ATTEMPTS = 3;
   const list = await ollamaList();
   if (!list.ok) {
     ollamaStatus.ready = false;
     ollamaStatus.error = list.error;
     PROVIDERS.ollama = false;
     if (attempt < MAX_ATTEMPTS) {
-      const wait = 2000 * attempt;
-      console.log(`[Ollama] not reachable (${list.error}), retrying in ${wait/1000}s`);
-      await new Promise(r => setTimeout(r, wait));
+      await new Promise(r => setTimeout(r, 2000 * attempt));
       return ensureOllama(attempt + 1);
     }
-    console.error('[Ollama] unreachable after retries');
+    console.warn('[Ollama] unreachable after retries');
     return false;
   }
   ollamaStatus.models = list.models;
-  console.log(`[Ollama] reachable, models: ${list.models.join(', ') || 'none'}`);
   const has = list.models.some(n => n === OLLAMA_MODEL || n === OLLAMA_MODEL + ':latest' || n.startsWith(OLLAMA_MODEL.split(':')[0]));
   if (!has) {
-    console.log(`[Ollama] model ${OLLAMA_MODEL} not found, pulling...`);
     const pulled = await ollamaPull(OLLAMA_MODEL);
     if (!pulled.ok) {
       ollamaStatus.ready = false;
@@ -569,8 +536,6 @@ async function ensureOllama(attempt = 1) {
       PROVIDERS.ollama = false;
       return false;
     }
-    const recheck = await ollamaList();
-    if (recheck.ok) ollamaStatus.models = recheck.models;
   }
   ollamaStatus.ready = true;
   ollamaStatus.error = null;
@@ -652,19 +617,18 @@ async function searchqueChat(userQuestion, signal, ms) {
     body: JSON.stringify({ model: AR_SEARCH_MODEL, prompt: q }),
   }, ms, signal);
   if (!res.ok) throw new Error(`ar_${res.status}`);
-  if (!looksLikeJson(res)) throw new Error('ar_bad_ct');
   return res;
 }
 
 /* ============================================================
-   Chat chain — HF → PL → Ollama → searchque
+   Chat chain
    ============================================================ */
 async function miroxChatChain({ messages, cfg, stream, signal, extra, sseData }) {
   const start = Date.now();
   const userQuestion = extractLastUserQuestion(messages);
   const trace = [];
 
-  /* 1. Hugging Face */
+  /* 1. HF */
   if (PROVIDERS.hf) {
     for (const modelId of HF_CHAT_MODELS) {
       if (signal?.aborted) throw new Error('aborted');
@@ -678,9 +642,7 @@ async function miroxChatChain({ messages, cfg, stream, signal, extra, sseData })
         console.log(`[Mirox] hf:${modelId} failed — ${e.message}`);
       }
     }
-  } else {
-    trace.push('hf:no_key');
-  }
+  } else trace.push('hf:no_key');
 
   /* 2. Pollinations */
   if (PROVIDERS.pl) {
@@ -696,14 +658,11 @@ async function miroxChatChain({ messages, cfg, stream, signal, extra, sseData })
         console.log(`[Mirox] pl:${modelId} failed — ${e.message}`);
       }
     }
-  } else {
-    trace.push('pl:no_key');
-  }
+  } else trace.push('pl:no_key');
 
-  /* 3. Ollama local */
+  /* 3. Ollama */
   if (ollamaReady && PROVIDERS.ollama) {
     try {
-      console.log(`[Mirox] trying Ollama (${OLLAMA_MODEL})...`);
       if (stream) {
         sseData({ p: 'ollama' });
         const full = await ollamaChatStream(messages, cfg, sseData, signal);
@@ -717,14 +676,11 @@ async function miroxChatChain({ messages, cfg, stream, signal, extra, sseData })
     } catch (e) {
       if (e.name === 'AbortError') throw e;
       trace.push(`ollama:${e.message}`);
-      console.log(`[Mirox] ollama failed — ${e.message}`);
       ollamaStatus.error = e.message;
     }
-  } else {
-    trace.push('ollama:not_ready');
-  }
+  } else trace.push('ollama:not_ready');
 
-  /* 4. AIroute searchque */
+  /* 4. searchque */
   if (userQuestion && !signal?.aborted) {
     try {
       const res = await searchqueChat(userQuestion, signal, AR_SEARCH_MS);
@@ -733,11 +689,170 @@ async function miroxChatChain({ messages, cfg, stream, signal, extra, sseData })
     } catch (e) {
       if (e.name === 'AbortError') throw e;
       trace.push(`ar:${e.message}`);
-      console.log(`[Mirox] searchque failed — ${e.message}`);
     }
   }
 
   throw Object.assign(new Error(GENERIC_ERR), { trace });
+}
+
+/* ============================================================
+   Image generation — fixed
+   ============================================================ */
+async function toDataUrl(response) {
+  const ct = response.headers.get('content-type') || '';
+  if (ct.includes('image/')) {
+    const buf = Buffer.from(await response.arrayBuffer());
+    if (buf.byteLength < 1000) return null;
+    return `data:${ct.split(';')[0]};base64,${buf.toString('base64')}`;
+  }
+  // JSON response — could contain url or b64_json
+  try {
+    const data = await response.json();
+    const url = data?.data?.[0]?.url || data?.images?.[0]?.url || data?.url || data?.image;
+    if (typeof url === 'string' && url.startsWith('data:image')) return url;
+    if (typeof url === 'string' && url.startsWith('http')) return url;
+    const b64 = data?.data?.[0]?.b64_json || data?.b64_json;
+    if (typeof b64 === 'string') return `data:image/png;base64,${b64}`;
+  } catch {}
+  return null;
+}
+
+async function generateImage(prompt, aspect = '1:1') {
+  const dims = { '1:1': { w: 1024, h: 1024 }, '16:9': { w: 1344, h: 768 }, '9:16': { w: 768, h: 1344 }, '4:3': { w: 1152, h: 864 } };
+  const { w, h } = dims[aspect] || dims['1:1'];
+  const deadline = Date.now() + IMG_TOTAL_MS;
+  const left = () => deadline - Date.now();
+  const trace = [];
+
+  /* 1. Pollinations GET — most reliable, keyless fallback works too */
+  for (const modelId of PL_IMG_MODELS) {
+    if (left() < 3000) break;
+    try {
+      const url = `${PL_IMG_BASE}/${encodeURIComponent(prompt)}?model=${modelId}&width=${w}&height=${h}&nologo=true&seed=${Date.now() % 99999}`;
+      const headers = { 'Accept': 'image/png' };
+      if (PL_KEY) headers.Authorization = `Bearer ${PL_KEY}`;
+      const res = await fetchT(url, { method: 'GET', headers }, Math.min(left() - 1500, 25000));
+      if (!res.ok) { trace.push(`pl:${modelId}:${res.status}`); continue; }
+      const dataUrl = await toDataUrl(res);
+      if (dataUrl) {
+        console.log(`[Mirox] image ok: pl:${modelId}`);
+        return dataUrl;
+      }
+      trace.push(`pl:${modelId}:bad_body`);
+    } catch (e) { trace.push(`pl:${modelId}:${e.message}`); }
+  }
+
+  /* 2. HuggingFace */
+  if (HF_API_KEY) {
+    for (const modelId of HF_IMG_MODELS) {
+      if (left() < 3000) break;
+      try {
+        const res = await fetchT(`${HF_IMG_BASE}/${modelId}`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${HF_API_KEY}`, 'Content-Type': 'application/json', 'Accept': 'image/png', 'x-wait-for-model': 'true' },
+          body: JSON.stringify({ inputs: prompt, parameters: { width: w, height: h } }),
+        }, Math.min(left() - 1500, 25000));
+        if (!res.ok) { trace.push(`hf:${res.status}`); continue; }
+        const dataUrl = await toDataUrl(res);
+        if (dataUrl) { console.log(`[Mirox] image ok: hf`); return dataUrl; }
+        trace.push(`hf:bad_body`);
+      } catch (e) { trace.push(`hf:${e.message}`); }
+    }
+  }
+
+  /* 3. AIroute */
+  if (AR_KEY) {
+    for (const modelId of AR_IMG_MODELS) {
+      if (left() < 3000) break;
+      try {
+        const res = await fetchT(AR_IMG_URL, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${AR_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: modelId, prompt }),
+        }, Math.min(left() - 1500, 20000));
+        if (!res.ok) { trace.push(`ar:${res.status}`); continue; }
+        const data = await res.json().catch(() => ({}));
+        if (data?.image) { console.log(`[Mirox] image ok: ar`); return data.image; }
+        trace.push(`ar:no_image`);
+      } catch (e) { trace.push(`ar:${e.message}`); }
+    }
+  }
+
+  console.error('[Mirox] all image providers failed:', trace.join(' | '));
+  throw new Error(GENERIC_ERR);
+}
+
+/* ============================================================
+   Image → caption (for text-only models)
+   Uses Pollinations vision or HF. Falls back to a placeholder.
+   ============================================================ */
+async function captionImage(base64DataUrl) {
+  try {
+    const b64 = String(base64DataUrl).split(',')[1] || '';
+    if (!b64) return null;
+
+    // Try Pollinations vision via chat with an image_url message
+    for (const modelId of ['openai', 'openai-fast']) {
+      if (!PL_KEY) break;
+      try {
+        const body = {
+          model: modelId,
+          messages: [
+            { role: 'system', content: 'Describe the image in one concise sentence. Focus on subject, style, colors, mood. No preamble.' },
+            { role: 'user', content: [
+              { type: 'text', text: 'What is in this image?' },
+              { type: 'image_url', image_url: { url: base64DataUrl } },
+            ]},
+          ],
+          max_tokens: 120,
+          stream: false,
+        };
+        const res = await fetchT(PL_URL, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${PL_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        }, 25000);
+        if (!res.ok) continue;
+        const data = await res.json().catch(() => ({}));
+        const txt = extractReplyText(data).trim();
+        if (txt) return txt;
+      } catch {}
+    }
+
+    // Try HF with a small VLM
+    if (HF_API_KEY) {
+      const models = [
+        'meta-llama/Llama-3.2-11B-Vision-Instruct:together',
+        'Qwen/Qwen2.5-VL-7B-Instruct:together',
+      ];
+      for (const modelId of models) {
+        try {
+          const body = {
+            model: modelId,
+            messages: [
+              { role: 'system', content: 'Describe the image in one concise sentence. Focus on subject, style, colors, mood.' },
+              { role: 'user', content: [
+                { type: 'text', text: 'What is in this image?' },
+                { type: 'image_url', image_url: { url: base64DataUrl } },
+              ]},
+            ],
+            max_tokens: 120,
+            stream: false,
+          };
+          const res = await fetchT(HF_URL, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${HF_API_KEY}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          }, 25000);
+          if (!res.ok) continue;
+          const data = await res.json().catch(() => ({}));
+          const txt = extractReplyText(data).trim();
+          if (txt) return txt;
+        } catch {}
+      }
+    }
+  } catch {}
+  return null;
 }
 
 /* ============================================================
@@ -772,14 +887,14 @@ function chunkText(n, target) {
    ============================================================ */
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json({ limit: '15mb' }));
+app.use(express.json({ limit: '25mb' }));
 app.use(async (req, res, next) => { try { await loadDb(); } catch {} next(); });
 
 /* Health */
 app.get(['/api/health','/health','/ping'], async (req, res) => {
   await loadDb();
   res.json({
-    ok: true, app: 'MiroxAI', version: 'v68',
+    ok: true, app: 'MiroxAI', version: 'v69',
     providers: PROVIDERS,
     ollama: ollamaStatus,
     db: { driver: 'json-file', file: DB_FILE, ready: dbReady, error: dbError, users: db ? Object.keys(db.users).length : 0 },
@@ -787,112 +902,99 @@ app.get(['/api/health','/health','/ping'], async (req, res) => {
   });
 });
 
-/* Full diagnostic — shows exactly which providers are configured + reachable */
+/* Diagnostics */
 app.get('/api/providers/status', async (req, res) => {
   const list = await ollamaList();
   res.json({
-    ok: true,
-    version: 'v68',
+    ok: true, version: 'v69',
     chain_order: ['hf', 'pl', 'ollama', 'searchque'],
     providers: {
-      hf: {
-        configured: !!HF_API_KEY,
-        key_prefix: HF_API_KEY ? HF_API_KEY.slice(0, 6) + '...' : null,
-        url: HF_URL,
-        models: HF_CHAT_MODELS,
-        note: HF_API_KEY ? 'ready to try' : 'set HF_API_KEY env var',
-      },
-      pl: {
-        configured: !!PL_KEY,
-        key_prefix: PL_KEY ? PL_KEY.slice(0, 6) + '...' : null,
-        url: PL_URL,
-        models: PL_CHAT_MODELS,
-        note: PL_KEY ? 'ready to try' : 'set PL_KEY env var',
-      },
-      ollama: {
-        configured: true,
-        host: OLLAMA_HOST,
-        model: OLLAMA_MODEL,
-        reachable: list.ok,
-        ready: ollamaReady,
-        installed_models: list.models || [],
-        error: ollamaStatus.error,
-        note: list.ok
-          ? (list.models.some(n => n.startsWith(OLLAMA_MODEL.split(':')[0]))
-              ? 'ready to try'
-              : `model missing — run: ollama pull ${OLLAMA_MODEL}`)
-          : 'not reachable — is ollama running? (sudo systemctl enable --now ollama)',
-      },
-      searchque: {
-        configured: true,
-        url: AR_CHAT_URL,
-        model: AR_SEARCH_MODEL,
-        note: 'keyless ultimate fallback — always available',
-      },
+      hf: { configured: !!HF_API_KEY, models: HF_CHAT_MODELS },
+      pl: { configured: !!PL_KEY, models: PL_CHAT_MODELS, img_models: PL_IMG_MODELS },
+      ollama: { configured: true, host: OLLAMA_HOST, model: OLLAMA_MODEL, reachable: list.ok, ready: ollamaReady, installed_models: list.models || [], error: ollamaStatus.error },
+      searchque: { configured: true, url: AR_CHAT_URL, model: AR_SEARCH_MODEL },
     },
   });
 });
 
-/* Test a single provider by name */
-app.get('/api/providers/test', async (req, res) => {
-  const provider = String(req.query.p || '').toLowerCase();
-  const prompt = String(req.query.q || 'Say "ok" in one word.');
-  const msgs = [
-    { role: 'system', content: 'Reply in one short sentence.' },
-    { role: 'user', content: prompt },
-  ];
-  const t0 = Date.now();
-  try {
-    let reply = '', used = '';
-    if (provider === 'hf') {
-      const modelsToTry = HF_CHAT_MODELS;
-      let lastErr = null;
-      for (const m of modelsToTry) {
-        try {
-          const r = await hfChat(m, msgs, 50, false, null, HF_ATTEMPT_MS);
-          const parsed = await readProviderBody(r);
-          if (parsed.ok) { reply = parsed.reply; used = `hf:${m}`; break; }
-          lastErr = parsed.reason;
-        } catch (e) { lastErr = e.message; }
-      }
-      if (!reply) throw new Error('all hf models failed: ' + lastErr);
-    } else if (provider === 'pl') {
-      let lastErr = null;
-      for (const m of PL_CHAT_MODELS) {
-        try {
-          const r = await plChat(m, msgs, 50, false, null, PL_ATTEMPT_MS);
-          const parsed = await readProviderBody(r);
-          if (parsed.ok) { reply = parsed.reply; used = `pl:${m}`; break; }
-          lastErr = parsed.reason;
-        } catch (e) { lastErr = e.message; }
-      }
-      if (!reply) throw new Error('all pl models failed: ' + lastErr);
-    } else if (provider === 'ollama') {
-      if (!ollamaReady) throw new Error('ollama not ready — ' + (ollamaStatus.error || 'unknown'));
-      reply = await ollamaChatNonStream(msgs, { tokens: 50 });
-      used = `ollama:${OLLAMA_MODEL}`;
-    } else if (provider === 'searchque') {
-      const r = await searchqueChat(prompt, null, AR_SEARCH_MS);
-      const parsed = await readProviderBody(r);
-      if (!parsed.ok) throw new Error('searchque returned ' + parsed.reason);
-      reply = parsed.reply;
-      used = 'searchque';
-    } else {
-      return res.status(400).json({ ok: false, error: 'unknown provider. Use ?p=hf|pl|ollama|searchque' });
-    }
-    res.json({ ok: true, provider, used, reply: reply.slice(0, 300), ms: Date.now() - t0 });
-  } catch (e) {
-    res.status(500).json({ ok: false, provider, error: e.message, ms: Date.now() - t0 });
-  }
+/* ============================================================
+   ADMIN ENDPOINTS — restored
+   ============================================================ */
+function adminSession(req) {
+  const token = safe(req.headers['x-admin-token']).trim();
+  if (!token) return null;
+  const s = verifySession(token);
+  if (!s || !s.admin) return null;
+  if (s.exp < Date.now()) return null;
+  return s;
+}
+
+app.post('/api/admin/auth', (req, res) => {
+  const password = safe(req.body?.password);
+  if (!password || password !== ADMIN_PASS) return res.status(401).json({ ok: false, error: 'Invalid password' });
+  res.json({ ok: true, token: signSession({ admin: true, exp: Date.now() + 12 * 60 * 60 * 1000 }) });
 });
 
-/* Force ollama pull */
-app.post('/api/ollama/pull', async (req, res) => {
-  if (ollamaPullPromise) return res.json({ ok: true, message: 'Already pulling' });
-  ollamaPullPromise = ollamaPull(OLLAMA_MODEL).finally(() => { ollamaPullPromise = null; });
-  const result = await ollamaPullPromise;
-  if (result.ok) { await ensureOllama(); res.json({ ok: true }); }
-  else res.status(500).json({ ok: false, error: result.error });
+app.post('/api/admin/set-tier', async (req, res) => {
+  try {
+    if (!adminSession(req)) return res.status(401).json({ ok: false, error: 'Unauthorized' });
+    await loadDb();
+    const email = safe(req.body?.email).toLowerCase().trim();
+    const tier = safe(req.body?.tier).trim();
+    if (!email || !PLANS[tier]) return res.status(400).json({ ok: false, error: 'Invalid email or tier' });
+
+    if (!db.users[email]) {
+      db.users[email] = {
+        email, name: '', tier, daily_used: 0, eclipse_used: 0,
+        daily_reset: today(), month_key: monthKey(), keys_this_month: 0,
+        created_at: now(), last_login: 0, persona: null, memory: [],
+      };
+    } else {
+      db.users[email].tier = tier;
+    }
+    await persist();
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ ok: false, error: 'Failed' }); }
+});
+
+app.get('/api/admin/stats', async (req, res) => {
+  try {
+    if (!adminSession(req)) return res.status(401).json({ ok: false, error: 'Unauthorized' });
+    await loadDb();
+
+    const users_data = {};
+    for (const [email, u] of Object.entries(db.users || {})) {
+      users_data[email] = {
+        email, name: u.name || '', tier: u.tier || 'free',
+        daily_used: u.daily_used || 0, eclipse_used: u.eclipse_used || 0,
+        keys_this_month: u.keys_this_month || 0,
+        created_at: u.created_at || 0, last_login: u.last_login || 0,
+      };
+    }
+
+    const recentChats  = [...(db.logsChat || [])].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 200);
+    const recentImages = [...(db.logsImage || [])].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 200);
+    const recentEvents = [...(db.logsUser || [])].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 200);
+
+    res.json({
+      ok: true,
+      users:  Object.keys(db.users || {}).length,
+      chats:  (db.logsChat || []).length,
+      images: (db.logsImage || []).length,
+      events: (db.logsUser || []).length,
+      users_data,
+      chats_data:  recentChats.map(c => ({ email: c.email, model: c.model, message: c.message, ts: c.ts, canned: !!c.canned })),
+      images_data: recentImages.map(i => ({ email: i.email, prompt: i.prompt, model: i.model, ts: i.ts })),
+      events_data: recentEvents.map(e => {
+        let details = {};
+        try { details = e.details ? JSON.parse(e.details) : {}; } catch {}
+        return { email: e.email, event: e.event, ts: e.ts, ...details };
+      }),
+    });
+  } catch (e) {
+    console.error('[Mirox] admin stats error:', e.message);
+    res.status(500).json({ ok: false, error: 'Failed' });
+  }
 });
 
 /* Config */
@@ -903,7 +1005,7 @@ app.get(['/api/config','/config'], async (req, res) => {
     id, label: m.label, tagline: m.tagline, tier: m.tier, default: !!m.default,
   }));
   res.json({
-    app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v68' },
+    app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v69' },
     models, default_model: models[0].id, plans: PLANS,
     user_tier: u ? u.tier : 'free', guest: !u, ready: true,
     providers: PROVIDERS, api_models: API_ALLOWED_MODELS,
@@ -987,10 +1089,7 @@ app.post('/api/persona', async (req, res) => {
   res.json({ ok: true });
 });
 
-/* Support ticket */
-app.post('/api/support/ticket', async (req, res) => {
-  res.json({ ok: true });
-});
+app.post('/api/support/ticket', async (req, res) => { res.json({ ok: true }); });
 
 /* API keys */
 app.post(['/api/keys/generate','/keys/generate'], async (req, res) => {
@@ -1030,6 +1129,44 @@ app.get(['/api/keys/list','/keys/list'], async (req, res) => {
       .sort((a, b) => (b.created || 0) - (a.created || 0));
     res.json({ ok: true, keys, used: u.keys_this_month || 0, limit: PLANS[u.tier]?.api_keys_per_month || 2 });
   } catch { res.json({ ok: true, keys: [], used: 0, limit: 2 }); }
+});
+
+/* ============================================================
+   Image caption endpoint
+   ============================================================ */
+app.post('/api/vision/caption', async (req, res) => {
+  try {
+    const dataUrl = safe(req.body?.image, 20_000_000);
+    if (!dataUrl || !dataUrl.startsWith('data:image')) return res.status(400).json({ ok: false, error: 'image data url required' });
+    const caption = await captionImage(dataUrl);
+    if (!caption) return res.json({ ok: false, error: 'caption unavailable' });
+    res.json({ ok: true, caption });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: 'caption failed' });
+  }
+});
+
+/* ============================================================
+   Image generation
+   ============================================================ */
+app.post('/v1/images/generations', async (req, res) => {
+  try {
+    const prompt = safe(req.body?.prompt, 2000).trim();
+    const aspect = safe(req.body?.aspect_ratio, 10) || '1:1';
+    if (!prompt) return res.status(400).json({ error: { message: 'Prompt required' } });
+    const u = await currentUser(req);
+    const imageUrl = await generateImage(prompt, aspect);
+    if (u && !u._viaKey) {
+      await loadDb();
+      db.counters.image = (db.counters.image || 0) + 1;
+      db.logsImage.push({ id: db.counters.image, email: u.email, prompt: prompt.slice(0, 300), model: 'Lumenal 1.0', ts: now() });
+      if (db.logsImage.length > MAX_LOGS) db.logsImage.splice(0, db.logsImage.length - MAX_LOGS);
+      persist();
+    }
+    res.json({ ok: true, image: imageUrl, model: 'Lumenal 1.0' });
+  } catch (e) {
+    res.status(502).json({ error: { message: GENERIC_ERR } });
+  }
 });
 
 /* ============================================================
@@ -1083,16 +1220,44 @@ app.post('/v1/chat/completions', async (req, res) => {
       const text = safe(rawMessage, 100000).trim();
       const files = safeArr(rawFiles);
       if (!text && !files.length) return res.status(400).json({ error: { message: 'Empty message', code: 'invalid_request' } });
+
       const sys = buildSystemPrompt(cfg)
         + (u?.persona ? `\n\nUser preference: ${safe(u.persona, 500)}` : '')
         + (u?.memory?.length ? `\n\nRemember: ${u.memory.slice(-8).map(m => safe(m.text)).join(' | ')}` : '');
       msgs = [{ role: 'system', content: sys }];
-      const textFiles = files.filter(f => f && f.type !== 'image');
+
+      const textFiles = files.filter(f => f && f.type === 'text');
+      const imageFiles = files.filter(f => f && f.type === 'image' && f.dataUrl);
+
       let userText = text;
       if (textFiles.length) {
-        userText = textFiles.map(f => `[Attached: ${safe(f.name, 200)}]\n\`\`\`\n${safe(f.content, 6000)}\n\`\`\``).join('\n\n') + '\n\n' + (text || '');
+        const fileText = textFiles.map(f => `[Attached file: ${safe(f.name, 200)}]\n\`\`\`\n${safe(f.content, 8000)}\n\`\`\``).join('\n\n');
+        userText = (fileText + '\n\n' + (text || '')).trim();
       }
-      msgs.push({ role: 'user', content: userText || '(empty)' });
+
+      // For images: if the model is one of the vision-capable HF ones, send as image_url.
+      // Otherwise send a text description (caption) so text-only models understand.
+      const supportsVision = /luna|pro|ultra|eclipse|gen/i.test(requestedModel);
+      if (imageFiles.length) {
+        // Get a caption for each image so text AIs understand it
+        const captions = [];
+        for (const img of imageFiles) {
+          const c = await captionImage(img.dataUrl);
+          captions.push(c || '(image attached)');
+        }
+
+        if (supportsVision) {
+          const content = [{ type: 'text', text: userText || 'Look at the image(s).' }];
+          for (const img of imageFiles) content.push({ type: 'image_url', image_url: { url: img.dataUrl } });
+          msgs.push({ role: 'user', content });
+        } else {
+          const annotated = `[User attached ${imageFiles.length} image(s). Descriptions: ${captions.join(' | ')}]\n\n${userText || ''}`.trim();
+          msgs.push({ role: 'user', content: annotated });
+        }
+      } else {
+        msgs.push({ role: 'user', content: userText || '(empty)' });
+      }
+
       for (const h of safeArr(rawHistory).slice(-14)) {
         const role = safe(h.role, 20); const txt = safe(h.content, 4000).trim();
         if ((role === 'user' || role === 'assistant') && txt) msgs.push({ role, content: txt });
@@ -1113,19 +1278,12 @@ app.post('/v1/chat/completions', async (req, res) => {
         return res.json({
           id: 'chatcmpl-' + Date.now(), object: 'chat.completion', created: now(), model: cfg.label,
           choices: [{ index: 0, message: { role: 'assistant', content: canned }, finish_reason: 'stop' }],
-          reply: canned,
-          daily_used: u?.daily_used || 0,
-          daily_remaining: u ? Math.max(0, (PLANS[u.tier]?.daily_limit || 50) - (u.daily_used || 0)) : 0,
-          _ms: Date.now() - t0,
+          reply: canned, _ms: Date.now() - t0,
         });
       }
       sseInit(res);
       sseWrite(res, { p: 'canned' });
-      for (const piece of chunkText(canned, 20)) {
-        if (res.writableEnded) break;
-        sseWrite(res, { d: piece });
-        await new Promise(r => setTimeout(r, 8));
-      }
+      for (const piece of chunkText(canned, 20)) { if (res.writableEnded) break; sseWrite(res, { d: piece }); await new Promise(r => setTimeout(r, 8)); }
       sseWrite(res, { done: true });
       sseDone(res);
       try { res.end(); } catch {}
@@ -1140,6 +1298,18 @@ app.post('/v1/chat/completions', async (req, res) => {
       }
     };
 
+    /* Log */
+    if (u && !u._viaKey) {
+      await loadDb();
+      db.counters.chat = (db.counters.chat || 0) + 1;
+      db.logsChat.push({
+        id: db.counters.chat, email: u.email, model: cfg.label,
+        message: safe(userQuestionForCanned, 1000), ts: now(), canned: 0,
+      });
+      if (db.logsChat.length > MAX_LOGS) db.logsChat.splice(0, db.logsChat.length - MAX_LOGS);
+      persist();
+    }
+
     /* Non-stream */
     if (!stream) {
       try {
@@ -1148,9 +1318,8 @@ app.post('/v1/chat/completions', async (req, res) => {
           sseData: () => {},
         });
         let reply = '';
-        if (result.provider === 'ollama') {
-          reply = result.reply;
-        } else {
+        if (result.provider === 'ollama') reply = result.reply;
+        else {
           const parsed = await readProviderBody(result.res);
           if (!parsed.ok) return res.status(502).json({ error: { message: GENERIC_ERR, type: 'server_error' }, _ms: Date.now() - t0 });
           reply = parsed.reply;
@@ -1159,10 +1328,7 @@ app.post('/v1/chat/completions', async (req, res) => {
         return res.json({
           id: 'chatcmpl-' + Date.now(), object: 'chat.completion', created: now(), model: cfg.label,
           choices: [{ index: 0, message: { role: 'assistant', content: reply }, finish_reason: 'stop' }],
-          reply,
-          daily_used: u?.daily_used || 0,
-          daily_remaining: u ? Math.max(0, (PLANS[u.tier]?.daily_limit || 50) - (u.daily_used || 0)) : 0,
-          _ms: Date.now() - t0,
+          reply, _ms: Date.now() - t0,
         });
       } catch (e) {
         console.error('[Mirox] non-stream failed. Trace:', e.trace || []);
@@ -1190,30 +1356,19 @@ app.post('/v1/chat/completions', async (req, res) => {
       });
 
       if (result.provider === 'ollama') {
-        if (!res.writableEnded) {
-          sseWrite(res, { done: true });
-          sseDone(res);
-        }
+        if (!res.writableEnded) { sseWrite(res, { done: true }); sseDone(res); }
       } else if (result.provider === 'fallback') {
         const parsed = await readProviderBody(result.res);
         if (parsed.ok) {
           sseWrite(res, { p: 'ar-search' });
           const pieces = chunkText(parsed.reply, Math.min(80, Math.max(30, Math.floor(parsed.reply.length / 12))));
-          for (const p of pieces) {
-            if (clientClosed || res.writableEnded) break;
-            sseWrite(res, { d: p });
-            await new Promise(r => setTimeout(r, 6));
-          }
-          if (!clientClosed && !res.writableEnded) {
-            sseWrite(res, { done: true });
-            sseDone(res);
-          }
+          for (const p of pieces) { if (clientClosed || res.writableEnded) break; sseWrite(res, { d: p }); await new Promise(r => setTimeout(r, 6)); }
+          if (!clientClosed && !res.writableEnded) { sseWrite(res, { done: true }); sseDone(res); }
         } else {
           try { sseWrite(res, { error: { message: GENERIC_ERR } }); } catch {}
           try { sseDone(res); } catch {}
         }
       } else if (result.provider === 'pl') {
-        /* Pollinations — check if it's real SSE or JSON */
         if (result.nativeStream && looksLikeStream(result.res)) {
           sseWrite(res, { p: 'pl' });
           const reader = result.res.body.getReader();
@@ -1226,8 +1381,7 @@ app.post('/v1/chat/completions', async (req, res) => {
             buf += dec.decode(value, { stream: true });
             let idx;
             while ((idx = buf.indexOf('\n')) !== -1) {
-              let line = buf.slice(0, idx);
-              buf = buf.slice(idx + 1);
+              let line = buf.slice(0, idx); buf = buf.slice(idx + 1);
               if (line.endsWith('\r')) line = line.slice(0, -1);
               const trimmed = line.trim();
               if (!trimmed.startsWith('data:')) continue;
@@ -1241,32 +1395,21 @@ app.post('/v1/chat/completions', async (req, res) => {
             }
           }
           try { reader.releaseLock(); } catch {}
-          if (!clientClosed && !res.writableEnded) {
-            sseWrite(res, { done: true });
-            sseDone(res);
-          }
+          if (!clientClosed && !res.writableEnded) { sseWrite(res, { done: true }); sseDone(res); }
         } else {
-          /* PL returned non-stream JSON */
           const parsed = await readProviderBody(result.res);
           if (parsed.ok) {
             sseWrite(res, { p: 'pl' });
             const pieces = chunkText(parsed.reply, Math.min(80, Math.max(30, Math.floor(parsed.reply.length / 12))));
-            for (const p of pieces) {
-              if (clientClosed || res.writableEnded) break;
-              sseWrite(res, { d: p });
-              await new Promise(r => setTimeout(r, 6));
-            }
-            if (!clientClosed && !res.writableEnded) {
-              sseWrite(res, { done: true });
-              sseDone(res);
-            }
+            for (const p of pieces) { if (clientClosed || res.writableEnded) break; sseWrite(res, { d: p }); await new Promise(r => setTimeout(r, 6)); }
+            if (!clientClosed && !res.writableEnded) { sseWrite(res, { done: true }); sseDone(res); }
           } else {
             try { sseWrite(res, { error: { message: GENERIC_ERR } }); } catch {}
             try { sseDone(res); } catch {}
           }
         }
       } else {
-        /* HF native SSE passthrough */
+        /* HF stream */
         sseWrite(res, { p: 'hf' });
         const reader = result.res.body.getReader();
         const dec = new TextDecoder('utf-8', { fatal: false });
@@ -1278,8 +1421,7 @@ app.post('/v1/chat/completions', async (req, res) => {
           buf += dec.decode(value, { stream: true });
           let idx;
           while ((idx = buf.indexOf('\n')) !== -1) {
-            let line = buf.slice(0, idx);
-            buf = buf.slice(idx + 1);
+            let line = buf.slice(0, idx); buf = buf.slice(idx + 1);
             if (line.endsWith('\r')) line = line.slice(0, -1);
             const trimmed = line.trim();
             if (!trimmed.startsWith('data:')) continue;
@@ -1293,17 +1435,12 @@ app.post('/v1/chat/completions', async (req, res) => {
           }
         }
         try { reader.releaseLock(); } catch {}
-        if (!clientClosed && !res.writableEnded) {
-          sseWrite(res, { done: true });
-          sseDone(res);
-        }
+        if (!clientClosed && !res.writableEnded) { sseWrite(res, { done: true }); sseDone(res); }
       }
 
       await updateUsage();
     } catch (e) {
-      if (e.name !== 'AbortError') {
-        console.warn('[Mirox] stream error:', e.message, 'Trace:', e.trace || []);
-      }
+      if (e.name !== 'AbortError') console.warn('[Mirox] stream error:', e.message, 'Trace:', e.trace || []);
       if (!clientClosed && !res.writableEnded) {
         try { sseWrite(res, { error: { message: GENERIC_ERR } }); } catch {}
         try { sseDone(res); } catch {}
@@ -1323,25 +1460,20 @@ app.post('/v1/chat/completions', async (req, res) => {
   }
 });
 
-/* 404 + error */
 app.use((req, res) => res.status(404).json({ error: { message: 'Not found: ' + req.path } }));
 app.use((err, req, res, next) => {
   console.error('[Mirox] unhandled:', err.message);
   if (!res.headersSent) res.status(500).json({ error: { message: GENERIC_ERR } });
 });
 
-/* ============================================================
-   Startup
-   ============================================================ */
+/* Startup */
 (async () => {
   await loadDb();
-  await ensureOllama();
-
+  ensureOllama().catch(() => {});
   if (process.env.VERCEL !== '1') {
     app.listen(PORT, () => {
       console.log(`[Mirox] Server ready at http://localhost:${PORT}`);
       console.log(`[Mirox] Chain: HF → Pollinations → Ollama → searchque`);
-      console.log(`[Mirox] Diagnose: http://localhost:${PORT}/api/providers/status`);
     });
   }
 })();
