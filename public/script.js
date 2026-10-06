@@ -1,7 +1,9 @@
 (function () {
   'use strict';
 
-  /* ----- Loader failsafe ----- */
+  /* ============================================================
+     Loader failsafe — always kills the boot screen
+     ============================================================ */
   function killLoader() {
     const el = document.getElementById('loadingScreen');
     if (!el) return;
@@ -17,7 +19,9 @@
   const $$ = (s) => document.querySelectorAll(s);
   const on = (sel, ev, fn) => { const el = $(sel); if (el) el.addEventListener(ev, fn); };
 
-  /* ----- Models & constants ----- */
+  /* ============================================================
+     Config
+     ============================================================ */
   const FALLBACK_MODELS = [
     { id: 'mirox-luna-1.2', label: 'Luna', tagline: 'Fast · warm · unlimited', tier: 'free', default: true },
     { id: 'mirox-gen-1', label: 'Gen', tagline: 'Ultra concise · unlimited', tier: 'free' },
@@ -31,8 +35,11 @@
   const APPEARANCE_KEY = 'miroxai_appearance_v23';
   const BRIDGE_KEY = 'miroxai_bridge_v23';
   const MAX_BRIDGE_QUESTIONS = 6;
-  const MAX_BRIDGE_ITER = 12;
+  const MAX_BRIDGE_ITER = 25;
 
+  /* ============================================================
+     State
+     ============================================================ */
   let __config = null;
   let __user = null;
   let __tier = 'free';
@@ -43,12 +50,15 @@
   let pendingFiles = [];
   let activeStreamController = null;
   let __usage = null;
-  let __bridge = { name: 'My Laptop', model: 'mirox-luna-1.2', port: 8765, connected: false, baseUrl: null, log: [] };
+  let __bridge = { name: 'My Laptop', model: 'mirox-luna-1.2', port: 8765, connected: false, baseUrl: null };
   let bridgeConversation = [];
   let bridgeRunning = false;
   let bridgeQuestionCount = 0;
+  let bridgeProgress = 0;
 
-  /* ----- Utils ----- */
+  /* ============================================================
+     Utilities
+     ============================================================ */
   const uid = () => 'c_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
   const escapeHtml = (s) => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
   function safeGet(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } }
@@ -59,7 +69,8 @@
   async function authJson(url, opts = {}, fallback = null) {
     try {
       const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
-      const t = getToken(); if (t) headers.Authorization = 'Bearer ' + t;
+      const t = getToken();
+      if (t) headers.Authorization = 'Bearer ' + t;
       const r = await fetch(url, { ...opts, headers, credentials: 'same-origin', cache: 'no-store' });
       const ct = (r.headers.get('content-type') || '').toLowerCase();
       if (!ct.includes('application/json')) return fallback;
@@ -67,13 +78,17 @@
     } catch { return fallback; }
   }
 
-  /* ----- Modals ----- */
+  /* ============================================================
+     Modals / Sidebar helpers
+     ============================================================ */
   const openModal = (id) => { const el = document.getElementById(id); if (el) el.classList.add('open'); };
   const closeModal = (id) => { const el = document.getElementById(id); if (el) el.classList.remove('open'); };
   const openSidebar = () => { $('#sidebar')?.classList.add('open'); $('#sidebarScrim')?.classList.add('open'); };
   const closeSidebar = () => { $('#sidebar')?.classList.remove('open'); $('#sidebarScrim')?.classList.remove('open'); };
 
-  /* ----- Appearance ----- */
+  /* ============================================================
+     Appearance
+     ============================================================ */
   function applyAppearance(prefs) {
     const root = document.documentElement;
     const mode = prefs.mode || 'light';
@@ -90,7 +105,9 @@
     applyAppearance(prefs);
   }
 
-  /* ----- Markdown ----- */
+  /* ============================================================
+     Markdown renderer
+     ============================================================ */
   function renderMarkdown(text) {
     if (!text) return '';
     let src = String(text);
@@ -147,7 +164,8 @@
   }
   function wireCopyButtons(scope) {
     (scope || document).querySelectorAll('.code-action-btn[data-copy]').forEach(btn => {
-      if (btn.__wired) return; btn.__wired = true;
+      if (btn.__wired) return;
+      btn.__wired = true;
       btn.onclick = async () => {
         const code = btn.closest('.code-block')?.querySelector('pre code')?.textContent || '';
         try {
@@ -159,10 +177,13 @@
     });
   }
 
-  /* ----- Conversations ----- */
+  /* ============================================================
+     Conversations
+     ============================================================ */
   function currentConvo() { return __conversations.find(c => c.id === currentConversationId) || null; }
   function saveChats() { safeSet(LS_KEY, __conversations); }
   function loadChats() { __conversations = safeGet(LS_KEY, []); }
+
   function welcomeHTML() {
     return `<div class="welcome-screen">
       <img src="/logo.png" alt="MiroxAI" class="welcome-logo theme-aware-logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';">
@@ -186,7 +207,8 @@
   }
   function bindSuggestionClicks() {
     $$('.suggestion-card').forEach(card => {
-      if (card.__wired) return; card.__wired = true;
+      if (card.__wired) return;
+      card.__wired = true;
       card.onclick = () => {
         const p = card.dataset.prompt;
         if (p === 'Open the Bridge workspace') { openBridgeWorkspace(); return; }
@@ -196,19 +218,25 @@
     });
   }
   function renderHistory() {
-    const list = $('#historyList'); if (!list) return;
-    if (!__conversations.length) { list.innerHTML = '<li class="history-empty">No conversations yet</li>'; return; }
+    const list = $('#historyList');
+    if (!list) return;
+    if (!__conversations.length) {
+      list.innerHTML = '<li class="history-empty">No conversations yet</li>';
+      return;
+    }
     list.innerHTML = __conversations.map(c =>
       `<li class="history-item${c.id === currentConversationId ? ' active' : ''}" data-id="${c.id}">
         <i class="ri-chat-3-line"></i>
         <span class="history-title">${escapeHtml(c.title || 'Chat')}</span>
-        <button class="history-delete icon-btn"><i class="ri-delete-bin-line"></i></button>
+        <button class="history-delete icon-btn" aria-label="Delete"><i class="ri-delete-bin-line"></i></button>
       </li>`
     ).join('');
   }
   function scrollToBottom() { const c = $('#chatMessages'); if (c) c.scrollTop = c.scrollHeight; }
 
-  /* ----- Messages ----- */
+  /* ============================================================
+     Message rendering
+     ============================================================ */
   function addMessageToDOM(role, content, ts, msgId, files, image) {
     const container = $('#chatMessages'); if (!container) return null;
     const welcome = container.querySelector('.welcome-screen'); if (welcome) welcome.remove();
@@ -228,14 +256,14 @@
       inner += '</div>';
     }
     if (role === 'ai' && image) {
-      inner += `<div style="margin-bottom:10px;border-radius:14px;overflow:hidden;border:1px solid var(--border);max-width:400px;cursor:zoom-in;"><img src="${image}" style="display:block;width:100%;" draggable="false"></div>`;
+      inner += `<div style="margin-bottom:10px;border-radius:14px;overflow:hidden;border:1px solid var(--border);max-width:100%;cursor:zoom-in;"><img src="${image}" style="display:block;width:100%;" draggable="false"></div>`;
     }
     inner += '<div class="bubble-text"></div>';
 
     el.innerHTML = `<div class="bubble">${inner}</div>
       <div class="message-actions">
-        <button class="action-btn" data-action="copy" title="Copy"><i class="ri-file-copy-line"></i></button>
-        ${role === 'ai' ? '<button class="action-btn" data-action="retry" title="Retry"><i class="ri-refresh-line"></i></button>' : ''}
+        <button class="action-btn" data-action="copy" title="Copy" aria-label="Copy"><i class="ri-file-copy-line"></i></button>
+        ${role === 'ai' ? '<button class="action-btn" data-action="retry" title="Retry" aria-label="Retry"><i class="ri-refresh-line"></i></button>' : ''}
       </div>
       <div class="message-time">${ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</div>`;
 
@@ -250,12 +278,10 @@
       bubble.dataset.rawText = content || '';
       if (content) { bt.innerHTML = renderMarkdown(content); wireCopyButtons(bt); }
     }
-
     if (role === 'ai' && image) {
       const img = el.querySelector('img');
       if (img) img.onclick = () => openImageViewer(image);
     }
-
     wireMessageActions(el);
     scrollToBottom();
     return el;
@@ -265,7 +291,9 @@
     const welcome = container.querySelector('.welcome-screen'); if (welcome) welcome.remove();
     const id = uid();
     const el = document.createElement('div');
-    el.className = 'message ai'; el.dataset.msgId = id; el.dataset.role = 'ai';
+    el.className = 'message ai';
+    el.dataset.msgId = id;
+    el.dataset.role = 'ai';
     el.innerHTML = `<div class="bubble thinking"><span class="thinking-text">Thinking</span><span class="thinking-dots"><span></span><span></span><span></span></span></div><div class="message-time"></div>`;
     container.appendChild(el);
     scrollToBottom();
@@ -273,12 +301,17 @@
   }
   function wireMessageActions(el) {
     el.querySelectorAll('.action-btn').forEach(btn => {
-      if (btn.__wired) return; btn.__wired = true;
+      if (btn.__wired) return;
+      btn.__wired = true;
       btn.onclick = async () => {
         const action = btn.dataset.action;
         const bubble = el.querySelector('.bubble');
         if (action === 'copy') {
-          try { await navigator.clipboard.writeText(bubble?.innerText || ''); btn.innerHTML = '<i class="ri-check-line"></i>'; setTimeout(() => { btn.innerHTML = '<i class="ri-file-copy-line"></i>'; }, 1200); } catch {}
+          try {
+            await navigator.clipboard.writeText(bubble?.innerText || '');
+            btn.innerHTML = '<i class="ri-check-line"></i>';
+            setTimeout(() => { btn.innerHTML = '<i class="ri-file-copy-line"></i>'; }, 1200);
+          } catch {}
         } else if (action === 'retry') {
           if (isReplying) return;
           handleRetry(el);
@@ -293,7 +326,9 @@
     const idx = (convo.messages || []).findIndex(m => m.id === id);
     if (idx < 0) return;
     let userMsg = null;
-    for (let i = idx - 1; i >= 0; i--) if (convo.messages[i].role === 'user') { userMsg = convo.messages[i]; break; }
+    for (let i = idx - 1; i >= 0; i--) {
+      if (convo.messages[i].role === 'user') { userMsg = convo.messages[i]; break; }
+    }
     if (!userMsg) return;
     convo.messages = convo.messages.slice(0, idx);
     saveChats();
@@ -303,7 +338,9 @@
     sendToAPI(userMsg.content, userMsg.files || []);
   }
 
-  /* ----- Send ----- */
+  /* ============================================================
+     Send button state
+     ============================================================ */
   function updateSendButtonState() {
     const btn = $('#sendBtn'), inp = $('#messageInput');
     if (!btn || !inp) return;
@@ -312,6 +349,10 @@
     btn.classList.toggle('is-disabled', !enable);
     btn.setAttribute('aria-disabled', String(!enable));
   }
+
+  /* ============================================================
+     Send flow
+     ============================================================ */
   function handleSend() {
     if (isReplying) return;
     const inp = $('#messageInput'); if (!inp) return;
@@ -320,20 +361,30 @@
     const files = pendingFiles.slice();
     if (!currentConversationId) {
       currentConversationId = uid();
-      __conversations.unshift({ id: currentConversationId, title: text.slice(0, 60) || 'New chat', messages: [], created: Date.now() });
+      __conversations.unshift({
+        id: currentConversationId,
+        title: text.slice(0, 60) || 'New chat',
+        messages: [],
+        created: Date.now()
+      });
     }
     const msgId = uid();
     const convo = currentConvo();
     if (convo) convo.messages.push({ id: msgId, role: 'user', content: text, ts: Date.now(), files });
     addMessageToDOM('user', text, Date.now(), msgId, files);
-    inp.value = ''; inp.style.height = 'auto';
-    pendingFiles = []; updatePreview(); updateSendButtonState();
-    saveChats(); renderHistory();
+    inp.value = '';
+    inp.style.height = 'auto';
+    pendingFiles = [];
+    updatePreview();
+    updateSendButtonState();
+    saveChats();
+    renderHistory();
     sendToAPI(text, files);
   }
 
   async function sendToAPI(text, files) {
-    isReplying = true; updateSendButtonState();
+    isReplying = true;
+    updateSendButtonState();
     const stopBtn = $('#stopBtn'); if (stopBtn) stopBtn.style.display = 'grid';
     const convo = currentConvo();
     const history = convo ? convo.messages.slice(-14).map(m => ({ role: m.role, content: m.content })) : [];
@@ -344,17 +395,25 @@
     const timeEl = el.querySelector('.message-time');
     const aiMsgId = el.dataset.msgId;
     activeStreamController = new AbortController();
-
-    let full = '', generatedImage = null, finishReason = 'stop';
-    let bubbleText = null, firstChunk = true;
+    let full = '';
+    let generatedImage = null;
+    let finishReason = 'stop';
+    let bubbleText = null;
+    let firstChunk = true;
 
     try {
       const res = await fetch('/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: text, history, model, stream: true, files,
-          bridge: __bridge.connected ? { connected: true, name: __bridge.name, model: __bridge.model } : null,
+          message: text,
+          history,
+          model,
+          stream: true,
+          files,
+          bridge: __bridge.connected
+            ? { connected: true, name: __bridge.name, model: __bridge.model }
+            : null,
         }),
         signal: activeStreamController.signal,
       });
@@ -362,7 +421,6 @@
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error?.message || `HTTP ${res.status}`);
       }
-
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let buf = '';
@@ -372,7 +430,8 @@
         buf += dec.decode(value, { stream: true });
         let idx;
         while ((idx = buf.indexOf('\n')) !== -1) {
-          const line = buf.slice(0, idx).trim(); buf = buf.slice(idx + 1);
+          const line = buf.slice(0, idx).trim();
+          buf = buf.slice(idx + 1);
           if (!line.startsWith('data:')) continue;
           const pl = line.slice(5).trim();
           if (!pl || pl === '[DONE]') continue;
@@ -381,9 +440,10 @@
             if (o.img) {
               generatedImage = o.img;
               bubble.classList.remove('thinking');
-              bubble.innerHTML = `<div style="margin-bottom:10px;border-radius:14px;overflow:hidden;border:1px solid var(--border);max-width:400px;cursor:zoom-in;"><img src="${o.img}" style="display:block;width:100%;" draggable="false"></div><div class="bubble-text"></div>`;
+              bubble.innerHTML = `<div style="margin-bottom:10px;border-radius:14px;overflow:hidden;border:1px solid var(--border);max-width:100%;cursor:zoom-in;"><img src="${o.img}" style="display:block;width:100%;" draggable="false"></div><div class="bubble-text"></div>`;
               bubbleText = bubble.querySelector('.bubble-text');
-              const img = bubble.querySelector('img'); if (img) img.onclick = () => openImageViewer(o.img);
+              const img = bubble.querySelector('img');
+              if (img) img.onclick = () => openImageViewer(o.img);
               firstChunk = false;
               scrollToBottom();
               refreshUsage();
@@ -393,11 +453,17 @@
               full += o.d;
               if (firstChunk) {
                 bubble.classList.remove('thinking');
-                if (!generatedImage) { bubble.innerHTML = '<div class="bubble-text"></div>'; bubbleText = bubble.querySelector('.bubble-text'); }
+                if (!generatedImage) {
+                  bubble.innerHTML = '<div class="bubble-text"></div>';
+                  bubbleText = bubble.querySelector('.bubble-text');
+                }
                 firstChunk = false;
               }
               const target = bubbleText || bubble.querySelector('.bubble-text');
-              if (target) { target.innerHTML = renderMarkdown(full); wireCopyButtons(target); }
+              if (target) {
+                target.innerHTML = renderMarkdown(full);
+                wireCopyButtons(target);
+              }
               scrollToBottom();
             }
             if (o.error) throw new Error(o.error.message || o.error);
@@ -405,16 +471,22 @@
           } catch {}
         }
       }
-
-      finalizeBubble(bubble, full);
-      if (convo) convo.messages.push({ id: aiMsgId, role: 'assistant', content: full, ts: Date.now(), image: generatedImage, finish_reason: finishReason });
+      const bt = bubble.querySelector('.bubble-text');
+      if (bt) { bt.innerHTML = renderMarkdown(full); wireCopyButtons(bt); }
+      if (convo) convo.messages.push({
+        id: aiMsgId,
+        role: 'assistant',
+        content: full,
+        ts: Date.now(),
+        image: generatedImage,
+        finish_reason: finishReason
+      });
       saveChats();
       if (timeEl) timeEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       refreshUsage();
     } catch (e) {
       bubble.classList.remove('thinking');
-      if (e.name !== 'AbortError') bubble.textContent = 'Error: ' + e.message;
-      else bubble.textContent = '(stopped)';
+      bubble.textContent = e.name === 'AbortError' ? '(stopped)' : 'Error: ' + e.message;
     } finally {
       isReplying = false;
       activeStreamController = null;
@@ -422,20 +494,20 @@
       updateSendButtonState();
     }
   }
-  function finalizeBubble(bubble, text) {
-    const bt = bubble?.querySelector('.bubble-text');
-    if (!bt) return;
-    bt.innerHTML = renderMarkdown(text || '');
-    wireCopyButtons(bt);
-  }
+
   function stopStreaming() {
-    if (activeStreamController) { try { activeStreamController.abort(); } catch {} activeStreamController = null; }
+    if (activeStreamController) {
+      try { activeStreamController.abort(); } catch {}
+      activeStreamController = null;
+    }
     isReplying = false;
     const s = $('#stopBtn'); if (s) s.style.display = 'none';
     updateSendButtonState();
   }
 
-  /* ----- Files ----- */
+  /* ============================================================
+     File attachments
+     ============================================================ */
   function handleFiles(fileList) {
     if (!fileList || !fileList.length) return;
     const arr = Array.from(fileList);
@@ -445,11 +517,17 @@
       const isImg = (f.type || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(f.name);
       const r = new FileReader();
       if (isImg) {
-        r.onload = () => { newFiles.push({ name: f.name, size: f.size, type: 'image', dataUrl: r.result, order: idx }); done++; if (done === arr.length) finish(); };
+        r.onload = () => {
+          newFiles.push({ name: f.name, size: f.size, type: 'image', dataUrl: r.result, order: idx });
+          done++; if (done === arr.length) finish();
+        };
         r.onerror = () => { done++; if (done === arr.length) finish(); };
         r.readAsDataURL(f);
       } else {
-        r.onload = () => { newFiles.push({ name: f.name, size: f.size, type: 'text', content: String(r.result).slice(0, 60000), order: idx }); done++; if (done === arr.length) finish(); };
+        r.onload = () => {
+          newFiles.push({ name: f.name, size: f.size, type: 'text', content: String(r.result).slice(0, 60000), order: idx });
+          done++; if (done === arr.length) finish();
+        };
         r.onerror = () => { done++; if (done === arr.length) finish(); };
         r.readAsText(f);
       }
@@ -464,44 +542,56 @@
   function updatePreview() {
     const p = $('#attachmentPreview'), list = $('#attachmentList');
     if (!p || !list) return;
-    if (!pendingFiles.length) { p.style.display = 'none'; list.innerHTML = ''; return; }
+    if (!pendingFiles.length) {
+      p.style.display = 'none';
+      list.innerHTML = '';
+      return;
+    }
     p.style.display = 'flex';
-    list.innerHTML = pendingFiles.map(f => f.type === 'image' && f.dataUrl
-      ? `<div class="attach-chip"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name)}</div>`
-      : `<div class="attach-chip"><i class="ri-file-line"></i>${escapeHtml(f.name)}</div>`
+    list.innerHTML = pendingFiles.map(f =>
+      f.type === 'image' && f.dataUrl
+        ? `<div class="attach-chip"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name)}</div>`
+        : `<div class="attach-chip"><i class="ri-file-line"></i>${escapeHtml(f.name)}</div>`
     ).join('');
   }
 
-  /* ----- Image viewer ----- */
+  /* ============================================================
+     Image viewer
+     ============================================================ */
   let __ivDataUrl = '';
   function openImageViewer(url) {
     if (!url) return;
     __ivDataUrl = url;
-    const iv = $('#imageViewer'); if (!iv) return;
+    const iv = $('#imageViewer');
+    if (!iv) return;
     iv.classList.add('open');
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
-      const c = $('#ivCanvas'); if (!c) return;
-      c.width = img.naturalWidth; c.height = img.naturalHeight;
+      const c = $('#ivCanvas');
+      if (!c) return;
+      c.width = img.naturalWidth;
+      c.height = img.naturalHeight;
       c.getContext('2d').drawImage(img, 0, 0);
     };
     img.src = url;
   }
   function closeImageViewer() { $('#imageViewer')?.classList.remove('open'); }
 
-  /* ----- Model picker ----- */
-  function getModelsList() { return __config?.models?.length ? __config.models : FALLBACK_MODELS; }
+  /* ============================================================
+     Model picker
+     ============================================================ */
+  function getModelsList() {
+    return __config?.models?.length ? __config.models : FALLBACK_MODELS;
+  }
   function canUseModel(tier) {
-    // Luna and Gen (free) → always allowed
     if (tier === 'free') return true;
-    // Eclipse → only free users get 5/day; pro users blocked from eclipse
-    if (tier === 'ultimate') return true; // we check the quota in the backend
-    // Pro tier → free tier blocked
+    if (tier === 'ultimate') return true;
     return TIER_RANK[__tier] >= TIER_RANK[tier];
   }
   function renderModelPicker() {
-    const menu = $('#modelPickerMenu'); if (!menu) return;
+    const menu = $('#modelPickerMenu');
+    if (!menu) return;
     const models = getModelsList();
     const cur = __model || models[0].id;
     menu.innerHTML = models.map(m => {
@@ -509,7 +599,7 @@
       const lock = usable ? '' : ' locked';
       let lockLabel = '';
       if (!usable) lockLabel = ' · <span style="color:var(--accent);font-size:10.5px;">UPGRADE</span>';
-      else if (m.tier === 'ultimate' && __tier === 'free') lockLabel = ' · <span style="color:var(--accent);font-size:10.5px;">5/day free</span>';
+      else if (m.tier === 'ultimate' && __tier === 'free') lockLabel = ' · <span style="color:var(--accent);font-size:10.5px;">5/day</span>';
       return `<div class="model-option${m.id === cur ? ' active' : ''}${lock}" data-model-id="${m.id}" data-usable="${usable}">
         <span class="model-option-label"><span class="dot"></span>${escapeHtml(m.label)}${lockLabel}</span>
         <span class="model-option-tag">${escapeHtml(m.tagline || '')}</span>
@@ -539,33 +629,34 @@
   function openModelPicker() { $('#modelPicker')?.classList.add('open'); $('#modelPickerMenu')?.classList.add('open'); }
   function closeModelPicker() { $('#modelPicker')?.classList.remove('open'); $('#modelPickerMenu')?.classList.remove('open'); }
 
-  /* ----- Credit bar ----- */
+  /* ============================================================
+     Credit bar
+     ============================================================ */
   function renderCreditBar() {
-    const bar = $('#creditBar'); if (!bar) return;
-    // Hide for paid users
+    const bar = $('#creditBar');
+    if (!bar) return;
     if (!__usage || __tier !== 'free') { bar.style.display = 'none'; return; }
     bar.style.display = 'flex';
-
-    const vl = __usage.vision_limit ?? 10, vu = __usage.vision_used ?? 0;
-    const il = __usage.image_limit ?? 10, iu = __usage.image_used ?? 0;
-    const el = __usage.eclipse_limit ?? 5, eu = __usage.eclipse_used ?? 0;
-
     const setPill = (sel, used, limit) => {
-      const pill = bar.querySelector(sel); if (!pill) return;
+      const pill = bar.querySelector(sel);
+      if (!pill) return;
       const txt = pill.querySelector('span');
       const rem = Math.max(0, limit - used);
       if (txt) txt.textContent = `${rem}/${limit}`;
       pill.classList.toggle('low', rem <= Math.max(1, Math.floor(limit * 0.25)) && rem > 0);
       pill.classList.toggle('empty', rem <= 0);
     };
-    setPill('[data-credit="vision"]', vu, vl);
-    setPill('[data-credit="image"]', iu, il);
-    setPill('[data-credit="eclipse"]', eu, el);
+    setPill('[data-credit="vision"]', __usage.vision_used || 0, __usage.vision_limit || 10);
+    setPill('[data-credit="image"]', __usage.image_used || 0, __usage.image_limit || 10);
+    setPill('[data-credit="eclipse"]', __usage.eclipse_used || 0, __usage.eclipse_limit || 5);
   }
+
   async function refreshUsage() {
     const res = await authJson('/api/me', {}, null);
     if (!res?.user) {
-      __user = null; __usage = null; __tier = 'free';
+      __user = null;
+      __usage = null;
+      __tier = 'free';
       renderCreditBar();
       const chip = $('#userChip');
       if (chip) {
@@ -577,9 +668,6 @@
     __user = res.user;
     __tier = res.user.tier || 'free';
     __usage = {
-      daily_limit: res.user.daily_limit ?? null,
-      daily_used: res.user.daily_used ?? 0,
-      unlimited_chat: !!res.user.unlimited_chat,
       vision_limit: res.user.vision_limit ?? 10,
       vision_used: res.user.vision_used ?? 0,
       image_limit: res.user.image_limit ?? 10,
@@ -596,7 +684,9 @@
     renderModelPicker();
   }
 
-  /* ----- Config ----- */
+  /* ============================================================
+     Config loading
+     ============================================================ */
   async function loadConfig() {
     try {
       const res = await fetch('/api/config', { cache: 'no-store' });
@@ -608,18 +698,25 @@
     renderModelPicker();
   }
 
-  /* ----- Auth ----- */
+  /* ============================================================
+     Auth
+     ============================================================ */
   async function doLogin(e) {
     if (e) e.preventDefault();
     const name = $('#loginName')?.value.trim();
     const email = $('#loginEmail')?.value.trim().toLowerCase();
     if (!name || !email) return;
-    const res = await authJson('/api/auth/simple-login', { method: 'POST', body: JSON.stringify({ name, email }) }, null);
+    const res = await authJson('/api/auth/simple-login', {
+      method: 'POST',
+      body: JSON.stringify({ name, email })
+    }, null);
     if (res?.ok) {
       setToken(res.token);
       closeModal('loginModal');
       await refreshUsage();
-    } else alert(res?.error || 'Login failed');
+    } else {
+      alert(res?.error || 'Login failed');
+    }
   }
   async function doLogout() {
     await authJson('/api/logout', { method: 'POST' }, null);
@@ -628,11 +725,17 @@
     closeModal('settingsModal');
   }
 
-  /* ----- Plans ----- */
+  /* ============================================================
+     Plans
+     ============================================================ */
   async function loadPlans() {
-    const grid = $('#plansGrid'); if (!grid) return;
+    const grid = $('#plansGrid');
+    if (!grid) return;
     const res = await authJson('/api/subscription/plans', {}, null);
-    if (!res?.plans) { grid.innerHTML = '<div class="history-empty">Could not load.</div>'; return; }
+    if (!res?.plans) {
+      grid.innerHTML = '<div class="history-empty">Could not load.</div>';
+      return;
+    }
     grid.innerHTML = res.plans.map(p => {
       const isCurrent = p.id === __tier;
       const price = p.id === 'free'
@@ -649,7 +752,9 @@
     }).join('');
   }
 
-  /* ----- Persona ----- */
+  /* ============================================================
+     Persona
+     ============================================================ */
   async function loadPersona() {
     if (!__user) return;
     const res = await authJson('/api/persona', {}, null);
@@ -658,23 +763,42 @@
   }
   async function savePersona() {
     const status = $('#personaStatus');
-    if (!__user) { if (status) { status.textContent = 'Sign in first.'; status.className = 'persona-status err'; } return; }
-    const inp = $('#personaInput'); if (!inp) return;
+    if (!__user) {
+      if (status) { status.textContent = 'Sign in first.'; status.className = 'persona-status err'; }
+      return;
+    }
+    const inp = $('#personaInput');
+    if (!inp) return;
     if (status) { status.textContent = 'Saving…'; status.className = 'persona-status'; }
-    const res = await authJson('/api/persona', { method: 'POST', body: JSON.stringify({ persona: inp.value.trim() }) }, null);
-    if (res?.ok) { if (status) { status.textContent = 'Saved ✓'; status.className = 'persona-status ok'; } setTimeout(() => { if (status) status.textContent = ''; }, 2000); }
-    else { if (status) { status.textContent = 'Failed.'; status.className = 'persona-status err'; } }
+    const res = await authJson('/api/persona', {
+      method: 'POST',
+      body: JSON.stringify({ persona: inp.value.trim() })
+    }, null);
+    if (res?.ok) {
+      if (status) { status.textContent = 'Saved ✓'; status.className = 'persona-status ok'; }
+      setTimeout(() => { if (status) status.textContent = ''; }, 2000);
+    } else {
+      if (status) { status.textContent = 'Failed.'; status.className = 'persona-status err'; }
+    }
   }
 
-  /* ----- Image gen ----- */
+  /* ============================================================
+     Image generation
+     ============================================================ */
   async function genImage() {
-    const inp = $('#imagePrompt'); const prompt = inp?.value.trim();
+    const inp = $('#imagePrompt');
+    const prompt = inp?.value.trim();
     if (!prompt) return alert('Describe the image first.');
-    const btn = $('#generateImageBtn'), result = $('#imageResult');
+    const btn = $('#generateImageBtn');
+    const result = $('#imageResult');
     if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
     if (result) result.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);">Generating…</div>';
     try {
-      const res = await fetch('/v1/images/generations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, aspect_ratio: '1:1' }) });
+      const res = await fetch('/v1/images/generations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, aspect_ratio: '1:1' })
+      });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok && data.image) {
         if (result) result.innerHTML = `<img src="${data.image}" alt="${escapeHtml(prompt)}">`;
@@ -689,47 +813,40 @@
     }
   }
 
-  /* =========================================================
+  /* ============================================================
      BRIDGE
-     ========================================================= */
+     ============================================================ */
   function loadBridgeLS() {
     const b = safeGet(BRIDGE_KEY, {});
-    __bridge = { ...__bridge, ...b, connected: false, baseUrl: null, log: b.log || [] };
+    __bridge = { ...__bridge, ...b, connected: false, baseUrl: null };
   }
-  function saveBridgeLS() { safeSet(BRIDGE_KEY, { name: __bridge.name, model: __bridge.model, port: __bridge.port, log: __bridge.log.slice(0, 100) }); }
-  function bridgeLog(msg, type = 'info') {
-    const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    __bridge.log.unshift({ ts: t, msg, type });
-    __bridge.log = __bridge.log.slice(0, 100);
-    saveBridgeLS();
-    renderBridgeLog();
-  }
-  function renderBridgeLog() {
-    const el = $('#bridgeLog'); if (!el) return;
-    if (!__bridge.log.length) { el.innerHTML = '<div style="color:var(--text-faint);">No bridge activity yet.</div>'; return; }
-    el.innerHTML = __bridge.log.map(l => `<div class="log-line log-${l.type}"><span class="log-time">${l.ts}</span>${escapeHtml(l.msg)}</div>`).join('');
-  }
-  function renderBridgeStatus() {
-    [['#bridgeStatus', '.bridge-status-dot'], ['#bwStatusPill', '.bridge-status-dot'], ['#bwStatusBox', '.bridge-status-dot']].forEach(([sel, dotSel]) => {
-      const wrap = document.querySelector(sel); if (!wrap) return;
-      const dot = wrap.querySelector(dotSel);
-      const txt = wrap.querySelector('span');
-      if (dot) { dot.classList.toggle('online', __bridge.connected); dot.classList.toggle('offline', !__bridge.connected); }
-      if (txt) txt.textContent = __bridge.connected ? 'Connected' : 'Disconnected';
+  function saveBridgeLS() {
+    safeSet(BRIDGE_KEY, {
+      name: __bridge.name,
+      model: __bridge.model,
+      port: __bridge.port
     });
+  }
+
+  function renderBridgeStatus() {
+    [['#bridgeStatus', '.bridge-status-dot'], ['#bwStatusPill', '.bridge-status-dot'], ['#bwStatusBox', '.bridge-status-dot']]
+      .forEach(([sel, dotSel]) => {
+        const wrap = document.querySelector(sel);
+        if (!wrap) return;
+        const dot = wrap.querySelector(dotSel);
+        const txt = wrap.querySelector('span');
+        if (dot) {
+          dot.classList.toggle('online', __bridge.connected);
+          dot.classList.toggle('offline', !__bridge.connected);
+        }
+        if (txt) txt.textContent = __bridge.connected ? 'Connected' : 'Disconnected';
+      });
     const c = $('#bwConnectBtn'), d = $('#bwDisconnectBtn');
     if (c) c.style.display = __bridge.connected ? 'none' : 'flex';
     if (d) d.style.display = __bridge.connected ? 'flex' : 'none';
     updateBridgeSendBtn();
   }
-  function setBridgeStatusStrip(mode, mainText, subText) {
-    const strip = $('#bwStatusStrip');
-    if (!strip) return;
-    if (!mode) { strip.style.display = 'none'; return; }
-    strip.style.display = 'flex';
-    const t = $('#bwStatusText'); if (t) t.textContent = mainText || '';
-    const s = $('#bwStatusSub'); if (s) s.textContent = subText || '';
-  }
+
   async function testBridge(port) {
     for (const host of ['localhost', '127.0.0.1']) {
       try {
@@ -737,66 +854,84 @@
         const t = setTimeout(() => ctrl.abort(), 4000);
         const r = await fetch(`http://${host}:${port}/ping`, { signal: ctrl.signal, mode: 'cors' });
         clearTimeout(t);
-        if (r.ok) { const d = await r.json(); if (d && d.ok) return { ok: true, data: d, base: `http://${host}:${port}` }; }
+        if (r.ok) {
+          const d = await r.json();
+          if (d && d.ok) return { ok: true, data: d, base: `http://${host}:${port}` };
+        }
       } catch {}
     }
     return { ok: false };
   }
+
   async function startBridge() {
     const name = ($('#bwNameInput')?.value || __bridge.name).trim();
     const model = $('#bwModelSelect')?.value || __bridge.model;
     const port = parseInt($('#bwPortInput')?.value || __bridge.port, 10);
-    __bridge.name = name; __bridge.model = model; __bridge.port = port;
+    __bridge.name = name;
+    __bridge.model = model;
+    __bridge.port = port;
     saveBridgeLS();
     renderBridgeStatus();
-    bridgeLog(`Connecting to http://localhost:${port}…`, 'info');
     setBwHint('Connecting…', '');
     const res = await testBridge(port);
     if (res.ok) {
       __bridge.connected = true;
       __bridge.baseUrl = res.base;
       renderBridgeStatus();
-      bridgeLog(`✓ Connected to "${res.data.name}"`, 'ok');
-      const empty = $('#bridgeEmpty'); if (empty) empty.remove();
+      const empty = $('#bridgeEmpty');
+      if (empty) empty.remove();
       setBwHint('Connected. Ready.', 'ok');
+      addBridgeSystemMsg('Connected to ' + res.data.name);
     } else {
       __bridge.connected = false;
       __bridge.baseUrl = null;
       renderBridgeStatus();
-      bridgeLog(`✗ Failed on port ${port}`, 'err');
-      setBwHint(`Could not reach the bridge on port ${port}.\n\n1. Make sure you ran "python runner.py".\n2. Test in browser: http://localhost:${port}/ping`, 'err');
+      setBwHint(
+        `Could not reach the bridge on port ${port}.\n\n1. Make sure you ran "python runner.py".\n2. Test in browser: http://localhost:${port}/ping`,
+        'err'
+      );
     }
   }
+
   function stopBridge() {
     __bridge.connected = false;
     __bridge.baseUrl = null;
     renderBridgeStatus();
-    bridgeLog('Disconnected', 'info');
     setBwHint('', '');
   }
+
   async function bridgeCall(endpoint, payload) {
     if (!__bridge.connected || !__bridge.baseUrl) throw new Error('Bridge not connected');
     const r = await fetch(__bridge.baseUrl + endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload || {}),
+      body: JSON.stringify(payload || {})
     });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return await r.json();
   }
+
   function downloadBridgeClient() {
-    const params = new URLSearchParams({ name: __bridge.name, port: String(__bridge.port), model: __bridge.model });
+    const params = new URLSearchParams({
+      name: __bridge.name,
+      port: String(__bridge.port),
+      model: __bridge.model
+    });
     const a = document.createElement('a');
     a.href = '/api/bridge/download?' + params.toString();
     a.download = 'mirox_client_bridge.zip';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    bridgeLog('Downloading client package…', 'info');
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   }
+
   function setBwHint(text, cls = '') {
-    const el = $('#bwConnectHint'); if (!el) return;
+    const el = $('#bwConnectHint');
+    if (!el) return;
     el.textContent = text;
     el.className = 'bw-hint' + (cls ? ' ' + cls : '');
   }
+
   function updateBridgeSendBtn() {
     const btn = $('#bridgeSendBtn'), inp = $('#bridgeInput');
     if (!btn || !inp) return;
@@ -806,7 +941,223 @@
     btn.setAttribute('aria-disabled', String(!enabled));
   }
 
-  /* ----- Bridge command parsing ----- */
+  function openBridgeWorkspace() {
+    $('#bridgeWorkspace')?.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    setTimeout(() => { if (__bridge.connected) startBridge(); }, 50);
+  }
+  function closeBridgeWorkspace() {
+    $('#bridgeWorkspace')?.classList.remove('open');
+    document.body.style.overflow = '';
+  }
+  function clearBridgeChat() {
+    const m = $('#bridgeMessages');
+    if (m) m.innerHTML = '';
+    bridgeConversation = [];
+    bridgeQuestionCount = 0;
+    bridgeProgress = 0;
+    updateBridgeProgress(0, 'Ready');
+    const w = $('#bwProgress');
+    if (w) w.style.display = 'none';
+  }
+
+  function scrollBridgeBottom() {
+    const c = $('#bridgeMessages');
+    if (c) c.scrollTop = c.scrollHeight;
+  }
+
+  function addBridgeUserMsg(text) {
+    const container = $('#bridgeMessages');
+    if (!container) return;
+    const empty = $('#bridgeEmpty');
+    if (empty) empty.remove();
+    const el = document.createElement('div');
+    el.className = 'bridge-msg user';
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    el.innerHTML = `<div class="bridge-bubble">${escapeHtml(text).replace(/\n/g, '<br>')}</div><div class="bridge-meta">You · ${time}</div>`;
+    container.appendChild(el);
+    scrollBridgeBottom();
+  }
+
+  function addBridgeAiMsg(text) {
+    if (!text || !text.trim()) return null;
+    const container = $('#bridgeMessages');
+    if (!container) return null;
+    const empty = $('#bridgeEmpty');
+    if (empty) empty.remove();
+    const el = document.createElement('div');
+    el.className = 'bridge-msg ai';
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    el.innerHTML = `<div class="bridge-bubble">${renderMarkdown(text)}</div><div class="bridge-meta">Mirox · ${time}</div>`;
+    container.appendChild(el);
+    wireCopyButtons(el);
+    scrollBridgeBottom();
+    return el;
+  }
+
+  function addBridgeSystemMsg(text) {
+    const container = $('#bridgeMessages');
+    if (!container) return;
+    const empty = $('#bridgeEmpty');
+    if (empty) empty.remove();
+    const el = document.createElement('div');
+    el.className = 'bridge-msg system';
+    el.innerHTML = `<div class="bridge-bubble">${escapeHtml(text)}</div>`;
+    container.appendChild(el);
+    scrollBridgeBottom();
+  }
+
+  function addBridgeSuccessMsg(text) {
+    const container = $('#bridgeMessages');
+    if (!container) return;
+    const el = document.createElement('div');
+    el.className = 'bridge-msg ai';
+    el.innerHTML = `<div class="bridge-success"><i class="ri-checkbox-circle-fill"></i><span>${escapeHtml(text)}</span></div>`;
+    container.appendChild(el);
+    scrollBridgeBottom();
+  }
+
+  function addBridgeThinkingBubble() {
+    const container = $('#bridgeMessages');
+    if (!container) return null;
+    const empty = $('#bridgeEmpty');
+    if (empty) empty.remove();
+    const el = document.createElement('div');
+    el.className = 'bridge-msg ai';
+    el.innerHTML = `<div class="bridge-thinking"><span>Thinking</span><span class="thinking-dots"><span></span><span></span><span></span></span></div>`;
+    container.appendChild(el);
+    scrollBridgeBottom();
+    return el;
+  }
+
+  function addBridgeQuestionBubble(question) {
+    const container = $('#bridgeMessages');
+    if (!container) return null;
+    const el = document.createElement('div');
+    el.className = 'bridge-msg ai';
+    el.innerHTML = `<div class="bridge-question-bubble"><div class="qb-head"><i class="ri-question-line"></i> Question for you</div><div class="qb-text">${escapeHtml(question)}</div></div>`;
+    container.appendChild(el);
+    scrollBridgeBottom();
+    return el;
+  }
+
+  function getActionData(cmd) {
+    if (cmd.type === 'write') {
+      return {
+        icon: 'ri-file-add-line',
+        iconClass: 'write',
+        label: `Writing <code>${escapeHtml(getBaseName(cmd.path))}</code>`
+      };
+    }
+    if (cmd.type === 'exec') {
+      const short = cmd.command.length > 55 ? cmd.command.slice(0, 55) + '…' : cmd.command;
+      return {
+        icon: 'ri-play-line',
+        iconClass: 'exec',
+        label: `Running <code>${escapeHtml(short)}</code>`
+      };
+    }
+    if (cmd.type === 'read') {
+      return {
+        icon: 'ri-file-text-line',
+        iconClass: 'read',
+        label: `Reading <code>${escapeHtml(getBaseName(cmd.path))}</code>`
+      };
+    }
+    if (cmd.type === 'list') {
+      return {
+        icon: 'ri-folder-line',
+        iconClass: 'list',
+        label: `Listing <code>${escapeHtml(getBaseName(cmd.path) || cmd.path)}</code>`
+      };
+    }
+    return { icon: 'ri-terminal-line', iconClass: '', label: cmd.type };
+  }
+
+  function getBaseName(p) {
+    if (!p) return '';
+    const parts = String(p).split('/');
+    return parts[parts.length - 1] || p;
+  }
+
+  function addBridgeActionBubble(cmd) {
+    const container = $('#bridgeMessages');
+    if (!container) return null;
+    const el = document.createElement('div');
+    el.className = 'bridge-msg ai';
+    const data = getActionData(cmd);
+    el.innerHTML = `<div class="bridge-action">
+      <div class="bridge-action-head">
+        <div class="bridge-action-icon ${data.iconClass}"><i class="${data.icon}"></i></div>
+        <div class="bridge-action-label">${data.label}</div>
+        <span class="bridge-action-status working"><i class="ri-loader-4-line"></i> Working</span>
+      </div>
+      <div class="bridge-action-output" style="display:none;"></div>
+    </div>`;
+    container.appendChild(el);
+    scrollBridgeBottom();
+    return el;
+  }
+
+  function updateBridgeActionBubble(el, cmd, result) {
+    if (!el) return;
+    const status = el.querySelector('.bridge-action-status');
+    const output = el.querySelector('.bridge-action-output');
+    if (!status || !output) return;
+    const ok = result && result.ok;
+    if (ok) {
+      status.className = 'bridge-action-status ok';
+      status.innerHTML = '<i class="ri-check-line"></i> Done';
+    } else {
+      status.className = 'bridge-action-status err';
+      status.innerHTML = '<i class="ri-close-line"></i> Failed';
+    }
+    let body = '';
+    if (ok) {
+      if (cmd.type === 'exec') {
+        body = (result.stdout || '').trim();
+        if (result.stderr && result.stderr.trim()) {
+          body += (body ? '\n' : '') + '[stderr]\n' + result.stderr.trim();
+        }
+        if (!body) body = `exit ${result.exit_code}`;
+      } else if (cmd.type === 'write') {
+        body = `Wrote ${result.bytes} bytes`;
+      } else if (cmd.type === 'read') {
+        body = (result.content || '').slice(0, 500) || '(empty)';
+      } else if (cmd.type === 'list') {
+        body = (result.items || []).slice(0, 20)
+          .map(i => (i.is_dir ? '📁 ' : '📄 ') + i.name)
+          .join('\n');
+      }
+    } else {
+      body = (result && result.error) || 'Unknown error';
+    }
+    if (body) {
+      output.textContent = body.length > 800 ? body.slice(0, 800) + '\n…' : body;
+      output.style.display = 'block';
+      if (!ok) output.classList.add('err');
+    }
+    scrollBridgeBottom();
+  }
+
+  function updateBridgeProgress(pct, text) {
+    bridgeProgress = Math.max(0, Math.min(100, Math.round(pct)));
+    const bar = $('#bwProgress');
+    const fill = $('#bwProgressFill');
+    const pctEl = $('#bwProgressPct');
+    const txtEl = $('#bwProgressText');
+    if (bar) bar.style.display = 'block';
+    if (fill) {
+      fill.style.width = bridgeProgress + '%';
+      fill.classList.toggle('done', bridgeProgress >= 100);
+    }
+    if (pctEl) {
+      pctEl.textContent = bridgeProgress + '%';
+      pctEl.classList.toggle('done', bridgeProgress >= 100);
+    }
+    if (txtEl && text) txtEl.textContent = text;
+  }
+
   function extractBridgeCommands(text) {
     const cmds = [];
     let m;
@@ -818,8 +1169,10 @@
     while ((m = readRe.exec(text)) !== null) cmds.push({ type: 'read', path: m[1], index: m.index });
     const listRe = /<bridge-list\s+path="([^"]+)"\s*\/>/g;
     while ((m = listRe.exec(text)) !== null) cmds.push({ type: 'list', path: m[1], index: m.index });
+    cmds.sort((a, b) => a.index - b.index);
     return cmds;
   }
+
   function extractBridgeQuestions(text) {
     const qs = [];
     const re = /<bridge-ask>([\s\S]*?)<\/bridge-ask>/g;
@@ -836,12 +1189,31 @@
           options.push(l.replace(/^[-*]\s*/, '').trim());
         }
       }
-      qs.push({ question, options, index: m.index });
+      qs.push({ question, options });
     }
     return qs;
   }
 
-  /* ----- Bridge command execution ----- */
+  function extractProgressTag(text) {
+    const m = /<bridge-progress\s+step="(\d+)"\s+total="(\d+)"(?:\s+label="([^"]*)")?\s*\/>/.exec(text);
+    if (!m) return null;
+    return { step: parseInt(m[1], 10), total: parseInt(m[2], 10), label: m[3] || '' };
+  }
+
+  function getNarrationText(text) {
+    let t = String(text || '');
+    t = t.replace(/<bridge-exec>[\s\S]*?<\/bridge-exec>/g, '');
+    t = t.replace(/<bridge-write\s+[^>]*>[\s\S]*?<\/bridge-write>/g, '');
+    t = t.replace(/<bridge-read\s+[^>]*\/>/g, '');
+    t = t.replace(/<bridge-list\s+[^>]*\/>/g, '');
+    t = t.replace(/<bridge-ask>[\s\S]*?<\/bridge-ask>/g, '');
+    t = t.replace(/<bridge-progress[^>]*\/>/g, '');
+    t = t.replace(/```[\s\S]*?```/g, '');
+    t = t.replace(/\bDONE\b/g, '');
+    t = t.replace(/\s+/g, ' ').trim();
+    return t;
+  }
+
   async function executeBridgeCommand(cmd) {
     if (cmd.type === 'exec') return bridgeCall('/exec', { command: cmd.command });
     if (cmd.type === 'write') return bridgeCall('/write', { path: cmd.path, content: cmd.content });
@@ -849,74 +1221,34 @@
     if (cmd.type === 'list') return bridgeCall('/list', { path: cmd.path });
     return { ok: false, error: 'Unknown' };
   }
+
   function formatResultForAI(cmd, result) {
     const ok = result && result.ok;
     if (!ok) return `[${cmd.type}] ERROR: ${(result && result.error) || 'unknown'}`;
-    if (cmd.type === 'exec') return `[exec] exit=${result.exit_code}\nSTDOUT:\n${(result.stdout || '').slice(0, 4000)}\nSTDERR:\n${(result.stderr || '').slice(0, 2000)}`;
+    if (cmd.type === 'exec') return `[exec] exit=${result.exit_code}\nSTDOUT:\n${(result.stdout || '').slice(0, 3000)}\nSTDERR:\n${(result.stderr || '').slice(0, 1500)}`;
     if (cmd.type === 'write') return `[write] ok path=${result.path} bytes=${result.bytes}`;
-    if (cmd.type === 'read') return `[read] path=${result.path}\n${(result.content || '').slice(0, 4000)}`;
+    if (cmd.type === 'read') return `[read] path=${result.path}\n${(result.content || '').slice(0, 3000)}`;
     if (cmd.type === 'list') return `[list] path=${result.path}\n` + (result.items || []).map(i => (i.is_dir ? 'D ' : 'F ') + i.name).join('\n');
     return '[unknown]';
   }
-  function addBridgeCmdResult(cmd, result) {
-    const container = $('#bridgeMessages'); if (!container) return;
-    const ok = result && result.ok;
-    const label = { exec: `$ ${cmd.command}`, write: `→ write ${cmd.path}`, read: `← read ${cmd.path}`, list: `≡ list ${cmd.path}` }[cmd.type] || cmd.type;
-    let body = '';
-    if (ok) {
-      if (cmd.type === 'exec') body = (result.stdout || '') + (result.stderr ? '\n[stderr]\n' + result.stderr : '') + `\n[exit ${result.exit_code}]`;
-      else if (cmd.type === 'write') body = `Wrote ${result.bytes} bytes → ${result.path}`;
-      else if (cmd.type === 'read') body = result.content || '(empty)';
-      else if (cmd.type === 'list') body = (result.items || []).map(i => (i.is_dir ? '📁 ' : '📄 ') + i.name).join('\n');
-    } else body = (result && result.error) || 'Unknown error';
-    const el = document.createElement('div');
-    el.className = 'bridge-cmd-result' + (ok ? '' : ' err');
-    el.innerHTML = `<div class="bridge-cmd-label"><i class="ri-terminal-box-line"></i> ${escapeHtml(label)}</div><pre>${escapeHtml(String(body).slice(0, 5000))}</pre>`;
-    container.appendChild(el);
-    container.scrollTop = container.scrollHeight;
-  }
 
-  /* ----- Bridge workspace chat ----- */
-  function openBridgeWorkspace() {
-    $('#bridgeWorkspace')?.classList.add('open');
-    setTimeout(() => { if (__bridge.connected) startBridge(); }, 50);
-  }
-  function closeBridgeWorkspace() { $('#bridgeWorkspace')?.classList.remove('open'); }
-  function clearBridgeChat() {
-    const m = $('#bridgeMessages'); if (m) m.innerHTML = '';
-    bridgeConversation = [];
-    bridgeQuestionCount = 0;
-  }
-  function addBridgeMsg(role, text) {
-    const container = $('#bridgeMessages'); if (!container) return null;
-    const empty = $('#bridgeEmpty'); if (empty) empty.remove();
-    const el = document.createElement('div');
-    el.className = 'bridge-msg ' + role;
-    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const body = role === 'ai' ? renderMarkdown(text) : escapeHtml(text).replace(/\n/g, '<br>');
-    el.innerHTML = `<div class="bridge-bubble">${body}</div><div class="bridge-meta">${role === 'ai' ? 'Mirox' : role === 'user' ? 'You' : 'System'} · ${time}</div>`;
-    container.appendChild(el);
-    container.scrollTop = container.scrollHeight;
-    wireCopyButtons(el);
-    return el;
-  }
-
-  /* ----- Bridge question modal (Lovable-style) ----- */
   let __bqResolver = null;
   let __bqSelected = null;
+
   function showBridgeQuestionModal(q, counterText) {
     return new Promise((resolve) => {
       __bqResolver = resolve;
       __bqSelected = null;
-
-      const modal = $('#bridgeQuestionModal'); if (!modal) { resolve(''); return; }
+      const modal = $('#bridgeQuestionModal');
+      if (!modal) { resolve(''); return; }
       const txt = $('#bqText'); if (txt) txt.textContent = q.question || '';
       const ctr = $('#bqCounter'); if (ctr) ctr.textContent = counterText;
-
-      const optsWrap = $('#bqOptions'); if (!optsWrap) { resolve(''); return; }
+      const optsWrap = $('#bqOptions');
+      if (!optsWrap) { resolve(''); return; }
       optsWrap.innerHTML = '';
-
+      const cw = $('#bqCustomWrap');
       if (q.options && q.options.length) {
+        if (cw) cw.style.display = 'none';
         q.options.forEach(opt => {
           const b = document.createElement('button');
           b.type = 'button';
@@ -930,18 +1262,18 @@
           optsWrap.appendChild(b);
         });
       } else {
-        // No options → show custom input directly
-        const cw = $('#bqCustomWrap'); if (cw) cw.style.display = 'block';
+        if (cw) cw.style.display = 'block';
       }
-
-      const cw = $('#bqCustomWrap'); if (cw) cw.style.display = 'none';
       const ci = $('#bqCustomInput'); if (ci) ci.value = '';
-
       modal.classList.add('open');
       setTimeout(() => { $('#bqCustomInput')?.focus(); }, 100);
     });
   }
-  function closeBridgeQuestionModal() { $('#bridgeQuestionModal')?.classList.remove('open'); }
+
+  function closeBridgeQuestionModal() {
+    $('#bridgeQuestionModal')?.classList.remove('open');
+  }
+
   function submitBridgeQuestion() {
     const custom = $('#bqCustomInput')?.value.trim();
     const answer = custom || __bqSelected || '';
@@ -950,7 +1282,6 @@
     if (__bqResolver) { __bqResolver(answer); __bqResolver = null; }
   }
 
-  /* ----- Fetch AI reply for bridge (non-stream) ----- */
   async function fetchBridgeReply(history) {
     const res = await fetch('/v1/chat/completions', {
       method: 'POST',
@@ -960,156 +1291,164 @@
         history: history.slice(0, -1).map(h => ({ role: h.role, content: h.content })),
         model: __bridge.model,
         stream: false,
-        bridge: { connected: true, name: __bridge.name, model: __bridge.model, mode: 'developer' },
-      }),
+        bridge: { connected: true, name: __bridge.name, model: __bridge.model, mode: 'developer' }
+      })
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
     return data.reply || data.choices?.[0]?.message?.content || '';
   }
 
-  /* ----- Run the bridge loop ----- */
   async function runBridgeTurn(userText) {
     if (!__bridge.connected) { setBwHint('Bridge is not connected.', 'err'); return; }
     if (bridgeRunning) return;
     bridgeRunning = true;
     bridgeQuestionCount = 0;
     updateBridgeSendBtn();
+    updateBridgeProgress(2, 'Starting…');
 
-    addBridgeMsg('user', userText);
+    addBridgeUserMsg(userText);
     bridgeConversation.push({ role: 'user', content: userText });
 
     let iter = 0;
     try {
       while (iter++ < MAX_BRIDGE_ITER) {
-        // ---- Thinking ----
-        setBridgeStatusStrip(true, 'Thinking…', 'model is reasoning');
-        bridgeLog('→ thinking…', 'info');
-
+        const thinkingEl = addBridgeThinkingBubble();
         let reply = '';
         try {
           reply = await fetchBridgeReply(bridgeConversation);
         } catch (e) {
-          setBridgeStatusStrip(false);
-          addBridgeMsg('system', 'AI error: ' + e.message);
-          bridgeLog('AI error: ' + e.message, 'err');
+          if (thinkingEl) thinkingEl.remove();
+          addBridgeSystemMsg('AI error: ' + e.message);
           break;
         }
-        if (!reply || !reply.trim()) {
-          setBridgeStatusStrip(false);
-          break;
+        if (thinkingEl) thinkingEl.remove();
+        if (!reply || !reply.trim()) break;
+
+        const prog = extractProgressTag(reply);
+        if (prog && prog.total > 0) {
+          const pct = Math.min(98, Math.round((prog.step / prog.total) * 100));
+          updateBridgeProgress(pct, prog.label || `Step ${prog.step} of ${prog.total}`);
+        } else {
+          const pct = Math.min(90, 5 + iter * 6);
+          updateBridgeProgress(pct, `Working… (step ${iter})`);
         }
-        addBridgeMsg('ai', reply);
+
+        const narration = getNarrationText(reply);
+        if (narration) addBridgeAiMsg(narration);
+
         bridgeConversation.push({ role: 'assistant', content: reply });
         if (bridgeConversation.length > 30) bridgeConversation = bridgeConversation.slice(-30);
 
-        // ---- Questions (only if we haven't hit 6) ----
         const questions = extractBridgeQuestions(reply);
         if (questions.length > 0 && bridgeQuestionCount < MAX_BRIDGE_QUESTIONS) {
-          setBridgeStatusStrip(true, 'Waiting for your answer…', '');
           const q = questions[0];
-          const remaining = MAX_BRIDGE_QUESTIONS - bridgeQuestionCount;
+          addBridgeQuestionBubble(q.question);
           const counterText = `Question ${bridgeQuestionCount + 1} of ${MAX_BRIDGE_QUESTIONS}`;
           const answer = await showBridgeQuestionModal(q, counterText);
           bridgeQuestionCount++;
-          addBridgeMsg('user', answer);
+          addBridgeUserMsg(answer);
           bridgeConversation.push({ role: 'user', content: `[Answer to "${q.question}"] ${answer}` });
-          setBridgeStatusStrip(false);
           continue;
         }
         if (questions.length > 0 && bridgeQuestionCount >= MAX_BRIDGE_QUESTIONS) {
-          bridgeLog(`Question limit (${MAX_BRIDGE_QUESTIONS}) reached`, 'err');
-          addBridgeMsg('system', `Reached question limit (${MAX_BRIDGE_QUESTIONS}). AI must proceed without further questions.`);
-          bridgeConversation.push({ role: 'user', content: `[System] Question limit reached. Continue with best-effort defaults and do not ask more questions.` });
+          addBridgeSystemMsg(`Question limit (${MAX_BRIDGE_QUESTIONS}) reached.`);
+          bridgeConversation.push({
+            role: 'user',
+            content: `[System] Question limit reached. Continue with best-effort defaults.`
+          });
           continue;
         }
 
-        // ---- Commands ----
         const cmds = extractBridgeCommands(reply);
         if (cmds.length > 0) {
           const resultLines = [];
           for (let i = 0; i < cmds.length; i++) {
             const cmd = cmds[i];
-            const preview = (cmd.command || cmd.path || '').slice(0, 70);
-            const label = cmd.type === 'exec' ? `$ ${preview}` : `${cmd.type} ${preview}`;
-            setBridgeStatusStrip(true, `Executing (${i + 1}/${cmds.length})…`, label);
-            bridgeLog(`→ ${cmd.type}: ${preview}`, 'info');
-
+            const bubble = addBridgeActionBubble(cmd);
             let result;
             try {
               result = await executeBridgeCommand(cmd);
             } catch (e) {
               result = { ok: false, error: e.message };
             }
-            addBridgeCmdResult(cmd, result);
+            updateBridgeActionBubble(bubble, cmd, result);
             resultLines.push(formatResultForAI(cmd, result));
-            bridgeLog(`${result.ok ? '✓' : '✗'} ${cmd.type}`, result.ok ? 'ok' : 'err');
           }
-
           bridgeConversation.push({
             role: 'user',
-            content: `[Bridge results]\n${resultLines.join('\n\n')}\n\nContinue with the next step. If the task is completely done, reply with exactly "DONE".`,
+            content: `[Bridge results]\n${resultLines.join('\n\n')}\n\nContinue with the next step. If done, reply with exactly "DONE".`
           });
           continue;
         }
 
-        // No questions, no commands → done
         if (/\bDONE\b/i.test(reply)) {
-          setBridgeStatusStrip(false);
-          bridgeLog('✓ Task complete', 'ok');
-          addBridgeMsg('system', 'Task complete.');
+          updateBridgeProgress(100, 'Complete');
+          addBridgeSuccessMsg('Task complete');
           break;
         }
-        // Otherwise, break out
-        setBridgeStatusStrip(false);
         break;
       }
       if (iter >= MAX_BRIDGE_ITER) {
-        setBridgeStatusStrip(false);
-        addBridgeMsg('system', 'Reached iteration limit.');
+        updateBridgeProgress(100, 'Iteration limit');
+        addBridgeSystemMsg('Reached iteration limit.');
       }
     } finally {
       bridgeRunning = false;
       updateBridgeSendBtn();
-      setBridgeStatusStrip(false);
     }
   }
 
   function handleBridgeSend() {
-    const inp = $('#bridgeInput'); if (!inp) return;
+    const inp = $('#bridgeInput');
+    if (!inp) return;
     const text = inp.value.trim();
     if (!text || bridgeRunning || !__bridge.connected) return;
-    inp.value = ''; inp.style.height = 'auto';
+    inp.value = '';
+    inp.style.height = 'auto';
     updateBridgeSendBtn();
     runBridgeTurn(text);
   }
 
-  /* ----- Wire everything ----- */
+  /* ============================================================
+     Wire everything
+     ============================================================ */
   function wireAll() {
-    // Sidebar
+    /* Sidebar */
     on('#hamburgerBtn', 'click', openSidebar);
     on('#sidebarCloseBtn', 'click', closeSidebar);
     on('#sidebarScrim', 'click', closeSidebar);
-    on('#brandLogo', 'click', (e) => { e.preventDefault(); startNewChat(); if (window.innerWidth <= 860) closeSidebar(); });
-    on('#newChatBtn', 'click', () => { startNewChat(); if (window.innerWidth <= 860) closeSidebar(); });
+    on('#brandLogo', 'click', (e) => {
+      e.preventDefault();
+      startNewChat();
+      if (window.innerWidth <= 860) closeSidebar();
+    });
+    on('#newChatBtn', 'click', () => {
+      startNewChat();
+      if (window.innerWidth <= 860) closeSidebar();
+    });
 
-    // Sidebar tabs
+    /* Sidebar tabs */
     $$('.sidebar-tab').forEach(tab => {
       tab.onclick = () => {
         const t = tab.dataset.tab;
         $$('.sidebar-tab').forEach(x => x.classList.toggle('active', x.dataset.tab === t));
-        $$('.sidebar-section').forEach(s => { s.style.display = s.dataset.pane === t ? '' : 'none'; });
+        $$('.sidebar-section').forEach(s => {
+          s.style.display = s.dataset.pane === t ? '' : 'none';
+        });
       };
     });
 
-    // History
+    /* History click handling */
     on('#historyList', 'click', (e) => {
-      const item = e.target.closest('.history-item'); if (!item) return;
+      const item = e.target.closest('.history-item');
+      if (!item) return;
       if (e.target.closest('.history-delete')) {
         const id = item.dataset.id;
         __conversations = __conversations.filter(c => c.id !== id);
         if (currentConversationId === id) startNewChat();
-        saveChats(); renderHistory();
+        saveChats();
+        renderHistory();
         return;
       }
       const id = item.dataset.id;
@@ -1118,13 +1457,15 @@
       currentConversationId = id;
       const t = $('#chatTitle'); if (t) t.textContent = convo.title || 'Chat';
       const c = $('#chatMessages'); if (c) c.innerHTML = '';
-      for (const m of convo.messages || []) addMessageToDOM(m.role, m.content, m.ts, m.id, m.files || [], m.image);
+      for (const m of convo.messages || []) {
+        addMessageToDOM(m.role, m.content, m.ts, m.id, m.files || [], m.image);
+      }
       renderHistory();
       scrollToBottom();
       if (window.innerWidth <= 860) closeSidebar();
     });
 
-    // Composer
+    /* Composer */
     const inp = $('#messageInput');
     if (inp) {
       inp.addEventListener('input', () => {
@@ -1133,33 +1474,49 @@
         updateSendButtonState();
       });
       inp.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); handleSend(); }
+        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+          e.preventDefault();
+          handleSend();
+        }
       });
     }
     on('#sendBtn', 'click', handleSend);
     on('#attachBtn', 'click', () => $('#fileInput')?.click());
-    on('#fileInput', 'change', (e) => { handleFiles(e.target.files); e.target.value = ''; });
-    on('#removeAttachmentBtn', 'click', () => { pendingFiles = []; updatePreview(); updateSendButtonState(); });
+    on('#fileInput', 'change', (e) => {
+      handleFiles(e.target.files);
+      e.target.value = '';
+    });
+    on('#removeAttachmentBtn', 'click', () => {
+      pendingFiles = [];
+      updatePreview();
+      updateSendButtonState();
+    });
     on('#stopBtn', 'click', stopStreaming);
 
-    // Model picker
+    /* Model picker */
     on('#modelPickerBtn', 'click', (e) => {
       e.stopPropagation();
       const menu = $('#modelPickerMenu');
-      if (menu?.classList.contains('open')) closeModelPicker(); else openModelPicker();
+      if (menu?.classList.contains('open')) closeModelPicker();
+      else openModelPicker();
     });
-    document.addEventListener('click', (e) => { if (!e.target.closest('#modelPicker')) closeModelPicker(); });
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('#modelPicker')) closeModelPicker();
+    });
 
-    // Tools
+    /* Tool buttons */
     on('#imageModeBtn', 'click', () => openModal('imageModal'));
-    on('#plansModeBtn', 'click', () => { openModal('plansModal'); loadPlans(); });
+    on('#plansModeBtn', 'click', () => {
+      openModal('plansModal');
+      loadPlans();
+    });
     on('#supportModeBtn', 'click', () => openModal('supportModal'));
     on('#supportModeBtn2', 'click', () => openModal('supportModal'));
     on('#bridgeModeBtn', 'click', openBridgeWorkspace);
     on('#bridgeOpenBtn', 'click', openBridgeWorkspace);
     on('#generateImageBtn', 'click', genImage);
 
-    // Support submit
+    /* Support submit */
     on('#submitReportBtn', 'click', () => {
       const s = $('#supportSubject')?.value.trim();
       const m = $('#supportMessage')?.value.trim();
@@ -1168,8 +1525,11 @@
       closeModal('supportModal');
     });
 
-    // Settings
-    on('#settingsBtn', 'click', () => { openModal('settingsModal'); loadPersona(); });
+    /* Settings */
+    on('#settingsBtn', 'click', () => {
+      openModal('settingsModal');
+      loadPersona();
+    });
     on('#logoutBtn', 'click', doLogout);
     on('#savePersonaBtn', 'click', savePersona);
     $$('.settings-tab').forEach(tab => {
@@ -1180,34 +1540,53 @@
       };
     });
 
-    // Appearance
-    $$('[data-mode]').forEach(b => b.onclick = () => applyAppearance({ mode: b.dataset.mode, theme: document.documentElement.getAttribute('data-theme') || 'default' }));
-    $$('.swatch').forEach(b => b.onclick = () => applyAppearance({ mode: document.documentElement.getAttribute('data-mode') || 'light', theme: b.dataset.theme }));
+    /* Appearance */
+    $$('[data-mode]').forEach(b => b.onclick = () => applyAppearance({
+      mode: b.dataset.mode,
+      theme: document.documentElement.getAttribute('data-theme') || 'default'
+    }));
+    $$('.swatch').forEach(b => b.onclick = () => applyAppearance({
+      mode: document.documentElement.getAttribute('data-mode') || 'light',
+      theme: b.dataset.theme
+    }));
 
-    // Modal close
+    /* Modal close */
     document.addEventListener('click', (e) => {
       const cb = e.target.closest('[data-close]');
       if (cb) { closeModal(cb.dataset.close); return; }
-      if (e.target.classList.contains('modal-overlay') && e.target.id !== 'bridgeQuestionModal') e.target.classList.remove('open');
+      if (e.target.classList.contains('modal-overlay') && e.target.id !== 'bridgeQuestionModal') {
+        e.target.classList.remove('open');
+      }
     });
 
-    // User chip / upgrade
-    on('#userChip', 'click', () => { if (!__user) openModal('loginModal'); });
-    on('#upgradeBtn', 'click', (e) => { e.stopPropagation(); if (!__user) openModal('loginModal'); else { openModal('plansModal'); loadPlans(); } });
+    /* User chip / upgrade */
+    on('#userChip', 'click', () => {
+      if (!__user) openModal('loginModal');
+    });
+    on('#upgradeBtn', 'click', (e) => {
+      e.stopPropagation();
+      if (!__user) openModal('loginModal');
+      else { openModal('plansModal'); loadPlans(); }
+    });
 
-    // Login
+    /* Login form */
     on('#simpleLoginForm', 'submit', doLogin);
 
-    // Image viewer
-    document.addEventListener('click', (e) => { if (e.target.closest('[data-iv-close]')) closeImageViewer(); });
+    /* Image viewer */
+    document.addEventListener('click', (e) => {
+      if (e.target.closest('[data-iv-close]')) closeImageViewer();
+    });
     on('#ivDownload', 'click', () => {
       if (!__ivDataUrl) return;
       const a = document.createElement('a');
-      a.href = __ivDataUrl; a.download = `mirox-${Date.now()}.png`;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      a.href = __ivDataUrl;
+      a.download = `mirox-${Date.now()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     });
 
-    // Bridge
+    /* Bridge */
     on('#bwCloseBtn', 'click', closeBridgeWorkspace);
     on('#bwNewBtn', 'click', clearBridgeChat);
     on('#bwDownloadBtn', 'click', downloadBridgeClient);
@@ -1222,7 +1601,10 @@
         updateBridgeSendBtn();
       });
       bwInp.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); handleBridgeSend(); }
+        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+          e.preventDefault();
+          handleBridgeSend();
+        }
       });
     }
     on('#bridgeSendBtn', 'click', handleBridgeSend);
@@ -1235,20 +1617,26 @@
       };
     });
 
-    // Bridge question modal buttons
+    /* Bridge question modal */
     on('#bqCustomToggle', 'click', () => {
       const cw = $('#bqCustomWrap');
-      if (cw) { cw.style.display = cw.style.display === 'none' ? 'block' : 'none'; if (cw.style.display === 'block') $('#bqCustomInput')?.focus(); }
+      if (cw) {
+        cw.style.display = cw.style.display === 'none' ? 'block' : 'none';
+        if (cw.style.display === 'block') $('#bqCustomInput')?.focus();
+      }
     });
     on('#bqSubmit', 'click', submitBridgeQuestion);
     on('#bqCustomInput', 'keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); submitBridgeQuestion(); }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        submitBridgeQuestion();
+      }
     });
 
-    // Suggestion cards
+    /* Suggestion cards */
     bindSuggestionClicks();
 
-    // Escape
+    /* Keyboard shortcuts */
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         closeImageViewer();
@@ -1260,9 +1648,16 @@
         $('#messageInput')?.focus();
       }
     });
+
+    /* Auto-close sidebar on desktop resize */
+    window.addEventListener('resize', () => {
+      if (window.innerWidth > 860) closeSidebar();
+    });
   }
 
-  /* ----- Init ----- */
+  /* ============================================================
+     Init
+     ============================================================ */
   async function init() {
     try {
       loadAppearance();
@@ -1270,7 +1665,6 @@
       wireAll();
       renderModelPicker();
       renderBridgeStatus();
-      renderBridgeLog();
       updateBridgeSendBtn();
       await loadConfig();
       loadChats();
@@ -1283,6 +1677,9 @@
     }
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
-  else init();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
 })();
