@@ -3,13 +3,13 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "engines": { "node": "24.x" },
+  "engines": { "node": "20.x" },
   "scripts": {
-    "start": "node backend.js"
+    "start": "node api/index.js"
   },
   "dependencies": {
     "express": "^4.19.2",
     "cors": "^2.8.5",
-    "ollama": "^0.5.9"
+    "archiver": "^7.0.1"
   }
 }
