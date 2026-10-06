@@ -1,9 +1,12 @@
 /* ============================================================
-   MiroxAI — Styles v62
-   - Bridge panel
+   MiroxAI — Styles v63
+   - Bridge panel + result blocks
    - GitHub settings
    - OAuth buttons
-   - (existing styles kept)
+   - Minimal loading screen
+   - Proper AI bubble container
+   - Credit bar, sidebar search, image history
+   - Secure image viewer
    ============================================================ */
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -108,7 +111,7 @@ ul { list-style: none; } img { max-width: 100%; display: block; } a { color: inh
 .image-history-cell img { width: 100%; height: 100%; object-fit: cover; }
 .image-history-cell:hover { border-color: var(--accent); }
 
-/* Bridge panel */
+/* ---------- Bridge panel ---------- */
 .bridge-panel { display: flex; flex-direction: column; gap: 10px; padding: 4px; }
 .bridge-status { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: var(--radius); background: var(--panel-2); font-size: 13px; font-weight: 500; }
 .bridge-status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-faint); }
@@ -440,10 +443,43 @@ ul { list-style: none; } img { max-width: 100%; display: block; } a { color: inh
 .iv-btn.primary { background: var(--accent); color: #fff; border-color: transparent; }
 .iv-btn.primary:hover { background: var(--accent-hover); }
 
+/* ---------- Bridge result blocks ---------- */
+.bridge-result {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+}
+.bridge-result-header {
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.bridge-result pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.bridge-result.err { border-color: rgba(220,38,38,0.3); }
+.bridge-result.err .bridge-result-header { color: #dc2626; }
+
+/* ---------- Scrollbar ---------- */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 99px; }
 
+/* ---------- Responsive ---------- */
 @media (max-width: 860px) {
   :root { --content-max: 100%; }
   .main { margin-left: 0; }
