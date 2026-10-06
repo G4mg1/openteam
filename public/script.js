@@ -1,11 +1,11 @@
 /* ============================================================
-   MiroxAI — Frontend v60
-   FIXED:
-   ✅ AI bubble now has a proper container (see CSS)
-   ✅ Continue no longer breaks syntax highlighting — markdown
-      is re-rendered after streaming ends so code fences finalize
-   ✅ sendToAPI finalizes code blocks the same way
-   ✅ Minimal loading screen
+   MiroxAI — Frontend v61
+   FIXES:
+   ✅ Persona save now shows status + works for guests w/ sign-in prompt
+   ✅ Continue preserves syntax highlighting (finalizeBubble)
+   ✅ Credit bar (5 msgs / 10 vision / 10 images per day for free users)
+   ✅ Secure image viewer (canvas + download + regenerate)
+   ✅ Sidebar search (messages + images) and image history tab
    ============================================================ */
 
 const $  = s => document.querySelector(s);
@@ -27,19 +27,23 @@ const APPEARANCE_KEY = 'miroxai_appearance_v23';
 const MCP_KEY = 'miroxai_mcp_v23';
 const FEEDBACK_KEY = 'miroxai_feedback_v23';
 const KEYS_CACHE = 'miroxai_keys_cache_v23';
+const IMG_HISTORY_KEY = 'miroxai_image_history_v23';
 
 let __config = null, __user = null, __tier = 'free', __model = 'mirox-luna-1.2';
 let currentConversationId = null, isReplying = false, __conversations = [], pendingFiles = [];
 let recognition = null, activeStreamController = null;
 let userSettings = { soundOn: true, notifOn: true, highlightOn: true, lineNumbers: false, language: 'en-US', voiceRate: 1, autoSpeak: false, voice_id: null };
 let ttsAvailable = false, currentAudio = null, readAloudEnabled = false, lastSpokenText = '', audioUnlocked = false;
+let __usage = null; // { daily_limit, vision_limit, image_limit, daily_used, vision_used, image_used, ... }
+let __imageHistory = []; // [{ id, prompt, dataUrl, ts }]
+let __sidebarTab = 'chats';
+let __searchQuery = '';
 
 const LANGUAGE_ICONS = {
   js:'ri-javascript-fill', javascript:'ri-javascript-fill', jsx:'ri-reactjs-line',
   ts:'ri-code-s-slash-line', typescript:'ri-code-s-slash-line', tsx:'ri-reactjs-line',
   py:'ri-code-s-slash-line', python:'ri-code-s-slash-line',
-  html:'ri-html5-fill', xml:'ri-html5-fill',
-  css:'ri-css3-fill',
+  html:'ri-html5-fill', xml:'ri-html5-fill', css:'ri-css3-fill',
   json:'ri-braces-line', yaml:'ri-braces-line', yml:'ri-braces-line', toml:'ri-braces-line',
   bash:'ri-terminal-box-line', sh:'ri-terminal-box-line', shell:'ri-terminal-box-line', zsh:'ri-terminal-box-line',
   sql:'ri-database-2-line',
@@ -75,7 +79,7 @@ const HL = (() => {
     if (['js','ts','java','cpp','go','rust','c'].includes(l)) {
       src = src.replace(/(\/\/[^\n]*)/g, (m) => { comments.push(m); return `\u0001C${comments.length - 1}\u0001`; });
       src = src.replace(/(\/\*[\s\S]*?\*\/)/g, (m) => { comments.push(m); return `\u0001C${comments.length - 1}\u0001`; });
-    } else if (l === 'py' || l === 'bash' || l === 'sh' || l === 'shell' || l === 'zsh' || l === 'yaml' || l === 'yml') {
+    } else if (['py','bash','sh','shell','zsh','yaml','yml'].includes(l)) {
       src = src.replace(/(#[^\n]*)/g, (m) => { comments.push(m); return `\u0001C${comments.length - 1}\u0001`; });
     } else if (l === 'sql') {
       src = src.replace(/(--[^\n]*)/g, (m) => { comments.push(m); return `\u0001C${comments.length - 1}\u0001`; });
@@ -98,6 +102,7 @@ setTimeout(killLoader, 2200);
 
 const uid = () => 'c_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 const escapeHtml = s => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
+const escapeRe = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 function getDeviceId() { let id = localStorage.getItem(DEVICE_ID_KEY); if (!id) { id = 'dev_' + uid(); localStorage.setItem(DEVICE_ID_KEY, id); } return id; }
 function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
 function setToken(t) { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch {} }
@@ -126,6 +131,18 @@ function saveUserSettings() { try { localStorage.setItem(USER_SETTINGS_KEY, JSON
 function loadFeedback() { try { return JSON.parse(localStorage.getItem(FEEDBACK_KEY) || '{}'); } catch { return {}; } }
 function saveFeedback(fb) { try { localStorage.setItem(FEEDBACK_KEY, JSON.stringify(fb)); } catch {} }
 
+/* ---------- Image history (local) ---------- */
+function loadImageHistoryLS() { try { __imageHistory = JSON.parse(localStorage.getItem(IMG_HISTORY_KEY) || '[]'); } catch { __imageHistory = []; } }
+function saveImageHistoryLS() { try { localStorage.setItem(IMG_HISTORY_KEY, JSON.stringify(__imageHistory.slice(0, 200))); } catch {} }
+function addImageToHistory(prompt, dataUrl) {
+  if (!dataUrl) return;
+  __imageHistory.unshift({ id: uid(), prompt: String(prompt || '').slice(0, 500), dataUrl, ts: Date.now() });
+  __imageHistory = __imageHistory.slice(0, 200);
+  saveImageHistoryLS();
+  renderImageHistory();
+}
+
+/* ---------- Appearance ---------- */
 function loadAppearance() {
   let prefs = {};
   try { prefs = JSON.parse(localStorage.getItem(APPEARANCE_KEY) || '{}'); } catch {}
@@ -249,9 +266,7 @@ function wireCodeButtons(scope) {
     });
   });
 }
-
-/* ✅ FIX: helper that re-renders a bubble's text so code blocks finalize
-   (closed fences → Copy button, syntax highlighting applied) */
+/* ✅ FIX: re-render bubble with finalized markdown (closes any streaming code block) */
 function finalizeBubble(bubble, fullText) {
   if (!bubble) return;
   const bt = bubble.querySelector('.bubble-text');
@@ -274,7 +289,7 @@ function stopSpeaking() {
   if (currentAudio) { try { currentAudio.pause(); currentAudio.currentTime = 0; } catch {} currentAudio = null; }
 }
 async function speakText(text) {
-  if (!ttsAvailable) { console.warn('[Mirox] TTS not configured (F_API missing on server).'); return false; }
+  if (!ttsAvailable) return false;
   const clean = stripForSpeech(text);
   if (!clean) return false;
   stopSpeaking();
@@ -282,21 +297,17 @@ async function speakText(text) {
   unlockAudio();
   try {
     const voiceId = userSettings.voice_id || __user?.voice_id || null;
-    const r = await fetch('/api/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: clean.slice(0, 900), voice: voiceId || null }),
-    });
-    if (!r.ok) { console.warn('[Mirox] TTS failed HTTP', r.status); return false; }
+    const r = await fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: clean.slice(0, 900), voice: voiceId || null }) });
+    if (!r.ok) return false;
     const blob = await r.blob();
-    if (blob.size < 200) { console.warn('[Mirox] TTS returned empty audio'); return false; }
+    if (blob.size < 200) return false;
     const url = URL.createObjectURL(blob);
     const a = new Audio(url);
     currentAudio = a;
     a.onended = () => { URL.revokeObjectURL(url); currentAudio = null; };
     await a.play();
     return true;
-  } catch (e) { console.warn('[Mirox] TTS error:', e.message); return false; }
+  } catch { return false; }
 }
 function playAudioDataUrl(dataUrl) {
   if (!dataUrl) return false;
@@ -328,11 +339,62 @@ function openConversationLS(id) {
   for (const msg of c.messages || []) addMessageToDOM(msg.role, msg.content, msg.ts, false, msg.id, msg.files || [], msg.image || null, msg.finish_reason || null);
   renderHistory(); scrollToBottom();
 }
+
+/* ✅ search-aware history render */
+function getFilteredConversations() {
+  const q = __searchQuery.trim().toLowerCase();
+  if (!q) return __conversations;
+  return __conversations.filter(c => {
+    if ((c.title || '').toLowerCase().includes(q)) return true;
+    return (c.messages || []).some(m => String(m.content || '').toLowerCase().includes(q));
+  });
+}
+function snippetFor(convo, q) {
+  if (!q) return '';
+  const lower = q.toLowerCase();
+  for (const m of convo.messages || []) {
+    const t = String(m.content || '');
+    const idx = t.toLowerCase().indexOf(lower);
+    if (idx >= 0) {
+      const start = Math.max(0, idx - 24);
+      const end = Math.min(t.length, idx + q.length + 24);
+      return (start > 0 ? '…' : '') + t.slice(start, end) + (end < t.length ? '…' : '');
+    }
+  }
+  return '';
+}
+function highlightSnippet(snippet, q) {
+  if (!q) return escapeHtml(snippet);
+  try {
+    const re = new RegExp(escapeRe(q), 'gi');
+    return escapeHtml(snippet).replace(re, m => `<mark>${m}</mark>`);
+  } catch { return escapeHtml(snippet); }
+}
 function renderHistory() {
   const list = $('#historyList'); if (!list) return;
-  if (!__conversations.length) { list.innerHTML = '<li class="history-empty">No conversations yet</li>'; return; }
-  list.innerHTML = __conversations.map(c => `<li class="history-item${c.id === currentConversationId ? ' active' : ''}" data-id="${c.id}"><i class="ri-chat-3-line"></i><span class="history-title">${escapeHtml(c.title || 'Chat')}</span><button class="history-delete icon-btn"><i class="ri-delete-bin-line"></i></button></li>`).join('');
+  const items = getFilteredConversations();
+  if (!items.length) {
+    list.innerHTML = `<li class="history-empty">${__searchQuery ? 'No matches' : 'No conversations yet'}</li>`;
+    return;
+  }
+  list.innerHTML = items.map(c => {
+    const snip = snippetFor(c, __searchQuery);
+    return `<li class="history-item${c.id === currentConversationId ? ' active' : ''}" data-id="${c.id}"><i class="ri-chat-3-line"></i><div class="history-item-wrap"><span class="history-title">${escapeHtml(c.title || 'Chat')}</span>${snip ? `<span class="history-snippet">${highlightSnippet(snip, __searchQuery)}</span>` : ''}</div><button class="history-delete icon-btn"><i class="ri-delete-bin-line"></i></button></li>`;
+  }).join('');
 }
+
+/* ✅ image history render */
+function renderImageHistory() {
+  const grid = $('#imageHistoryGrid'); if (!grid) return;
+  const q = __searchQuery.trim().toLowerCase();
+  const items = q ? __imageHistory.filter(i => (i.prompt || '').toLowerCase().includes(q)) : __imageHistory;
+  if (!items.length) {
+    grid.innerHTML = `<div class="history-empty" style="grid-column:1/-1;">${q ? 'No matches' : 'No images yet'}</div>`;
+    return;
+  }
+  grid.innerHTML = items.map(i => `<div class="image-history-cell" data-img-id="${i.id}" title="${escapeHtml(i.prompt || '')}"><img src="${i.dataUrl}" alt="${escapeHtml(i.prompt || '')}" loading="lazy"></div>`).join('');
+}
+
 function scrollToBottom() { const c = $('#chatMessages'); if (c) c.scrollTop = c.scrollHeight; }
 
 /* ---------- Message rendering ---------- */
@@ -345,10 +407,30 @@ function renderMessageAttachments(files) {
   const items = files.map(f => f.type === 'image' && f.dataUrl ? `<div class="bubble-attach bubble-attach-img" data-lightbox="${escapeHtml(f.dataUrl)}"><img src="${f.dataUrl}" alt="${escapeHtml(f.name || '')}" loading="lazy"></div>` : `<div class="bubble-attach bubble-attach-file"><i class="ri-file-line"></i><span>${escapeHtml(f.name || 'file')}</span></div>`).join('');
   return `<div class="bubble-attachments">${items}</div>`;
 }
-function renderGeneratedImage(dataUrl, alt) { if (!dataUrl) return ''; return `<div class="bubble-generated-image" data-lightbox="${escapeHtml(dataUrl)}"><img src="${dataUrl}" alt="${escapeHtml(alt || 'Generated image')}" loading="lazy"></div>`; }
+function renderGeneratedImage(dataUrl, alt) {
+  if (!dataUrl) return '';
+  return `<div class="bubble-generated-image" data-gen-img="${escapeHtml(dataUrl)}" data-gen-prompt="${escapeHtml(alt || '')}"><img src="${dataUrl}" alt="${escapeHtml(alt || 'Generated image')}" loading="lazy" draggable="false"><div class="gen-img-actions"><button class="icon-btn" data-gen-action="download" title="Download"><i class="ri-download-2-line"></i></button><button class="icon-btn" data-gen-action="regenerate" title="Regenerate"><i class="ri-refresh-line"></i></button></div></div>`;
+}
 function buildContinueBar(msgId) { return `<div class="continue-bar" data-continue-id="${msgId}"><button class="continue-btn" data-continue="${msgId}"><i class="ri-arrow-down-line"></i> Continue</button></div>`; }
 function wireLightbox(el) {
-  el.querySelectorAll('[data-lightbox]').forEach(el2 => el2.addEventListener('click', () => { const lb = $('#lightbox'); if (lb) { lb.querySelector('img').src = el2.dataset.lightbox; lb.classList.add('open'); } }));
+  el.querySelectorAll('[data-lightbox]').forEach(el2 => el2.addEventListener('click', () => openImageViewer(el2.dataset.lightbox, '')));
+  el.querySelectorAll('[data-gen-img]').forEach(el2 => {
+    el2.addEventListener('click', (e) => {
+      if (e.target.closest('[data-gen-action]')) return;
+      openImageViewer(el2.dataset.genImg, el2.dataset.genPrompt || '');
+    });
+  });
+  el.querySelectorAll('[data-gen-action]').forEach(btn => {
+    if (btn.__wired) return; btn.__wired = true;
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const wrap = btn.closest('[data-gen-img]');
+      const dataUrl = wrap?.dataset.genImg || '';
+      const prompt = wrap?.dataset.genPrompt || '';
+      if (btn.dataset.genAction === 'download') downloadDataUrl(dataUrl, 'mirox-image.png');
+      if (btn.dataset.genAction === 'regenerate') regenerateImage(prompt);
+    });
+  });
 }
 function wireContinueBtn(msgEl) {
   msgEl.querySelectorAll('[data-continue]').forEach(btn => { if (btn.__wired) return; btn.__wired = true; btn.addEventListener('click', () => handleContinue(msgEl)); });
@@ -441,7 +523,7 @@ function applyStoredFeedback(msgEl) {
   else if (fb[id] === 'bad') msgEl.querySelector('.action-btn[data-action="bad"]')?.classList.add('active-bad');
 }
 
-/* ---------- Continue — appends into same bubble ---------- */
+/* ---------- Continue (append) ---------- */
 async function handleContinue(msgEl) {
   if (isReplying) return;
   const convo = currentConvo(); if (!convo) return;
@@ -483,7 +565,6 @@ async function handleContinue(msgEl) {
       }),
       signal: activeStreamController.signal,
     });
-
     if (!res.ok) {
       const ct = (res.headers.get('content-type') || '').toLowerCase();
       let errMsg = `HTTP ${res.status}`;
@@ -493,7 +574,6 @@ async function handleContinue(msgEl) {
 
     const reader = res.body.getReader(); const dec = new TextDecoder();
     let buf = '';
-
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
@@ -519,9 +599,7 @@ async function handleContinue(msgEl) {
     }
 
     bubbleText.classList.remove('streaming');
-
-    /* ✅ FIX: finalize the bubble — this makes unclosed code blocks
-       get their Copy button + proper syntax highlighting applied. */
+    /* ✅ FIX: finalize the bubble so closed code blocks get proper highlighting + Copy */
     finalizeBubble(bubble, full);
 
     m.content = full;
@@ -537,17 +615,10 @@ async function handleContinue(msgEl) {
     }
 
     saveChatsToLS();
-    if (readAloudEnabled) {
-      if (pendingTts) playAudioDataUrl(pendingTts);
-      else if (full) speakText(full);
-    }
+    if (readAloudEnabled) { if (pendingTts) playAudioDataUrl(pendingTts); else if (full) speakText(full); }
   } catch (e) {
     bubbleText.classList.remove('streaming');
-
-    /* ✅ FIX: also finalize on error, so any code written so far
-       still renders with syntax highlighting + Copy button. */
     finalizeBubble(bubble, full);
-
     if (e.name !== 'AbortError') {
       const err = document.createElement('div');
       err.style.cssText = 'color:var(--danger);font-size:13px;margin-top:8px;';
@@ -599,6 +670,10 @@ function handleSend() {
   const inp = $('#messageInput'); if (!inp) return;
   const text = inp.value.trim();
   if (!text && !pendingFiles.length) return;
+  if (__usage && __tier === 'free' && (__usage.daily_used ?? 0) >= (__usage.daily_limit ?? 5)) {
+    alert('Daily message limit reached. Free users get 5 messages per day — refilled tomorrow.');
+    return;
+  }
   const filesToSend = pendingFiles.slice();
   if (!currentConversationId) {
     currentConversationId = uid();
@@ -632,6 +707,7 @@ async function sendToAPI(text, files = []) {
   let full = '', generatedImage = null, pendingTts = null, finishReason = 'stop';
   let imageWasSet = false;
   let bubbleText = null;
+  let imagePromptUsed = '';
 
   try {
     const res = await fetch('/v1/chat/completions', {
@@ -649,7 +725,6 @@ async function sendToAPI(text, files = []) {
 
     const reader = res.body.getReader(); const dec = new TextDecoder();
     let buf = '', firstChunk = true;
-
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
@@ -674,14 +749,16 @@ async function sendToAPI(text, files = []) {
           if (o.img) {
             generatedImage = o.img;
             imageWasSet = true;
+            imagePromptUsed = text;
             bubble.classList.remove('thinking');
-            bubble.innerHTML = `<div class="bubble-generated-image" data-lightbox="${escapeHtml(o.img)}"><img src="${o.img}" alt="${escapeHtml(o.imgAlt || 'Generated image')}" loading="lazy"></div><div class="bubble-text"></div>`;
+            bubble.innerHTML = `${renderGeneratedImage(o.img, text)}<div class="bubble-text"></div>`;
             bubbleText = bubble.querySelector('.bubble-text');
             wireLightbox(msgEl);
             const act = msgEl.querySelector('.message-actions');
             if (act) { act.style.opacity = ''; act.style.pointerEvents = ''; }
             scrollToBottom();
             firstChunk = false;
+            addImageToHistory(text, o.img);
             continue;
           }
 
@@ -711,9 +788,7 @@ async function sendToAPI(text, files = []) {
 
     bubble.classList.remove('streaming');
     delete msgEl.dataset.thinking;
-
-    /* ✅ FIX: finalize the bubble — code blocks get Copy buttons
-       and proper syntax highlighting after streaming stops. */
+    /* ✅ FIX: finalize bubble so closed code blocks are properly highlighted */
     finalizeBubble(bubble, full);
 
     if (finishReason === 'length') {
@@ -732,12 +807,10 @@ async function sendToAPI(text, files = []) {
     if (timeEl) timeEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     if (readAloudEnabled) { if (pendingTts) playAudioDataUrl(pendingTts); else if (full) speakText(full); }
+    refreshUsage();
   } catch (e) {
     bubble.classList.remove('streaming');
-
-    /* ✅ FIX: finalize even on error so partial code renders properly. */
     finalizeBubble(bubble, full);
-
     if (e.name !== 'AbortError') {
       bubble.classList.remove('thinking');
       bubble.textContent = `Sorry, something went wrong: ${e.message}`;
@@ -765,6 +838,12 @@ function stopStreaming() {
 function handleFiles(files) {
   if (!files?.length) return;
   const arr = Array.from(files);
+  const imageCount = arr.filter(f => (f.type || '').startsWith('image/')).length;
+  if (__usage && __tier === 'free' && imageCount > 0) {
+    const remaining = (__usage.vision_limit ?? 10) - (__usage.vision_used ?? 0);
+    if (remaining <= 0) { alert('Vision upload limit reached for today. Free users get 10 image uploads per day.'); return; }
+    if (imageCount > remaining) { alert(`You can only upload ${remaining} more image(s) today.`); return; }
+  }
   let done = 0;
   const newFiles = [];
   arr.forEach((f, idx) => {
@@ -787,6 +866,61 @@ function updatePreview() {
   if (!pendingFiles.length) { p.style.display = 'none'; list.innerHTML = ''; return; }
   p.style.display = 'flex';
   list.innerHTML = pendingFiles.map(f => f.type === 'image' && f.dataUrl ? `<div class="attach-chip"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name)}</div>` : `<div class="attach-chip"><i class="ri-file-line"></i>${escapeHtml(f.name)}</div>`).join('');
+}
+
+/* ---------- Image viewer (secure) ---------- */
+let __ivCurrentDataUrl = '';
+let __ivCurrentPrompt = '';
+function openImageViewer(dataUrl, prompt) {
+  if (!dataUrl) return;
+  __ivCurrentDataUrl = dataUrl;
+  __ivCurrentPrompt = prompt || '';
+  const iv = $('#imageViewer'); if (!iv) return;
+  $('#ivPrompt').textContent = prompt ? prompt : '';
+  $('#ivTitle').textContent = prompt ? prompt.slice(0, 60) : 'Generated image';
+  iv.classList.add('open');
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    const canvas = $('#ivCanvas');
+    if (!canvas) return;
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+  };
+  img.onerror = () => {
+    const canvas = $('#ivCanvas'); if (!canvas) return;
+    canvas.width = 400; canvas.height = 300;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#eee'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#666'; ctx.font = '16px Inter'; ctx.textAlign = 'center';
+    ctx.fillText('Image preview unavailable', canvas.width / 2, canvas.height / 2);
+  };
+  img.src = dataUrl;
+}
+function closeImageViewer() { $('#imageViewer')?.classList.remove('open'); }
+function downloadDataUrl(dataUrl, filename = 'mirox-image.png') {
+  if (!dataUrl) return;
+  try {
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } catch {}
+}
+async function regenerateImage(prompt) {
+  if (!prompt) { alert('No prompt to regenerate.'); return; }
+  if (__usage && __tier === 'free' && (__usage.image_used ?? 0) >= (__usage.image_limit ?? 10)) {
+    alert('Daily image generation limit reached. Free users get 10 images per day.');
+    return;
+  }
+  closeImageViewer();
+  const chatInput = $('#messageInput');
+  if (chatInput) { chatInput.value = prompt; updateSendButtonState(); }
+  setTimeout(() => handleSend(), 80);
 }
 
 /* ---------- Model picker ---------- */
@@ -843,19 +977,62 @@ function wireReadAloud() {
   });
 }
 
+/* ---------- Usage / credits ---------- */
+function renderCreditBar() {
+  const bar = $('#creditBar'); if (!bar) return;
+  if (!__usage || __tier !== 'free') { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  const u = __usage;
+  const cl = u.daily_limit ?? 5; const cu = u.daily_used ?? 0;
+  const vl = u.vision_limit ?? 10; const vu = u.vision_used ?? 0;
+  const il = u.image_limit ?? 10; const iu = u.image_used ?? 0;
+  const setPill = (sel, used, limit) => {
+    const el = bar.querySelector(sel); if (!el) return;
+    const txt = el.querySelector('span');
+    const remaining = Math.max(0, limit - used);
+    if (txt) txt.textContent = `${remaining}/${limit}`;
+    el.classList.toggle('low', remaining <= Math.max(1, Math.floor(limit * 0.25)));
+    el.classList.toggle('empty', remaining <= 0);
+  };
+  setPill('[data-credit="chat"]', cu, cl);
+  setPill('[data-credit="vision"]', vu, vl);
+  setPill('[data-credit="image"]', iu, il);
+}
+async function refreshUsage() {
+  if (!__user) { __usage = null; renderCreditBar(); return; }
+  const res = await authJson('/api/me', {}, null);
+  if (res?.user) {
+    __user = res.user;
+    __tier = res.user.tier || 'free';
+    __usage = {
+      daily_limit: res.user.daily_limit ?? 5,
+      daily_used: res.user.daily_used ?? 0,
+      vision_limit: res.user.vision_limit ?? 10,
+      vision_used: res.user.vision_used ?? 0,
+      image_limit: res.user.image_limit ?? 10,
+      image_used: res.user.image_used ?? 0,
+    };
+  }
+  renderCreditBar();
+}
+
 /* ---------- Auth ---------- */
 async function doLogin() {
   const name = $('#loginName')?.value.trim();
   const email = $('#loginEmail')?.value.trim().toLowerCase();
   if (!name || !email) return;
   const res = await authJson('/api/auth/simple-login', { method: 'POST', body: JSON.stringify({ name, email }) }, null);
-  if (res?.ok && res.token) { setToken(res.token); __user = res.user; __tier = res.user.tier || 'free'; if (res.user.voice_id) { userSettings.voice_id = res.user.voice_id; saveUserSettings(); } closeModal('loginModal'); updateUserUI(); renderModelPicker(); loadChatsFromLS(); renderHistory(); }
-  else alert(res?.error || 'Login failed');
+  if (res?.ok && res.token) {
+    setToken(res.token); __user = res.user; __tier = res.user.tier || 'free';
+    if (res.user.voice_id) { userSettings.voice_id = res.user.voice_id; saveUserSettings(); }
+    closeModal('loginModal'); updateUserUI(); renderModelPicker();
+    loadChatsFromLS(); renderHistory(); refreshUsage();
+  } else alert(res?.error || 'Login failed');
 }
 async function doLogout() {
   await authJson('/api/logout', { method: 'POST' }, null);
-  setToken(''); __user = null; __tier = 'free';
-  updateUserUI(); closeModal('settingsModal'); renderModelPicker();
+  setToken(''); __user = null; __tier = 'free'; __usage = null;
+  updateUserUI(); closeModal('settingsModal'); renderModelPicker(); renderCreditBar();
 }
 function updateUserUI() {
   const chip = $('#userChip'); if (!chip) return;
@@ -864,13 +1041,29 @@ function updateUserUI() {
 }
 async function loadUser() {
   const res = await authJson('/api/me', {}, null);
-  if (res?.user) { __user = res.user; __tier = res.user.tier || 'free'; if (res.user.voice_id) { userSettings.voice_id = res.user.voice_id; saveUserSettings(); } updateUserUI(); }
-  else { __tier = 'free'; updateUserUI(); }
+  if (res?.user) {
+    __user = res.user; __tier = res.user.tier || 'free';
+    if (res.user.voice_id) { userSettings.voice_id = res.user.voice_id; saveUserSettings(); }
+    __usage = {
+      daily_limit: res.user.daily_limit ?? 5,
+      daily_used: res.user.daily_used ?? 0,
+      vision_limit: res.user.vision_limit ?? 10,
+      vision_used: res.user.vision_used ?? 0,
+      image_limit: res.user.image_limit ?? 10,
+      image_used: res.user.image_used ?? 0,
+    };
+    updateUserUI();
+  } else { __tier = 'free'; __usage = null; updateUserUI(); }
+  renderCreditBar();
   loadChatsFromLS(); renderHistory();
 }
 async function loadConfig() {
-  try { const res = await fetch('/api/config', { cache: 'no-store' }); const data = await res.json(); if (data?.models?.length) __config = data; else __config = { models: FALLBACK_MODELS }; ttsAvailable = !!data?.tts_available; }
-  catch { __config = { models: FALLBACK_MODELS }; }
+  try {
+    const res = await fetch('/api/config', { cache: 'no-store' });
+    const data = await res.json();
+    if (data?.models?.length) __config = data; else __config = { models: FALLBACK_MODELS };
+    ttsAvailable = !!data?.tts_available;
+  } catch { __config = { models: FALLBACK_MODELS }; }
   const models = getModelsList(); __model = models[0].id; renderModelPicker();
   if ($('#currentModelLabel')) $('#currentModelLabel').textContent = models[0].label;
 }
@@ -923,13 +1116,21 @@ async function genKey() {
 }
 async function genImage() {
   const prompt = $('#imagePrompt')?.value.trim(); if (!prompt) return alert('Please describe the image.');
+  if (__usage && __tier === 'free' && (__usage.image_used ?? 0) >= (__usage.image_limit ?? 10)) {
+    alert('Daily image generation limit reached. Free users get 10 images per day.');
+    return;
+  }
   const btn = $('#generateImageBtn'), result = $('#imageResult');
   if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line"></i> Generating…'; }
   if (result) result.innerHTML = '<div style="text-align:center;padding:20px;"><div class="bubble thinking" style="display:inline-flex;background:var(--panel);border:1px solid var(--border);padding:12px 16px;border-radius:16px;"><span class="thinking-text">Generating</span><span class="thinking-dots"><span></span><span></span><span></span></span></div></div>';
   try {
     const res = await fetch('/v1/images/generations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, aspect_ratio: $('#imageAspect')?.value || '1:1' }) });
     const data = await res.json().catch(() => ({}));
-    if (res.ok && data.ok && data.image) { if (result) result.innerHTML = `<img src="${data.image}" alt="${escapeHtml(prompt)}" loading="lazy">`; }
+    if (res.ok && data.ok && data.image) {
+      if (result) result.innerHTML = `<img src="${data.image}" alt="${escapeHtml(prompt)}" loading="lazy" draggable="false">`;
+      addImageToHistory(prompt, data.image);
+      refreshUsage();
+    }
     else { if (result) result.innerHTML = `<div style="padding:16px;border-radius:12px;background:rgba(220,38,38,0.08);border:1px solid rgba(220,38,38,0.2);"><p style="color:#dc2626;font-size:13px;margin:0;"><strong>Failed:</strong> ${escapeHtml(data.error?.message || data.error || 'Unknown')}</p></div>`; }
   } catch (e) { if (result) result.innerHTML = `<div style="padding:16px;border-radius:12px;background:rgba(220,38,38,0.08);"><p style="color:#dc2626;font-size:13px;margin:0;"><strong>Error:</strong> ${escapeHtml(e.message)}</p></div>`; }
   finally { if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-image-add-line"></i> Generate'; } }
@@ -1016,9 +1217,59 @@ async function requestMic() { try { await navigator.mediaDevices.getUserMedia({ 
 /* ---------- Memory / Persona ---------- */
 async function loadMemory() { const list = $('#memoryList'); if (!list || !__user) return; const res = await authJson('/api/memory', {}, null); if (res?.facts?.length) list.innerHTML = res.facts.map(f => `<div class="memory-item"><span>${escapeHtml(f.text)}</span></div>`).join(''); else list.innerHTML = '<p style="font-size:13px;color:var(--text-faint);">No memories yet.</p>'; }
 async function addMemory() { const input = $('#memoryInput'); if (!input?.value.trim()) return; await authJson('/api/memory', { method: 'POST', body: JSON.stringify({ fact: input.value.trim() }) }); input.value = ''; loadMemory(); }
-async function loadPersona() { if (!__user) return; const res = await authJson('/api/persona', {}, null); if (res?.persona && $('#personaInput')) $('#personaInput').value = res.persona; }
-async function savePersona() { await authJson('/api/persona', { method: 'POST', body: JSON.stringify({ persona: $('#personaInput')?.value.trim() || '' }) }); }
+async function loadPersona() {
+  const statusEl = $('#personaStatus'); if (statusEl) { statusEl.textContent = ''; statusEl.className = 'persona-status'; }
+  if (!__user) { if ($('#personaInput')) $('#personaInput').value = ''; return; }
+  const res = await authJson('/api/persona', {}, null);
+  if (res?.persona && $('#personaInput')) $('#personaInput').value = res.persona;
+}
+/* ✅ FIX: proper feedback + guest handling */
+async function savePersona() {
+  const statusEl = $('#personaStatus');
+  const inp = $('#personaInput');
+  if (!inp) return;
+  if (!__user) {
+    if (statusEl) { statusEl.textContent = 'Sign in to save your persona.'; statusEl.className = 'persona-status err'; }
+    openModal('loginModal');
+    return;
+  }
+  const val = inp.value.trim();
+  if (statusEl) { statusEl.textContent = 'Saving…'; statusEl.className = 'persona-status'; }
+  const res = await authJson('/api/persona', { method: 'POST', body: JSON.stringify({ persona: val }) }, null);
+  if (res?.ok) {
+    if (statusEl) { statusEl.textContent = 'Saved ✓'; statusEl.className = 'persona-status ok'; }
+    setTimeout(() => { if (statusEl && statusEl.textContent === 'Saved ✓') { statusEl.textContent = ''; statusEl.className = 'persona-status'; } }, 2500);
+  } else {
+    if (statusEl) { statusEl.textContent = res?.error || 'Failed to save.'; statusEl.className = 'persona-status err'; }
+  }
+}
 async function submitReport() { const category = $('#supportCategory')?.value; const subject = $('#supportSubject')?.value.trim(); const message = $('#supportMessage')?.value.trim(); if (!subject || !message) return alert('Please fill subject and message.'); const res = await authJson('/api/support/ticket', { method: 'POST', body: JSON.stringify({ category, subject, message }) }, null); if (res?.ok) { alert('Ticket submitted!'); closeModal('supportModal'); } }
+
+/* ---------- Sidebar UI ---------- */
+function setSidebarTab(tab) {
+  __sidebarTab = tab;
+  $$('.sidebar-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  $$('.sidebar-section').forEach(s => { s.style.display = (s.dataset.pane === tab) ? '' : 'none'; });
+  if (tab === 'images') renderImageHistory(); else renderHistory();
+}
+function wireSidebar() {
+  $$('.sidebar-tab').forEach(t => t.addEventListener('click', () => setSidebarTab(t.dataset.tab)));
+  const inp = $('#sidebarSearchInput');
+  const clearBtn = $('#sidebarSearchClear');
+  if (inp) {
+    inp.addEventListener('input', () => {
+      __searchQuery = inp.value;
+      if (clearBtn) clearBtn.style.display = __searchQuery ? 'grid' : 'none';
+      if (__sidebarTab === 'images') renderImageHistory(); else renderHistory();
+    });
+  }
+  if (clearBtn) clearBtn.addEventListener('click', () => {
+    if (inp) inp.value = '';
+    __searchQuery = '';
+    clearBtn.style.display = 'none';
+    if (__sidebarTab === 'images') renderImageHistory(); else renderHistory();
+  });
+}
 
 /* ---------- Wire everything ---------- */
 function wireToolButtons() {
@@ -1060,13 +1311,18 @@ function wireToolButtons() {
   $('#newChatBtn')?.addEventListener('click', () => { startNewChat(); if (window.innerWidth <= 860) closeSidebar(); });
   $('#userChip')?.addEventListener('click', () => { if (!__user) openModal('loginModal'); });
   $('#voiceSelect')?.addEventListener('change', async () => { const sel = $('#voiceSelect'); userSettings.voice_id = sel?.value || null; saveUserSettings(); authJson('/api/me/voice', { method: 'POST', body: JSON.stringify({ voice_id: sel?.value || null }) }, null); });
+
+  // Image viewer buttons
+  document.querySelectorAll('[data-iv-close]').forEach(el => el.addEventListener('click', closeImageViewer));
+  $('#ivDownload')?.addEventListener('click', () => downloadDataUrl(__ivCurrentDataUrl, `mirox-${Date.now()}.png`));
+  $('#ivRegenerate')?.addEventListener('click', () => regenerateImage(__ivCurrentPrompt));
+  $('#ivCopyPrompt')?.addEventListener('click', async () => { try { if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(__ivCurrentPrompt || ''); } catch {} });
 }
 
 document.addEventListener('click', function (e) {
   const t = e.target; const closest = s => t.closest(s);
   const closer = closest('[data-close]'); if (closer) { closeModal(closer.dataset.close); return; }
   if (t.classList.contains('modal-overlay')) { t.classList.remove('open'); return; }
-  if (t.classList.contains('lightbox')) { t.classList.remove('open'); return; }
   const tab = closest('.settings-tab');
   if (tab) { document.querySelectorAll('.settings-tab').forEach(x => x.classList.remove('active')); document.querySelectorAll('.settings-pane').forEach(x => x.classList.remove('active')); tab.classList.add('active'); document.querySelector(`.settings-pane[data-pane="${tab.dataset.tab}"]`)?.classList.add('active'); if (tab.dataset.tab === 'mcp') loadMcp(); if (tab.dataset.tab === 'voice') loadVoices(); return; }
   const mb = closest('[data-mode]'); if (mb && mb.closest('#modeOptions')) { applyAppearance({ mode: mb.dataset.mode }); return; }
@@ -1095,20 +1351,35 @@ document.addEventListener('click', function (e) {
     const id = hist.dataset.id; if (id) { stopStreaming(); openConversationLS(id); if (window.innerWidth <= 860) closeSidebar(); }
     return;
   }
+  const imgCell = closest('.image-history-cell');
+  if (imgCell) { const it = __imageHistory.find(x => x.id === imgCell.dataset.imgId); if (it) openImageViewer(it.dataUrl, it.prompt || ''); return; }
 });
 document.addEventListener('submit', function (e) { e.preventDefault(); if (e.target?.id === 'simpleLoginForm') doLogin(); }, true);
 document.addEventListener('change', function (e) { if (e.target?.id === 'fileInput') { handleFiles(e.target.files); e.target.value = ''; } if (e.target?.id === 'langSelect') { userSettings.language = e.target.value; saveUserSettings(); } });
 
+/* Disable right-click on generated images globally */
+document.addEventListener('contextmenu', (e) => {
+  const t = e.target;
+  if (t && (t.closest('.bubble-generated-image') || t.closest('.image-viewer-panel') || t.closest('.image-history-cell'))) {
+    e.preventDefault();
+  }
+});
+
 /* ---------- Init ---------- */
 async function init() {
   loadUserSettings(); loadAppearance();
-  wireModelPicker(); wireSendButton(); wireToolButtons(); wireReadAloud(); wirePttButton();
+  loadImageHistoryLS();
+  wireModelPicker(); wireSendButton(); wireToolButtons(); wireReadAloud(); wirePttButton(); wireSidebar();
   renderModelPicker();
   readAloudEnabled = !!userSettings.autoSpeak;
   updateReadAloudIcon();
   await loadConfig();
   await loadUser();
   bindSuggestionClicks(); updateUserUI(); loadMcp();
-  document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); $('#messageInput')?.focus(); } });
+  renderImageHistory();
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); $('#messageInput')?.focus(); }
+    if (e.key === 'Escape') closeImageViewer();
+  });
 }
 init();
