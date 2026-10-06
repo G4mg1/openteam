@@ -1,9 +1,11 @@
 /* ============================================================
-   MiroxAI — Frontend v53
-   - Attachments stored per-message and shown in bubble
-   - Image displayed above user text (ChatGPT/DeepSeek style)
-   - Background feature removed
-   - Provider-aware thinking text
+   MiroxAI — Frontend v54
+   - Image generation in chat bubbles
+   - Fish Audio TTS playback
+   - Read-aloud toggle
+   - Voice changer setting
+   - Call mode with TTS responses
+   - Improved code rendering with language icons
    ============================================================ */
 
 const $  = s => document.querySelector(s);
@@ -31,7 +33,31 @@ let __config = null, __user = null, __tier = 'free', __model = 'mirox-luna-1.2';
 let currentConversationId = null, isReplying = false, __conversations = [], pendingFiles = [];
 let recognition = null, callRecognition = null;
 let callActive = false, callMuted = false, activeStreamController = null;
-let userSettings = { soundOn: true, notifOn: true, highlightOn: true, lineNumbers: false, language: 'en-US', voiceRate: 1 };
+let userSettings = { soundOn: true, notifOn: true, highlightOn: true, lineNumbers: false, language: 'en-US', voiceRate: 1, autoSpeak: false, voice_id: null };
+let ttsAvailable = false;
+let currentAudio = null;
+let readAloudEnabled = false;
+let lastSpokenText = '';
+
+const LANGUAGE_ICONS = {
+  js: 'ri-javascript-fill', javascript: 'ri-javascript-fill', jsx: 'ri-reactjs-line',
+  ts: 'ri-code-s-slash-line', typescript: 'ri-code-s-slash-line', tsx: 'ri-reactjs-line',
+  py: 'ri-code-s-slash-line', python: 'ri-code-s-slash-line',
+  html: 'ri-html5-fill', xml: 'ri-html5-fill',
+  css: 'ri-css3-fill',
+  json: 'ri-braces-line', yaml: 'ri-braces-line', yml: 'ri-braces-line', toml: 'ri-braces-line',
+  bash: 'ri-terminal-box-line', sh: 'ri-terminal-box-line', shell: 'ri-terminal-box-line', zsh: 'ri-terminal-box-line',
+  sql: 'ri-database-2-line',
+  go: 'ri-code-s-slash-line', rust: 'ri-code-s-slash-line', rs: 'ri-code-s-slash-line',
+  java: 'ri-code-s-slash-line', cpp: 'ri-code-s-slash-line', c: 'ri-code-s-slash-line',
+  php: 'ri-code-s-slash-line', ruby: 'ri-code-s-slash-line', rb: 'ri-code-s-slash-line',
+  md: 'ri-markdown-line', markdown: 'ri-markdown-line',
+};
+
+function langIcon(lang) {
+  const k = String(lang || '').toLowerCase();
+  return LANGUAGE_ICONS[k] || 'ri-code-line';
+}
 
 function killLoader() {
   const l = document.getElementById('loadingScreen');
@@ -42,12 +68,7 @@ setTimeout(killLoader, 500);
 setTimeout(killLoader, 1800);
 
 const uid = () => 'c_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
-
-const escapeHtml = s => {
-  const d = document.createElement('div');
-  d.textContent = s == null ? '' : String(s);
-  return d.innerHTML;
-};
+const escapeHtml = s => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
 
 function getDeviceId() {
   let id = localStorage.getItem(DEVICE_ID_KEY);
@@ -57,20 +78,9 @@ function getDeviceId() {
 function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
 function setToken(t) { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch {} }
 
-function loadCachedKeys(email) {
-  try { const all = JSON.parse(localStorage.getItem(KEYS_CACHE) || '{}'); return all[email] || []; }
-  catch { return []; }
-}
-function saveCachedKeys(email, keys) {
-  try { const all = JSON.parse(localStorage.getItem(KEYS_CACHE) || '{}'); all[email] = keys; localStorage.setItem(KEYS_CACHE, JSON.stringify(all)); }
-  catch {}
-}
-function addCachedKey(email, keyObj) {
-  if (!email) return;
-  const keys = loadCachedKeys(email);
-  keys.unshift(keyObj);
-  saveCachedKeys(email, keys.slice(0, 50));
-}
+function loadCachedKeys(email) { try { const all = JSON.parse(localStorage.getItem(KEYS_CACHE) || '{}'); return all[email] || []; } catch { return []; } }
+function saveCachedKeys(email, keys) { try { const all = JSON.parse(localStorage.getItem(KEYS_CACHE) || '{}'); all[email] = keys; localStorage.setItem(KEYS_CACHE, JSON.stringify(all)); } catch {} }
+function addCachedKey(email, keyObj) { if (!email) return; const keys = loadCachedKeys(email); keys.unshift(keyObj); saveCachedKeys(email, keys.slice(0, 50)); }
 
 async function authJson(url, opts = {}, fallback = null) {
   try {
@@ -92,9 +102,7 @@ function closeSidebar() { $('#sidebar')?.classList.remove('open'); $('#sidebarSc
 function loadUserSettings() {
   try { userSettings = { ...userSettings, ...JSON.parse(localStorage.getItem(USER_SETTINGS_KEY) || '{}') }; } catch {}
 }
-function saveUserSettings() {
-  try { localStorage.setItem(USER_SETTINGS_KEY, JSON.stringify(userSettings)); } catch {}
-}
+function saveUserSettings() { try { localStorage.setItem(USER_SETTINGS_KEY, JSON.stringify(userSettings)); } catch {} }
 function loadFeedback()  { try { return JSON.parse(localStorage.getItem(FEEDBACK_KEY) || '{}'); } catch { return {}; } }
 function saveFeedback(fb) { try { localStorage.setItem(FEEDBACK_KEY, JSON.stringify(fb)); } catch {} }
 
@@ -123,17 +131,10 @@ function loadMcp() {
   try { servers = JSON.parse(localStorage.getItem(MCP_KEY) || '[]'); } catch {}
   renderMcp(servers);
 }
-function saveMcp(servers) {
-  try { localStorage.setItem(MCP_KEY, JSON.stringify(servers)); } catch {}
-  renderMcp(servers);
-}
+function saveMcp(servers) { try { localStorage.setItem(MCP_KEY, JSON.stringify(servers)); } catch {} renderMcp(servers); }
 function renderMcp(servers) {
-  const list = $('#mcpList');
-  if (!list) return;
-  if (!servers.length) {
-    list.innerHTML = '<div style="font-size:12.5px;color:var(--text-faint);padding:4px 0;">No MCP servers configured.</div>';
-    return;
-  }
+  const list = $('#mcpList'); if (!list) return;
+  if (!servers.length) { list.innerHTML = '<div style="font-size:12.5px;color:var(--text-faint);padding:4px 0;">No MCP servers configured.</div>'; return; }
   list.innerHTML = servers.map((s, i) => `
     <div class="mcp-item">
       <div class="mcp-item-status ${s.enabled ? 'on' : ''}"></div>
@@ -146,7 +147,7 @@ function renderMcp(servers) {
     </div>`).join('');
 }
 
-/* ---------- Markdown renderer (unchanged) ---------- */
+/* ---------- Markdown + code rendering ---------- */
 function renderMarkdown(text) {
   if (!text) return '';
   let src = String(text);
@@ -163,16 +164,29 @@ function renderMarkdown(text) {
   if (last < src.length) parts.push({ type: 'text', content: src.slice(last) });
   return parts.map(p => p.type === 'code' ? renderCodeBlock(p.lang, p.content) : renderTextBlock(p.content)).join('');
 }
+
 function renderCodeBlock(lang, code) {
-  const label = (lang || 'Code').toUpperCase();
-  const cls = 'language-' + (lang || '').toLowerCase();
+  const cleanLang = (lang || '').trim().toLowerCase();
+  const label = (cleanLang || 'Code').toUpperCase();
+  const icon = langIcon(cleanLang);
   const raw = String(code || '').replace(/\n$/, '');
   const lines = raw.split('\n');
   const codeHtml = lines.map(l => escapeHtml(l)).join('\n');
   let gutter = '';
-  if (userSettings.lineNumbers) { let g = ''; for (let i = 1; i <= lines.length; i++) g += i + '\n'; gutter = `<div class="code-gutter">${g}</div>`; }
-  return `<div class="code-block"><div class="code-block-header"><span>${escapeHtml(label)}</span><button class="code-action-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></div><div class="code-block-body">${gutter}<pre><code class="${cls}">${codeHtml}</code></pre></div></div>`;
+  if (userSettings.lineNumbers) {
+    let g = '';
+    for (let i = 1; i <= lines.length; i++) g += i + '\n';
+    gutter = `<div class="code-gutter">${g}</div>`;
+  }
+  return `<div class="code-block" data-lang="${escapeHtml(cleanLang)}">
+    <div class="code-block-header">
+      <span class="code-lang-label"><i class="${icon}"></i> ${escapeHtml(label)}</span>
+      <button class="code-action-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button>
+    </div>
+    <div class="code-block-body">${gutter}<pre><code class="language-${escapeHtml(cleanLang)}">${codeHtml}</code></pre></div>
+  </div>`;
 }
+
 function isTableSeparator(line) { const t = line.trim(); if (!t.startsWith('|')) return false; return /^\|[\s:|-]+\|?\s*$/.test(t) && /-/.test(t); }
 function parseTableRow(line) { let s = line.trim(); if (s.startsWith('|')) s = s.slice(1); if (s.endsWith('|')) s = s.slice(0, -1); return s.split('|').map(c => c.trim()); }
 function renderTextBlock(text) {
@@ -234,8 +248,14 @@ function highlightCode(scope) {
     const raw = el.textContent || '';
     try {
       const m = (el.className || '').match(/language-([a-z0-9+#-]+)/i);
-      const r = (m && window.hljs.getLanguage(m[1])) ? window.hljs.highlight(raw, { language: m[1], ignoreIllegals: true }) : window.hljs.highlightAuto(raw);
-      el.innerHTML = r.value; el.classList.add('hljs');
+      let r;
+      if (m && m[1] && window.hljs.getLanguage(m[1])) {
+        r = window.hljs.highlight(raw, { language: m[1], ignoreIllegals: true });
+      } else {
+        r = window.hljs.highlightAuto(raw);
+      }
+      el.innerHTML = r.value;
+      el.classList.add('hljs');
     } catch {}
     el.dataset.hl = '1';
   });
@@ -256,7 +276,64 @@ function wireCodeButtons(scope) {
   });
 }
 
-/* ---------- Conversations ---------- */
+/* ============================================================
+   TTS playback
+   ============================================================ */
+function stopSpeaking() {
+  if (currentAudio) {
+    try { currentAudio.pause(); currentAudio.currentTime = 0; } catch {}
+    currentAudio = null;
+  }
+}
+
+function playAudioDataUrl(dataUrl) {
+  stopSpeaking();
+  try {
+    const a = new Audio(dataUrl);
+    currentAudio = a;
+    a.volume = 1.0;
+    a.play().catch(() => {});
+    a.onended = () => { currentAudio = null; };
+    return a;
+  } catch { return null; }
+}
+
+async function speakText(text) {
+  if (!text || !ttsAvailable) return;
+  const clean = stripForSpeech(text);
+  if (!clean) return;
+  lastSpokenText = clean;
+  try {
+    const voiceId = userSettings.voice_id || __user?.voice_id || null;
+    const r = await fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: clean.slice(0, 800), voice: voiceId }),
+    });
+    if (!r.ok) return;
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = new Audio(url);
+    stopSpeaking();
+    currentAudio = a;
+    a.onended = () => { URL.revokeObjectURL(url); currentAudio = null; };
+    await a.play().catch(() => {});
+  } catch {}
+}
+
+function stripForSpeech(text) {
+  return String(text || '')
+    .replace(/```[\s\S]*?```/g, ' code block ')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/[#*_>~]/g, ' ')
+    .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/* ============================================================
+   Conversations
+   ============================================================ */
 function currentConvo() { return __conversations.find(c => c.id === currentConversationId) || null; }
 function saveChatsToLS() { try { localStorage.setItem(LS_KEY, JSON.stringify(__conversations)); } catch {} }
 function loadChatsFromLS() { try { __conversations = JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch { __conversations = []; } }
@@ -269,9 +346,9 @@ function getWelcomeHTML() {
     <p class="welcome-sub">Built by the OpenSurr team. Ask anything, attach images or files, or start a voice call.</p>
     <div class="suggestion-grid">
       <button class="suggestion-card" type="button" data-prompt="What would you like to talk about?"><i class="ri-chat-3-line"></i><span>What would you like to talk about?</span></button>
+      <button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span>Generate me an image of a cat</span></button>
       <button class="suggestion-card" type="button" data-prompt="Help me write code"><i class="ri-code-line"></i><span>Help me write code</span></button>
       <button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span>Explain a concept simply</span></button>
-      <button class="suggestion-card" type="button" data-prompt="Generate an image"><i class="ri-image-line"></i><span>Generate an image</span></button>
     </div>
   </div>`;
 }
@@ -304,13 +381,12 @@ function openConversationLS(id) {
   const container = $('#chatMessages');
   container.innerHTML = '';
   for (const msg of c.messages || []) {
-    addMessageToDOM(msg.role, msg.content, msg.ts, false, msg.id, msg.files || []);
+    addMessageToDOM(msg.role, msg.content, msg.ts, false, msg.id, msg.files || [], msg.image || null);
   }
   renderHistory(); scrollToBottom();
 }
 function renderHistory() {
-  const list = $('#historyList');
-  if (!list) return;
+  const list = $('#historyList'); if (!list) return;
   if (!__conversations.length) { list.innerHTML = '<li class="history-empty">No conversations yet</li>'; return; }
   list.innerHTML = __conversations.map(c => `
     <li class="history-item${c.id === currentConversationId ? ' active' : ''}" data-id="${c.id}">
@@ -321,11 +397,14 @@ function renderHistory() {
 }
 function scrollToBottom() { const c = $('#chatMessages'); if (c) c.scrollTop = c.scrollHeight; }
 
-/* ---------- Message rendering with attachments in bubble ---------- */
+/* ============================================================
+   Message rendering
+   ============================================================ */
 function buildActions(role, msgId) {
   if (role === 'ai') {
     return `<div class="message-actions" data-msg-id="${msgId}">
       <button class="action-btn" data-action="copy" title="Copy"><i class="ri-file-copy-line"></i></button>
+      <button class="action-btn" data-action="speak" title="Read aloud"><i class="ri-volume-up-line"></i></button>
       <button class="action-btn" data-action="retry" title="Regenerate"><i class="ri-refresh-line"></i></button>
       <button class="action-btn" data-action="good" title="Good"><i class="ri-thumb-up-line"></i></button>
       <button class="action-btn" data-action="bad" title="Bad"><i class="ri-thumb-down-line"></i></button>
@@ -348,7 +427,12 @@ function renderMessageAttachments(files) {
   return `<div class="bubble-attachments">${items}</div>`;
 }
 
-function addMessageToDOM(role, content, ts, animate = true, msgId = null, files = []) {
+function renderGeneratedImage(dataUrl, alt) {
+  if (!dataUrl) return '';
+  return `<div class="bubble-generated-image" data-lightbox="${escapeHtml(dataUrl)}"><img src="${dataUrl}" alt="${escapeHtml(alt || 'Generated image')}" loading="lazy"></div>`;
+}
+
+function addMessageToDOM(role, content, ts, animate = true, msgId = null, files = [], generatedImage = null) {
   const container = $('#chatMessages');
   if (!container) return null;
   const welcome = container.querySelector('.welcome-screen');
@@ -360,11 +444,12 @@ function addMessageToDOM(role, content, ts, animate = true, msgId = null, files 
   msgEl.dataset.role = role;
 
   const attachmentsHtml = role === 'user' ? renderMessageAttachments(files) : '';
-  const textHtml = content ? '' : '';
+  const generatedHtml = role === 'ai' && generatedImage ? renderGeneratedImage(generatedImage, content) : '';
 
   msgEl.innerHTML = `<div class="message-content">
     <div class="bubble">
       ${attachmentsHtml}
+      ${generatedHtml}
       <div class="bubble-text"></div>
     </div>
     ${buildActions(role, id)}
@@ -378,10 +463,26 @@ function addMessageToDOM(role, content, ts, animate = true, msgId = null, files 
     if (!content) bubbleText.style.display = 'none';
   } else {
     bubble.dataset.rawText = content;
-    renderBubble(bubble, content);
+    if (generatedImage) {
+      bubble.classList.remove('thinking');
+      if (userSettings.highlightOn) {
+        bubbleText.innerHTML = renderMarkdown(content || '');
+        highlightCode(bubbleText);
+        wireCodeButtons(bubbleText);
+      } else {
+        bubbleText.textContent = content || '';
+      }
+    } else {
+      bubble.innerHTML = '';
+      if (!userSettings.highlightOn) { bubble.textContent = content || ''; }
+      else {
+        bubble.innerHTML = renderMarkdown(content || '') ;
+        highlightCode(bubble);
+        wireCodeButtons(bubble);
+      }
+    }
   }
 
-  // Lightbox click
   msgEl.querySelectorAll('[data-lightbox]').forEach(el => {
     el.addEventListener('click', () => {
       const lb = $('#lightbox');
@@ -413,6 +514,7 @@ function addThinkingBubble() {
     </div>
     <div class="message-actions" style="opacity:0;pointer-events:none;">
       <button class="action-btn" data-action="copy"><i class="ri-file-copy-line"></i></button>
+      <button class="action-btn" data-action="speak"><i class="ri-volume-up-line"></i></button>
       <button class="action-btn" data-action="retry"><i class="ri-refresh-line"></i></button>
       <button class="action-btn" data-action="good"><i class="ri-thumb-up-line"></i></button>
       <button class="action-btn" data-action="bad"><i class="ri-thumb-down-line"></i></button>
@@ -443,6 +545,14 @@ function wireMessageActions(msgEl) {
           btn.innerHTML = '<i class="ri-check-line"></i>';
           setTimeout(() => { btn.classList.remove('active'); btn.innerHTML = '<i class="ri-file-copy-line"></i>'; }, 1200);
         } catch {}
+        return;
+      }
+      if (action === 'speak') {
+        const raw = bubble?.dataset.rawText || bubble?.innerText || '';
+        if (currentAudio) { stopSpeaking(); btn.classList.remove('active'); return; }
+        btn.classList.add('active');
+        await speakText(raw);
+        btn.classList.remove('active');
         return;
       }
       if (action === 'retry') { if (role !== 'ai') return; handleRetry(msgEl); return; }
@@ -537,7 +647,9 @@ function handleSend() {
   sendToAPI(text, filesToSend);
 }
 
-/* ---------- Send to API ---------- */
+/* ============================================================
+   Send to API
+   ============================================================ */
 async function sendToAPI(text, files = []) {
   isReplying = true;
   updateSendButtonState();
@@ -554,11 +666,21 @@ async function sendToAPI(text, files = []) {
   const aiMsgId = msgEl.dataset.msgId;
   activeStreamController = new AbortController();
 
+  let full = '';
+  let generatedImage = null;
+
   try {
     const res = await fetch('/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, history, model, stream: true, files }),
+      body: JSON.stringify({
+        message: text,
+        history,
+        model,
+        stream: true,
+        files,
+        voice_id: userSettings.voice_id || null,
+      }),
       signal: activeStreamController.signal,
     });
     if (!res.ok) {
@@ -576,7 +698,8 @@ async function sendToAPI(text, files = []) {
 
     const reader = res.body.getReader();
     const dec = new TextDecoder();
-    let buf = '', full = '', firstChunk = true;
+    let buf = '', firstChunk = true;
+    let pendingTts = null;
 
     while (true) {
       const { value, done } = await reader.read();
@@ -594,14 +717,37 @@ async function sendToAPI(text, files = []) {
 
           if (o.p) {
             if (o.p === 'ar-search' || o.p === 'ar' || o.p === 'fallback') {
-              if (thinkingText) { thinkingText.textContent = 'Reading current data for answer'; }
+              if (thinkingText) thinkingText.textContent = 'Reading current data for answer';
             } else if (o.p === 'ollama') {
-              if (thinkingText) { thinkingText.textContent = 'Running local model'; }
+              if (thinkingText) thinkingText.textContent = 'Running local model';
+            } else if (o.p === 'image') {
+              if (thinkingText) thinkingText.textContent = 'Drawing it…';
             } else if (o.p === 'pl' || o.p === 'hf') {
-              if (thinkingText) { thinkingText.textContent = 'Thinking'; }
+              if (thinkingText) thinkingText.textContent = 'Thinking';
             } else if (o.p === 'canned') {
-              if (thinkingText) { thinkingText.textContent = 'Replying'; }
+              if (thinkingText) thinkingText.textContent = 'Replying';
             }
+          }
+
+          if (o.status) {
+            if (thinkingText) thinkingText.textContent = o.status;
+          }
+
+          if (o.img) {
+            generatedImage = o.img;
+            // Clear thinking bubble and add image
+            bubble.classList.remove('thinking');
+            const imgHtml = `<div class="bubble-generated-image" data-lightbox="${escapeHtml(o.img)}"><img src="${o.img}" alt="${escapeHtml(o.imgAlt || 'Generated image')}" loading="lazy"></div><div class="bubble-text"></div>`;
+            bubble.innerHTML = imgHtml;
+            bubble.querySelector('[data-lightbox]')?.addEventListener('click', () => {
+              const lb = $('#lightbox');
+              if (lb) { lb.querySelector('img').src = o.img; lb.classList.add('open'); }
+            });
+            const act = msgEl.querySelector('.message-actions');
+            if (act) { act.style.opacity = ''; act.style.pointerEvents = ''; }
+            scrollToBottom();
+            firstChunk = false;
+            continue;
           }
 
           if (o.d) {
@@ -609,19 +755,30 @@ async function sendToAPI(text, files = []) {
             if (firstChunk) {
               bubble.classList.remove('thinking');
               bubble.classList.add('streaming');
-              bubble.innerHTML = '';
+              bubble.innerHTML = '<div class="bubble-text"></div>';
               firstChunk = false;
               const act = msgEl.querySelector('.message-actions');
               if (act) { act.style.opacity = ''; act.style.pointerEvents = ''; }
             }
-            renderBubble(bubble, full);
+            const bt = bubble.querySelector('.bubble-text') || bubble;
+            if (userSettings.highlightOn) {
+              bt.innerHTML = renderMarkdown(full);
+              highlightCode(bt);
+              wireCodeButtons(bt);
+            } else {
+              bt.textContent = full;
+            }
             if (!bubble.classList.contains('streaming')) bubble.classList.add('streaming');
             scrollToBottom();
           }
+
+          if (o.tts) {
+            pendingTts = o.tts;
+          }
+
           if (o.error) throw new Error(o.error.message || o.error);
           if (o.done) {
             bubble.classList.remove('streaming');
-            if (__user) { __user.daily_used = o.daily_used; __user.eclipse_used = o.eclipse_used; }
           }
         } catch {}
       }
@@ -632,15 +789,29 @@ async function sendToAPI(text, files = []) {
     bubble.dataset.rawText = full;
 
     const c = currentConvo();
-    if (c) { c.messages.push({ id: aiMsgId, role: 'assistant', content: full, ts: Date.now() }); c.updated = Date.now(); }
+    if (c) {
+      c.messages.push({ id: aiMsgId, role: 'assistant', content: full, ts: Date.now(), image: generatedImage });
+      c.updated = Date.now();
+    }
     saveChatsToLS();
     wireMessageActions(msgEl);
     if (timeEl) timeEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    /* Auto-speak if read-aloud enabled */
+    if (pendingTts && readAloudEnabled) {
+      try {
+        stopSpeaking();
+        const a = new Audio(pendingTts);
+        currentAudio = a;
+        a.onended = () => { currentAudio = null; };
+        a.play().catch(() => {});
+      } catch {}
+    }
   } catch (e) {
     bubble.classList.remove('streaming');
     if (e.name !== 'AbortError') {
       bubble.classList.remove('thinking');
-      bubble.textContent = `Sorry, something went wrong: ${e.message}`;
+      bubble.innerHTML = `<div class="bubble-text">Sorry, something went wrong: ${escapeHtml(e.message)}</div>`;
       if (timeEl) timeEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     } else {
       bubble.classList.remove('thinking');
@@ -660,12 +831,15 @@ async function sendToAPI(text, files = []) {
 
 function stopStreaming() {
   if (activeStreamController) { try { activeStreamController.abort(); } catch {} activeStreamController = null; }
+  stopSpeaking();
   isReplying = false;
   const st = $('#stopBtn'); if (st) st.style.display = 'none';
   updateSendButtonState();
 }
 
-/* ---------- Files ---------- */
+/* ============================================================
+   Files
+   ============================================================ */
 function handleFiles(files) {
   if (!files?.length) return;
   const arr = Array.from(files);
@@ -701,7 +875,9 @@ function updatePreview() {
     : `<div class="attach-chip"><i class="ri-file-line"></i>${escapeHtml(f.name)}</div>`).join('');
 }
 
-/* ---------- Model picker ---------- */
+/* ============================================================
+   Model picker
+   ============================================================ */
 function getModelsList() { if (__config?.models?.length) return __config.models; return FALLBACK_MODELS; }
 function canUseModel(modelTier) {
   if (modelTier === 'free') return true;
@@ -709,8 +885,7 @@ function canUseModel(modelTier) {
   return TIER_RANK[__tier || 'free'] >= TIER_RANK[modelTier];
 }
 function renderModelPicker() {
-  const menu = $('#modelPickerMenu');
-  if (!menu) return;
+  const menu = $('#modelPickerMenu'); if (!menu) return;
   const models = getModelsList();
   const currentId = __model || models[0].id;
   menu.innerHTML = models.map(m => {
@@ -749,8 +924,7 @@ function selectModel(id) {
 function openModelPicker()  { $('#modelPicker')?.classList.add('open'); $('#modelPickerMenu')?.classList.add('open'); }
 function closeModelPicker() { $('#modelPicker')?.classList.remove('open'); $('#modelPickerMenu')?.classList.remove('open'); }
 function wireModelPicker() {
-  const btn = $('#modelPickerBtn');
-  if (!btn) return;
+  const btn = $('#modelPickerBtn'); if (!btn) return;
   btn.addEventListener('pointerdown', (e) => {
     e.preventDefault(); e.stopPropagation();
     if ($('#modelPickerMenu')?.classList.contains('open')) closeModelPicker();
@@ -780,7 +954,40 @@ function wireSendButton() {
   updateSendButtonState();
 }
 
-/* ---------- Auth ---------- */
+/* ============================================================
+   Read aloud toggle
+   ============================================================ */
+function updateReadAloudIcon() {
+  const btn = $('#readAloudBtn');
+  if (!btn) return;
+  btn.innerHTML = readAloudEnabled
+    ? '<i class="ri-volume-up-line"></i>'
+    : '<i class="ri-volume-mute-line"></i>';
+  btn.classList.toggle('active', readAloudEnabled);
+  btn.title = readAloudEnabled ? 'Read aloud: ON' : 'Read aloud: OFF';
+  btn.setAttribute('aria-label', btn.title);
+}
+
+function wireReadAloud() {
+  const btn = $('#readAloudBtn');
+  if (!btn) return;
+  updateReadAloudIcon();
+  btn.addEventListener('click', async () => {
+    readAloudEnabled = !readAloudEnabled;
+    userSettings.autoSpeak = readAloudEnabled;
+    saveUserSettings();
+    updateReadAloudIcon();
+    if (readAloudEnabled) {
+      if (lastSpokenText) speakText(lastSpokenText);
+    } else {
+      stopSpeaking();
+    }
+  });
+}
+
+/* ============================================================
+   Auth
+   ============================================================ */
 async function doLogin() {
   const name = $('#loginName')?.value.trim();
   const email = $('#loginEmail')?.value.trim().toLowerCase();
@@ -789,6 +996,8 @@ async function doLogin() {
   if (res?.ok && res.token) {
     setToken(res.token);
     __user = res.user;
+    __tier = res.user.tier || 'free';
+    if (res.user.voice_id) { userSettings.voice_id = res.user.voice_id; saveUserSettings(); }
     closeModal('loginModal');
     updateUserUI();
     renderModelPicker();
@@ -823,6 +1032,7 @@ async function loadUser() {
   if (res?.user) {
     __user = res.user;
     __tier = res.user.tier || 'free';
+    if (res.user.voice_id) { userSettings.voice_id = res.user.voice_id; saveUserSettings(); }
     updateUserUI();
   } else {
     __tier = 'free';
@@ -838,6 +1048,7 @@ async function loadConfig() {
     const data = await res.json();
     if (data?.models?.length) __config = data;
     else __config = { models: FALLBACK_MODELS };
+    ttsAvailable = !!data?.tts_available;
   } catch {
     __config = { models: FALLBACK_MODELS };
   }
@@ -848,8 +1059,7 @@ async function loadConfig() {
 }
 
 async function loadPlans() {
-  const grid = $('#plansGrid');
-  if (!grid) return;
+  const grid = $('#plansGrid'); if (!grid) return;
   const res = await authJson('/api/subscription/plans', {}, null);
   if (!res?.plans) return;
   grid.innerHTML = res.plans.map(p => `
@@ -860,10 +1070,27 @@ async function loadPlans() {
     </div>`).join('');
 }
 
-/* ---------- API keys ---------- */
+/* ============================================================
+   Voice loading
+   ============================================================ */
+async function loadVoices() {
+  const sel = $('#voiceSelect');
+  if (!sel) return;
+  const res = await authJson('/api/voices', {}, null);
+  const voices = res?.voices || [];
+  const current = userSettings.voice_id || '';
+  sel.innerHTML = '<option value="">Default voice</option>' +
+    voices.map(v => `<option value="${escapeHtml(v.id)}"${v.id === current ? ' selected' : ''}>${escapeHtml(v.name)}${v.lang ? ' · ' + escapeHtml(v.lang) : ''}</option>`).join('');
+  if (!voices.length && !ttsAvailable) {
+    sel.innerHTML = '<option value="">TTS not configured (F_API missing)</option>';
+  }
+}
+
+/* ============================================================
+   API keys
+   ============================================================ */
 async function loadUserKeys() {
-  const list = $('#apiKeysList'), counter = $('#apiKeyCounter');
-  if (!list) return;
+  const list = $('#apiKeysList'), counter = $('#apiKeyCounter'); if (!list) return;
   if (!__user) {
     list.innerHTML = '<div style="font-size:13px;color:var(--text-faint);">Sign in to see your API keys.</div>';
     if (counter) counter.textContent = '(0/2 this month)';
@@ -902,7 +1129,9 @@ async function genKey() {
   }
 }
 
-/* ---------- Image generation ---------- */
+/* ============================================================
+   Standalone image generation modal
+   ============================================================ */
 async function genImage() {
   const prompt = $('#imagePrompt')?.value.trim();
   if (!prompt) return alert('Please describe the image.');
@@ -928,7 +1157,9 @@ async function genImage() {
   }
 }
 
-/* ---------- Voice ---------- */
+/* ============================================================
+   Voice — mic + call mode
+   ============================================================ */
 function startMic() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return alert('Speech recognition not supported.');
@@ -948,45 +1179,97 @@ function startMic() {
   recognition.onend = () => micBtn?.classList.remove('active');
   recognition.start();
 }
+
 function startCall() {
   if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) return alert('Not supported.');
   callActive = true;
+  callMuted = false;
   $('#callOverlay')?.classList.add('open');
+  const b = $('#callMuteBtn');
+  if (b) b.innerHTML = '<i class="ri-mic-line"></i>';
+  if ($('#callStatus')) $('#callStatus').textContent = 'Listening…';
+  if ($('#callTranscript')) $('#callTranscript').textContent = '';
   startCallRecognition();
 }
+
+let callRecogActive = false;
+
 function startCallRecognition() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return;
   callRecognition = new SR();
   callRecognition.lang = userSettings.language || 'en-US';
   callRecognition.continuous = true;
-  callRecognition.onresult = e => {
+  callRecognition.interimResults = false;
+  callRecogActive = true;
+  callRecognition.onresult = async e => {
     if (callMuted) return;
-    const text = e.results[e.results.length - 1][0].transcript;
+    const last = e.results[e.results.length - 1];
+    if (!last.isFinal) return;
+    const text = last[0].transcript.trim();
+    if (!text) return;
     if ($('#callTranscript')) $('#callTranscript').textContent = 'You: ' + text;
+    if ($('#callStatus')) $('#callStatus').textContent = 'Thinking…';
+    await handleCallTurn(text);
   };
-  callRecognition.onend = () => { if (callActive) setTimeout(startCallRecognition, 500); };
+  callRecognition.onend = () => {
+    if (callActive && callRecogActive) {
+      setTimeout(() => { if (callActive && callRecogActive) startCallRecognition(); }, 400);
+    }
+  };
+  callRecognition.onerror = () => {};
   try { callRecognition.start(); } catch {}
 }
+
+async function handleCallTurn(userText) {
+  const history = currentConvo()?.messages?.slice(-10).map(m => ({ role: m.role, content: m.content })) || [];
+  const model = __model || 'mirox-luna-1.2';
+  try {
+    const res = await fetch('/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: userText, history, model, stream: false, voice_id: userSettings.voice_id || null }),
+    });
+    const data = await res.json().catch(() => ({}));
+    const reply = data?.reply || data?.choices?.[0]?.message?.content || '';
+    if (reply) {
+      if ($('#callTranscript')) {
+        $('#callTranscript').textContent += `\n\nMirox: ${reply}`;
+        $('#callTranscript').scrollTop = $('#callTranscript').scrollHeight;
+      }
+      if ($('#callStatus')) $('#callStatus').textContent = 'Speaking…';
+      await speakText(reply);
+      if ($('#callStatus')) $('#callStatus').textContent = 'Listening…';
+    }
+  } catch {
+    if ($('#callStatus')) $('#callStatus').textContent = 'Error — retry';
+  }
+}
+
 function endCall() {
   callActive = false;
+  callRecogActive = false;
   try { callRecognition?.stop(); } catch {}
   callRecognition = null;
+  stopSpeaking();
   $('#callOverlay')?.classList.remove('open');
 }
 function toggleMute() {
   callMuted = !callMuted;
   const b = $('#callMuteBtn');
   if (b) b.innerHTML = callMuted ? '<i class="ri-mic-off-line"></i>' : '<i class="ri-mic-line"></i>';
+  if ($('#callStatus')) $('#callStatus').textContent = callMuted ? 'Muted' : 'Listening…';
 }
 async function requestMic() {
   try { await navigator.mediaDevices.getUserMedia({ audio: true }); alert('Mic granted.'); }
   catch { alert('Denied.'); }
 }
 
-/* ---------- Memory + persona ---------- */
+/* ============================================================
+   Memory + persona
+   ============================================================ */
 async function loadMemory() {
-  const list = $('#memoryList');
-  if (!list || !__user) return;
+  const list = $('#memoryList'); if (!list || !__user) return;
   const res = await authJson('/api/memory', {}, null);
   if (res?.facts?.length) list.innerHTML = res.facts.map(f => `<div class="memory-item"><span>${escapeHtml(f.text)}</span></div>`).join('');
   else list.innerHTML = '<p style="font-size:13px;color:var(--text-faint);">No memories yet.</p>';
@@ -1015,14 +1298,16 @@ async function submitReport() {
   if (res?.ok) { alert('Ticket submitted!'); closeModal('supportModal'); }
 }
 
-/* ---------- Wire buttons ---------- */
+/* ============================================================
+   Wiring
+   ============================================================ */
 function wireToolButtons() {
   $('#talkModeBtn')?.addEventListener('click', startCall);
   $('#imageModeBtn')?.addEventListener('click', () => openModal('imageModal'));
   $('#plansModeBtn')?.addEventListener('click', () => { openModal('plansModal'); loadPlans(); loadUserKeys(); });
   $('#supportModeBtn')?.addEventListener('click', () => openModal('supportModal'));
   $('#supportModeBtn2')?.addEventListener('click', () => openModal('supportModal'));
-  $('#settingsBtn')?.addEventListener('click', () => { openModal('settingsModal'); loadPersona(); loadMemory(); loadMcp(); });
+  $('#settingsBtn')?.addEventListener('click', () => { openModal('settingsModal'); loadPersona(); loadMemory(); loadMcp(); loadVoices(); });
   $('#upgradeBtn')?.addEventListener('click', (e) => {
     e.stopPropagation();
     if (!__user) openModal('loginModal');
@@ -1031,6 +1316,14 @@ function wireToolButtons() {
   $('#logoutBtn')?.addEventListener('click', doLogout);
   $('#generateKeyBtn')?.addEventListener('click', genKey);
   $('#generateImageBtn')?.addEventListener('click', genImage);
+  $('#previewVoiceBtn')?.addEventListener('click', async () => {
+    const sel = $('#voiceSelect');
+    const vid = sel?.value || null;
+    if (vid) { userSettings.voice_id = vid; saveUserSettings(); }
+    const t = 'Hi, I am Mirox. This is how I sound.';
+    await speakText(t);
+    authJson('/api/me/voice', { method: 'POST', body: JSON.stringify({ voice_id: vid || null }) }, null);
+  });
   $('#copyNewKeyBtn')?.addEventListener('click', async () => {
     const v = $('#newKeyValue')?.textContent || '';
     try {
@@ -1077,9 +1370,16 @@ function wireToolButtons() {
   $('#brandLogo')?.addEventListener('click', (e) => { e.preventDefault(); startNewChat(); if (window.innerWidth <= 860) closeSidebar(); });
   $('#newChatBtn')?.addEventListener('click', () => { startNewChat(); if (window.innerWidth <= 860) closeSidebar(); });
   $('#userChip')?.addEventListener('click', () => { if (!__user) openModal('loginModal'); });
+
+  /* Voice select change */
+  $('#voiceSelect')?.addEventListener('change', async () => {
+    const sel = $('#voiceSelect');
+    userSettings.voice_id = sel?.value || null;
+    saveUserSettings();
+    authJson('/api/me/voice', { method: 'POST', body: JSON.stringify({ voice_id: sel?.value || null }) }, null);
+  });
 }
 
-/* ---------- Global handlers ---------- */
 document.addEventListener('click', function (e) {
   const t = e.target;
   const closest = s => t.closest(s);
@@ -1097,6 +1397,7 @@ document.addEventListener('click', function (e) {
     tab.classList.add('active');
     document.querySelector(`.settings-pane[data-pane="${tab.dataset.tab}"]`)?.classList.add('active');
     if (tab.dataset.tab === 'mcp') loadMcp();
+    if (tab.dataset.tab === 'voice') loadVoices();
     return;
   }
   const mb = closest('[data-mode]');
@@ -1120,6 +1421,11 @@ document.addEventListener('click', function (e) {
         const txt = b.dataset.rawText;
         if (txt !== undefined) renderBubble(b, txt);
       });
+    }
+    if (k === 'autoSpeak') {
+      readAloudEnabled = userSettings.autoSpeak;
+      updateReadAloudIcon();
+      if (!readAloudEnabled) stopSpeaking();
     }
     return;
   }
@@ -1147,8 +1453,7 @@ document.addEventListener('click', function (e) {
       const id = hist.dataset.id;
       __conversations = __conversations.filter(x => x.id !== id);
       if (currentConversationId === id) startNewChat();
-      saveChatsToLS();
-      renderHistory();
+      saveChatsToLS(); renderHistory();
       e.stopPropagation();
       return;
     }
@@ -1167,31 +1472,33 @@ document.addEventListener('submit', function (e) {
   if (e.target?.id === 'simpleLoginForm') doLogin();
 }, true);
 
-document.addEventListener('input', function (e) {
-  if (e.target?.id === 'voiceRateInput') {
-    userSettings.voiceRate = parseFloat(e.target.value);
-    saveUserSettings();
-  }
-});
-
 document.addEventListener('change', function (e) {
   if (e.target?.id === 'fileInput') { handleFiles(e.target.files); e.target.value = ''; }
   if (e.target?.id === 'langSelect') { userSettings.language = e.target.value; saveUserSettings(); }
 });
 
-/* ---------- Init ---------- */
+/* ============================================================
+   Init
+   ============================================================ */
 async function init() {
   loadUserSettings();
   loadAppearance();
   wireModelPicker();
   wireSendButton();
   wireToolButtons();
+  wireReadAloud();
   renderModelPicker();
+
+  /* restore read-aloud state */
+  readAloudEnabled = !!userSettings.autoSpeak;
+  updateReadAloudIcon();
+
   await loadConfig();
   await loadUser();
   bindSuggestionClicks();
   updateUserUI();
   loadMcp();
+
   document.addEventListener('keydown', e => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
       e.preventDefault();
