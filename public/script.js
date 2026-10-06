@@ -1,28 +1,14 @@
 /* ============================================================
-   MiroxAI — Frontend v52
-   - Handles all providers: hf, ollama, fallback (searchque), canned
-   - Thinking text per provider
-   - Full chat, attachments, voice, settings, plans, MCP
+   MiroxAI — Frontend v53
+   - Attachments stored per-message and shown in bubble
+   - Image displayed above user text (ChatGPT/DeepSeek style)
+   - Background feature removed
+   - Provider-aware thinking text
    ============================================================ */
 
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getDatabase, ref, set, get, update, push, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
-
-/* ---------- Firebase (optional — only used for cross-device chat sync) ---------- */
-const FIREBASE_CONFIG = { databaseURL: 'https://miroxdata-default-rtdb.europe-west1.firebasedatabase.app/' };
-let firebaseApp = null, db = null;
-try {
-  firebaseApp = initializeApp(FIREBASE_CONFIG);
-  db = getDatabase(firebaseApp);
-} catch (e) {
-  console.warn('[Mirox] Firebase init failed — chat sync disabled', e.message);
-}
-
-/* ---------- DOM shortcuts ---------- */
 const $  = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
 
-/* ---------- Constants ---------- */
 const FALLBACK_MODELS = [
   { id: 'mirox-luna-1.2',    label: 'Luna',    tagline: 'Fast · warm · free',           tier: 'free',     default: true },
   { id: 'mirox-gen-1',       label: 'Gen',     tagline: 'Ultra concise',                tier: 'free' },
@@ -30,7 +16,6 @@ const FALLBACK_MODELS = [
   { id: 'mirox-ultra-10',    label: 'Ultra',   tagline: 'Deep reasoning',               tier: 'pro' },
   { id: 'mirox-eclipse-2.0', label: 'Eclipse', tagline: 'Best quality · Ultimate only', tier: 'ultimate' },
 ];
-
 const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
 
 const LS_KEY            = 'miroxai_conversations_v20';
@@ -38,23 +23,16 @@ const TOKEN_KEY         = 'mirox_token';
 const USER_SETTINGS_KEY = 'miroxai_user_settings_v20';
 const DEVICE_ID_KEY     = 'mirox_device_id';
 const APPEARANCE_KEY    = 'miroxai_appearance_v20';
-const BG_KEY            = 'miroxai_bg_v20';
 const MCP_KEY           = 'miroxai_mcp_v20';
 const FEEDBACK_KEY      = 'miroxai_feedback_v20';
 const KEYS_CACHE        = 'miroxai_keys_cache_v20';
 
-/* ---------- State ---------- */
 let __config = null, __user = null, __tier = 'free', __model = 'mirox-luna-1.2';
 let currentConversationId = null, isReplying = false, __conversations = [], pendingFiles = [];
-let bgState = { url: null, dim: 45 };
 let recognition = null, callRecognition = null;
 let callActive = false, callMuted = false, activeStreamController = null;
-
 let userSettings = { soundOn: true, notifOn: true, highlightOn: true, lineNumbers: false, language: 'en-US', voiceRate: 1 };
 
-/* ============================================================
-   Loading screen
-   ============================================================ */
 function killLoader() {
   const l = document.getElementById('loadingScreen');
   if (l) { l.classList.add('hidden'); setTimeout(() => l.style.display = 'none', 400); }
@@ -63,9 +41,6 @@ killLoader();
 setTimeout(killLoader, 500);
 setTimeout(killLoader, 1800);
 
-/* ============================================================
-   Utilities
-   ============================================================ */
 const uid = () => 'c_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
 const escapeHtml = s => {
@@ -79,13 +54,9 @@ function getDeviceId() {
   if (!id) { id = 'dev_' + uid(); localStorage.setItem(DEVICE_ID_KEY, id); }
   return id;
 }
-
 function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
 function setToken(t) { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch {} }
 
-/* ============================================================
-   API key cache
-   ============================================================ */
 function loadCachedKeys(email) {
   try { const all = JSON.parse(localStorage.getItem(KEYS_CACHE) || '{}'); return all[email] || []; }
   catch { return []; }
@@ -101,9 +72,6 @@ function addCachedKey(email, keyObj) {
   saveCachedKeys(email, keys.slice(0, 50));
 }
 
-/* ============================================================
-   Auth fetch + Firebase helpers
-   ============================================================ */
 async function authJson(url, opts = {}, fallback = null) {
   try {
     const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
@@ -116,22 +84,11 @@ async function authJson(url, opts = {}, fallback = null) {
   } catch { return fallback; }
 }
 
-async function saveToFirebase(path, data)      { if (!db) return; try { await set(ref(db, path), data); } catch {} }
-async function updateFirebase(path, data)      { if (!db) return; try { await update(ref(db, path), data); } catch {} }
-async function readFromFirebase(path)          { if (!db) return null; try { const s = await get(ref(db, path)); return s.exists() ? s.val() : null; } catch { return null; } }
-async function pushToFirebase(path, data)      { if (!db) return; try { const r = push(ref(db, path)); await set(r, { ...data, _ts: serverTimestamp() }); } catch {} }
-
-/* ============================================================
-   Modals + sidebar
-   ============================================================ */
 function openModal(id)  { document.getElementById(id)?.classList.add('open'); }
 function closeModal(id) { document.getElementById(id)?.classList.remove('open'); }
 function openSidebar()  { $('#sidebar')?.classList.add('open'); $('#sidebarScrim')?.classList.add('open'); }
 function closeSidebar() { $('#sidebar')?.classList.remove('open'); $('#sidebarScrim')?.classList.remove('open'); }
 
-/* ============================================================
-   User settings
-   ============================================================ */
 function loadUserSettings() {
   try { userSettings = { ...userSettings, ...JSON.parse(localStorage.getItem(USER_SETTINGS_KEY) || '{}') }; } catch {}
 }
@@ -141,9 +98,6 @@ function saveUserSettings() {
 function loadFeedback()  { try { return JSON.parse(localStorage.getItem(FEEDBACK_KEY) || '{}'); } catch { return {}; } }
 function saveFeedback(fb) { try { localStorage.setItem(FEEDBACK_KEY, JSON.stringify(fb)); } catch {} }
 
-/* ============================================================
-   Appearance
-   ============================================================ */
 function loadAppearance() {
   let prefs = {};
   try { prefs = JSON.parse(localStorage.getItem(APPEARANCE_KEY) || '{}'); } catch {}
@@ -164,31 +118,6 @@ function applyAppearance(prefs) {
   $$('[data-corner]').forEach(b => b.classList.toggle('active', b.dataset.corner === corner));
 }
 
-/* ============================================================
-   Background
-   ============================================================ */
-function loadBgPrefs() {
-  try { bgState = { ...bgState, ...JSON.parse(localStorage.getItem(BG_KEY) || '{}') }; } catch {}
-  applyBackground();
-}
-function applyBackground() {
-  if (bgState.url) {
-    document.body.style.backgroundImage = `linear-gradient(rgba(20,15,10,${bgState.dim / 100}), rgba(20,15,10,${bgState.dim / 100})), url("${bgState.url}")`;
-    document.body.style.backgroundSize = 'cover';
-    document.body.style.backgroundPosition = 'center';
-    document.body.style.backgroundAttachment = 'fixed';
-  } else {
-    document.body.style.backgroundImage = '';
-    document.body.style.backgroundSize = '';
-    document.body.style.backgroundPosition = '';
-    document.body.style.backgroundAttachment = '';
-  }
-}
-function saveBgPrefs() { try { localStorage.setItem(BG_KEY, JSON.stringify(bgState)); } catch {} }
-
-/* ============================================================
-   MCP servers
-   ============================================================ */
 function loadMcp() {
   let servers = [];
   try { servers = JSON.parse(localStorage.getItem(MCP_KEY) || '[]'); } catch {}
@@ -217,9 +146,7 @@ function renderMcp(servers) {
     </div>`).join('');
 }
 
-/* ============================================================
-   Markdown rendering
-   ============================================================ */
+/* ---------- Markdown renderer (unchanged) ---------- */
 function renderMarkdown(text) {
   if (!text) return '';
   let src = String(text);
@@ -236,7 +163,6 @@ function renderMarkdown(text) {
   if (last < src.length) parts.push({ type: 'text', content: src.slice(last) });
   return parts.map(p => p.type === 'code' ? renderCodeBlock(p.lang, p.content) : renderTextBlock(p.content)).join('');
 }
-
 function renderCodeBlock(lang, code) {
   const label = (lang || 'Code').toUpperCase();
   const cls = 'language-' + (lang || '').toLowerCase();
@@ -244,25 +170,11 @@ function renderCodeBlock(lang, code) {
   const lines = raw.split('\n');
   const codeHtml = lines.map(l => escapeHtml(l)).join('\n');
   let gutter = '';
-  if (userSettings.lineNumbers) {
-    let g = '';
-    for (let i = 1; i <= lines.length; i++) g += i + '\n';
-    gutter = `<div class="code-gutter">${g}</div>`;
-  }
+  if (userSettings.lineNumbers) { let g = ''; for (let i = 1; i <= lines.length; i++) g += i + '\n'; gutter = `<div class="code-gutter">${g}</div>`; }
   return `<div class="code-block"><div class="code-block-header"><span>${escapeHtml(label)}</span><button class="code-action-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></div><div class="code-block-body">${gutter}<pre><code class="${cls}">${codeHtml}</code></pre></div></div>`;
 }
-
-function isTableSeparator(line) {
-  const t = line.trim();
-  if (!t.startsWith('|')) return false;
-  return /^\|[\s:|-]+\|?\s*$/.test(t) && /-/.test(t);
-}
-function parseTableRow(line) {
-  let s = line.trim();
-  if (s.startsWith('|')) s = s.slice(1);
-  if (s.endsWith('|')) s = s.slice(0, -1);
-  return s.split('|').map(c => c.trim());
-}
+function isTableSeparator(line) { const t = line.trim(); if (!t.startsWith('|')) return false; return /^\|[\s:|-]+\|?\s*$/.test(t) && /-/.test(t); }
+function parseTableRow(line) { let s = line.trim(); if (s.startsWith('|')) s = s.slice(1); if (s.endsWith('|')) s = s.slice(0, -1); return s.split('|').map(c => c.trim()); }
 function renderTextBlock(text) {
   const lines = String(text).split('\n');
   let out = '', buf = [], listMode = null;
@@ -274,27 +186,13 @@ function renderTextBlock(text) {
     if (t.startsWith('|') && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
       flush(); closeList();
       const headers = parseTableRow(t);
-      const aligns = parseTableRow(lines[i + 1]).map(c => {
-        const left = c.startsWith(':'), right = c.endsWith(':');
-        if (left && right) return 'center';
-        if (right) return 'right';
-        return 'left';
-      });
+      const aligns = parseTableRow(lines[i + 1]).map(c => { const left = c.startsWith(':'), right = c.endsWith(':'); if (left && right) return 'center'; if (right) return 'right'; return 'left'; });
       const rows = []; let j = i + 2;
-      while (j < lines.length) {
-        const rt = lines[j].trim();
-        if (!rt.startsWith('|')) break;
-        if (isTableSeparator(rt)) break;
-        rows.push(parseTableRow(rt)); j++;
-      }
+      while (j < lines.length) { const rt = lines[j].trim(); if (!rt.startsWith('|')) break; if (isTableSeparator(rt)) break; rows.push(parseTableRow(rt)); j++; }
       let tbl = '<div class="table-wrap"><table class="md-table"><thead><tr>';
       headers.forEach((h, k) => { tbl += `<th style="text-align:${aligns[k] || 'left'}">${inlineFmt(h)}</th>`; });
       tbl += '</tr></thead><tbody>';
-      rows.forEach(row => {
-        tbl += '<tr>';
-        for (let k = 0; k < headers.length; k++) tbl += `<td style="text-align:${aligns[k] || 'left'}">${inlineFmt(row[k] || '')}</td>`;
-        tbl += '</tr>';
-      });
+      rows.forEach(row => { tbl += '<tr>'; for (let k = 0; k < headers.length; k++) tbl += `<td style="text-align:${aligns[k] || 'left'}">${inlineFmt(row[k] || '')}</td>`; tbl += '</tr>'; });
       tbl += '</tbody></table></div>';
       out += tbl; i = j; continue;
     }
@@ -336,9 +234,7 @@ function highlightCode(scope) {
     const raw = el.textContent || '';
     try {
       const m = (el.className || '').match(/language-([a-z0-9+#-]+)/i);
-      const r = (m && window.hljs.getLanguage(m[1]))
-        ? window.hljs.highlight(raw, { language: m[1], ignoreIllegals: true })
-        : window.hljs.highlightAuto(raw);
+      const r = (m && window.hljs.getLanguage(m[1])) ? window.hljs.highlight(raw, { language: m[1], ignoreIllegals: true }) : window.hljs.highlightAuto(raw);
       el.innerHTML = r.value; el.classList.add('hljs');
     } catch {}
     el.dataset.hl = '1';
@@ -352,11 +248,7 @@ function wireCodeButtons(scope) {
       const text = btn.closest('.code-block')?.querySelector('pre code')?.textContent || '';
       try {
         if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(text);
-        else {
-          const ta = document.createElement('textarea');
-          ta.value = text; ta.style.position = 'fixed'; ta.style.top = '-1000px';
-          document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
-        }
+        else { const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.top = '-1000px'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); }
         btn.innerHTML = '<i class="ri-check-line"></i> Copied';
         setTimeout(() => { btn.innerHTML = '<i class="ri-file-copy-line"></i> Copy'; }, 1400);
       } catch {}
@@ -364,26 +256,10 @@ function wireCodeButtons(scope) {
   });
 }
 
-/* ============================================================
-   Conversation management
-   ============================================================ */
+/* ---------- Conversations ---------- */
 function currentConvo() { return __conversations.find(c => c.id === currentConversationId) || null; }
-function saveChatsToLS() {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(__conversations)); } catch {}
-  if (__user) saveToFirebase(`chats/${__user.email}/conversations`, __conversations);
-}
-function loadChatsFromLS() {
-  try { __conversations = JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch { __conversations = []; }
-}
-async function loadChatsFromFirebase() {
-  if (!__user) return;
-  const data = await readFromFirebase(`chats/${__user.email}/conversations`);
-  if (Array.isArray(data) && data.length) {
-    __conversations = data;
-    saveChatsToLS();
-    renderHistory();
-  }
-}
+function saveChatsToLS() { try { localStorage.setItem(LS_KEY, JSON.stringify(__conversations)); } catch {} }
+function loadChatsFromLS() { try { __conversations = JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch { __conversations = []; } }
 
 function getWelcomeHTML() {
   return `<div class="welcome-screen">
@@ -427,16 +303,15 @@ function openConversationLS(id) {
   $('#chatTitle').textContent = c.title || 'Chat';
   const container = $('#chatMessages');
   container.innerHTML = '';
-  for (const msg of c.messages || []) addMessageToDOM(msg.role, msg.content, msg.ts, false, msg.id);
+  for (const msg of c.messages || []) {
+    addMessageToDOM(msg.role, msg.content, msg.ts, false, msg.id, msg.files || []);
+  }
   renderHistory(); scrollToBottom();
 }
 function renderHistory() {
   const list = $('#historyList');
   if (!list) return;
-  if (!__conversations.length) {
-    list.innerHTML = '<li class="history-empty">No conversations yet</li>';
-    return;
-  }
+  if (!__conversations.length) { list.innerHTML = '<li class="history-empty">No conversations yet</li>'; return; }
   list.innerHTML = __conversations.map(c => `
     <li class="history-item${c.id === currentConversationId ? ' active' : ''}" data-id="${c.id}">
       <i class="ri-chat-3-line"></i>
@@ -444,14 +319,9 @@ function renderHistory() {
       <button class="history-delete icon-btn"><i class="ri-delete-bin-line"></i></button>
     </li>`).join('');
 }
-function scrollToBottom() {
-  const c = $('#chatMessages');
-  if (c) c.scrollTop = c.scrollHeight;
-}
+function scrollToBottom() { const c = $('#chatMessages'); if (c) c.scrollTop = c.scrollHeight; }
 
-/* ============================================================
-   Message rendering
-   ============================================================ */
+/* ---------- Message rendering with attachments in bubble ---------- */
 function buildActions(role, msgId) {
   if (role === 'ai') {
     return `<div class="message-actions" data-msg-id="${msgId}">
@@ -467,7 +337,18 @@ function buildActions(role, msgId) {
   </div>`;
 }
 
-function addMessageToDOM(role, content, ts, animate = true, msgId = null) {
+function renderMessageAttachments(files) {
+  if (!files || !files.length) return '';
+  const items = files.map(f => {
+    if (f.type === 'image' && f.dataUrl) {
+      return `<div class="bubble-attach bubble-attach-img" data-lightbox="${escapeHtml(f.dataUrl)}"><img src="${f.dataUrl}" alt="${escapeHtml(f.name || '')}" loading="lazy"></div>`;
+    }
+    return `<div class="bubble-attach bubble-attach-file"><i class="ri-file-line"></i><span>${escapeHtml(f.name || 'file')}</span></div>`;
+  }).join('');
+  return `<div class="bubble-attachments">${items}</div>`;
+}
+
+function addMessageToDOM(role, content, ts, animate = true, msgId = null, files = []) {
   const container = $('#chatMessages');
   if (!container) return null;
   const welcome = container.querySelector('.welcome-screen');
@@ -477,15 +358,37 @@ function addMessageToDOM(role, content, ts, animate = true, msgId = null) {
   msgEl.className = `message ${role === 'user' ? 'user' : 'ai'}`;
   msgEl.dataset.msgId = id;
   msgEl.dataset.role = role;
+
+  const attachmentsHtml = role === 'user' ? renderMessageAttachments(files) : '';
+  const textHtml = content ? '' : '';
+
   msgEl.innerHTML = `<div class="message-content">
-    <div class="bubble"></div>
+    <div class="bubble">
+      ${attachmentsHtml}
+      <div class="bubble-text"></div>
+    </div>
     ${buildActions(role, id)}
     <div class="message-time">${ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</div>
   </div>`;
   container.appendChild(msgEl);
   const bubble = msgEl.querySelector('.bubble');
-  if (role === 'user') bubble.textContent = content;
-  else { bubble.dataset.rawText = content; renderBubble(bubble, content); }
+  const bubbleText = msgEl.querySelector('.bubble-text');
+  if (role === 'user') {
+    bubbleText.textContent = content || '';
+    if (!content) bubbleText.style.display = 'none';
+  } else {
+    bubble.dataset.rawText = content;
+    renderBubble(bubble, content);
+  }
+
+  // Lightbox click
+  msgEl.querySelectorAll('[data-lightbox]').forEach(el => {
+    el.addEventListener('click', () => {
+      const lb = $('#lightbox');
+      if (lb) { lb.querySelector('img').src = el.dataset.lightbox; lb.classList.add('open'); }
+    });
+  });
+
   wireMessageActions(msgEl);
   applyStoredFeedback(msgEl);
   if (animate) scrollToBottom();
@@ -535,11 +438,7 @@ function wireMessageActions(msgEl) {
       if (action === 'copy') {
         try {
           if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(text);
-          else {
-            const ta = document.createElement('textarea');
-            ta.value = text; ta.style.position = 'fixed'; ta.style.top = '-1000px';
-            document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
-          }
+          else { const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.top = '-1000px'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); }
           btn.classList.add('active');
           btn.innerHTML = '<i class="ri-check-line"></i>';
           setTimeout(() => { btn.classList.remove('active'); btn.innerHTML = '<i class="ri-file-copy-line"></i>'; }, 1200);
@@ -549,10 +448,11 @@ function wireMessageActions(msgEl) {
       if (action === 'retry') { if (role !== 'ai') return; handleRetry(msgEl); return; }
       if (action === 'edit') {
         if (role !== 'user') return;
-        const current = bubble?.textContent || '';
+        const current = bubble?.querySelector('.bubble-text')?.textContent || '';
         const next = prompt('Edit message', current);
         if (next === null || !next.trim()) return;
-        bubble.textContent = next.trim();
+        const bt = bubble.querySelector('.bubble-text');
+        if (bt) { bt.textContent = next.trim(); bt.style.display = ''; }
         const c = currentConvo();
         if (c) { const m = (c.messages || []).find(x => x.id === id); if (m) { m.content = next.trim(); saveChatsToLS(); } }
         return;
@@ -564,10 +464,10 @@ function wireMessageActions(msgEl) {
         msgEl.querySelectorAll('.action-btn[data-action="good"], .action-btn[data-action="bad"]').forEach(b => b.classList.remove('active-good', 'active-bad'));
         if (action === 'good') {
           if (currentlyGood) { delete fb[id]; saveFeedback(fb); }
-          else { fb[id] = 'good'; btn.classList.add('active-good'); saveFeedback(fb); recordFeedback(id, 'good'); }
+          else { fb[id] = 'good'; btn.classList.add('active-good'); saveFeedback(fb); }
         } else {
           if (currentlyBad) { delete fb[id]; saveFeedback(fb); }
-          else { fb[id] = 'bad'; btn.classList.add('active-bad'); saveFeedback(fb); recordFeedback(id, 'bad'); }
+          else { fb[id] = 'bad'; btn.classList.add('active-bad'); saveFeedback(fb); }
         }
       }
     });
@@ -579,10 +479,6 @@ function applyStoredFeedback(msgEl) {
   const fb = loadFeedback();
   if (fb[id] === 'good') msgEl.querySelector('.action-btn[data-action="good"]')?.classList.add('active-good');
   else if (fb[id] === 'bad') msgEl.querySelector('.action-btn[data-action="bad"]')?.classList.add('active-bad');
-}
-
-function recordFeedback(id, kind) {
-  if (__user) pushToFirebase(`logs/feedback/${__user.email}`, { msg_id: id, kind, ts: Date.now(), device: getDeviceId() });
 }
 
 async function handleRetry(msgEl) {
@@ -600,12 +496,9 @@ async function handleRetry(msgEl) {
   let el = msgEl.nextElementSibling;
   while (el) { const n = el.nextElementSibling; el.remove(); el = n; }
   msgEl.remove();
-  sendToAPI(userMsg.content, { skipUserAppend: true });
+  sendToAPI(userMsg.content, userMsg.files || []);
 }
 
-/* ============================================================
-   Send button + composer
-   ============================================================ */
 function updateSendButtonState() {
   const btn = $('#sendBtn'), inp = $('#messageInput');
   if (!btn || !inp) return;
@@ -621,26 +514,31 @@ function handleSend() {
   if (!inp) return;
   const text = inp.value.trim();
   if (!text && !pendingFiles.length) return;
+
+  const filesToSend = pendingFiles.slice();
   if (!currentConversationId) {
     currentConversationId = uid();
     __conversations.unshift({ id: currentConversationId, title: text.slice(0, 60) || 'New chat', messages: [], created: Date.now() });
   }
   const msgId = uid();
   const convo = currentConvo();
-  if (convo) { convo.messages.push({ id: msgId, role: 'user', content: text, ts: Date.now() }); convo.updated = Date.now(); }
-  addMessageToDOM('user', text, Date.now(), true, msgId);
+  if (convo) {
+    convo.messages.push({ id: msgId, role: 'user', content: text, ts: Date.now(), files: filesToSend });
+    convo.updated = Date.now();
+  }
+  addMessageToDOM('user', text, Date.now(), true, msgId, filesToSend);
   inp.value = '';
   inp.style.height = 'auto';
+  pendingFiles = [];
+  updatePreview();
   updateSendButtonState();
   saveChatsToLS();
   renderHistory();
-  sendToAPI(text);
+  sendToAPI(text, filesToSend);
 }
 
-/* ============================================================
-   Send to API — provider-aware thinking text
-   ============================================================ */
-async function sendToAPI(text, opts = {}) {
+/* ---------- Send to API ---------- */
+async function sendToAPI(text, files = []) {
   isReplying = true;
   updateSendButtonState();
   const stopBtn = $('#stopBtn');
@@ -660,7 +558,7 @@ async function sendToAPI(text, opts = {}) {
     const res = await fetch('/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, history, model, stream: true, files: pendingFiles }),
+      body: JSON.stringify({ message: text, history, model, stream: true, files }),
       signal: activeStreamController.signal,
     });
     if (!res.ok) {
@@ -694,12 +592,11 @@ async function sendToAPI(text, opts = {}) {
         try {
           const o = JSON.parse(pl);
 
-          /* Provider hint — updates the thinking text */
           if (o.p) {
             if (o.p === 'ar-search' || o.p === 'ar' || o.p === 'fallback') {
-              if (thinkingText) { thinkingText.dataset.default = thinkingText.textContent; thinkingText.textContent = 'Reading current data for answer'; }
+              if (thinkingText) { thinkingText.textContent = 'Reading current data for answer'; }
             } else if (o.p === 'ollama') {
-              if (thinkingText) { thinkingText.dataset.default = thinkingText.textContent; thinkingText.textContent = 'Running local model'; }
+              if (thinkingText) { thinkingText.textContent = 'Running local model'; }
             } else if (o.p === 'pl' || o.p === 'hf') {
               if (thinkingText) { thinkingText.textContent = 'Thinking'; }
             } else if (o.p === 'canned') {
@@ -738,8 +635,6 @@ async function sendToAPI(text, opts = {}) {
     if (c) { c.messages.push({ id: aiMsgId, role: 'assistant', content: full, ts: Date.now() }); c.updated = Date.now(); }
     saveChatsToLS();
     wireMessageActions(msgEl);
-
-    if (__user) pushToFirebase(`logs/chat/${__user.email}`, { model, message: text.slice(0, 500), reply: full.slice(0, 1000), ts: Date.now(), device: getDeviceId() });
     if (timeEl) timeEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   } catch (e) {
     bubble.classList.remove('streaming');
@@ -759,8 +654,6 @@ async function sendToAPI(text, opts = {}) {
     isReplying = false;
     activeStreamController = null;
     const st = $('#stopBtn'); if (st) st.style.display = 'none';
-    pendingFiles = [];
-    updatePreview();
     updateSendButtonState();
   }
 }
@@ -772,9 +665,7 @@ function stopStreaming() {
   updateSendButtonState();
 }
 
-/* ============================================================
-   File attachments
-   ============================================================ */
+/* ---------- Files ---------- */
 function handleFiles(files) {
   if (!files?.length) return;
   const arr = Array.from(files);
@@ -810,17 +701,13 @@ function updatePreview() {
     : `<div class="attach-chip"><i class="ri-file-line"></i>${escapeHtml(f.name)}</div>`).join('');
 }
 
-/* ============================================================
-   Model picker
-   ============================================================ */
+/* ---------- Model picker ---------- */
 function getModelsList() { if (__config?.models?.length) return __config.models; return FALLBACK_MODELS; }
-
 function canUseModel(modelTier) {
   if (modelTier === 'free') return true;
   if (modelTier === 'ultimate' && __tier === 'free') return true;
   return TIER_RANK[__tier || 'free'] >= TIER_RANK[modelTier];
 }
-
 function renderModelPicker() {
   const menu = $('#modelPickerMenu');
   if (!menu) return;
@@ -831,10 +718,7 @@ function renderModelPicker() {
     const lockLabel = usable ? '' : (m.tier === 'ultimate' ? '🔒 Ultimate' : '🔒 Pro');
     return `<div class="model-option${m.id === currentId ? ' active' : ''}${usable ? '' : ' locked'}"
                  data-model-id="${m.id}" data-tier="${m.tier}" data-usable="${usable}">
-      <span class="model-option-label">
-        <span class="dot"></span>${escapeHtml(m.label)}
-        ${lockLabel ? `<span class="model-lock">${lockLabel}</span>` : ''}
-      </span>
+      <span class="model-option-label"><span class="dot"></span>${escapeHtml(m.label)}${lockLabel ? `<span class="model-lock">${lockLabel}</span>` : ''}</span>
       <span class="model-option-tag">${escapeHtml(m.tagline || '')}</span>
     </div>`;
   }).join('');
@@ -857,8 +741,7 @@ function renderModelPicker() {
 function selectModel(id) {
   if (!id) return;
   __model = id;
-  const models = getModelsList();
-  const m = models.find(x => x.id === id);
+  const m = getModelsList().find(x => x.id === id);
   if (m && $('#currentModelLabel')) $('#currentModelLabel').textContent = m.label;
   renderModelPicker();
   closeModelPicker();
@@ -870,16 +753,13 @@ function wireModelPicker() {
   if (!btn) return;
   btn.addEventListener('pointerdown', (e) => {
     e.preventDefault(); e.stopPropagation();
-    const isOpen = $('#modelPickerMenu')?.classList.contains('open');
-    if (isOpen) closeModelPicker(); else openModelPicker();
+    if ($('#modelPickerMenu')?.classList.contains('open')) closeModelPicker();
+    else openModelPicker();
   });
   document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#modelPicker')) closeModelPicker(); }, true);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModelPicker(); });
 }
 
-/* ============================================================
-   Composer wiring
-   ============================================================ */
 function wireSendButton() {
   const btn = $('#sendBtn'), inp = $('#messageInput');
   if (!btn || !inp) return;
@@ -900,9 +780,7 @@ function wireSendButton() {
   updateSendButtonState();
 }
 
-/* ============================================================
-   Login / logout
-   ============================================================ */
+/* ---------- Auth ---------- */
 async function doLogin() {
   const name = $('#loginName')?.value.trim();
   const email = $('#loginEmail')?.value.trim().toLowerCase();
@@ -914,20 +792,17 @@ async function doLogin() {
     closeModal('loginModal');
     updateUserUI();
     renderModelPicker();
-    updateFirebase(`users/${email}`, { email, name, tier: res.user.tier || 'free', last_login: Date.now() });
-    pushToFirebase(`logs/user/${email}`, { event: 'signin', name, ts: Date.now(), device: getDeviceId() });
-    loadChatsFromFirebase();
+    loadChatsFromLS();
+    renderHistory();
   } else {
     alert(res?.error || 'Login failed');
   }
 }
 async function doLogout() {
-  const email = __user?.email;
   await authJson('/api/logout', { method: 'POST' }, null);
   setToken('');
   __user = null;
   __tier = 'free';
-  if (email) pushToFirebase(`logs/user/${email}`, { event: 'signout', ts: Date.now(), device: getDeviceId() });
   updateUserUI();
   closeModal('settingsModal');
   renderModelPicker();
@@ -948,20 +823,15 @@ async function loadUser() {
   if (res?.user) {
     __user = res.user;
     __tier = res.user.tier || 'free';
-    const fbUser = await readFromFirebase(`users/${res.user.email}`);
-    if (fbUser) { __user = { ...__user, ...fbUser }; __tier = fbUser.tier || 'free'; }
     updateUserUI();
-    loadChatsFromFirebase();
   } else {
     __tier = 'free';
     updateUserUI();
-    loadChatsFromLS();
   }
+  loadChatsFromLS();
+  renderHistory();
 }
 
-/* ============================================================
-   Config + plans
-   ============================================================ */
 async function loadConfig() {
   try {
     const res = await fetch('/api/config', { cache: 'no-store' });
@@ -990,9 +860,7 @@ async function loadPlans() {
     </div>`).join('');
 }
 
-/* ============================================================
-   API keys
-   ============================================================ */
+/* ---------- API keys ---------- */
 async function loadUserKeys() {
   const list = $('#apiKeysList'), counter = $('#apiKeyCounter');
   if (!list) return;
@@ -1002,20 +870,16 @@ async function loadUserKeys() {
     return;
   }
   const cached = loadCachedKeys(__user.email);
-  if (cached.length) {
-    list.innerHTML = cached.map(k => `<div class="api-key-item"><i class="ri-key-line"></i><span class="key-prefix">${escapeHtml(k.prefix)}…</span><span style="color:var(--text-faint);font-size:11px;margin-left:auto;">${k.created ? new Date(k.created * 1000).toLocaleDateString() : ''}</span></div>`).join('');
-  } else {
-    list.innerHTML = '<div style="font-size:12.5px;color:var(--text-faint);">Loading…</div>';
-  }
+  list.innerHTML = cached.length
+    ? cached.map(k => `<div class="api-key-item"><i class="ri-key-line"></i><span class="key-prefix">${escapeHtml(k.prefix)}…</span></div>`).join('')
+    : '<div style="font-size:12.5px;color:var(--text-faint);">Loading…</div>';
   const res = await authJson('/api/keys/list', {}, null);
   const used = res?.used ?? cached.length;
   const limit = res?.limit ?? 2;
   if (counter) counter.textContent = `(${used}/${limit} this month)`;
   if (res?.keys?.length) {
     saveCachedKeys(__user.email, res.keys);
-    list.innerHTML = res.keys.map(k => `<div class="api-key-item"><i class="ri-key-line"></i><span class="key-prefix">${escapeHtml(k.prefix)}…</span><span style="color:var(--text-faint);font-size:11px;margin-left:auto;">${k.created ? new Date(k.created * 1000).toLocaleDateString() : ''}</span></div>`).join('');
-  } else if (!cached.length) {
-    list.innerHTML = '<div style="font-size:13px;color:var(--text-faint);">No API keys yet.</div>';
+    list.innerHTML = res.keys.map(k => `<div class="api-key-item"><i class="ri-key-line"></i><span class="key-prefix">${escapeHtml(k.prefix)}…</span></div>`).join('');
   }
 }
 
@@ -1028,31 +892,23 @@ async function genKey() {
     if (res?.ok && res.key) {
       addCachedKey(__user.email, { prefix: res.prefix, created: Math.floor(Date.now() / 1000) });
       const newKeyDisplay = $('#newKeyDisplay'), newKeyValue = $('#newKeyValue');
-      if (newKeyDisplay && newKeyValue) {
-        newKeyDisplay.style.display = 'block';
-        newKeyValue.textContent = res.key;
-      }
+      if (newKeyDisplay && newKeyValue) { newKeyDisplay.style.display = 'block'; newKeyValue.textContent = res.key; }
       loadUserKeys();
-      pushToFirebase(`logs/account/${__user.email}`, { event: 'apikey_created', prefix: res.prefix, ts: Date.now() });
     } else {
       alert(res?.error || 'Failed to generate key.');
     }
-  } catch (e) {
-    alert('Network error: ' + e.message);
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Generate key'; }
   }
 }
 
-/* ============================================================
-   Image generation
-   ============================================================ */
+/* ---------- Image generation ---------- */
 async function genImage() {
   const prompt = $('#imagePrompt')?.value.trim();
   if (!prompt) return alert('Please describe the image.');
   const btn = $('#generateImageBtn'), result = $('#imageResult');
   if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line"></i> Generating…'; }
-  if (result) result.innerHTML = `<div style="text-align:center;padding:20px;"><div class="bubble thinking" style="display:inline-flex;background:var(--panel);border:1px solid var(--border);padding:12px 16px;border-radius:16px;"><span class="thinking-text">Generating</span><span class="thinking-dots"><span></span><span></span><span></span></span></div></div>`;
+  if (result) result.innerHTML = '<div style="text-align:center;padding:20px;"><div class="bubble thinking" style="display:inline-flex;background:var(--panel);border:1px solid var(--border);padding:12px 16px;border-radius:16px;"><span class="thinking-text">Generating</span><span class="thinking-dots"><span></span><span></span><span></span></span></div></div>';
   try {
     const res = await fetch('/v1/images/generations', {
       method: 'POST',
@@ -1062,7 +918,6 @@ async function genImage() {
     const data = await res.json().catch(() => ({}));
     if (res.ok && data.ok && data.image) {
       if (result) result.innerHTML = `<img src="${data.image}" alt="${escapeHtml(prompt)}" loading="lazy">`;
-      if (__user) pushToFirebase(`logs/image/${__user.email}`, { prompt: prompt.slice(0, 300), model: 'Lumenal 1.0', ts: Date.now() });
     } else {
       if (result) result.innerHTML = `<div style="padding:16px;border-radius:12px;background:rgba(220,38,38,0.08);border:1px solid rgba(220,38,38,0.2);"><p style="color:#dc2626;font-size:13px;margin:0;"><strong>Failed:</strong> ${escapeHtml(data.error?.message || data.error || 'Unknown')}</p></div>`;
     }
@@ -1073,9 +928,7 @@ async function genImage() {
   }
 }
 
-/* ============================================================
-   Voice
-   ============================================================ */
+/* ---------- Voice ---------- */
 function startMic() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return alert('Speech recognition not supported.');
@@ -1130,9 +983,7 @@ async function requestMic() {
   catch { alert('Denied.'); }
 }
 
-/* ============================================================
-   Memory + persona
-   ============================================================ */
+/* ---------- Memory + persona ---------- */
 async function loadMemory() {
   const list = $('#memoryList');
   if (!list || !__user) return;
@@ -1162,16 +1013,12 @@ async function submitReport() {
   if (!subject || !message) return alert('Please fill subject and message.');
   const res = await authJson('/api/support/ticket', { method: 'POST', body: JSON.stringify({ category, subject, message }) }, null);
   if (res?.ok) { alert('Ticket submitted!'); closeModal('supportModal'); }
-  else alert(res?.error || 'Failed.');
 }
 
-/* ============================================================
-   Wire all buttons
-   ============================================================ */
+/* ---------- Wire buttons ---------- */
 function wireToolButtons() {
   $('#talkModeBtn')?.addEventListener('click', startCall);
   $('#imageModeBtn')?.addEventListener('click', () => openModal('imageModal'));
-  $('#backgroundModeBtn')?.addEventListener('click', () => openModal('backgroundModal'));
   $('#plansModeBtn')?.addEventListener('click', () => { openModal('plansModal'); loadPlans(); loadUserKeys(); });
   $('#supportModeBtn')?.addEventListener('click', () => openModal('supportModal'));
   $('#supportModeBtn2')?.addEventListener('click', () => openModal('supportModal'));
@@ -1188,11 +1035,7 @@ function wireToolButtons() {
     const v = $('#newKeyValue')?.textContent || '';
     try {
       if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(v);
-      else {
-        const ta = document.createElement('textarea');
-        ta.value = v; ta.style.position = 'fixed'; ta.style.top = '-1000px';
-        document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
-      }
+      else { const ta = document.createElement('textarea'); ta.value = v; ta.style.position = 'fixed'; ta.style.top = '-1000px'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); }
       const b = $('#copyNewKeyBtn');
       if (b) { b.innerHTML = '<i class="ri-check-line"></i>'; setTimeout(() => b.innerHTML = '<i class="ri-file-copy-line"></i>', 1200); }
     } catch {}
@@ -1218,15 +1061,6 @@ function wireToolButtons() {
   $('#stopBtn')?.addEventListener('click', stopStreaming);
   $('#callEndBtn')?.addEventListener('click', endCall);
   $('#callMuteBtn')?.addEventListener('click', toggleMute);
-  $('#bgUploadZone')?.addEventListener('click', () => $('#bgFileInput')?.click());
-  $('#bgUrlApplyBtn')?.addEventListener('click', () => {
-    const u = $('#bgUrlInput')?.value.trim();
-    if (u) { bgState.url = u; saveBgPrefs(); applyBackground(); }
-  });
-  $('#bgRemoveBtn')?.addEventListener('click', () => {
-    bgState.url = null; saveBgPrefs(); applyBackground();
-    if ($('#bgUrlInput')) $('#bgUrlInput').value = '';
-  });
   $('#editTitleBtn')?.addEventListener('click', () => {
     const cur = $('#chatTitle')?.textContent || '';
     const nxt = prompt('Rename chat', cur);
@@ -1240,21 +1074,12 @@ function wireToolButtons() {
   $('#hamburgerBtn')?.addEventListener('click', openSidebar);
   $('#sidebarCloseBtn')?.addEventListener('click', closeSidebar);
   $('#sidebarScrim')?.addEventListener('click', closeSidebar);
-  $('#brandLogo')?.addEventListener('click', (e) => {
-    e.preventDefault();
-    startNewChat();
-    if (window.innerWidth <= 860) closeSidebar();
-  });
-  $('#newChatBtn')?.addEventListener('click', () => {
-    startNewChat();
-    if (window.innerWidth <= 860) closeSidebar();
-  });
+  $('#brandLogo')?.addEventListener('click', (e) => { e.preventDefault(); startNewChat(); if (window.innerWidth <= 860) closeSidebar(); });
+  $('#newChatBtn')?.addEventListener('click', () => { startNewChat(); if (window.innerWidth <= 860) closeSidebar(); });
   $('#userChip')?.addEventListener('click', () => { if (!__user) openModal('loginModal'); });
 }
 
-/* ============================================================
-   Global event delegation
-   ============================================================ */
+/* ---------- Global handlers ---------- */
 document.addEventListener('click', function (e) {
   const t = e.target;
   const closest = s => t.closest(s);
@@ -1343,13 +1168,6 @@ document.addEventListener('submit', function (e) {
 }, true);
 
 document.addEventListener('input', function (e) {
-  if (e.target?.id === 'bgDimInput') {
-    bgState.dim = parseInt(e.target.value);
-    const l = $('#bgDimLabel');
-    if (l) l.textContent = bgState.dim + '%';
-    applyBackground();
-    saveBgPrefs();
-  }
   if (e.target?.id === 'voiceRateInput') {
     userSettings.voiceRate = parseFloat(e.target.value);
     saveUserSettings();
@@ -1358,35 +1176,19 @@ document.addEventListener('input', function (e) {
 
 document.addEventListener('change', function (e) {
   if (e.target?.id === 'fileInput') { handleFiles(e.target.files); e.target.value = ''; }
-  if (e.target?.id === 'bgFileInput') {
-    const f = e.target.files[0];
-    if (!f) return;
-    const r = new FileReader();
-    r.onload = () => { bgState.url = r.result; saveBgPrefs(); applyBackground(); };
-    r.readAsDataURL(f);
-    e.target.value = '';
-  }
-  if (e.target?.id === 'langSelect') {
-    userSettings.language = e.target.value;
-    saveUserSettings();
-  }
+  if (e.target?.id === 'langSelect') { userSettings.language = e.target.value; saveUserSettings(); }
 });
 
-/* ============================================================
-   Init
-   ============================================================ */
+/* ---------- Init ---------- */
 async function init() {
   loadUserSettings();
   loadAppearance();
-  loadBgPrefs();
   wireModelPicker();
   wireSendButton();
   wireToolButtons();
   renderModelPicker();
   await loadConfig();
   await loadUser();
-  loadChatsFromLS();
-  renderHistory();
   bindSuggestionClicks();
   updateUserUI();
   loadMcp();
