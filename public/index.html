@@ -11,6 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/remixicon@4.9.0/fonts/remixicon.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -59,6 +60,7 @@
       <button id="hamburgerBtn" class="icon-btn hamburger" type="button" aria-label="Menu"><i class="ri-menu-line"></i></button>
       <h2 id="chatTitle" class="chat-title">New chat</h2>
       <div class="chat-header-actions">
+        <button id="readAloudBtn" class="icon-btn" type="button" aria-label="Read aloud" title="Read aloud"><i class="ri-volume-mute-line"></i></button>
         <div id="modelPicker" class="model-picker-wrap">
           <button id="modelPickerBtn" class="model-picker-btn" type="button">
             <i class="ri-sparkling-2-line"></i>
@@ -79,9 +81,9 @@
         <p class="welcome-sub">Built by the OpenSurr team. Ask anything, attach images or files, or start a voice call.</p>
         <div class="suggestion-grid">
           <button class="suggestion-card" type="button" data-prompt="What would you like to talk about?"><i class="ri-chat-3-line"></i><span>What would you like to talk about?</span></button>
+          <button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span>Generate me an image of a cat</span></button>
           <button class="suggestion-card" type="button" data-prompt="Help me write code"><i class="ri-code-line"></i><span>Help me write code</span></button>
           <button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span>Explain a concept simply</span></button>
-          <button class="suggestion-card" type="button" data-prompt="Generate an image"><i class="ri-image-line"></i><span>Generate an image</span></button>
         </div>
       </div>
     </div>
@@ -172,6 +174,18 @@
         </div>
       </div>
       <div class="settings-pane" data-pane="voice">
+        <div class="setting-group">
+          <h4>Voice</h4>
+          <p class="setting-desc">Choose how Mirox sounds when reading responses aloud.</p>
+          <select id="voiceSelect" class="modal-select">
+            <option value="">Default</option>
+          </select>
+          <button id="previewVoiceBtn" class="modal-btn" type="button" style="margin-top:10px;"><i class="ri-play-line"></i> Preview voice</button>
+        </div>
+        <div class="setting-group">
+          <h4>Read aloud</h4>
+          <div class="setting-row"><span>Auto-speak responses</span><button class="toggle-btn" type="button" data-toggle="autoSpeak">OFF</button></div>
+        </div>
         <div class="setting-group"><h4>Voice language</h4><select id="langSelect" class="modal-select">
           <option value="en-US">English</option><option value="es-ES">Spanish</option>
           <option value="fr-FR">French</option><option value="de-DE">German</option>
@@ -275,7 +289,7 @@
       <div class="call-avatar"><i class="ri-mic-line"></i></div>
       <div class="call-status" id="callStatus">Listening…</div>
       <div class="call-actions">
-        <button id="callMuteBtn" class="call-btn" type="button" aria-label="Mute"><i class="ri-mic-off-line"></i></button>
+        <button id="callMuteBtn" class="call-btn" type="button" aria-label="Mute"><i class="ri-mic-line"></i></button>
         <button id="callEndBtn" class="call-btn danger" type="button" aria-label="End"><i class="ri-phone-fill"></i></button>
       </div>
       <div class="call-transcript" id="callTranscript"></div>
@@ -285,6 +299,21 @@
   <div id="lightbox" class="lightbox"><img src="" alt="Preview"></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/javascript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/typescript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/css.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/xml.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/sql.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/rust.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/java.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/cpp.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/php.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/ruby.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/yaml.min.js"></script>
   <script type="module" src="/script.js"></script>
 </body>
 </html>
