@@ -1,32 +1,27 @@
 #!/usr/bin/env python3
 """
-MiroxAI Bridge Client
-=====================
-Run this on your laptop to let Mirox control it.
-It opens a WebSocket server on localhost:PORT and waits for commands.
+MiroxAI Bridge Client — HTTP-only.
+Runs on 127.0.0.1:PORT and lets MiroxAI (from any HTTPS page) drive
+your laptop: run commands, write files, read files, list directories.
 
-Commands supported:
-  exec    — run a shell command
-  write   — write a file
-  read    — read a file
-  list    — list directory contents
-  ping    — health check
+Sends the "Access-Control-Allow-Private-Network: true" header so that
+Chrome allows HTTPS pages (like https://miroxai.org) to reach it.
 """
-
-import asyncio
-import json
 import os
-import subprocess
 import sys
+import json
 import time
+import subprocess
+import asyncio
 from pathlib import Path
 
 try:
-    import websockets
+    from aiohttp import web
 except ImportError:
-    print("Missing dependency: websockets")
-    print("Install with: pip install websockets")
+    print("Missing dependency: aiohttp")
+    print("Install with: pip install aiohttp")
     sys.exit(1)
+
 
 # ---------- Config ----------
 CONFIG_FILE = Path(__file__).parent / "config.json"
@@ -38,14 +33,15 @@ else:
         "bridge_name": "My Laptop",
         "port": 8765,
         "model": "mirox-luna-1.2",
-        "allowed_dirs": [str(Path.home())],
+        "allowed_dirs": ["~"],
         "max_output_bytes": 200000,
     }
 
-PORT = CONFIG.get("port", 8765)
+PORT = int(CONFIG.get("port", 8765))
 NAME = CONFIG.get("bridge_name", "My Laptop")
-ALLOWED_DIRS = [Path(p).expanduser().resolve() for p in CONFIG.get("allowed_dirs", [str(Path.home())])]
+ALLOWED_DIRS = [Path(p).expanduser().resolve() for p in CONFIG.get("allowed_dirs", ["~"])]
 MAX_OUTPUT = CONFIG.get("max_output_bytes", 200000)
+
 
 # ---------- Safety ----------
 def is_path_allowed(p: Path) -> bool:
@@ -61,7 +57,8 @@ def is_path_allowed(p: Path) -> bool:
             continue
     return False
 
-def safe_path(raw: str) -> Path | None:
+
+def safe_path(raw: str):
     p = Path(raw).expanduser()
     if not p.is_absolute():
         p = Path.cwd() / p
@@ -69,61 +66,126 @@ def safe_path(raw: str) -> Path | None:
         p = p.resolve()
     except Exception:
         return None
-    if not is_path_allowed(p):
-        return None
-    return p
+    return p if is_path_allowed(p) else None
+
+
+# ---------- CORS middleware ----------
+@web.middleware
+async def cors_mw(request, handler):
+    # Handle preflight
+    if request.method == "OPTIONS":
+        resp = web.Response()
+    else:
+        try:
+            resp = await handler(request)
+        except web.HTTPException as e:
+            resp = e
+        except Exception as e:
+            resp = web.json_response({"ok": False, "error": str(e)}, status=500)
+
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    # CRITICAL — required by Chrome for HTTPS pages to call http://localhost
+    resp.headers["Access-Control-Allow-Private-Network"] = "true"
+    resp.headers["Access-Control-Max-Age"] = "86400"
+    return resp
+
 
 # ---------- Handlers ----------
-async def handle_exec(args: dict) -> dict:
-    cmd = args.get("command", "").strip()
+async def ping(req):
+    return web.json_response({
+        "ok": True,
+        "name": NAME,
+        "cwd": os.getcwd(),
+        "time": time.time(),
+    })
+
+
+async def exec_cmd(req):
+    try:
+        data = await req.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "Invalid JSON"})
+
+    cmd = str(data.get("command", "")).strip()
     if not cmd:
-        return {"ok": False, "error": "No command provided"}
-    cwd = args.get("cwd") or str(Path.home())
+        return web.json_response({"ok": False, "error": "No command provided"})
+
+    cwd = data.get("cwd") or str(Path.home())
     cwd_path = safe_path(cwd) or Path.home()
+    timeout = int(data.get("timeout", 120))
+
+    print(f"[Bridge] exec: {cmd[:120]}")
     try:
         proc = subprocess.run(
             cmd, shell=True, cwd=str(cwd_path),
-            capture_output=True, text=True, timeout=args.get("timeout", 120),
+            capture_output=True, text=True, timeout=timeout,
         )
-        out = (proc.stdout or "")[:MAX_OUTPUT]
-        err = (proc.stderr or "")[:MAX_OUTPUT]
-        return {"ok": True, "exit_code": proc.returncode, "stdout": out, "stderr": err, "cwd": str(cwd_path)}
+        return web.json_response({
+            "ok": True,
+            "exit_code": proc.returncode,
+            "stdout": (proc.stdout or "")[:MAX_OUTPUT],
+            "stderr": (proc.stderr or "")[:MAX_OUTPUT],
+            "cwd": str(cwd_path),
+        })
     except subprocess.TimeoutExpired:
-        return {"ok": False, "error": "Command timed out"}
+        return web.json_response({"ok": False, "error": "Command timed out"})
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        return web.json_response({"ok": False, "error": str(e)})
 
-async def handle_write(args: dict) -> dict:
-    raw_path = args.get("path", "")
-    content = args.get("content", "")
-    p = safe_path(raw_path)
+
+async def write_file(req):
+    try:
+        data = await req.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "Invalid JSON"})
+
+    p = safe_path(data.get("path", ""))
     if not p:
-        return {"ok": False, "error": "Path not allowed or invalid"}
+        return web.json_response({"ok": False, "error": "Path not allowed"})
+
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
+        content = data.get("content", "")
         p.write_text(content, encoding="utf-8")
-        return {"ok": True, "path": str(p), "bytes": len(content.encode("utf-8"))}
+        print(f"[Bridge] wrote: {p}")
+        return web.json_response({"ok": True, "path": str(p), "bytes": len(content)})
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        return web.json_response({"ok": False, "error": str(e)})
 
-async def handle_read(args: dict) -> dict:
-    p = safe_path(args.get("path", ""))
+
+async def read_file(req):
+    try:
+        data = await req.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "Invalid JSON"})
+
+    p = safe_path(data.get("path", ""))
     if not p:
-        return {"ok": False, "error": "Path not allowed or invalid"}
+        return web.json_response({"ok": False, "error": "Path not allowed"})
     if not p.exists():
-        return {"ok": False, "error": "File not found"}
+        return web.json_response({"ok": False, "error": "Not found"})
+
     try:
         text = p.read_text(encoding="utf-8", errors="replace")[:MAX_OUTPUT]
-        return {"ok": True, "path": str(p), "content": text}
+        return web.json_response({"ok": True, "path": str(p), "content": text})
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        return web.json_response({"ok": False, "error": str(e)})
 
-async def handle_list(args: dict) -> dict:
-    p = safe_path(args.get("path", str(Path.home())))
+
+async def list_dir(req):
+    try:
+        data = await req.json()
+    except Exception:
+        data = {}
+
+    p = safe_path(data.get("path", "."))
     if not p:
-        return {"ok": False, "error": "Path not allowed or invalid"}
+        return web.json_response({"ok": False, "error": "Path not allowed"})
     if not p.is_dir():
-        return {"ok": False, "error": "Not a directory"}
+        return web.json_response({"ok": False, "error": "Not a directory"})
+
     try:
         items = []
         for child in sorted(p.iterdir()):
@@ -132,63 +194,30 @@ async def handle_list(args: dict) -> dict:
                 "is_dir": child.is_dir(),
                 "size": child.stat().st_size if child.is_file() else 0,
             })
-        return {"ok": True, "path": str(p), "items": items[:500]}
+        return web.json_response({"ok": True, "path": str(p), "items": items[:500]})
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        return web.json_response({"ok": False, "error": str(e)})
 
-async def handle_ping(_: dict) -> dict:
-    return {"ok": True, "name": NAME, "time": time.time(), "cwd": os.getcwd()}
 
-HANDLERS = {
-    "exec": handle_exec,
-    "write": handle_write,
-    "read": handle_read,
-    "list": handle_list,
-    "ping": handle_ping,
-}
+# ---------- App ----------
+def build_app():
+    app = web.Application(middlewares=[cors_mw])
+    app.router.add_get("/ping", ping)
+    app.router.add_options("/ping", lambda r: web.Response())
+    app.router.add_post("/exec", exec_cmd)
+    app.router.add_options("/exec", lambda r: web.Response())
+    app.router.add_post("/write", write_file)
+    app.router.add_options("/write", lambda r: web.Response())
+    app.router.add_post("/read", read_file)
+    app.router.add_options("/read", lambda r: web.Response())
+    app.router.add_post("/list", list_dir)
+    app.router.add_options("/list", lambda r: web.Response())
+    return app
 
-# ---------- WebSocket server ----------
-async def client_handler(websocket):
-    peer = websocket.remote_address
-    print(f"[Bridge] Client connected from {peer}")
-    try:
-        async for raw in websocket:
-            try:
-                msg = json.loads(raw)
-            except json.JSONDecodeError:
-                await websocket.send(json.dumps({"ok": False, "error": "Invalid JSON"}))
-                continue
-
-            cmd = msg.get("command", "")
-            args = msg.get("args", {}) or {}
-            req_id = msg.get("id", "")
-
-            handler = HANDLERS.get(cmd)
-            if not handler:
-                await websocket.send(json.dumps({"id": req_id, "ok": False, "error": f"Unknown command: {cmd}"}))
-                continue
-
-            try:
-                result = await handler(args)
-            except Exception as e:
-                result = {"ok": False, "error": str(e)}
-
-            result["id"] = req_id
-            await websocket.send(json.dumps(result))
-    except websockets.exceptions.ConnectionClosed:
-        pass
-    finally:
-        print(f"[Bridge] Client disconnected: {peer}")
-
-async def main():
-    print(f"[Bridge] Starting '{NAME}' on ws://localhost:{PORT}")
-    print(f"[Bridge] Allowed dirs: {[str(d) for d in ALLOWED_DIRS]}")
-    async with websockets.serve(client_handler, "localhost", PORT):
-        print("[Bridge] Ready. Waiting for Mirox…")
-        await asyncio.Future()
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\n[Bridge] Stopped.")
+    print(f"[Bridge] Starting '{NAME}' on http://127.0.0.1:{PORT}")
+    print(f"[Bridge] Allowed dirs: {[str(d) for d in ALLOWED_DIRS]}")
+    print(f"[Bridge] Ready. Open MiroxAI and click 'Connect'.")
+    print(f"[Bridge] Health check: http://localhost:{PORT}/ping")
+    web.run_app(build_app(), host="127.0.0.1", port=PORT, print=None, access_log=None)
