@@ -4,8 +4,8 @@ MiroxAI Bridge Client — HTTP-only.
 Runs on 127.0.0.1:PORT and lets MiroxAI (from any HTTPS page) drive
 your laptop: run commands, write files, read files, list directories.
 
-Sends the "Access-Control-Allow-Private-Network: true" header so that
-Chrome allows HTTPS pages (like https://miroxai.org) to reach it.
+Sends "Access-Control-Allow-Private-Network: true" so Chrome allows
+HTTPS pages (like https://miroxai.org) to reach it.
 """
 import os
 import sys
@@ -72,7 +72,6 @@ def safe_path(raw: str):
 # ---------- CORS middleware ----------
 @web.middleware
 async def cors_mw(request, handler):
-    # Handle preflight
     if request.method == "OPTIONS":
         resp = web.Response()
     else:
@@ -86,7 +85,6 @@ async def cors_mw(request, handler):
     resp.headers["Access-Control-Allow-Origin"] = "*"
     resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
-    # CRITICAL — required by Chrome for HTTPS pages to call http://localhost
     resp.headers["Access-Control-Allow-Private-Network"] = "true"
     resp.headers["Access-Control-Max-Age"] = "86400"
     return resp
