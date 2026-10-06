@@ -1,18 +1,8 @@
 #!/usr/bin/env python3
 """
-MiroxAI Bridge Client — HTTP-only.
-Runs on 127.0.0.1:PORT and lets MiroxAI (from any HTTPS page) drive
-your laptop: run commands, write files, read files, list directories.
-
-Sends "Access-Control-Allow-Private-Network: true" so Chrome allows
-HTTPS pages (like https://miroxai.org) to reach it.
+MiroxAI Bridge Client — HTTP-only (works over HTTPS pages).
 """
-import os
-import sys
-import json
-import time
-import subprocess
-import asyncio
+import os, sys, json, time, subprocess, platform
 from pathlib import Path
 
 try:
@@ -22,8 +12,6 @@ except ImportError:
     print("Install with: pip install aiohttp")
     sys.exit(1)
 
-
-# ---------- Config ----------
 CONFIG_FILE = Path(__file__).parent / "config.json"
 if CONFIG_FILE.exists():
     with open(CONFIG_FILE, "r", encoding="utf-8") as f:
@@ -43,7 +31,6 @@ ALLOWED_DIRS = [Path(p).expanduser().resolve() for p in CONFIG.get("allowed_dirs
 MAX_OUTPUT = CONFIG.get("max_output_bytes", 200000)
 
 
-# ---------- Safety ----------
 def is_path_allowed(p: Path) -> bool:
     try:
         p = p.expanduser().resolve()
@@ -69,7 +56,6 @@ def safe_path(raw: str):
     return p if is_path_allowed(p) else None
 
 
-# ---------- CORS middleware ----------
 @web.middleware
 async def cors_mw(request, handler):
     if request.method == "OPTIONS":
@@ -81,7 +67,6 @@ async def cors_mw(request, handler):
             resp = e
         except Exception as e:
             resp = web.json_response({"ok": False, "error": str(e)}, status=500)
-
     resp.headers["Access-Control-Allow-Origin"] = "*"
     resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
@@ -90,7 +75,6 @@ async def cors_mw(request, handler):
     return resp
 
 
-# ---------- Handlers ----------
 async def ping(req):
     return web.json_response({
         "ok": True,
@@ -100,20 +84,33 @@ async def ping(req):
     })
 
 
+async def env_info(req):
+    home = str(Path.home())
+    return web.json_response({
+        "ok": True,
+        "name": NAME,
+        "home": home,
+        "cwd": os.getcwd(),
+        "platform": platform.system(),
+        "platform_release": platform.release(),
+        "python": platform.python_version(),
+        "allowed_dirs": [str(d) for d in ALLOWED_DIRS],
+        "separator": os.sep,
+        "time": time.time(),
+    })
+
+
 async def exec_cmd(req):
     try:
         data = await req.json()
     except Exception:
         return web.json_response({"ok": False, "error": "Invalid JSON"})
-
     cmd = str(data.get("command", "")).strip()
     if not cmd:
         return web.json_response({"ok": False, "error": "No command provided"})
-
     cwd = data.get("cwd") or str(Path.home())
     cwd_path = safe_path(cwd) or Path.home()
     timeout = int(data.get("timeout", 120))
-
     print(f"[Bridge] exec: {cmd[:120]}")
     try:
         proc = subprocess.run(
@@ -138,11 +135,9 @@ async def write_file(req):
         data = await req.json()
     except Exception:
         return web.json_response({"ok": False, "error": "Invalid JSON"})
-
     p = safe_path(data.get("path", ""))
     if not p:
         return web.json_response({"ok": False, "error": "Path not allowed"})
-
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
         content = data.get("content", "")
@@ -158,13 +153,11 @@ async def read_file(req):
         data = await req.json()
     except Exception:
         return web.json_response({"ok": False, "error": "Invalid JSON"})
-
     p = safe_path(data.get("path", ""))
     if not p:
         return web.json_response({"ok": False, "error": "Path not allowed"})
     if not p.exists():
         return web.json_response({"ok": False, "error": "Not found"})
-
     try:
         text = p.read_text(encoding="utf-8", errors="replace")[:MAX_OUTPUT]
         return web.json_response({"ok": True, "path": str(p), "content": text})
@@ -177,13 +170,11 @@ async def list_dir(req):
         data = await req.json()
     except Exception:
         data = {}
-
     p = safe_path(data.get("path", "."))
     if not p:
         return web.json_response({"ok": False, "error": "Path not allowed"})
     if not p.is_dir():
         return web.json_response({"ok": False, "error": "Not a directory"})
-
     try:
         items = []
         for child in sorted(p.iterdir()):
@@ -197,11 +188,12 @@ async def list_dir(req):
         return web.json_response({"ok": False, "error": str(e)})
 
 
-# ---------- App ----------
 def build_app():
     app = web.Application(middlewares=[cors_mw])
     app.router.add_get("/ping", ping)
     app.router.add_options("/ping", lambda r: web.Response())
+    app.router.add_get("/env", env_info)
+    app.router.add_options("/env", lambda r: web.Response())
     app.router.add_post("/exec", exec_cmd)
     app.router.add_options("/exec", lambda r: web.Response())
     app.router.add_post("/write", write_file)
@@ -215,6 +207,8 @@ def build_app():
 
 if __name__ == "__main__":
     print(f"[Bridge] Starting '{NAME}' on http://127.0.0.1:{PORT}")
+    print(f"[Bridge] Home directory: {Path.home()}")
+    print(f"[Bridge] Platform: {platform.system()} {platform.release()}")
     print(f"[Bridge] Allowed dirs: {[str(d) for d in ALLOWED_DIRS]}")
     print(f"[Bridge] Ready. Open MiroxAI and click 'Connect'.")
     print(f"[Bridge] Health check: http://localhost:{PORT}/ping")
