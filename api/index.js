@@ -1,9 +1,7 @@
 /* ============================================================
-   MiroxAI Backend v75 (Vercel Fixed)
-   - Uses /tmp for database (Vercel read-only fix)
-   - Embeds Python bridge script directly in JS (fixes file path 404)
-   - Handles Loginment OAuth securely
-   - Serves static files and handles SPA routing
+   MiroxAI Backend v76
+   - HTTP-only Bridge (fixes mixed-content handshake error)
+   - Injects bridge system prompt when bridge is connected
    ============================================================ */
 
 import express from 'express';
@@ -24,8 +22,6 @@ const F_API      = (process.env.F_API || '').trim();
 const SECRET     = process.env.SECRET_KEY || 'mirox-fallback-secret';
 const ADMIN_PASS = (process.env.ADMIN_PASSWORD || '2010').trim();
 const PORT       = process.env.PORT || 3000;
-
-// VERCEL FIX: Write to /tmp instead of __dirname
 const DB_FILE    = process.env.DB_FILE || '/tmp/mirox-db.json';
 
 const OLLAMA_HOST  = process.env.OLLAMA_HOST  || 'http://127.0.0.1:11434';
@@ -42,14 +38,10 @@ const AR_SEARCH_MS      = 15000;
 const IMG_TOTAL_MS      = 60000;
 const TTS_TOTAL_MS      = 90000;
 const MAX_LOGS          = 500;
-
 const GENERIC_ERR = 'Mirox AI encountered an error';
 
-const PROVIDERS = {
-  hf: !!HF_API_KEY, pl: !!PL_KEY, ollama: false, ar: !!AR_KEY, search: true, fish: !!F_API,
-};
-
-console.log('[Mirox] v75 — Vercel Ready');
+const PROVIDERS = { hf: !!HF_API_KEY, pl: !!PL_KEY, ollama: false, ar: !!AR_KEY, search: true, fish: !!F_API };
+console.log('[Mirox] v76 — HTTP Bridge');
 
 const safe = (v, max = 100000) => {
   try { if (v == null) return ''; const s = typeof v === 'string' ? v : JSON.stringify(v); return s.length > max ? s.slice(0, max) : s; } catch { return ''; }
@@ -159,23 +151,16 @@ async function loadDb() {
     const raw = await fs.readFile(DB_FILE, 'utf8');
     db = Object.assign(emptyDb(), JSON.parse(raw)); dbReady = true;
   } catch (e) {
-    if (e.code === 'ENOENT') { 
-      db = emptyDb(); dbReady = true; 
-      try { await fs.writeFile(DB_FILE, JSON.stringify(db, null, 2), 'utf8'); } catch (writeErr) {
-        console.warn('[DB] Vercel read-only fallback: using in-memory DB');
-      } 
-    }
-    else { dbError = e.message; db = emptyDb(); dbReady = false; }
+    if (e.code === 'ENOENT') {
+      db = emptyDb(); dbReady = true;
+      try { await fs.writeFile(DB_FILE, JSON.stringify(db, null, 2), 'utf8'); } catch {}
+    } else { dbError = e.message; db = emptyDb(); dbReady = false; }
   }
   return db;
 }
 function persist() {
   if (!db) return Promise.resolve();
-  writeChain = writeChain.then(async () => { 
-    try { await fs.writeFile(DB_FILE, JSON.stringify(db, null, 2), 'utf8'); } catch (e) {
-      // Silent fail on Vercel read-only
-    } 
-  });
+  writeChain = writeChain.then(async () => { try { await fs.writeFile(DB_FILE, JSON.stringify(db, null, 2), 'utf8'); } catch {} });
   return writeChain;
 }
 const now = () => Math.floor(Date.now() / 1000);
@@ -206,9 +191,7 @@ async function ensureFreshUser(email) {
     await saveUser(rec); return rec;
   }
   let dirty = false;
-  if (rec.daily_reset !== today()) {
-    rec.daily_used = 0; rec.vision_used = 0; rec.image_used = 0; rec.eclipse_used = 0; rec.daily_reset = today(); dirty = true;
-  }
+  if (rec.daily_reset !== today()) { rec.daily_used = 0; rec.vision_used = 0; rec.image_used = 0; rec.eclipse_used = 0; rec.daily_reset = today(); dirty = true; }
   if (rec.month_key !== monthKey()) { rec.keys_this_month = 0; rec.month_key = monthKey(); dirty = true; }
   if (rec.vision_used === undefined) { rec.vision_used = 0; dirty = true; }
   if (rec.image_used === undefined) { rec.image_used = 0; dirty = true; }
@@ -280,6 +263,35 @@ Always Mirox {{LABEL}}.`;
 
 const fillGuard = label => IDENTITY_GUARD.replace(/\{\{LABEL\}\}/g, label);
 
+/* ---------- Bridge system prompt ---------- */
+const BRIDGE_PROMPT = `BRIDGE MODE ACTIVE — You have DIRECT ACCESS to the user's computer.
+
+You can run commands and manipulate files on their machine by outputting these special tags. The user's browser will execute them and show you the result. Do NOT wrap these tags in code fences — output them as plain text.
+
+1. Run a shell command:
+   <bridge-exec>ls -la ~</bridge-exec>
+
+2. Write (or overwrite) a file — use the tag with path attribute, content between tags:
+   <bridge-write path="/Users/me/project/app.js">
+   console.log("hi");
+   </bridge-write>
+
+3. Read a file:
+   <bridge-read path="/Users/me/project/app.js"/>
+
+4. List a directory:
+   <bridge-list path="/Users/me/project/"/>
+
+RULES:
+- ALWAYS use absolute paths. Never use ~ or relative paths.
+- When the user asks you to "make a project", "build an app", "create files", "run this", etc., you MUST use these tags. Do not just paste code — actually write it.
+- Break large tasks into multiple tags: write files first, then run install/build/start commands.
+- Announce briefly what you're doing, then output the tag on its own line.
+- After you output the tags, STOP and wait. The user's next message will contain the results (stdout/stderr/exit codes). Then you can decide the next step.
+- If a command fails, read the error and try to fix it in your next reply.
+- Never output bridge tags if the user hasn't asked you to run or create anything.
+- Paths must be within the user's allowed directories (usually their home).`;
+
 const MIROX_MODELS = {
   'mirox-luna-1.2':   { label: 'Luna',   tagline: 'Fast · warm · free',           tier: 'free',     default: true, tokens: 1400, basePrompt: 'You are Luna, a warm assistant by OpenSurr. Keep replies concise. Use fenced code blocks with the language tag for code.' },
   'mirox-gen-1':      { label: 'Gen',    tagline: 'Ultra concise',                tier: 'free',     tokens: 1000, basePrompt: 'You are Gen from OpenSurr. Ultra-concise. Use fenced code blocks with the language tag for code.' },
@@ -295,10 +307,15 @@ const PLANS = {
   ultimate: { label: 'Ultimate', daily_limit: 5000, vision_limit: 2000, image_limit: 2000, eclipse_daily_limit: 999, price_usd: 20.99, price_afg: 1470, api_keys_per_month: 20 },
 };
 const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
-const buildSystemPrompt = cfg => fillGuard(cfg.label) + '\n\n---\n\n' + cfg.basePrompt;
 
-function injectIdentityGuard(messages, cfg) {
-  const guard = buildSystemPrompt(cfg);
+function buildSystemPrompt(cfg, bridge) {
+  let p = fillGuard(cfg.label) + '\n\n---\n\n' + cfg.basePrompt;
+  if (bridge && bridge.connected) p += '\n\n---\n\n' + BRIDGE_PROMPT;
+  return p;
+}
+
+function injectIdentityGuard(messages, cfg, bridge) {
+  const guard = buildSystemPrompt(cfg, bridge);
   if (!Array.isArray(messages) || !messages.length) return [{ role: 'system', content: guard }];
   if (messages[0]?.role === 'system') return [{ role: 'system', content: guard + '\n\n---\n\nUSER SYSTEM:\n' + safe(messages[0].content) }, ...messages.slice(1)];
   return [{ role: 'system', content: guard }, ...messages];
@@ -355,7 +372,6 @@ const HF_IMG_MODELS = ['black-forest-labs/FLUX.1-schnell', 'stabilityai/stable-d
 const PL_IMG_MODELS = ['flux', 'turbo'];
 const AR_IMG_MODELS = ['black-forest-labs/FLUX.1-schnell'];
 
-/* ---------- Chat providers ---------- */
 async function hfChat(modelId, messages, maxTokens, stream, signal, ms, extra = {}) {
   if (!HF_API_KEY) throw new Error('hf_no_key');
   const body = { model: modelId, messages, max_tokens: maxTokens, stream: !!stream, temperature: 0.7 };
@@ -436,8 +452,6 @@ async function searchqueChat(userQuestion, signal, ms) {
   if (!res.ok) throw new Error(`ar_${res.status}`);
   return res;
 }
-
-/* ---------- Chat chain ---------- */
 async function miroxChatChain({ messages, cfg, stream, signal, sseData }) {
   const trace = [];
   if (PROVIDERS.hf) {
@@ -492,7 +506,6 @@ async function generateImage(prompt, aspect = '1:1') {
   const { w, h } = dims[aspect] || dims['1:1'];
   const deadline = Date.now() + IMG_TOTAL_MS;
   const left = () => deadline - Date.now();
-
   for (const modelId of PL_IMG_MODELS) {
     if (left() < 3000) break;
     try {
@@ -537,7 +550,7 @@ async function captionImage(base64DataUrl) {
       for (const modelId of ['openai', 'openai-fast']) {
         try {
           const body = { model: modelId, messages: [
-            { role: 'system', content: 'Describe the image in one detailed sentence. Include subject, colors, style, composition, mood, background.' },
+            { role: 'system', content: 'Describe the image in one detailed sentence.' },
             { role: 'user', content: [{ type: 'text', text: 'What is in this image?' }, { type: 'image_url', image_url: { url: base64DataUrl } }] },
           ], max_tokens: 200, stream: false };
           const res = await fetchT(PL_URL, { method: 'POST', headers: { Authorization: `Bearer ${PL_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, 25000);
@@ -605,15 +618,12 @@ async function fishTTS(text, voiceId) {
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '30mb' }));
-
-// VERCEL FIX: Serve static files from the 'public' folder
 app.use(express.static(path.join(__dirname, '../public')));
-
 app.use(async (req, res, next) => { try { await loadDb(); } catch {} next(); });
 
 app.get(['/api/health','/health','/ping'], async (req, res) => {
   await loadDb();
-  res.json({ ok: true, app: 'MiroxAI', version: 'v75', providers: PROVIDERS, ollama: ollamaStatus, db: { ready: dbReady, error: dbError }, fish_key_present: !!F_API, time: now() });
+  res.json({ ok: true, app: 'MiroxAI', version: 'v76', providers: PROVIDERS, ollama: ollamaStatus, db: { ready: dbReady, error: dbError }, fish_key_present: !!F_API, time: now() });
 });
 app.get('/api/tts/health', async (req, res) => {
   if (!F_API) return res.json({ ok: false, configured: false, error: 'F_API not set' });
@@ -644,7 +654,7 @@ app.get('/api/voices', async (req, res) => {
   } catch { res.json({ ok: true, voices: [] }); }
 });
 
-/* ✅ VERCEL FIXED: Bridge download embeds Python code directly */
+/* ---------- Bridge download (aiohttp-based, HTTP-only) ---------- */
 app.get('/api/bridge/download', async (req, res) => {
   try {
     const name = safe(req.query.name, 60) || 'My Laptop';
@@ -663,112 +673,215 @@ app.get('/api/bridge/download', async (req, res) => {
       bridge_name: name,
       port: port,
       model: model,
-      allowed_dirs: ['.'],
+      allowed_dirs: ['~'],
       max_output_bytes: 200000,
     }, null, 2);
 
-    const readme = `# MiroxAI Bridge Client\n\nBridge name: ${name}\nPort: ${port}\nModel: ${model}\n\n## Install\n\n1. Install Python 3.10+\n2. \`pip install websockets\`\n3. \`python runner.py\`\n\nThen open MiroxAI, go to the Bridge tab, and click "Start Bridge".\n`;
+    const readme = `# MiroxAI Bridge Client (HTTP-only)
 
-    // Embed Python code to guarantee it works on Vercel
+Bridge name: ${name}
+Port: ${port}
+Model: ${model}
+
+## Install
+
+1. Install Python 3.10+
+2. Install aiohttp:  pip install aiohttp
+3. Run:  python runner.py
+
+Then open MiroxAI, go to the Bridge tab, and click "Start Bridge".
+
+## Test it works
+
+After starting, open a browser and go to:
+  http://localhost:${port}/ping
+
+You should see JSON like: {"ok": true, "name": "${name}"}
+
+## Notes
+
+This runs an HTTP server (not WebSocket), so it works even when MiroxAI
+is loaded over HTTPS. If your browser blocks http://localhost, allow it
+when prompted.
+`;
+
+    // The Python bridge — HTTP-only, uses aiohttp
     const runner = `#!/usr/bin/env python3
-import asyncio, json, os, subprocess, sys, time
+"""
+MiroxAI Bridge Client - HTTP-only (works over HTTPS pages)
+"""
+import os, sys, json, time, subprocess, asyncio
 from pathlib import Path
+
 try:
-    import websockets
+    from aiohttp import web
 except ImportError:
-    print("Missing dependency: websockets. Run: pip install websockets"); sys.exit(1)
+    print("Missing dependency: aiohttp")
+    print("Install with: pip install aiohttp")
+    sys.exit(1)
 
 CONFIG_FILE = Path(__file__).parent / "config.json"
 if CONFIG_FILE.exists():
-    with open(CONFIG_FILE, "r", encoding="utf-8") as f: CONFIG = json.load(f)
+    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+        CONFIG = json.load(f)
 else:
-    CONFIG = {"bridge_name": "My Laptop", "port": 8765, "model": "mirox-luna-1.2", "allowed_dirs": ["."], "max_output_bytes": 200000}
+    CONFIG = {"bridge_name": "My Laptop", "port": 8765, "model": "mirox-luna-1.2",
+              "allowed_dirs": ["~"], "max_output_bytes": 200000}
 
-PORT = CONFIG.get("port", 8765)
+PORT = int(CONFIG.get("port", 8765))
 NAME = CONFIG.get("bridge_name", "My Laptop")
-ALLOWED_DIRS = [Path(p).expanduser().resolve() for p in CONFIG.get("allowed_dirs", ["."])]
+ALLOWED_DIRS = [Path(p).expanduser().resolve() for p in CONFIG.get("allowed_dirs", ["~"])]
 MAX_OUTPUT = CONFIG.get("max_output_bytes", 200000)
 
+
 def is_path_allowed(p):
-    try: p = p.expanduser().resolve()
-    except: return False
+    try:
+        p = p.expanduser().resolve()
+    except Exception:
+        return False
     for base in ALLOWED_DIRS:
-        try: p.relative_to(base); return True
-        except: continue
+        try:
+            p.relative_to(base)
+            return True
+        except ValueError:
+            continue
     return False
+
 
 def safe_path(raw):
     p = Path(raw).expanduser()
-    if not p.is_absolute(): p = Path.cwd() / p
-    try: p = p.resolve()
-    except: return None
+    if not p.is_absolute():
+        p = Path.cwd() / p
+    try:
+        p = p.resolve()
+    except Exception:
+        return None
     return p if is_path_allowed(p) else None
 
-async def handle_exec(args):
-    cmd = args.get("command", "").strip()
-    if not cmd: return {"ok": False, "error": "No command provided"}
-    cwd = args.get("cwd") or str(Path.home())
-    cwd_path = safe_path(cwd) or Path.home()
-    try:
-        proc = subprocess.run(cmd, shell=True, cwd=str(cwd_path), capture_output=True, text=True, timeout=args.get("timeout", 120))
-        return {"ok": True, "exit_code": proc.returncode, "stdout": (proc.stdout or "")[:MAX_OUTPUT], "stderr": (proc.stderr or "")[:MAX_OUTPUT], "cwd": str(cwd_path)}
-    except subprocess.TimeoutExpired: return {"ok": False, "error": "Command timed out"}
-    except Exception as e: return {"ok": False, "error": str(e)}
 
-async def handle_write(args):
-    p = safe_path(args.get("path", ""))
-    if not p: return {"ok": False, "error": "Path not allowed"}
+@web.middleware
+async def cors_mw(request, handler):
+    if request.method == "OPTIONS":
+        resp = web.Response()
+    else:
+        try:
+            resp = await handler(request)
+        except web.HTTPException as e:
+            resp = e
+        except Exception as e:
+            resp = web.json_response({"ok": False, "error": str(e)}, status=500)
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    resp.headers["Access-Control-Max-Age"] = "86400"
+    return resp
+
+
+async def ping(req):
+    return web.json_response({"ok": True, "name": NAME, "cwd": os.getcwd(), "time": time.time()})
+
+
+async def exec_cmd(req):
+    try:
+        data = await req.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "Invalid JSON"})
+    cmd = str(data.get("command", "")).strip()
+    if not cmd:
+        return web.json_response({"ok": False, "error": "No command provided"})
+    cwd = data.get("cwd") or str(Path.home())
+    cwd_path = safe_path(cwd) or Path.home()
+    timeout = int(data.get("timeout", 120))
+    print(f"[Bridge] exec: {cmd[:120]}")
+    try:
+        proc = subprocess.run(cmd, shell=True, cwd=str(cwd_path), capture_output=True, text=True, timeout=timeout)
+        return web.json_response({
+            "ok": True,
+            "exit_code": proc.returncode,
+            "stdout": (proc.stdout or "")[:MAX_OUTPUT],
+            "stderr": (proc.stderr or "")[:MAX_OUTPUT],
+            "cwd": str(cwd_path),
+        })
+    except subprocess.TimeoutExpired:
+        return web.json_response({"ok": False, "error": "Command timed out"})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
+
+
+async def write_file(req):
+    try:
+        data = await req.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "Invalid JSON"})
+    p = safe_path(data.get("path", ""))
+    if not p:
+        return web.json_response({"ok": False, "error": "Path not allowed"})
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(args.get("content", ""), encoding="utf-8")
-        return {"ok": True, "path": str(p)}
-    except Exception as e: return {"ok": False, "error": str(e)}
+        content = data.get("content", "")
+        p.write_text(content, encoding="utf-8")
+        print(f"[Bridge] wrote: {p}")
+        return web.json_response({"ok": True, "path": str(p), "bytes": len(content)})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
 
-async def handle_read(args):
-    p = safe_path(args.get("path", ""))
-    if not p: return {"ok": False, "error": "Path not allowed"}
-    if not p.exists(): return {"ok": False, "error": "File not found"}
-    try: return {"ok": True, "path": str(p), "content": p.read_text(encoding="utf-8", errors="replace")[:MAX_OUTPUT]}
-    except Exception as e: return {"ok": False, "error": str(e)}
 
-async def handle_list(args):
-    p = safe_path(args.get("path", "."))
-    if not p: return {"ok": False, "error": "Path not allowed"}
-    if not p.is_dir(): return {"ok": False, "error": "Not a directory"}
+async def read_file(req):
     try:
-        items = [{"name": c.name, "is_dir": c.is_dir(), "size": c.stat().st_size if c.is_file() else 0} for c in sorted(p.iterdir())]
-        return {"ok": True, "path": str(p), "items": items[:500]}
-    except Exception as e: return {"ok": False, "error": str(e)}
-
-async def handle_ping(_): return {"ok": True, "name": NAME, "time": time.time(), "cwd": os.getcwd()}
-
-HANDLERS = {"exec": handle_exec, "write": handle_write, "read": handle_read, "list": handle_list, "ping": handle_ping}
-
-async def client_handler(websocket):
-    print(f"[Bridge] Client connected")
+        data = await req.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "Invalid JSON"})
+    p = safe_path(data.get("path", ""))
+    if not p:
+        return web.json_response({"ok": False, "error": "Path not allowed"})
+    if not p.exists():
+        return web.json_response({"ok": False, "error": "Not found"})
     try:
-        async for raw in websocket:
-            try: msg = json.loads(raw)
-            except: await websocket.send(json.dumps({"ok": False, "error": "Invalid JSON"})); continue
-            cmd = msg.get("command", ""); args = msg.get("args", {}) or {}; req_id = msg.get("id", "")
-            handler = HANDLERS.get(cmd)
-            if not handler: await websocket.send(json.dumps({"id": req_id, "ok": False, "error": f"Unknown command: {cmd}"})); continue
-            try: result = await handler(args)
-            except Exception as e: result = {"ok": False, "error": str(e)}
-            result["id"] = req_id
-            await websocket.send(json.dumps(result))
-    except websockets.exceptions.ConnectionClosed: pass
-    finally: print(f"[Bridge] Client disconnected")
+        return web.json_response({"ok": True, "path": str(p), "content": p.read_text(encoding="utf-8", errors="replace")[:MAX_OUTPUT]})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
 
-async def main():
-    print(f"[Bridge] Starting '{NAME}' on ws://localhost:{PORT}")
-    async with websockets.serve(client_handler, "localhost", PORT):
-        print("[Bridge] Ready. Waiting for Mirox...")
-        await asyncio.Future()
+
+async def list_dir(req):
+    try:
+        data = await req.json()
+    except Exception:
+        data = {}
+    p = safe_path(data.get("path", "."))
+    if not p:
+        return web.json_response({"ok": False, "error": "Path not allowed"})
+    if not p.is_dir():
+        return web.json_response({"ok": False, "error": "Not a directory"})
+    try:
+        items = []
+        for child in sorted(p.iterdir()):
+            items.append({"name": child.name, "is_dir": child.is_dir(), "size": child.stat().st_size if child.is_file() else 0})
+        return web.json_response({"ok": True, "path": str(p), "items": items[:500]})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
+
+
+def build_app():
+    app = web.Application(middlewares=[cors_mw])
+    app.router.add_get("/ping", ping)
+    app.router.add_options("/ping", lambda r: web.Response())
+    app.router.add_post("/exec", exec_cmd)
+    app.router.add_options("/exec", lambda r: web.Response())
+    app.router.add_post("/write", write_file)
+    app.router.add_options("/write", lambda r: web.Response())
+    app.router.add_post("/read", read_file)
+    app.router.add_options("/read", lambda r: web.Response())
+    app.router.add_post("/list", list_dir)
+    app.router.add_options("/list", lambda r: web.Response())
+    return app
+
 
 if __name__ == "__main__":
-    try: asyncio.run(main())
-    except KeyboardInterrupt: print("\\n[Bridge] Stopped.")
+    print(f"[Bridge] Starting '{NAME}' on http://127.0.0.1:{PORT}")
+    print(f"[Bridge] Allowed dirs: {[str(d) for d in ALLOWED_DIRS]}")
+    print(f"[Bridge] Ready. Open MiroxAI and click 'Start Bridge'.")
+    print(f"[Bridge] Health check: http://localhost:{PORT}/ping")
+    web.run_app(build_app(), host="127.0.0.1", port=PORT, print=None, access_log=None)
 `;
 
     archive.append(configJson, { name: 'mirox_client_bridge/config.json' });
@@ -781,14 +894,13 @@ if __name__ == "__main__":
   }
 });
 
-/* ✅ GitHub OAuth via Loginment */
+/* ---------- GitHub OAuth via Loginment ---------- */
 function getOrigin(req) {
   const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
   const host = (req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
   if (!host) return '';
   return `${proto}://${host}`;
 }
-
 app.get('/api/auth/github/start', async (req, res) => {
   try {
     const origin = getOrigin(req);
@@ -797,11 +909,9 @@ app.get('/api/auth/github/start', async (req, res) => {
     const state = crypto.randomBytes(16).toString('hex');
     res.setHeader('Set-Cookie', `mirox_oauth_state=${state}; Path=/; HttpOnly; SameSite=Lax; Max-Age=600`);
     const url = `${LOGINMENT_DOMAIN}/authorize?client_id=${encodeURIComponent(LOGINMENT_CLIENT_ID)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}`;
-    console.log('[OAuth] Redirecting to:', url);
     res.redirect(url);
-  } catch (e) { console.error('[OAuth start]', e.message); res.redirect('/?github=error&error=start_failed'); }
+  } catch (e) { res.redirect('/?github=error&error=start_failed'); }
 });
-
 app.get('/api/auth/github/callback', async (req, res) => {
   try {
     const code = safe(req.query.code, 256).trim();
@@ -812,23 +922,19 @@ app.get('/api/auth/github/callback', async (req, res) => {
     if (!state || !cookieState || state !== cookieState) return res.redirect('/?github=bad_state');
     res.setHeader('Set-Cookie', 'mirox_oauth_state=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
     if (!code) return res.redirect('/?github=error&error=missing_code');
-
     const r = await fetchT(`${LOGINMENT_DOMAIN}/api/public/v1/token`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${LOGINMENT_API_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ code }),
     }, 20000);
-
     const data = await r.json().catch(() => ({}));
     if (!r.ok || !data.success || !data.user) {
       const errCode = data.error || `http_${r.status}`;
       return res.redirect('/?github=error&error=' + encodeURIComponent(errCode));
     }
-
     const email = safe(data.user.email, 200).trim().toLowerCase();
     const name = safe(data.user.name, 60).trim() || (email.split('@')[0] || 'User');
     if (!email) return res.redirect('/?github=error&error=no_email');
-
     let rec = await getUser(email);
     if (!rec) {
       rec = { email, name, tier: 'free', daily_used: 0, vision_used: 0, image_used: 0, eclipse_used: 0, daily_reset: today(), month_key: monthKey(), keys_this_month: 0, created_at: now(), last_login: now(), persona: null, memory: [], voice_id: null, github_token: 'gh_' + crypto.randomBytes(16).toString('hex') };
@@ -839,10 +945,10 @@ app.get('/api/auth/github/callback', async (req, res) => {
     await saveUser(rec);
     setSession(res, { uid: email, name, tier: rec.tier });
     res.redirect('/?github=ok');
-  } catch (e) { console.error('[OAuth callback]', e.message); res.redirect('/?github=error&error=' + encodeURIComponent(e.message)); }
+  } catch (e) { res.redirect('/?github=error&error=' + encodeURIComponent(e.message)); }
 });
 
-/* Admin */
+/* ---------- Admin ---------- */
 function adminSession(req) {
   const token = safe(req.headers['x-admin-token']).trim();
   if (!token) return null;
@@ -881,15 +987,15 @@ app.get('/api/admin/stats', async (req, res) => {
   } catch { res.status(500).json({ ok: false }); }
 });
 
-/* Config */
+/* ---------- Config ---------- */
 app.get(['/api/config','/config'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   let u = null; try { u = await currentUser(req); } catch {}
   const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tagline: m.tagline, tier: m.tier, default: !!m.default }));
-  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v75' }, models, default_model: models[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: true, providers: PROVIDERS, api_models: API_ALLOWED_MODELS, ollama: ollamaStatus, tts_available: !!F_API, user_voice: u?.voice_id || null });
+  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v76' }, models, default_model: models[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: true, providers: PROVIDERS, api_models: API_ALLOWED_MODELS, ollama: ollamaStatus, tts_available: !!F_API, user_voice: u?.voice_id || null });
 });
 
-/* Auth */
+/* ---------- Auth ---------- */
 app.post(['/api/auth/simple-login','/auth/simple-login'], async (req, res) => {
   try {
     const { name, email } = req.body || {};
@@ -1042,7 +1148,7 @@ app.post('/v1/chat/completions', async (req, res) => {
     let imageUploadCount = 0;
 
     if (Array.isArray(rawMessages) && rawMessages.length) {
-      msgs = injectIdentityGuard(sanitizeMessages(rawMessages), cfg);
+      msgs = injectIdentityGuard(sanitizeMessages(rawMessages), cfg, bridge);
       userQuestionForCanned = extractLastUserQuestion(msgs);
     } else {
       const text = safe(rawMessage, 100000).trim();
@@ -1050,7 +1156,7 @@ app.post('/v1/chat/completions', async (req, res) => {
       filesForIntent = files;
       if (!text && !files.length) return res.status(400).json({ error: { message: 'Empty message', code: 'invalid_request' } });
 
-      const sys = buildSystemPrompt(cfg) + (u?.persona ? `\n\nUser preference: ${safe(u.persona, 500)}` : '') + (u?.memory?.length ? `\n\nRemember: ${u.memory.slice(-8).map(m => safe(m.text)).join(' | ')}` : '');
+      const sys = buildSystemPrompt(cfg, bridge) + (u?.persona ? `\n\nUser preference: ${safe(u.persona, 500)}` : '') + (u?.memory?.length ? `\n\nRemember: ${u.memory.slice(-8).map(m => safe(m.text)).join(' | ')}` : '');
       msgs = [{ role: 'system', content: sys }];
 
       const textFiles = files.filter(f => f && f.type === 'text');
@@ -1155,7 +1261,7 @@ app.post('/v1/chat/completions', async (req, res) => {
 
         let dataUrl = null;
         try { dataUrl = await generateImage(finalPrompt, '1:1'); }
-        catch { sseWrite(res, { d: 'Image generation failed. Try again in a moment.' }); sseWrite(res, { done: true }); sseDone(res); try { res.end(); } catch {} clearTimeout(guard); return; }
+        catch { sseWrite(res, { d: 'Image generation failed.' }); sseWrite(res, { done: true }); sseDone(res); try { res.end(); } catch {} clearTimeout(guard); return; }
 
         if (dataUrl) sseWrite(res, { img: dataUrl, imgAlt: finalPrompt.slice(0, 100) });
 
@@ -1201,7 +1307,7 @@ app.post('/v1/chat/completions', async (req, res) => {
             }
             try { reader.releaseLock(); } catch {}
           }
-        } catch { fullReplyText = imgIntent.mode === 'improve' ? `Here's your enhanced image.` : `Here's the image I made for "${imgIntent.prompt}".`; sseWrite(res, { d: fullReplyText }); }
+        } catch { fullReplyText = 'Here is your image.'; sseWrite(res, { d: fullReplyText }); }
 
         if (F_API && wantTts && fullReplyText && !clientClosed && !res.writableEnded) { try { const buf = await fishTTS(fullReplyText, userVoice); sseWrite(res, { tts: 'data:audio/mpeg;base64,' + buf.toString('base64') }); } catch {} }
         if (!clientClosed && !res.writableEnded) { sseWrite(res, { done: true, finish_reason: finishReason }); sseDone(res); }
@@ -1290,7 +1396,7 @@ app.post('/v1/chat/completions', async (req, res) => {
         try { reader.releaseLock(); } catch {}
       }
 
-      if (F_API && wantTts && fullReplyText && !clientClosed && !res.writableEnded) { try { const buf = await fishTTS(fullReplyText, userVoice); sseWrite(res, { tts: 'data:audio/mpeg;base64,' + buf.toString('base64') }); } catch (e) { console.warn('[tts]', e.message); } }
+      if (F_API && wantTts && fullReplyText && !clientClosed && !res.writableEnded) { try { const buf = await fishTTS(fullReplyText, userVoice); sseWrite(res, { tts: 'data:audio/mpeg;base64,' + buf.toString('base64') }); } catch {} }
 
       if (!clientClosed && !res.writableEnded) { sseWrite(res, { done: true, finish_reason: finishReason }); sseDone(res); }
       await updateUsage();
@@ -1308,11 +1414,8 @@ app.post('/v1/chat/completions', async (req, res) => {
   }
 });
 
-// VERCEL FIX: Catch-all route to serve index.html for SPA routing
 app.use((req, res) => {
-  if (req.path.startsWith('/api')) {
-    return res.status(404).json({ error: { message: 'Not found: ' + req.path } });
-  }
+  if (req.path.startsWith('/api')) return res.status(404).json({ error: { message: 'Not found: ' + req.path } });
   res.sendFile(path.join(__dirname, '../public/index.html'));
 });
 
@@ -1324,8 +1427,6 @@ app.use((err, req, res, next) => { console.error('[unhandled]', err.message); if
   if (process.env.VERCEL !== '1') {
     app.listen(PORT, () => {
       console.log(`[Mirox] Server at http://localhost:${PORT}`);
-      console.log(`[Mirox] Test TTS: http://localhost:${PORT}/api/tts/health`);
-      console.log(`[Mirox] Bridge download: http://localhost:${PORT}/api/bridge/download`);
     });
   }
 })();
