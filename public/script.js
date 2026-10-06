@@ -1,11 +1,9 @@
 /* ============================================================
-   MiroxAI — Frontend v54
-   - Image generation in chat bubbles
-   - Fish Audio TTS playback
-   - Read-aloud toggle
-   - Voice changer setting
-   - Call mode with TTS responses
-   - Improved code rendering with language icons
+   MiroxAI — Frontend v55
+   - Push-to-talk call (hold to speak)
+   - Reliable Fish Audio TTS
+   - Pricing with USD/AFG + Buy buttons
+   - Image improve + img2img in chat
    ============================================================ */
 
 const $  = s => document.querySelector(s);
@@ -31,13 +29,14 @@ const KEYS_CACHE        = 'miroxai_keys_cache_v20';
 
 let __config = null, __user = null, __tier = 'free', __model = 'mirox-luna-1.2';
 let currentConversationId = null, isReplying = false, __conversations = [], pendingFiles = [];
-let recognition = null, callRecognition = null;
-let callActive = false, callMuted = false, activeStreamController = null;
+let recognition = null;
+let activeStreamController = null;
 let userSettings = { soundOn: true, notifOn: true, highlightOn: true, lineNumbers: false, language: 'en-US', voiceRate: 1, autoSpeak: false, voice_id: null };
 let ttsAvailable = false;
 let currentAudio = null;
 let readAloudEnabled = false;
 let lastSpokenText = '';
+let lastTtsDataUrl = null;
 
 const LANGUAGE_ICONS = {
   js: 'ri-javascript-fill', javascript: 'ri-javascript-fill', jsx: 'ri-reactjs-line',
@@ -53,11 +52,7 @@ const LANGUAGE_ICONS = {
   php: 'ri-code-s-slash-line', ruby: 'ri-code-s-slash-line', rb: 'ri-code-s-slash-line',
   md: 'ri-markdown-line', markdown: 'ri-markdown-line',
 };
-
-function langIcon(lang) {
-  const k = String(lang || '').toLowerCase();
-  return LANGUAGE_ICONS[k] || 'ri-code-line';
-}
+function langIcon(lang) { return LANGUAGE_ICONS[String(lang || '').toLowerCase()] || 'ri-code-line'; }
 
 function killLoader() {
   const l = document.getElementById('loadingScreen');
@@ -70,11 +65,7 @@ setTimeout(killLoader, 1800);
 const uid = () => 'c_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 const escapeHtml = s => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
 
-function getDeviceId() {
-  let id = localStorage.getItem(DEVICE_ID_KEY);
-  if (!id) { id = 'dev_' + uid(); localStorage.setItem(DEVICE_ID_KEY, id); }
-  return id;
-}
+function getDeviceId() { let id = localStorage.getItem(DEVICE_ID_KEY); if (!id) { id = 'dev_' + uid(); localStorage.setItem(DEVICE_ID_KEY, id); } return id; }
 function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
 function setToken(t) { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch {} }
 
@@ -85,8 +76,7 @@ function addCachedKey(email, keyObj) { if (!email) return; const keys = loadCach
 async function authJson(url, opts = {}, fallback = null) {
   try {
     const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
-    const t = getToken();
-    if (t) headers.Authorization = 'Bearer ' + t;
+    const t = getToken(); if (t) headers.Authorization = 'Bearer ' + t;
     const r = await fetch(url, { ...opts, headers, credentials: 'same-origin', cache: 'no-store' });
     const ct = (r.headers.get('content-type') || '').toLowerCase();
     if (!ct.includes('application/json')) return fallback;
@@ -99,9 +89,7 @@ function closeModal(id) { document.getElementById(id)?.classList.remove('open');
 function openSidebar()  { $('#sidebar')?.classList.add('open'); $('#sidebarScrim')?.classList.add('open'); }
 function closeSidebar() { $('#sidebar')?.classList.remove('open'); $('#sidebarScrim')?.classList.remove('open'); }
 
-function loadUserSettings() {
-  try { userSettings = { ...userSettings, ...JSON.parse(localStorage.getItem(USER_SETTINGS_KEY) || '{}') }; } catch {}
-}
+function loadUserSettings() { try { userSettings = { ...userSettings, ...JSON.parse(localStorage.getItem(USER_SETTINGS_KEY) || '{}') }; } catch {} }
 function saveUserSettings() { try { localStorage.setItem(USER_SETTINGS_KEY, JSON.stringify(userSettings)); } catch {} }
 function loadFeedback()  { try { return JSON.parse(localStorage.getItem(FEEDBACK_KEY) || '{}'); } catch { return {}; } }
 function saveFeedback(fb) { try { localStorage.setItem(FEEDBACK_KEY, JSON.stringify(fb)); } catch {} }
@@ -147,7 +135,7 @@ function renderMcp(servers) {
     </div>`).join('');
 }
 
-/* ---------- Markdown + code rendering ---------- */
+/* ---------- Markdown ---------- */
 function renderMarkdown(text) {
   if (!text) return '';
   let src = String(text);
@@ -164,7 +152,6 @@ function renderMarkdown(text) {
   if (last < src.length) parts.push({ type: 'text', content: src.slice(last) });
   return parts.map(p => p.type === 'code' ? renderCodeBlock(p.lang, p.content) : renderTextBlock(p.content)).join('');
 }
-
 function renderCodeBlock(lang, code) {
   const cleanLang = (lang || '').trim().toLowerCase();
   const label = (cleanLang || 'Code').toUpperCase();
@@ -174,8 +161,7 @@ function renderCodeBlock(lang, code) {
   const codeHtml = lines.map(l => escapeHtml(l)).join('\n');
   let gutter = '';
   if (userSettings.lineNumbers) {
-    let g = '';
-    for (let i = 1; i <= lines.length; i++) g += i + '\n';
+    let g = ''; for (let i = 1; i <= lines.length; i++) g += i + '\n';
     gutter = `<div class="code-gutter">${g}</div>`;
   }
   return `<div class="code-block" data-lang="${escapeHtml(cleanLang)}">
@@ -186,7 +172,6 @@ function renderCodeBlock(lang, code) {
     <div class="code-block-body">${gutter}<pre><code class="language-${escapeHtml(cleanLang)}">${codeHtml}</code></pre></div>
   </div>`;
 }
-
 function isTableSeparator(line) { const t = line.trim(); if (!t.startsWith('|')) return false; return /^\|[\s:|-]+\|?\s*$/.test(t) && /-/.test(t); }
 function parseTableRow(line) { let s = line.trim(); if (s.startsWith('|')) s = s.slice(1); if (s.endsWith('|')) s = s.slice(0, -1); return s.split('|').map(c => c.trim()); }
 function renderTextBlock(text) {
@@ -249,11 +234,8 @@ function highlightCode(scope) {
     try {
       const m = (el.className || '').match(/language-([a-z0-9+#-]+)/i);
       let r;
-      if (m && m[1] && window.hljs.getLanguage(m[1])) {
-        r = window.hljs.highlight(raw, { language: m[1], ignoreIllegals: true });
-      } else {
-        r = window.hljs.highlightAuto(raw);
-      }
+      if (m && m[1] && window.hljs.getLanguage(m[1])) r = window.hljs.highlight(raw, { language: m[1], ignoreIllegals: true });
+      else r = window.hljs.highlightAuto(raw);
       el.innerHTML = r.value;
       el.classList.add('hljs');
     } catch {}
@@ -277,7 +259,7 @@ function wireCodeButtons(scope) {
 }
 
 /* ============================================================
-   TTS playback
+   TTS
    ============================================================ */
 function stopSpeaking() {
   if (currentAudio) {
@@ -286,39 +268,56 @@ function stopSpeaking() {
   }
 }
 
+async function fetchTtsAudio(text, voiceId) {
+  const clean = stripForSpeech(text);
+  if (!clean) return null;
+  const r = await fetch('/api/tts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: clean.slice(0, 800), voice: voiceId || null }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    console.warn('[Mirox] TTS failed:', err.error || r.status);
+    return null;
+  }
+  const blob = await r.blob();
+  return URL.createObjectURL(blob);
+}
+
+async function speakText(text) {
+  if (!ttsAvailable) {
+    console.warn('[Mirox] TTS not available (F_API missing on server)');
+    return false;
+  }
+  stopSpeaking();
+  lastSpokenText = text;
+  try {
+    const voiceId = userSettings.voice_id || __user?.voice_id || null;
+    const url = await fetchTtsAudio(text, voiceId);
+    if (!url) return false;
+    const a = new Audio(url);
+    currentAudio = a;
+    a.onended = () => { URL.revokeObjectURL(url); currentAudio = null; };
+    await a.play();
+    return true;
+  } catch (e) {
+    console.warn('[Mirox] speak failed:', e.message);
+    return false;
+  }
+}
+
 function playAudioDataUrl(dataUrl) {
+  if (!dataUrl) return;
   stopSpeaking();
   try {
     const a = new Audio(dataUrl);
     currentAudio = a;
-    a.volume = 1.0;
-    a.play().catch(() => {});
     a.onended = () => { currentAudio = null; };
-    return a;
-  } catch { return null; }
-}
-
-async function speakText(text) {
-  if (!text || !ttsAvailable) return;
-  const clean = stripForSpeech(text);
-  if (!clean) return;
-  lastSpokenText = clean;
-  try {
-    const voiceId = userSettings.voice_id || __user?.voice_id || null;
-    const r = await fetch('/api/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: clean.slice(0, 800), voice: voiceId }),
-    });
-    if (!r.ok) return;
-    const blob = await r.blob();
-    const url = URL.createObjectURL(blob);
-    const a = new Audio(url);
-    stopSpeaking();
-    currentAudio = a;
-    a.onended = () => { URL.revokeObjectURL(url); currentAudio = null; };
-    await a.play().catch(() => {});
-  } catch {}
+    a.play().catch((e) => console.warn('[Mirox] audio play blocked:', e.message));
+  } catch (e) {
+    console.warn('[Mirox] play failed:', e.message);
+  }
 }
 
 function stripForSpeech(text) {
@@ -345,14 +344,13 @@ function getWelcomeHTML() {
     <h1 class="welcome-title">Hi, I'm Mirox</h1>
     <p class="welcome-sub">Built by the OpenSurr team. Ask anything, attach images or files, or start a voice call.</p>
     <div class="suggestion-grid">
-      <button class="suggestion-card" type="button" data-prompt="What would you like to talk about?"><i class="ri-chat-3-line"></i><span>What would you like to talk about?</span></button>
       <button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span>Generate me an image of a cat</span></button>
       <button class="suggestion-card" type="button" data-prompt="Help me write code"><i class="ri-code-line"></i><span>Help me write code</span></button>
       <button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span>Explain a concept simply</span></button>
+      <button class="suggestion-card" type="button" data-prompt="What would you like to talk about?"><i class="ri-chat-3-line"></i><span>What would you like to talk about?</span></button>
     </div>
   </div>`;
 }
-
 function startNewChat() {
   currentConversationId = null;
   $('#chatTitle').textContent = 'New chat';
@@ -374,15 +372,11 @@ function bindSuggestionClicks() {
   });
 }
 function openConversationLS(id) {
-  const c = __conversations.find(x => x.id === id);
-  if (!c) return;
+  const c = __conversations.find(x => x.id === id); if (!c) return;
   currentConversationId = id;
   $('#chatTitle').textContent = c.title || 'Chat';
-  const container = $('#chatMessages');
-  container.innerHTML = '';
-  for (const msg of c.messages || []) {
-    addMessageToDOM(msg.role, msg.content, msg.ts, false, msg.id, msg.files || [], msg.image || null);
-  }
+  const container = $('#chatMessages'); container.innerHTML = '';
+  for (const msg of c.messages || []) addMessageToDOM(msg.role, msg.content, msg.ts, false, msg.id, msg.files || [], msg.image || null);
   renderHistory(); scrollToBottom();
 }
 function renderHistory() {
@@ -415,7 +409,6 @@ function buildActions(role, msgId) {
     <button class="action-btn" data-action="edit" title="Edit"><i class="ri-edit-line"></i></button>
   </div>`;
 }
-
 function renderMessageAttachments(files) {
   if (!files || !files.length) return '';
   const items = files.map(f => {
@@ -426,26 +419,19 @@ function renderMessageAttachments(files) {
   }).join('');
   return `<div class="bubble-attachments">${items}</div>`;
 }
-
 function renderGeneratedImage(dataUrl, alt) {
   if (!dataUrl) return '';
   return `<div class="bubble-generated-image" data-lightbox="${escapeHtml(dataUrl)}"><img src="${dataUrl}" alt="${escapeHtml(alt || 'Generated image')}" loading="lazy"></div>`;
 }
-
 function addMessageToDOM(role, content, ts, animate = true, msgId = null, files = [], generatedImage = null) {
-  const container = $('#chatMessages');
-  if (!container) return null;
-  const welcome = container.querySelector('.welcome-screen');
-  if (welcome) welcome.remove();
+  const container = $('#chatMessages'); if (!container) return null;
+  const welcome = container.querySelector('.welcome-screen'); if (welcome) welcome.remove();
   const id = msgId || uid();
   const msgEl = document.createElement('div');
   msgEl.className = `message ${role === 'user' ? 'user' : 'ai'}`;
-  msgEl.dataset.msgId = id;
-  msgEl.dataset.role = role;
-
+  msgEl.dataset.msgId = id; msgEl.dataset.role = role;
   const attachmentsHtml = role === 'user' ? renderMessageAttachments(files) : '';
   const generatedHtml = role === 'ai' && generatedImage ? renderGeneratedImage(generatedImage, content) : '';
-
   msgEl.innerHTML = `<div class="message-content">
     <div class="bubble">
       ${attachmentsHtml}
@@ -465,48 +451,32 @@ function addMessageToDOM(role, content, ts, animate = true, msgId = null, files 
     bubble.dataset.rawText = content;
     if (generatedImage) {
       bubble.classList.remove('thinking');
-      if (userSettings.highlightOn) {
-        bubbleText.innerHTML = renderMarkdown(content || '');
-        highlightCode(bubbleText);
-        wireCodeButtons(bubbleText);
-      } else {
-        bubbleText.textContent = content || '';
-      }
+      if (userSettings.highlightOn) { bubbleText.innerHTML = renderMarkdown(content || ''); highlightCode(bubbleText); wireCodeButtons(bubbleText); }
+      else bubbleText.textContent = content || '';
     } else {
       bubble.innerHTML = '';
-      if (!userSettings.highlightOn) { bubble.textContent = content || ''; }
-      else {
-        bubble.innerHTML = renderMarkdown(content || '') ;
-        highlightCode(bubble);
-        wireCodeButtons(bubble);
-      }
+      if (!userSettings.highlightOn) bubble.textContent = content || '';
+      else { bubble.innerHTML = renderMarkdown(content || ''); highlightCode(bubble); wireCodeButtons(bubble); }
     }
   }
-
   msgEl.querySelectorAll('[data-lightbox]').forEach(el => {
     el.addEventListener('click', () => {
       const lb = $('#lightbox');
       if (lb) { lb.querySelector('img').src = el.dataset.lightbox; lb.classList.add('open'); }
     });
   });
-
   wireMessageActions(msgEl);
   applyStoredFeedback(msgEl);
   if (animate) scrollToBottom();
   return msgEl;
 }
-
 function addThinkingBubble() {
-  const container = $('#chatMessages');
-  if (!container) return null;
-  const welcome = container.querySelector('.welcome-screen');
-  if (welcome) welcome.remove();
+  const container = $('#chatMessages'); if (!container) return null;
+  const welcome = container.querySelector('.welcome-screen'); if (welcome) welcome.remove();
   const id = uid();
   const msgEl = document.createElement('div');
   msgEl.className = 'message ai';
-  msgEl.dataset.msgId = id;
-  msgEl.dataset.role = 'ai';
-  msgEl.dataset.thinking = '1';
+  msgEl.dataset.msgId = id; msgEl.dataset.role = 'ai'; msgEl.dataset.thinking = '1';
   msgEl.innerHTML = `<div class="message-content">
     <div class="bubble thinking">
       <span class="thinking-text" data-default="Thinking">Thinking</span>
@@ -525,24 +495,20 @@ function addThinkingBubble() {
   scrollToBottom();
   return msgEl;
 }
-
 function wireMessageActions(msgEl) {
   const id = msgEl.dataset.msgId, role = msgEl.dataset.role;
   msgEl.querySelectorAll('.message-actions .action-btn').forEach(btn => {
-    if (btn.__wired) return;
-    btn.__wired = true;
+    if (btn.__wired) return; btn.__wired = true;
     btn.addEventListener('click', async e => {
       e.preventDefault(); e.stopPropagation();
       const action = btn.dataset.action;
       const bubble = msgEl.querySelector('.bubble');
       const text = bubble?.innerText || '';
-
       if (action === 'copy') {
         try {
           if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(text);
           else { const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.top = '-1000px'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); }
-          btn.classList.add('active');
-          btn.innerHTML = '<i class="ri-check-line"></i>';
+          btn.classList.add('active'); btn.innerHTML = '<i class="ri-check-line"></i>';
           setTimeout(() => { btn.classList.remove('active'); btn.innerHTML = '<i class="ri-file-copy-line"></i>'; }, 1200);
         } catch {}
         return;
@@ -583,19 +549,15 @@ function wireMessageActions(msgEl) {
     });
   });
 }
-
 function applyStoredFeedback(msgEl) {
-  const id = msgEl.dataset.msgId;
-  const fb = loadFeedback();
+  const id = msgEl.dataset.msgId; const fb = loadFeedback();
   if (fb[id] === 'good') msgEl.querySelector('.action-btn[data-action="good"]')?.classList.add('active-good');
   else if (fb[id] === 'bad') msgEl.querySelector('.action-btn[data-action="bad"]')?.classList.add('active-bad');
 }
-
 async function handleRetry(msgEl) {
   if (isReplying) return;
   const id = msgEl.dataset.msgId;
-  const convo = currentConvo();
-  if (!convo) return;
+  const convo = currentConvo(); if (!convo) return;
   const idx = (convo.messages || []).findIndex(m => m.id === id);
   if (idx < 0) return;
   let userMsg = null;
@@ -610,21 +572,17 @@ async function handleRetry(msgEl) {
 }
 
 function updateSendButtonState() {
-  const btn = $('#sendBtn'), inp = $('#messageInput');
-  if (!btn || !inp) return;
+  const btn = $('#sendBtn'), inp = $('#messageInput'); if (!btn || !inp) return;
   const hasContent = inp.value.trim().length > 0 || pendingFiles.length > 0;
   const shouldEnable = hasContent && !isReplying;
   btn.classList.toggle('is-disabled', !shouldEnable);
   btn.setAttribute('aria-disabled', String(!shouldEnable));
 }
-
 function handleSend() {
   if (isReplying) return;
-  const inp = $('#messageInput');
-  if (!inp) return;
+  const inp = $('#messageInput'); if (!inp) return;
   const text = inp.value.trim();
   if (!text && !pendingFiles.length) return;
-
   const filesToSend = pendingFiles.slice();
   if (!currentConversationId) {
     currentConversationId = uid();
@@ -637,13 +595,10 @@ function handleSend() {
     convo.updated = Date.now();
   }
   addMessageToDOM('user', text, Date.now(), true, msgId, filesToSend);
-  inp.value = '';
-  inp.style.height = 'auto';
+  inp.value = ''; inp.style.height = 'auto';
   pendingFiles = [];
-  updatePreview();
-  updateSendButtonState();
-  saveChatsToLS();
-  renderHistory();
+  updatePreview(); updateSendButtonState();
+  saveChatsToLS(); renderHistory();
   sendToAPI(text, filesToSend);
 }
 
@@ -653,8 +608,7 @@ function handleSend() {
 async function sendToAPI(text, files = []) {
   isReplying = true;
   updateSendButtonState();
-  const stopBtn = $('#stopBtn');
-  if (stopBtn) stopBtn.style.display = 'grid';
+  const stopBtn = $('#stopBtn'); if (stopBtn) stopBtn.style.display = 'grid';
 
   const convo = currentConvo();
   const history = convo ? convo.messages.slice(-14).map(m => ({ role: m.role, content: m.content })) : [];
@@ -668,18 +622,16 @@ async function sendToAPI(text, files = []) {
 
   let full = '';
   let generatedImage = null;
+  let pendingTts = null;
 
   try {
     const res = await fetch('/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        message: text,
-        history,
-        model,
-        stream: true,
-        files,
+        message: text, history, model, stream: true, files,
         voice_id: userSettings.voice_id || null,
+        tts: readAloudEnabled,
       }),
       signal: activeStreamController.signal,
     });
@@ -699,7 +651,6 @@ async function sendToAPI(text, files = []) {
     const reader = res.body.getReader();
     const dec = new TextDecoder();
     let buf = '', firstChunk = true;
-    let pendingTts = null;
 
     while (true) {
       const { value, done } = await reader.read();
@@ -714,31 +665,19 @@ async function sendToAPI(text, files = []) {
         if (!pl || pl === '[DONE]') continue;
         try {
           const o = JSON.parse(pl);
-
           if (o.p) {
-            if (o.p === 'ar-search' || o.p === 'ar' || o.p === 'fallback') {
-              if (thinkingText) thinkingText.textContent = 'Reading current data for answer';
-            } else if (o.p === 'ollama') {
-              if (thinkingText) thinkingText.textContent = 'Running local model';
-            } else if (o.p === 'image') {
-              if (thinkingText) thinkingText.textContent = 'Drawing it…';
-            } else if (o.p === 'pl' || o.p === 'hf') {
-              if (thinkingText) thinkingText.textContent = 'Thinking';
-            } else if (o.p === 'canned') {
-              if (thinkingText) thinkingText.textContent = 'Replying';
-            }
+            if (o.p === 'ar-search' || o.p === 'fallback') { if (thinkingText) thinkingText.textContent = 'Reading current data'; }
+            else if (o.p === 'ollama') { if (thinkingText) thinkingText.textContent = 'Running local model'; }
+            else if (o.p === 'image') { if (thinkingText) thinkingText.textContent = 'Drawing…'; }
+            else if (o.p === 'pl' || o.p === 'hf') { if (thinkingText) thinkingText.textContent = 'Thinking'; }
+            else if (o.p === 'canned') { if (thinkingText) thinkingText.textContent = 'Replying'; }
           }
-
-          if (o.status) {
-            if (thinkingText) thinkingText.textContent = o.status;
-          }
+          if (o.status) { if (thinkingText) thinkingText.textContent = o.status; }
 
           if (o.img) {
             generatedImage = o.img;
-            // Clear thinking bubble and add image
             bubble.classList.remove('thinking');
-            const imgHtml = `<div class="bubble-generated-image" data-lightbox="${escapeHtml(o.img)}"><img src="${o.img}" alt="${escapeHtml(o.imgAlt || 'Generated image')}" loading="lazy"></div><div class="bubble-text"></div>`;
-            bubble.innerHTML = imgHtml;
+            bubble.innerHTML = `<div class="bubble-generated-image" data-lightbox="${escapeHtml(o.img)}"><img src="${o.img}" alt="${escapeHtml(o.imgAlt || 'Generated image')}" loading="lazy"></div><div class="bubble-text"></div>`;
             bubble.querySelector('[data-lightbox]')?.addEventListener('click', () => {
               const lb = $('#lightbox');
               if (lb) { lb.querySelector('img').src = o.img; lb.classList.add('open'); }
@@ -755,31 +694,21 @@ async function sendToAPI(text, files = []) {
             if (firstChunk) {
               bubble.classList.remove('thinking');
               bubble.classList.add('streaming');
-              bubble.innerHTML = '<div class="bubble-text"></div>';
+              if (!bubble.querySelector('.bubble-text')) bubble.innerHTML = '<div class="bubble-text"></div>';
               firstChunk = false;
               const act = msgEl.querySelector('.message-actions');
               if (act) { act.style.opacity = ''; act.style.pointerEvents = ''; }
             }
             const bt = bubble.querySelector('.bubble-text') || bubble;
-            if (userSettings.highlightOn) {
-              bt.innerHTML = renderMarkdown(full);
-              highlightCode(bt);
-              wireCodeButtons(bt);
-            } else {
-              bt.textContent = full;
-            }
+            if (userSettings.highlightOn) { bt.innerHTML = renderMarkdown(full); highlightCode(bt); wireCodeButtons(bt); }
+            else bt.textContent = full;
             if (!bubble.classList.contains('streaming')) bubble.classList.add('streaming');
             scrollToBottom();
           }
 
-          if (o.tts) {
-            pendingTts = o.tts;
-          }
-
+          if (o.tts) pendingTts = o.tts;
           if (o.error) throw new Error(o.error.message || o.error);
-          if (o.done) {
-            bubble.classList.remove('streaming');
-          }
+          if (o.done) bubble.classList.remove('streaming');
         } catch {}
       }
     }
@@ -789,23 +718,15 @@ async function sendToAPI(text, files = []) {
     bubble.dataset.rawText = full;
 
     const c = currentConvo();
-    if (c) {
-      c.messages.push({ id: aiMsgId, role: 'assistant', content: full, ts: Date.now(), image: generatedImage });
-      c.updated = Date.now();
-    }
+    if (c) { c.messages.push({ id: aiMsgId, role: 'assistant', content: full, ts: Date.now(), image: generatedImage }); c.updated = Date.now(); }
     saveChatsToLS();
     wireMessageActions(msgEl);
     if (timeEl) timeEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     /* Auto-speak if read-aloud enabled */
-    if (pendingTts && readAloudEnabled) {
-      try {
-        stopSpeaking();
-        const a = new Audio(pendingTts);
-        currentAudio = a;
-        a.onended = () => { currentAudio = null; };
-        a.play().catch(() => {});
-      } catch {}
+    if (readAloudEnabled) {
+      if (pendingTts) playAudioDataUrl(pendingTts);
+      else if (full) speakText(full);
     }
   } catch (e) {
     bubble.classList.remove('streaming');
@@ -828,7 +749,6 @@ async function sendToAPI(text, files = []) {
     updateSendButtonState();
   }
 }
-
 function stopStreaming() {
   if (activeStreamController) { try { activeStreamController.abort(); } catch {} activeStreamController = null; }
   stopSpeaking();
@@ -904,8 +824,7 @@ function renderModelPicker() {
         const tier = opt.dataset.tier;
         if (tier === 'pro') alert('Pro and Ultra models require the Pro or Ultimate plan.');
         else if (tier === 'ultimate') alert('Eclipse requires the Ultimate plan.');
-        closeModelPicker();
-        return;
+        closeModelPicker(); return;
       }
       selectModel(opt.dataset.modelId);
     };
@@ -918,8 +837,7 @@ function selectModel(id) {
   __model = id;
   const m = getModelsList().find(x => x.id === id);
   if (m && $('#currentModelLabel')) $('#currentModelLabel').textContent = m.label;
-  renderModelPicker();
-  closeModelPicker();
+  renderModelPicker(); closeModelPicker();
 }
 function openModelPicker()  { $('#modelPicker')?.classList.add('open'); $('#modelPickerMenu')?.classList.add('open'); }
 function closeModelPicker() { $('#modelPicker')?.classList.remove('open'); $('#modelPickerMenu')?.classList.remove('open'); }
@@ -933,17 +851,12 @@ function wireModelPicker() {
   document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#modelPicker')) closeModelPicker(); }, true);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModelPicker(); });
 }
-
 function wireSendButton() {
   const btn = $('#sendBtn'), inp = $('#messageInput');
   if (!btn || !inp) return;
   btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); handleSend(); });
   inp.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-      e.preventDefault(); e.stopPropagation();
-      handleSend();
-      return false;
-    }
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); e.stopPropagation(); handleSend(); return false; }
   });
   inp.addEventListener('input', () => {
     updateSendButtonState();
@@ -958,30 +871,26 @@ function wireSendButton() {
    Read aloud toggle
    ============================================================ */
 function updateReadAloudIcon() {
-  const btn = $('#readAloudBtn');
-  if (!btn) return;
-  btn.innerHTML = readAloudEnabled
-    ? '<i class="ri-volume-up-line"></i>'
-    : '<i class="ri-volume-mute-line"></i>';
+  const btn = $('#readAloudBtn'); if (!btn) return;
+  btn.innerHTML = readAloudEnabled ? '<i class="ri-volume-up-line"></i>' : '<i class="ri-volume-mute-line"></i>';
   btn.classList.toggle('active', readAloudEnabled);
   btn.title = readAloudEnabled ? 'Read aloud: ON' : 'Read aloud: OFF';
-  btn.setAttribute('aria-label', btn.title);
 }
-
 function wireReadAloud() {
-  const btn = $('#readAloudBtn');
-  if (!btn) return;
+  const btn = $('#readAloudBtn'); if (!btn) return;
   updateReadAloudIcon();
   btn.addEventListener('click', async () => {
     readAloudEnabled = !readAloudEnabled;
     userSettings.autoSpeak = readAloudEnabled;
     saveUserSettings();
     updateReadAloudIcon();
+    /* sync toggle in settings */
+    const tg = document.querySelector('[data-toggle="autoSpeak"]');
+    if (tg) { tg.textContent = readAloudEnabled ? 'ON' : 'OFF'; tg.classList.toggle('active', readAloudEnabled); }
     if (readAloudEnabled) {
+      if (!ttsAvailable) { alert('Text-to-speech is not configured on the server. Ask the admin to set F_API.'); readAloudEnabled = false; updateReadAloudIcon(); return; }
       if (lastSpokenText) speakText(lastSpokenText);
-    } else {
-      stopSpeaking();
-    }
+    } else stopSpeaking();
   });
 }
 
@@ -994,31 +903,19 @@ async function doLogin() {
   if (!name || !email) return;
   const res = await authJson('/api/auth/simple-login', { method: 'POST', body: JSON.stringify({ name, email }) }, null);
   if (res?.ok && res.token) {
-    setToken(res.token);
-    __user = res.user;
-    __tier = res.user.tier || 'free';
+    setToken(res.token); __user = res.user; __tier = res.user.tier || 'free';
     if (res.user.voice_id) { userSettings.voice_id = res.user.voice_id; saveUserSettings(); }
-    closeModal('loginModal');
-    updateUserUI();
-    renderModelPicker();
-    loadChatsFromLS();
-    renderHistory();
-  } else {
-    alert(res?.error || 'Login failed');
-  }
+    closeModal('loginModal'); updateUserUI(); renderModelPicker();
+    loadChatsFromLS(); renderHistory();
+  } else alert(res?.error || 'Login failed');
 }
 async function doLogout() {
   await authJson('/api/logout', { method: 'POST' }, null);
-  setToken('');
-  __user = null;
-  __tier = 'free';
-  updateUserUI();
-  closeModal('settingsModal');
-  renderModelPicker();
+  setToken(''); __user = null; __tier = 'free';
+  updateUserUI(); closeModal('settingsModal'); renderModelPicker();
 }
 function updateUserUI() {
-  const chip = $('#userChip');
-  if (!chip) return;
+  const chip = $('#userChip'); if (!chip) return;
   if (__user) {
     chip.querySelector('.user-name').textContent = __user.name || __user.email;
     chip.querySelector('.user-sub').textContent = `${(__tier || 'free').charAt(0).toUpperCase() + (__tier || 'free').slice(1)} plan`;
@@ -1030,18 +927,12 @@ function updateUserUI() {
 async function loadUser() {
   const res = await authJson('/api/me', {}, null);
   if (res?.user) {
-    __user = res.user;
-    __tier = res.user.tier || 'free';
+    __user = res.user; __tier = res.user.tier || 'free';
     if (res.user.voice_id) { userSettings.voice_id = res.user.voice_id; saveUserSettings(); }
     updateUserUI();
-  } else {
-    __tier = 'free';
-    updateUserUI();
-  }
-  loadChatsFromLS();
-  renderHistory();
+  } else { __tier = 'free'; updateUserUI(); }
+  loadChatsFromLS(); renderHistory();
 }
-
 async function loadConfig() {
   try {
     const res = await fetch('/api/config', { cache: 'no-store' });
@@ -1058,32 +949,56 @@ async function loadConfig() {
   if ($('#currentModelLabel')) $('#currentModelLabel').textContent = models[0].label;
 }
 
+/* ============================================================
+   Plans with USD/AFG
+   ============================================================ */
 async function loadPlans() {
   const grid = $('#plansGrid'); if (!grid) return;
   const res = await authJson('/api/subscription/plans', {}, null);
   if (!res?.plans) return;
-  grid.innerHTML = res.plans.map(p => `
-    <div class="plan-card${p.id === __tier ? ' current' : ''}">
+  grid.innerHTML = res.plans.map(p => {
+    const isFree = p.id === 'free';
+    const isCurrent = p.id === __tier;
+    const priceDisplay = isFree
+      ? '<div class="plan-price-free">Free</div>'
+      : `<div class="plan-price-usd">$${p.price_usd.toFixed(2)}<span class="plan-price-period">/mo</span></div>
+         <div class="plan-price-afg">≈ ${p.price_afg} AFG</div>`;
+    const buyBtn = isFree
+      ? `<button class="plan-btn${isCurrent ? ' disabled' : ''}" ${isCurrent ? 'disabled' : ''}>${isCurrent ? 'Current plan' : 'Start free'}</button>`
+      : `<button class="plan-btn primary" data-buy="${escapeHtml(p.id)}">Buy ${escapeHtml(p.label)}</button>`;
+    return `<div class="plan-card${isCurrent ? ' current' : ''}">
       <div class="plan-name">${escapeHtml(p.label)}</div>
-      <div class="plan-price">${p.price_robux ? p.price_robux + ' Robux' : 'Free'}</div>
+      <div class="plan-tagline">${escapeHtml(p.tagline || '')}</div>
+      <div class="plan-pricing">${priceDisplay}</div>
       <ul class="plan-perks">${(p.perks || []).map(x => `<li><i class="ri-check-line"></i> ${escapeHtml(x)}</li>`).join('')}</ul>
-    </div>`).join('');
+      ${buyBtn}
+    </div>`;
+  }).join('');
+
+  grid.querySelectorAll('[data-buy]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      openModal('paymentSoonModal');
+    });
+  });
 }
 
 /* ============================================================
-   Voice loading
+   Voice
    ============================================================ */
 async function loadVoices() {
-  const sel = $('#voiceSelect');
-  if (!sel) return;
+  const sel = $('#voiceSelect'); if (!sel) return;
+  const statusEl = $('#voiceStatus');
+  if (!ttsAvailable) {
+    sel.innerHTML = '<option value="">TTS not configured on server</option>';
+    if (statusEl) { statusEl.textContent = 'Admin needs to set F_API environment variable.'; statusEl.className = 'msg err'; }
+    return;
+  }
   const res = await authJson('/api/voices', {}, null);
   const voices = res?.voices || [];
   const current = userSettings.voice_id || '';
   sel.innerHTML = '<option value="">Default voice</option>' +
     voices.map(v => `<option value="${escapeHtml(v.id)}"${v.id === current ? ' selected' : ''}>${escapeHtml(v.name)}${v.lang ? ' · ' + escapeHtml(v.lang) : ''}</option>`).join('');
-  if (!voices.length && !ttsAvailable) {
-    sel.innerHTML = '<option value="">TTS not configured (F_API missing)</option>';
-  }
+  if (statusEl) { statusEl.textContent = voices.length ? `${voices.length} voice(s) available` : 'Using default voice (no custom voices found)'; statusEl.className = 'msg muted'; }
 }
 
 /* ============================================================
@@ -1109,7 +1024,6 @@ async function loadUserKeys() {
     list.innerHTML = res.keys.map(k => `<div class="api-key-item"><i class="ri-key-line"></i><span class="key-prefix">${escapeHtml(k.prefix)}…</span></div>`).join('');
   }
 }
-
 async function genKey() {
   if (!__user) { alert('Sign in first to generate an API key.'); openModal('loginModal'); return; }
   const btn = $('#generateKeyBtn');
@@ -1121,16 +1035,14 @@ async function genKey() {
       const newKeyDisplay = $('#newKeyDisplay'), newKeyValue = $('#newKeyValue');
       if (newKeyDisplay && newKeyValue) { newKeyDisplay.style.display = 'block'; newKeyValue.textContent = res.key; }
       loadUserKeys();
-    } else {
-      alert(res?.error || 'Failed to generate key.');
-    }
+    } else alert(res?.error || 'Failed to generate key.');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Generate key'; }
   }
 }
 
 /* ============================================================
-   Standalone image generation modal
+   Standalone image gen modal
    ============================================================ */
 async function genImage() {
   const prompt = $('#imagePrompt')?.value.trim();
@@ -1158,7 +1070,7 @@ async function genImage() {
 }
 
 /* ============================================================
-   Voice — mic + call mode
+   Voice mic (composer) — single shot
    ============================================================ */
 function startMic() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1180,55 +1092,123 @@ function startMic() {
   recognition.start();
 }
 
+/* ============================================================
+   Call mode — PUSH-TO-TALK
+   ============================================================ */
+let callActive = false;
+let callRecog = null;
+let isSpeaking = false;
+
 function startCall() {
-  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) return alert('Not supported.');
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return alert('Speech recognition not supported in this browser.');
   callActive = true;
-  callMuted = false;
+  isSpeaking = false;
   $('#callOverlay')?.classList.add('open');
-  const b = $('#callMuteBtn');
-  if (b) b.innerHTML = '<i class="ri-mic-line"></i>';
-  if ($('#callStatus')) $('#callStatus').textContent = 'Listening…';
+  if ($('#callStatus')) $('#callStatus').textContent = 'Hold the button to speak';
   if ($('#callTranscript')) $('#callTranscript').textContent = '';
-  startCallRecognition();
+  updatePttUI('idle');
 }
 
-let callRecogActive = false;
+function endCall() {
+  callActive = false;
+  isSpeaking = false;
+  try { callRecog?.stop(); } catch {}
+  callRecog = null;
+  stopSpeaking();
+  $('#callOverlay')?.classList.remove('open');
+  updatePttUI('idle');
+}
 
-function startCallRecognition() {
+function updatePttUI(state) {
+  const btn = $('#pttBtn'), avatar = $('#callAvatar'), status = $('#callStatus');
+  if (!btn) return;
+  if (state === 'recording') {
+    btn.classList.add('recording');
+    btn.innerHTML = '<i class="ri-mic-fill"></i><span>Release to send</span>';
+    if (avatar) avatar.classList.add('recording');
+    if (status) status.textContent = 'Listening…';
+  } else if (state === 'thinking') {
+    btn.classList.remove('recording');
+    btn.innerHTML = '<i class="ri-loader-4-line"></i><span>Thinking…</span>';
+    if (avatar) avatar.classList.remove('recording');
+    if (status) status.textContent = 'Thinking…';
+  } else if (state === 'speaking') {
+    btn.classList.remove('recording');
+    btn.innerHTML = '<i class="ri-volume-up-line"></i><span>Speaking…</span>';
+    if (avatar) avatar.classList.remove('recording');
+    if (status) status.textContent = 'Speaking…';
+  } else {
+    btn.classList.remove('recording');
+    btn.innerHTML = '<i class="ri-mic-line"></i><span>Hold to speak</span>';
+    if (avatar) avatar.classList.remove('recording');
+    if (status) status.textContent = 'Hold the button to speak';
+  }
+}
+
+function beginPttRecording() {
+  if (!callActive || isSpeaking) return;
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return;
-  callRecognition = new SR();
-  callRecognition.lang = userSettings.language || 'en-US';
-  callRecognition.continuous = true;
-  callRecognition.interimResults = false;
-  callRecogActive = true;
-  callRecognition.onresult = async e => {
-    if (callMuted) return;
-    const last = e.results[e.results.length - 1];
-    if (!last.isFinal) return;
-    const text = last[0].transcript.trim();
-    if (!text) return;
-    if ($('#callTranscript')) $('#callTranscript').textContent = 'You: ' + text;
-    if ($('#callStatus')) $('#callStatus').textContent = 'Thinking…';
-    await handleCallTurn(text);
-  };
-  callRecognition.onend = () => {
-    if (callActive && callRecogActive) {
-      setTimeout(() => { if (callActive && callRecogActive) startCallRecognition(); }, 400);
+  if (callRecog) { try { callRecog.abort(); } catch {} callRecog = null; }
+  callRecog = new SR();
+  callRecog.lang = userSettings.language || 'en-US';
+  callRecog.interimResults = false;
+  callRecog.continuous = false;
+  callRecog.maxAlternatives = 1;
+  let finalText = '';
+  callRecog.onresult = (e) => {
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) finalText += e.results[i][0].transcript;
     }
   };
-  callRecognition.onerror = () => {};
-  try { callRecognition.start(); } catch {}
+  callRecog.onerror = (e) => {
+    if (e.error !== 'aborted' && e.error !== 'no-speech') console.warn('[Call] recog error:', e.error);
+  };
+  callRecog.onend = () => {
+    if (!callActive) return;
+    if (finalText.trim()) {
+      handleCallTurn(finalText.trim());
+    } else {
+      updatePttUI('idle');
+    }
+    callRecog = null;
+  };
+  try {
+    callRecog.start();
+    updatePttUI('recording');
+  } catch (e) {
+    console.warn('[Call] start failed:', e.message);
+    updatePttUI('idle');
+  }
+}
+
+function endPttRecording() {
+  if (callRecog) {
+    try { callRecog.stop(); } catch {}
+    /* onend will fire and trigger handleCallTurn */
+  } else {
+    updatePttUI('idle');
+  }
 }
 
 async function handleCallTurn(userText) {
+  updatePttUI('thinking');
+  if ($('#callTranscript')) {
+    $('#callTranscript').textContent += (($('#callTranscript').textContent) ? '\n\n' : '') + `You: ${userText}`;
+    $('#callTranscript').scrollTop = $('#callTranscript').scrollHeight;
+  }
   const history = currentConvo()?.messages?.slice(-10).map(m => ({ role: m.role, content: m.content })) || [];
   const model = __model || 'mirox-luna-1.2';
   try {
     const res = await fetch('/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: userText, history, model, stream: false, voice_id: userSettings.voice_id || null }),
+      body: JSON.stringify({
+        message: userText, history, model, stream: false,
+        voice_id: userSettings.voice_id || null,
+        tts: true,
+      }),
     });
     const data = await res.json().catch(() => ({}));
     const reply = data?.reply || data?.choices?.[0]?.message?.content || '';
@@ -1237,29 +1217,66 @@ async function handleCallTurn(userText) {
         $('#callTranscript').textContent += `\n\nMirox: ${reply}`;
         $('#callTranscript').scrollTop = $('#callTranscript').scrollHeight;
       }
-      if ($('#callStatus')) $('#callStatus').textContent = 'Speaking…';
-      await speakText(reply);
-      if ($('#callStatus')) $('#callStatus').textContent = 'Listening…';
+      lastSpokenText = reply;
+      const ttsUrl = data?.tts || null;
+      if (ttsUrl) {
+        isSpeaking = true;
+        updatePttUI('speaking');
+        await new Promise((resolve) => {
+          try {
+            stopSpeaking();
+            const a = new Audio(ttsUrl);
+            currentAudio = a;
+            a.onended = () => { currentAudio = null; resolve(); };
+            a.onerror = () => { currentAudio = null; resolve(); };
+            a.play().catch(() => resolve());
+          } catch { resolve(); }
+        });
+        isSpeaking = false;
+      } else if (ttsAvailable) {
+        isSpeaking = true;
+        updatePttUI('speaking');
+        await speakText(reply);
+        isSpeaking = false;
+      } else {
+        updatePttUI('idle');
+      }
+      updatePttUI('idle');
+    } else {
+      updatePttUI('idle');
     }
-  } catch {
-    if ($('#callStatus')) $('#callStatus').textContent = 'Error — retry';
+  } catch (e) {
+    console.warn('[Call] turn error:', e.message);
+    if ($('#callStatus')) $('#callStatus').textContent = 'Error — try again';
+    updatePttUI('idle');
   }
 }
 
-function endCall() {
-  callActive = false;
-  callRecogActive = false;
-  try { callRecognition?.stop(); } catch {}
-  callRecognition = null;
-  stopSpeaking();
-  $('#callOverlay')?.classList.remove('open');
+function wirePttButton() {
+  const btn = $('#pttBtn'); if (!btn) return;
+  let recording = false;
+
+  const startHandler = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    if (recording) return;
+    recording = true;
+    beginPttRecording();
+  };
+  const endHandler = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    if (!recording) return;
+    recording = false;
+    endPttRecording();
+  };
+
+  btn.addEventListener('pointerdown', startHandler);
+  btn.addEventListener('pointerup', endHandler);
+  btn.addEventListener('pointerleave', endHandler);
+  btn.addEventListener('pointercancel', endHandler);
+  /* Prevent touch scroll while holding */
+  btn.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
 }
-function toggleMute() {
-  callMuted = !callMuted;
-  const b = $('#callMuteBtn');
-  if (b) b.innerHTML = callMuted ? '<i class="ri-mic-off-line"></i>' : '<i class="ri-mic-line"></i>';
-  if ($('#callStatus')) $('#callStatus').textContent = callMuted ? 'Muted' : 'Listening…';
-}
+
 async function requestMic() {
   try { await navigator.mediaDevices.getUserMedia({ audio: true }); alert('Mic granted.'); }
   catch { alert('Denied.'); }
@@ -1278,8 +1295,7 @@ async function addMemory() {
   const input = $('#memoryInput');
   if (!input?.value.trim()) return;
   await authJson('/api/memory', { method: 'POST', body: JSON.stringify({ fact: input.value.trim() }) });
-  input.value = '';
-  loadMemory();
+  input.value = ''; loadMemory();
 }
 async function loadPersona() {
   if (!__user) return;
@@ -1299,7 +1315,7 @@ async function submitReport() {
 }
 
 /* ============================================================
-   Wiring
+   Wire buttons
    ============================================================ */
 function wireToolButtons() {
   $('#talkModeBtn')?.addEventListener('click', startCall);
@@ -1320,9 +1336,15 @@ function wireToolButtons() {
     const sel = $('#voiceSelect');
     const vid = sel?.value || null;
     if (vid) { userSettings.voice_id = vid; saveUserSettings(); }
-    const t = 'Hi, I am Mirox. This is how I sound.';
-    await speakText(t);
+    else { userSettings.voice_id = null; saveUserSettings(); }
     authJson('/api/me/voice', { method: 'POST', body: JSON.stringify({ voice_id: vid || null }) }, null);
+    const status = $('#voiceStatus');
+    if (status) { status.textContent = 'Generating preview…'; status.className = 'msg muted'; }
+    const ok = await speakText('Hi, I am Mirox. This is how I sound.');
+    if (status) {
+      if (ok) { status.textContent = 'Preview playing…'; }
+      else { status.textContent = 'Preview failed — check server logs / F_API'; status.className = 'msg err'; }
+    }
   });
   $('#copyNewKeyBtn')?.addEventListener('click', async () => {
     const v = $('#newKeyValue')?.textContent || '';
@@ -1353,13 +1375,11 @@ function wireToolButtons() {
   $('#micBtn')?.addEventListener('click', startMic);
   $('#stopBtn')?.addEventListener('click', stopStreaming);
   $('#callEndBtn')?.addEventListener('click', endCall);
-  $('#callMuteBtn')?.addEventListener('click', toggleMute);
   $('#editTitleBtn')?.addEventListener('click', () => {
     const cur = $('#chatTitle')?.textContent || '';
     const nxt = prompt('Rename chat', cur);
     if (nxt === null) return;
-    const tr = nxt.trim();
-    if (!tr) return;
+    const tr = nxt.trim(); if (!tr) return;
     $('#chatTitle').textContent = tr;
     const c = currentConvo();
     if (c) { c.title = tr; saveChatsToLS(); renderHistory(); }
@@ -1371,22 +1391,24 @@ function wireToolButtons() {
   $('#newChatBtn')?.addEventListener('click', () => { startNewChat(); if (window.innerWidth <= 860) closeSidebar(); });
   $('#userChip')?.addEventListener('click', () => { if (!__user) openModal('loginModal'); });
 
-  /* Voice select change */
   $('#voiceSelect')?.addEventListener('change', async () => {
     const sel = $('#voiceSelect');
     userSettings.voice_id = sel?.value || null;
     saveUserSettings();
     authJson('/api/me/voice', { method: 'POST', body: JSON.stringify({ voice_id: sel?.value || null }) }, null);
   });
+
+  /* Payment soon modal already handled by data-close */
 }
 
+/* ============================================================
+   Global handlers
+   ============================================================ */
 document.addEventListener('click', function (e) {
   const t = e.target;
   const closest = s => t.closest(s);
-
   const closer = closest('[data-close]');
   if (closer) { closeModal(closer.dataset.close); return; }
-
   if (t.classList.contains('modal-overlay')) { t.classList.remove('open'); return; }
   if (t.classList.contains('lightbox')) { t.classList.remove('open'); return; }
 
@@ -1402,13 +1424,10 @@ document.addEventListener('click', function (e) {
   }
   const mb = closest('[data-mode]');
   if (mb && mb.closest('#modeOptions')) { applyAppearance({ mode: mb.dataset.mode }); return; }
-
   const sw = closest('.swatch');
   if (sw?.dataset.theme) { applyAppearance({ theme: sw.dataset.theme }); return; }
-
   const cb = closest('[data-corner]');
   if (cb && cb.closest('#cornerOptions')) { applyAppearance({ corner: cb.dataset.corner }); return; }
-
   const tg = closest('[data-toggle]');
   if (tg) {
     const k = tg.dataset.toggle;
@@ -1429,7 +1448,6 @@ document.addEventListener('click', function (e) {
     }
     return;
   }
-
   const mt = closest('.mcp-toggle');
   if (mt) {
     let servers = [];
@@ -1442,11 +1460,9 @@ document.addEventListener('click', function (e) {
   if (mr) {
     let servers = [];
     try { servers = JSON.parse(localStorage.getItem(MCP_KEY) || '[]'); } catch {}
-    servers.splice(+mr.dataset.idx, 1);
-    saveMcp(servers);
+    servers.splice(+mr.dataset.idx, 1); saveMcp(servers);
     return;
   }
-
   const hist = closest('.history-item');
   if (hist) {
     if (t.closest('.history-delete')) {
@@ -1454,8 +1470,7 @@ document.addEventListener('click', function (e) {
       __conversations = __conversations.filter(x => x.id !== id);
       if (currentConversationId === id) startNewChat();
       saveChatsToLS(); renderHistory();
-      e.stopPropagation();
-      return;
+      e.stopPropagation(); return;
     }
     const id = hist.dataset.id;
     if (id) {
@@ -1487,23 +1502,17 @@ async function init() {
   wireSendButton();
   wireToolButtons();
   wireReadAloud();
+  wirePttButton();
   renderModelPicker();
-
-  /* restore read-aloud state */
   readAloudEnabled = !!userSettings.autoSpeak;
   updateReadAloudIcon();
-
   await loadConfig();
   await loadUser();
   bindSuggestionClicks();
   updateUserUI();
   loadMcp();
-
   document.addEventListener('keydown', e => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-      e.preventDefault();
-      $('#messageInput')?.focus();
-    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); $('#messageInput')?.focus(); }
   });
 }
 init();
