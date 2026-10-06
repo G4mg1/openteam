@@ -1,383 +1,388 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#faf9f5">
-  <title>MiroxAI — by OpenSurr</title>
-  <link rel="icon" href="/logo.png" type="image/png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/remixicon@4.9.0/fonts/remixicon.css" rel="stylesheet">
-  <link rel="stylesheet" href="/style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#faf9f5">
+<title>MiroxAI — by OpenSurr</title>
+<link rel="icon" href="/logo.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/remixicon@4.9.0/fonts/remixicon.css" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <!-- LOADING -->
-  <div id="loadingScreen" class="loading-screen">
-    <div class="loading-brand">Mirox</div>
-    <div class="loading-line"><div class="loading-line-fill"></div></div>
+
+<div id="loadingScreen" class="loading-screen">
+  <div class="loading-brand">Mirox</div>
+  <div class="loading-line"><div class="loading-line-fill"></div></div>
+</div>
+
+<script>
+(function () {
+  function kill() {
+    var el = document.getElementById('loadingScreen');
+    if (!el) return;
+    el.classList.add('hidden');
+    setTimeout(function () { el.style.display = 'none'; }, 700);
+  }
+  window.__miroxKillLoader = kill;
+  setTimeout(kill, 1000);
+  setTimeout(kill, 2500);
+  window.addEventListener('error', function (e) {
+    console.error('[Mirox] error:', e.message);
+    kill();
+  });
+})();
+</script>
+
+<div id="sidebarScrim" class="sidebar-scrim"></div>
+
+<aside id="sidebar" class="sidebar">
+  <div class="sidebar-header">
+    <a href="#" id="brandLogo" class="brand">
+      <img src="/logo.png" alt="MiroxAI" class="brand-logo theme-aware-logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';">
+      <div class="logo-fallback logo-fallback-sm" style="display:none;">M</div>
+      <span class="brand-text">MiroxAI</span>
+    </a>
+    <button id="sidebarCloseBtn" class="icon-btn sidebar-close" type="button"><i class="ri-close-line"></i></button>
   </div>
 
-  <!-- FAILSAFE: kills loader no matter what, even if script.js errors -->
-  <script>
-    (function () {
-      function kill() {
-        var el = document.getElementById('loadingScreen');
-        if (!el) return;
-        el.classList.add('hidden');
-        setTimeout(function () { el.style.display = 'none'; }, 700);
-      }
-      window.__miroxKillLoader = kill;
-      setTimeout(kill, 1200);
-      setTimeout(kill, 3000);
-      window.addEventListener('error', function (e) {
-        console.error('[Mirox] script error:', e.message);
-        kill();
-      });
-    })();
-  </script>
+  <button id="newChatBtn" class="new-chat-btn" type="button"><i class="ri-add-line"></i><span>New chat</span></button>
 
-  <div id="sidebarScrim" class="sidebar-scrim"></div>
+  <div class="sidebar-search">
+    <i class="ri-search-line"></i>
+    <input id="sidebarSearchInput" type="search" placeholder="Search chats…" autocomplete="off">
+  </div>
 
-  <aside id="sidebar" class="sidebar">
-    <div class="sidebar-header">
-      <a href="#" id="brandLogo" class="brand">
-        <img src="/logo.png" alt="MiroxAI" class="brand-logo theme-aware-logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';">
-        <div class="logo-fallback logo-fallback-sm" style="display:none;">M</div>
-        <span class="brand-text">MiroxAI</span>
-      </a>
-      <button id="sidebarCloseBtn" class="icon-btn sidebar-close" type="button"><i class="ri-close-line"></i></button>
-    </div>
+  <div class="sidebar-tabs">
+    <button class="sidebar-tab active" type="button" data-tab="chats"><i class="ri-chat-3-line"></i> Chats</button>
+    <button class="sidebar-tab" type="button" data-tab="bridge"><i class="ri-link"></i> Bridge</button>
+  </div>
 
-    <button id="newChatBtn" class="new-chat-btn" type="button"><i class="ri-add-line"></i><span>New chat</span></button>
-
-    <div class="sidebar-search">
-      <i class="ri-search-line"></i>
-      <input id="sidebarSearchInput" type="search" placeholder="Search chats & images…" autocomplete="off">
-      <button id="sidebarSearchClear" class="icon-btn" type="button" style="display:none;"><i class="ri-close-line"></i></button>
-    </div>
-
-    <div class="sidebar-tabs">
-      <button class="sidebar-tab active" type="button" data-tab="chats"><i class="ri-chat-3-line"></i> Chats</button>
-      <button class="sidebar-tab" type="button" data-tab="images"><i class="ri-image-line"></i> Images</button>
-      <button class="sidebar-tab" type="button" data-tab="bridge"><i class="ri-link"></i> Bridge</button>
-    </div>
-
-    <div class="sidebar-section" data-pane="chats">
-      <ul id="historyList" class="history-list"><li class="history-empty">No conversations yet</li></ul>
-    </div>
-    <div class="sidebar-section" data-pane="images" style="display:none;">
-      <div id="imageHistoryGrid" class="image-history-grid">
-        <div class="history-empty">No images yet</div>
+  <div class="sidebar-section" data-pane="chats">
+    <ul id="historyList" class="history-list"><li class="history-empty">No conversations yet</li></ul>
+  </div>
+  <div class="sidebar-section" data-pane="bridge" style="display:none;">
+    <div class="bridge-panel">
+      <div class="bridge-status" id="bridgeStatus">
+        <div class="bridge-status-dot offline"></div>
+        <span>Disconnected</span>
       </div>
+      <p class="bridge-hint">Give Mirox direct control of your laptop.</p>
+      <button id="bridgeOpenBtn" class="modal-btn primary" type="button" style="width:100%;"><i class="ri-terminal-box-line"></i> Open Bridge Workspace</button>
+      <button id="bridgeDownloadBtn" class="modal-btn" type="button" style="width:100%;margin-top:8px;"><i class="ri-download-2-line"></i> Download client</button>
     </div>
-    <div class="sidebar-section" data-pane="bridge" style="display:none;">
-      <div class="bridge-panel">
-        <div class="bridge-status" id="bridgeStatus">
-          <div class="bridge-status-dot offline"></div>
-          <span>Disconnected</span>
-        </div>
-        <p class="bridge-hint">Bridge gives Mirox direct control over your laptop.</p>
-        <button id="bridgeOpenBtn" class="modal-btn primary" type="button" style="width:100%;"><i class="ri-terminal-box-line"></i> Open Bridge Workspace</button>
-        <button id="bridgeDownloadBtn" class="modal-btn" type="button" style="width:100%;margin-top:8px;"><i class="ri-download-2-line"></i> Download client package</button>
+  </div>
+
+  <div class="sidebar-footer">
+    <div id="userChip" class="user-chip">
+      <div class="user-avatar"><i class="ri-user-line"></i></div>
+      <div class="user-info">
+        <span class="user-name">Guest mode</span>
+        <span class="user-sub">Sign in to save chats</span>
+      </div>
+      <button id="upgradeBtn" class="upgrade-btn" type="button"><i class="ri-vip-crown-line"></i></button>
+    </div>
+    <div class="sidebar-links">
+      <a href="#" id="settingsBtn" class="sidebar-link"><i class="ri-settings-3-line"></i> Settings</a>
+      <a href="#" id="supportModeBtn" class="sidebar-link"><i class="ri-customer-service-2-line"></i> Support</a>
+    </div>
+    <div class="made-by">Made by OpenSurr</div>
+  </div>
+</aside>
+
+<main class="main">
+  <header class="chat-header">
+    <button id="hamburgerBtn" class="icon-btn hamburger" type="button"><i class="ri-menu-line"></i></button>
+    <h2 id="chatTitle" class="chat-title">New chat</h2>
+
+    <!-- Credit bar: only shows Vision / Image / Eclipse for free users -->
+    <div id="creditBar" class="credit-bar" style="display:none;">
+      <div class="credit-pill" data-credit="vision" title="Image uploads today">
+        <i class="ri-eye-line"></i><span>10/10</span>
+      </div>
+      <div class="credit-pill" data-credit="image" title="Image generations today">
+        <i class="ri-image-line"></i><span>10/10</span>
+      </div>
+      <div class="credit-pill" data-credit="eclipse" title="Eclipse messages today">
+        <i class="ri-sparkling-2-line"></i><span>5/5</span>
       </div>
     </div>
 
-    <div class="sidebar-footer">
-      <div id="userChip" class="user-chip">
-        <div class="user-avatar"><i class="ri-user-line"></i></div>
-        <div class="user-info">
-          <span class="user-name">Guest mode</span>
-          <span class="user-sub">Sign in to save chats</span>
-        </div>
-        <button id="upgradeBtn" class="upgrade-btn" type="button"><i class="ri-vip-crown-line"></i></button>
+    <div class="chat-header-actions">
+      <div id="modelPicker" class="model-picker-wrap">
+        <button id="modelPickerBtn" class="model-picker-btn" type="button">
+          <i class="ri-sparkling-2-line"></i>
+          <span id="currentModelLabel">Luna</span>
+          <i class="ri-arrow-down-s-line"></i>
+        </button>
+        <div id="modelPickerMenu" class="model-picker-menu"></div>
       </div>
-      <div class="sidebar-links">
-        <a href="#" id="settingsBtn" class="sidebar-link"><i class="ri-settings-3-line"></i> Settings</a>
-        <a href="/developers/" class="sidebar-link"><i class="ri-code-s-slash-line"></i> Developers</a>
-        <a href="#" id="supportModeBtn" class="sidebar-link"><i class="ri-customer-service-2-line"></i> Support</a>
-      </div>
-      <div class="made-by">Made by OpenSurr</div>
+      <button id="editTitleBtn" class="icon-btn" type="button"><i class="ri-edit-line"></i></button>
     </div>
-  </aside>
+  </header>
 
-  <main class="main">
-    <header class="chat-header">
-      <button id="hamburgerBtn" class="icon-btn hamburger" type="button"><i class="ri-menu-line"></i></button>
-      <h2 id="chatTitle" class="chat-title">New chat</h2>
-
-      <div id="creditBar" class="credit-bar" style="display:none;">
-        <div class="credit-pill" data-credit="chat"><i class="ri-chat-3-line"></i><span id="creditChatText">5/5</span></div>
-        <div class="credit-pill" data-credit="vision"><i class="ri-eye-line"></i><span id="creditVisionText">10/10</span></div>
-        <div class="credit-pill" data-credit="image"><i class="ri-image-line"></i><span id="creditImageText">10/10</span></div>
+  <div id="chatMessages" class="chat-messages">
+    <div class="welcome-screen">
+      <img src="/logo.png" alt="MiroxAI" class="welcome-logo theme-aware-logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';">
+      <div class="logo-fallback logo-fallback-lg" style="display:none;">M</div>
+      <h1 class="welcome-title">Hi, I'm Mirox</h1>
+      <p class="welcome-sub">Built by the OpenSurr team. Luna and Gen are unlimited and free.</p>
+      <div class="suggestion-grid">
+        <button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span>Generate me an image of a cat</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Help me write code"><i class="ri-code-line"></i><span>Help me write code</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span>Explain a concept simply</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Open the Bridge workspace"><i class="ri-link"></i><span>Bridge to my laptop</span></button>
       </div>
+    </div>
+  </div>
 
-      <div class="chat-header-actions">
-        <button id="readAloudBtn" class="icon-btn" type="button"><i class="ri-volume-mute-line"></i></button>
-        <div id="modelPicker" class="model-picker-wrap">
-          <button id="modelPickerBtn" class="model-picker-btn" type="button">
-            <i class="ri-sparkling-2-line"></i>
-            <span id="currentModelLabel">Luna</span>
-            <i class="ri-arrow-down-s-line"></i>
-          </button>
-          <div id="modelPickerMenu" class="model-picker-menu"></div>
-        </div>
-        <button id="editTitleBtn" class="icon-btn" type="button"><i class="ri-edit-line"></i></button>
+  <div class="composer-wrap">
+    <div id="attachmentPreview" class="attachment-preview" style="display:none;">
+      <div id="attachmentList" class="attachment-list"></div>
+      <button id="removeAttachmentBtn" class="icon-btn" type="button"><i class="ri-close-line"></i></button>
+    </div>
+
+    <div class="tools-row">
+      <button id="imageModeBtn" class="tool-btn" type="button"><i class="ri-image-line"></i><span>Lumenal</span></button>
+      <button id="bridgeModeBtn" class="tool-btn" type="button"><i class="ri-link"></i><span>Bridge</span></button>
+      <button id="plansModeBtn" class="tool-btn" type="button"><i class="ri-vip-crown-line"></i><span>Plans</span></button>
+      <button id="supportModeBtn2" class="tool-btn" type="button"><i class="ri-question-line"></i><span>Help</span></button>
+    </div>
+
+    <div class="composer">
+      <button type="button" id="attachBtn" class="icon-btn"><i class="ri-attachment-2"></i></button>
+      <input type="file" id="fileInput" multiple hidden>
+      <textarea id="messageInput" class="message-input" placeholder="How can I help you today?" rows="1"></textarea>
+      <button type="button" id="stopBtn" class="icon-btn stop-btn" style="display:none;"><i class="ri-stop-circle-line"></i></button>
+      <button type="button" id="sendBtn" class="send-btn is-disabled" aria-disabled="true"><i class="ri-arrow-up-line"></i></button>
+    </div>
+  </div>
+</main>
+
+<!-- ================== BRIDGE WORKSPACE ================== -->
+<div id="bridgeWorkspace" class="bridge-workspace-overlay">
+  <div class="bridge-workspace-panel">
+    <header class="bridge-workspace-top">
+      <div class="bridge-workspace-title">
+        <i class="ri-terminal-box-line"></i>
+        <span>Bridge Workspace</span>
+      </div>
+      <div class="bridge-workspace-status" id="bwStatusPill">
+        <div class="bridge-status-dot offline"></div>
+        <span>Disconnected</span>
+      </div>
+      <div class="bridge-workspace-actions">
+        <button id="bwDownloadBtn" class="icon-btn" type="button" title="Download client"><i class="ri-download-2-line"></i></button>
+        <button id="bwNewBtn" class="icon-btn" type="button" title="Clear chat"><i class="ri-delete-bin-6-line"></i></button>
+        <button id="bwCloseBtn" class="icon-btn" type="button" title="Close"><i class="ri-close-line"></i></button>
       </div>
     </header>
 
-    <div id="chatMessages" class="chat-messages">
-      <div class="welcome-screen">
-        <img src="/logo.png" alt="MiroxAI" class="welcome-logo theme-aware-logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';">
-        <div class="logo-fallback logo-fallback-lg" style="display:none;">M</div>
-        <h1 class="welcome-title">Hi, I'm Mirox</h1>
-        <p class="welcome-sub">Built by the OpenSurr team. Ask anything, attach images or files, or start a voice call.</p>
-        <div class="suggestion-grid">
-          <button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span>Generate me an image of a cat</span></button>
-          <button class="suggestion-card" type="button" data-prompt="Help me write code"><i class="ri-code-line"></i><span>Help me write code</span></button>
-          <button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span>Explain a concept simply</span></button>
-          <button class="suggestion-card" type="button" data-prompt="What would you like to talk about?"><i class="ri-chat-3-line"></i><span>What would you like to talk about?</span></button>
-        </div>
-      </div>
+    <!-- Live status bar for AI thinking / executing -->
+    <div class="bridge-status-strip" id="bwStatusStrip" style="display:none;">
+      <div class="bridge-status-strip-dot"></div>
+      <span id="bwStatusText">Thinking…</span>
+      <span class="bridge-status-strip-sub" id="bwStatusSub"></span>
     </div>
 
-    <div class="composer-wrap">
-      <p class="welcome-disclaimer-static">Mirox AI can make mistakes. Made by the OpenSurr team.</p>
-
-      <div id="attachmentPreview" class="attachment-preview" style="display:none;">
-        <div id="attachmentList" class="attachment-list"></div>
-        <button id="removeAttachmentBtn" class="icon-btn" type="button"><i class="ri-close-line"></i></button>
-      </div>
-
-      <div class="tools-row">
-        <button id="talkModeBtn" class="tool-btn" type="button"><i class="ri-mic-line"></i><span>Call</span></button>
-        <button id="imageModeBtn" class="tool-btn" type="button"><i class="ri-image-line"></i><span>Lumenal</span></button>
-        <button id="bridgeModeBtn" class="tool-btn" type="button"><i class="ri-link"></i><span>Bridge</span></button>
-        <button id="plansModeBtn" class="tool-btn" type="button"><i class="ri-vip-crown-line"></i><span>Plans</span></button>
-        <button id="supportModeBtn2" class="tool-btn" type="button"><i class="ri-question-line"></i><span>Help</span></button>
-      </div>
-
-      <div class="composer">
-        <button type="button" id="attachBtn" class="icon-btn"><i class="ri-attachment-2"></i></button>
-        <input type="file" id="fileInput" multiple hidden>
-        <textarea id="messageInput" class="message-input" placeholder="How can I help you today?" rows="1" enterkeyhint="send"></textarea>
-        <button type="button" id="micBtn" class="icon-btn mic-btn"><i class="ri-mic-line"></i></button>
-        <button type="button" id="stopBtn" class="icon-btn stop-btn" style="display:none;"><i class="ri-stop-circle-line"></i></button>
-        <button type="button" id="sendBtn" class="send-btn is-disabled" aria-disabled="true"><i class="ri-arrow-up-line"></i></button>
-      </div>
-    </div>
-  </main>
-
-  <!-- BRIDGE WORKSPACE -->
-  <div id="bridgeWorkspace" class="bridge-workspace-overlay">
-    <div class="bridge-workspace-panel">
-      <header class="bridge-workspace-top">
-        <div class="bridge-workspace-title">
-          <i class="ri-terminal-box-line"></i>
-          <span>Bridge Workspace</span>
-        </div>
-        <div class="bridge-workspace-status" id="bwStatusPill">
-          <div class="bridge-status-dot offline"></div>
-          <span>Disconnected</span>
-        </div>
-        <div class="bridge-workspace-actions">
-          <button id="bwDownloadBtn" class="icon-btn" type="button" title="Download client"><i class="ri-download-2-line"></i></button>
-          <button id="bwNewBtn" class="icon-btn" type="button" title="Clear chat"><i class="ri-delete-bin-6-line"></i></button>
-          <button id="bwCloseBtn" class="icon-btn" type="button" title="Close"><i class="ri-close-line"></i></button>
-        </div>
-      </header>
-
-      <div class="bridge-workspace-body">
-        <div class="bridge-workspace-main">
-          <div class="bridge-messages" id="bridgeMessages">
-            <div class="bridge-empty" id="bridgeEmpty">
-              <i class="ri-terminal-box-line"></i>
-              <h3>Bridge Workspace</h3>
-              <p>Give Mirox direct control over your laptop. It will write files, run commands, and build full projects — automatically.</p>
-              <ol class="bridge-empty-steps">
-                <li>Click <strong>Download client</strong> (top right) → extract the ZIP.</li>
-                <li>Run <code>pip install aiohttp</code> then <code>python runner.py</code>.</li>
-                <li>Click <strong>Connect</strong> in the right panel.</li>
-              </ol>
-            </div>
-          </div>
-          <div class="bridge-input-row">
-            <textarea id="bridgeInput" placeholder="e.g. Build a snake game in /Users/me/snake/" rows="1" enterkeyhint="send"></textarea>
-            <button id="bridgeSendBtn" class="send-btn is-disabled" type="button" aria-disabled="true"><i class="ri-arrow-up-line"></i></button>
+    <div class="bridge-workspace-body">
+      <div class="bridge-workspace-main">
+        <div class="bridge-messages" id="bridgeMessages">
+          <div class="bridge-empty" id="bridgeEmpty">
+            <i class="ri-terminal-box-line"></i>
+            <h3>Bridge Workspace</h3>
+            <p>Give Mirox direct control over your laptop. It writes files, runs commands, and builds full projects — automatically.</p>
+            <ol class="bridge-empty-steps">
+              <li>Click <strong>Download client</strong> (top right) → extract the ZIP.</li>
+              <li>Run <code>pip install aiohttp</code> then <code>python runner.py</code>.</li>
+              <li>Click <strong>Connect</strong> in the right panel.</li>
+            </ol>
           </div>
         </div>
-
-        <aside class="bridge-workspace-side">
-          <div class="bridge-side-section">
-            <h4>Connection</h4>
-            <div id="bwStatusBox" class="bw-status-box">
-              <div class="bridge-status-dot offline"></div>
-              <span>Disconnected</span>
-            </div>
-            <label class="bw-label">Name</label>
-            <input id="bwNameInput" class="modal-input" type="text" placeholder="My Laptop" maxlength="60">
-            <label class="bw-label">Model</label>
-            <select id="bwModelSelect" class="modal-select">
-              <option value="mirox-luna-1.2">Luna (fast)</option>
-              <option value="mirox-gen-1">Gen (concise)</option>
-              <option value="mirox-pro-5">Pro (deeper)</option>
-            </select>
-            <label class="bw-label">Port</label>
-            <input id="bwPortInput" class="modal-input" type="number" placeholder="8765" value="8765" min="1024" max="65535">
-            <button id="bwConnectBtn" class="modal-btn primary" type="button" style="width:100%;margin-top:10px;"><i class="ri-link"></i> Connect</button>
-            <button id="bwDisconnectBtn" class="modal-btn danger" type="button" style="width:100%;margin-top:8px;display:none;"><i class="ri-link-unlink"></i> Disconnect</button>
-            <div id="bwConnectHint" class="bw-hint"></div>
-          </div>
-
-          <div class="bridge-side-section">
-            <h4>Activity log</h4>
-            <div class="bridge-log" id="bridgeLog"></div>
-          </div>
-
-          <div class="bridge-side-section">
-            <h4>Quick actions</h4>
-            <button class="bw-quick" data-q="List my home directory and tell me what's there.">List home dir</button>
-            <button class="bw-quick" data-q="Create a new folder in my home called mirox_test and write a hello.txt inside it.">Hello world test</button>
-            <button class="bw-quick" data-q="Write a Python script in my home folder called calc.py that adds two numbers, then run it.">Python script</button>
-          </div>
-        </aside>
+        <div class="bridge-input-row">
+          <textarea id="bridgeInput" placeholder="e.g. Build a snake game in /Users/me/snake/" rows="1"></textarea>
+          <button id="bridgeSendBtn" class="send-btn is-disabled" type="button" aria-disabled="true"><i class="ri-arrow-up-line"></i></button>
+        </div>
       </div>
+
+      <aside class="bridge-workspace-side">
+        <div class="bridge-side-section">
+          <h4>Connection</h4>
+          <div id="bwStatusBox" class="bw-status-box">
+            <div class="bridge-status-dot offline"></div>
+            <span>Disconnected</span>
+          </div>
+          <label class="bw-label">Name</label>
+          <input id="bwNameInput" class="modal-input" type="text" placeholder="My Laptop" maxlength="60">
+          <label class="bw-label">Model</label>
+          <select id="bwModelSelect" class="modal-select">
+            <option value="mirox-luna-1.2">Luna (fast, unlimited)</option>
+            <option value="mirox-gen-1">Gen (concise, unlimited)</option>
+            <option value="mirox-pro-5">Pro (deeper)</option>
+          </select>
+          <label class="bw-label">Port</label>
+          <input id="bwPortInput" class="modal-input" type="number" value="8765" min="1024" max="65535">
+          <button id="bwConnectBtn" class="modal-btn primary" type="button" style="width:100%;margin-top:10px;"><i class="ri-link"></i> Connect</button>
+          <button id="bwDisconnectBtn" class="modal-btn danger" type="button" style="width:100%;margin-top:8px;display:none;"><i class="ri-link-unlink"></i> Disconnect</button>
+          <div id="bwConnectHint" class="bw-hint"></div>
+        </div>
+
+        <div class="bridge-side-section">
+          <h4>Activity log</h4>
+          <div class="bridge-log" id="bridgeLog"></div>
+        </div>
+
+        <div class="bridge-side-section">
+          <h4>Quick actions</h4>
+          <button class="bw-quick" data-q="List my home directory and tell me what's in it.">List home dir</button>
+          <button class="bw-quick" data-q="Build a snake game in my home folder as a folder called snake-game with index.html and game.js">Snake game</button>
+          <button class="bw-quick" data-q="Create a Python script in my home folder that fetches the latest Hacker News top story">Python fetch script</button>
+        </div>
+      </aside>
     </div>
   </div>
+</div>
 
-  <!-- Login -->
-  <div id="loginModal" class="modal-overlay">
-    <div class="modal">
-      <button class="icon-btn modal-close" type="button" data-close="loginModal"><i class="ri-close-line"></i></button>
-      <h2 class="modal-title">Sign in</h2>
-      <p class="modal-sub">Sign in with Google, Apple, or email to save your chats and connect GitHub.</p>
-      <div class="oauth-buttons">
-        <button id="oauthGoogleBtn" class="oauth-btn" type="button"><i class="ri-google-fill"></i> Continue with Google</button>
-        <button id="oauthAppleBtn" class="oauth-btn" type="button"><i class="ri-apple-fill"></i> Continue with Apple</button>
+<!-- ================== BRIDGE QUESTION MODAL ================== -->
+<div id="bridgeQuestionModal" class="modal-overlay">
+  <div class="modal bridge-question-modal">
+    <div class="bridge-q-header">
+      <div class="bridge-q-badge"><i class="ri-question-line"></i></div>
+      <div>
+        <div class="bridge-q-title">Mirox needs your input</div>
+        <div class="bridge-q-counter" id="bqCounter">Question 1 of 6</div>
       </div>
-      <div class="oauth-divider"><span>or sign in with name</span></div>
-      <form id="simpleLoginForm" class="modal-form">
-        <input type="text" id="loginName" class="modal-input" placeholder="Name" required maxlength="60">
-        <input type="email" id="loginEmail" class="modal-input" placeholder="Email" required>
-        <button type="submit" class="modal-btn primary">Continue</button>
-      </form>
+    </div>
+    <p class="bridge-q-text" id="bqText"></p>
+    <div class="bridge-q-options" id="bqOptions"></div>
+    <div class="bridge-q-custom" id="bqCustomWrap" style="display:none;">
+      <input type="text" id="bqCustomInput" class="modal-input" placeholder="Or type your own answer…">
+    </div>
+    <div class="bridge-q-footer">
+      <button id="bqCustomToggle" class="modal-btn" type="button"><i class="ri-edit-line"></i> Custom answer</button>
+      <button id="bqSubmit" class="modal-btn primary" type="button">Submit <i class="ri-arrow-right-line"></i></button>
     </div>
   </div>
+</div>
 
-  <!-- Settings -->
-  <div id="settingsModal" class="modal-overlay">
-    <div class="modal modal-wide">
-      <button class="icon-btn modal-close" type="button" data-close="settingsModal"><i class="ri-close-line"></i></button>
-      <h2 class="modal-title">Settings</h2>
-      <div class="settings-tabs">
-        <button class="settings-tab active" type="button" data-tab="general">General</button>
-        <button class="settings-tab" type="button" data-tab="appearance">Appearance</button>
-        <button class="settings-tab" type="button" data-tab="personal">Personal</button>
-        <button class="settings-tab" type="button" data-tab="memory">Memory</button>
+<!-- Login -->
+<div id="loginModal" class="modal-overlay">
+  <div class="modal">
+    <button class="icon-btn modal-close" type="button" data-close="loginModal"><i class="ri-close-line"></i></button>
+    <h2 class="modal-title">Sign in</h2>
+    <p class="modal-sub">Save your chats and unlock higher limits.</p>
+    <form id="simpleLoginForm" class="modal-form">
+      <input type="text" id="loginName" class="modal-input" placeholder="Name" required maxlength="60">
+      <input type="email" id="loginEmail" class="modal-input" placeholder="Email" required>
+      <button type="submit" class="modal-btn primary">Continue</button>
+    </form>
+  </div>
+</div>
+
+<!-- Settings -->
+<div id="settingsModal" class="modal-overlay">
+  <div class="modal modal-wide">
+    <button class="icon-btn modal-close" type="button" data-close="settingsModal"><i class="ri-close-line"></i></button>
+    <h2 class="modal-title">Settings</h2>
+    <div class="settings-tabs">
+      <button class="settings-tab active" type="button" data-tab="general">General</button>
+      <button class="settings-tab" type="button" data-tab="appearance">Appearance</button>
+      <button class="settings-tab" type="button" data-tab="personal">Personal</button>
+    </div>
+    <div class="settings-pane active" data-pane="general">
+      <div class="setting-group">
+        <h4>Session</h4>
+        <button id="logoutBtn" class="modal-btn danger" type="button">Sign out</button>
       </div>
-      <div class="settings-pane active" data-pane="general">
-        <div class="setting-group">
-          <h4>Session</h4>
-          <button id="logoutBtn" class="modal-btn danger" type="button">Sign out</button>
+    </div>
+    <div class="settings-pane" data-pane="appearance">
+      <div class="setting-group"><h4>Mode</h4>
+        <div id="modeOptions" class="segmented">
+          <button class="seg-btn" type="button" data-mode="light">Light</button>
+          <button class="seg-btn" type="button" data-mode="dark">Dark</button>
         </div>
       </div>
-      <div class="settings-pane" data-pane="appearance">
-        <div class="setting-group"><h4>Mode</h4>
-          <div id="modeOptions" class="segmented">
-            <button class="seg-btn" type="button" data-mode="light">Light</button>
-            <button class="seg-btn" type="button" data-mode="dark">Dark</button>
-          </div>
-        </div>
-        <div class="setting-group"><h4>Accent</h4>
-          <div class="swatch-grid">
-            <button class="swatch" type="button" data-theme="default" style="--sw:#c96442"></button>
-            <button class="swatch" type="button" data-theme="sage" style="--sw:#7a8c6b"></button>
-            <button class="swatch" type="button" data-theme="sky" style="--sw:#5b7ca8"></button>
-            <button class="swatch" type="button" data-theme="plum" style="--sw:#8b5a83"></button>
-            <button class="swatch" type="button" data-theme="amber" style="--sw:#c48a3f"></button>
-          </div>
+      <div class="setting-group"><h4>Accent</h4>
+        <div class="swatch-grid">
+          <button class="swatch" type="button" data-theme="default" style="--sw:#c96442"></button>
+          <button class="swatch" type="button" data-theme="sage" style="--sw:#7a8c6b"></button>
+          <button class="swatch" type="button" data-theme="sky" style="--sw:#5b7ca8"></button>
+          <button class="swatch" type="button" data-theme="plum" style="--sw:#8b5a83"></button>
+          <button class="swatch" type="button" data-theme="amber" style="--sw:#c48a3f"></button>
         </div>
       </div>
-      <div class="settings-pane" data-pane="personal">
-        <div class="setting-group">
-          <h4>Custom character</h4>
-          <textarea id="personaInput" class="modal-textarea" rows="3" placeholder="Describe how Mirox should behave…"></textarea>
-          <div class="persona-actions">
-            <button id="savePersonaBtn" class="modal-btn primary" type="button"><i class="ri-save-line"></i> Save</button>
-            <span id="personaStatus" class="persona-status"></span>
-          </div>
-        </div>
-      </div>
-      <div class="settings-pane" data-pane="memory">
-        <div class="setting-group">
-          <h4>Memory</h4>
-          <div id="memoryList" class="memory-list"></div>
-          <div class="memory-add">
-            <input type="text" id="memoryInput" class="modal-input" placeholder="Add a fact…" maxlength="200">
-            <button id="addMemoryBtn" class="modal-btn" type="button">Add</button>
-          </div>
+    </div>
+    <div class="settings-pane" data-pane="personal">
+      <div class="setting-group">
+        <h4>Custom character</h4>
+        <textarea id="personaInput" class="modal-textarea" rows="3" placeholder="Describe how Mirox should behave…"></textarea>
+        <div class="persona-actions">
+          <button id="savePersonaBtn" class="modal-btn primary" type="button"><i class="ri-save-line"></i> Save</button>
+          <span id="personaStatus" class="persona-status"></span>
         </div>
       </div>
     </div>
   </div>
+</div>
 
-  <!-- Plans -->
-  <div id="plansModal" class="modal-overlay">
-    <div class="modal modal-wide">
-      <button class="icon-btn modal-close" type="button" data-close="plansModal"><i class="ri-close-line"></i></button>
-      <h2 class="modal-title">Plans</h2>
-      <p class="modal-sub">Free users get 5 messages, 10 image uploads, and 10 image generations per day.</p>
-      <div id="plansGrid" class="plans-grid"></div>
+<!-- Plans -->
+<div id="plansModal" class="modal-overlay">
+  <div class="modal modal-wide">
+    <button class="icon-btn modal-close" type="button" data-close="plansModal"><i class="ri-close-line"></i></button>
+    <h2 class="modal-title">Plans</h2>
+    <p class="modal-sub">Luna and Gen are free and unlimited. Only image generation, image uploads, and Eclipse have daily caps.</p>
+    <div id="plansGrid" class="plans-grid"></div>
+  </div>
+</div>
+
+<!-- Image Studio -->
+<div id="imageModal" class="modal-overlay">
+  <div class="modal">
+    <button class="icon-btn modal-close" type="button" data-close="imageModal"><i class="ri-close-line"></i></button>
+    <h2 class="modal-title">Lumenal 1.0</h2>
+    <p class="modal-sub">Strong image generation, powered by Mirox.</p>
+    <div class="image-studio">
+      <textarea id="imagePrompt" class="modal-textarea" rows="3" placeholder="Describe the image you want…"></textarea>
+      <button id="generateImageBtn" class="modal-btn primary" type="button"><i class="ri-image-add-line"></i> Generate</button>
+      <div id="imageResult" class="image-result"></div>
     </div>
   </div>
+</div>
 
-  <!-- Image Studio -->
-  <div id="imageModal" class="modal-overlay">
-    <div class="modal">
-      <button class="icon-btn modal-close" type="button" data-close="imageModal"><i class="ri-close-line"></i></button>
-      <h2 class="modal-title">Lumenal 1.0</h2>
-      <p class="modal-sub">Strong image generation, powered by Mirox.</p>
-      <div class="image-studio">
-        <textarea id="imagePrompt" class="modal-textarea" rows="3" placeholder="Describe the image you want…"></textarea>
-        <button id="generateImageBtn" class="modal-btn primary" type="button"><i class="ri-image-add-line"></i> Generate</button>
-        <div id="imageResult" class="image-result"></div>
-      </div>
+<!-- Support -->
+<div id="supportModal" class="modal-overlay">
+  <div class="modal">
+    <button class="icon-btn modal-close" type="button" data-close="supportModal"><i class="ri-close-line"></i></button>
+    <h2 class="modal-title">Contact Support</h2>
+    <div class="support-form">
+      <input type="text" id="supportSubject" class="modal-input" placeholder="Subject">
+      <textarea id="supportMessage" class="modal-textarea" rows="4" placeholder="Message"></textarea>
+      <button id="submitReportBtn" class="modal-btn primary" type="button">Submit</button>
     </div>
   </div>
+</div>
 
-  <!-- Support -->
-  <div id="supportModal" class="modal-overlay">
-    <div class="modal">
-      <button class="icon-btn modal-close" type="button" data-close="supportModal"><i class="ri-close-line"></i></button>
-      <h2 class="modal-title">Contact Support</h2>
-      <div class="support-form">
-        <input type="text" id="supportSubject" class="modal-input" placeholder="Subject">
-        <textarea id="supportMessage" class="modal-textarea" rows="4" placeholder="Message"></textarea>
-        <button id="submitReportBtn" class="modal-btn primary" type="button">Submit</button>
-      </div>
+<!-- Image viewer -->
+<div id="imageViewer" class="image-viewer">
+  <div class="image-viewer-backdrop" data-iv-close></div>
+  <div class="image-viewer-panel" oncontextmenu="return false;">
+    <div class="image-viewer-top">
+      <div class="image-viewer-title">Generated image</div>
+      <button class="icon-btn" type="button" data-iv-close><i class="ri-close-line"></i></button>
+    </div>
+    <div class="image-viewer-canvas-wrap">
+      <canvas id="ivCanvas"></canvas>
+      <div class="image-viewer-watermark">MiroxAI · OpenSurr</div>
+    </div>
+    <div class="image-viewer-actions">
+      <button class="iv-btn" type="button" id="ivDownload"><i class="ri-download-2-line"></i> Download</button>
     </div>
   </div>
+</div>
 
-  <!-- Image viewer -->
-  <div id="imageViewer" class="image-viewer">
-    <div class="image-viewer-backdrop" data-iv-close></div>
-    <div class="image-viewer-panel" oncontextmenu="return false;">
-      <div class="image-viewer-top">
-        <div class="image-viewer-title" id="ivTitle">Generated image</div>
-        <button class="icon-btn" type="button" data-iv-close><i class="ri-close-line"></i></button>
-      </div>
-      <div class="image-viewer-canvas-wrap">
-        <canvas id="ivCanvas"></canvas>
-        <div class="image-viewer-watermark">MiroxAI · OpenSurr</div>
-      </div>
-      <div class="image-viewer-actions">
-        <button class="iv-btn" type="button" id="ivDownload"><i class="ri-download-2-line"></i> Download</button>
-        <button class="iv-btn" type="button" id="ivRegenerate"><i class="ri-refresh-line"></i> Regenerate</button>
-      </div>
-    </div>
-  </div>
-
-  <script src="/script.js" defer></script>
+<script src="/script.js" defer></script>
 </body>
 </html>
