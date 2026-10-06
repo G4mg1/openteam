@@ -33,14 +33,12 @@
 
     <button id="newChatBtn" class="new-chat-btn" type="button"><i class="ri-add-line"></i><span>New chat</span></button>
 
-    <!-- Search -->
     <div class="sidebar-search">
       <i class="ri-search-line"></i>
       <input id="sidebarSearchInput" type="search" placeholder="Search chats & images…" autocomplete="off">
       <button id="sidebarSearchClear" class="icon-btn" type="button" style="display:none;" aria-label="Clear"><i class="ri-close-line"></i></button>
     </div>
 
-    <!-- Tabs -->
     <div class="sidebar-tabs">
       <button class="sidebar-tab active" type="button" data-tab="chats"><i class="ri-chat-3-line"></i> Chats</button>
       <button class="sidebar-tab" type="button" data-tab="images"><i class="ri-image-line"></i> Images</button>
@@ -61,24 +59,9 @@
           <div class="bridge-status-dot offline"></div>
           <span>Disconnected</span>
         </div>
-        <div class="bridge-info">
-          <label>Bridge name</label>
-          <input id="bridgeNameInput" class="modal-input" type="text" placeholder="My Laptop" maxlength="60">
-          <label>AI model for Bridge</label>
-          <select id="bridgeModelSelect" class="modal-select">
-            <option value="mirox-luna-1.2">Luna</option>
-            <option value="mirox-gen-1">Gen</option>
-            <option value="mirox-pro-5">Pro</option>
-          </select>
-          <label>Listening port</label>
-          <input id="bridgePortInput" class="modal-input" type="number" placeholder="8765" value="8765" min="1024" max="65535">
-          <div class="bridge-actions">
-            <button id="bridgeStartBtn" class="modal-btn primary" type="button"><i class="ri-play-line"></i> Start Bridge</button>
-            <button id="bridgeStopBtn" class="modal-btn danger" type="button" style="display:none;"><i class="ri-stop-line"></i> Stop</button>
-          </div>
-          <button id="bridgeDownloadBtn" class="modal-btn" type="button" style="margin-top:10px;"><i class="ri-download-2-line"></i> Download client package</button>
-        </div>
-        <div class="bridge-log" id="bridgeLog"></div>
+        <p class="bridge-hint">Bridge gives Mirox direct control over your laptop: writes files, runs commands, builds projects.</p>
+        <button id="bridgeOpenBtn" class="modal-btn primary" type="button" style="width:100%;"><i class="ri-terminal-box-line"></i> Open Bridge Workspace</button>
+        <button id="bridgeDownloadBtn" class="modal-btn" type="button" style="width:100%;margin-top:8px;"><i class="ri-download-2-line"></i> Download client package</button>
       </div>
     </div>
 
@@ -105,7 +88,6 @@
       <button id="hamburgerBtn" class="icon-btn hamburger" type="button" aria-label="Menu"><i class="ri-menu-line"></i></button>
       <h2 id="chatTitle" class="chat-title">New chat</h2>
 
-      <!-- Credit bar (free users) -->
       <div id="creditBar" class="credit-bar" style="display:none;" title="Daily credits">
         <div class="credit-pill" data-credit="chat" title="Messages today">
           <i class="ri-chat-3-line"></i><span id="creditChatText">5/5</span>
@@ -174,6 +156,85 @@
     </div>
   </main>
 
+  <!-- ================= BRIDGE WORKSPACE (full-screen) ================= -->
+  <div id="bridgeWorkspace" class="bridge-workspace-overlay">
+    <div class="bridge-workspace-panel">
+      <header class="bridge-workspace-top">
+        <div class="bridge-workspace-title">
+          <i class="ri-terminal-box-line"></i>
+          <span>Bridge Workspace</span>
+          <span class="bridge-workspace-sub">AI builds directly on your laptop</span>
+        </div>
+        <div class="bridge-workspace-status" id="bwStatusPill">
+          <div class="bridge-status-dot offline"></div>
+          <span>Disconnected</span>
+        </div>
+        <div class="bridge-workspace-actions">
+          <button id="bwDownloadBtn" class="icon-btn" type="button" title="Download client"><i class="ri-download-2-line"></i></button>
+          <button id="bwNewBtn" class="icon-btn" type="button" title="Clear chat"><i class="ri-delete-bin-6-line"></i></button>
+          <button id="bwCloseBtn" class="icon-btn" type="button" title="Close"><i class="ri-close-line"></i></button>
+        </div>
+      </header>
+
+      <div class="bridge-workspace-body">
+        <div class="bridge-workspace-main">
+          <div class="bridge-messages" id="bridgeMessages">
+            <div class="bridge-empty" id="bridgeEmpty">
+              <i class="ri-terminal-box-line"></i>
+              <h3>Bridge Workspace</h3>
+              <p>Give Mirox direct control over your laptop. It will write files, run commands, and build full projects — automatically, in a loop.</p>
+              <ol class="bridge-empty-steps">
+                <li>Click <strong>Download client</strong> (top right) → extract the ZIP.</li>
+                <li>Run <code>pip install aiohttp</code> then <code>python runner.py</code>.</li>
+                <li>Click <strong>Connect</strong> in the right panel.</li>
+              </ol>
+            </div>
+          </div>
+          <div class="bridge-input-row">
+            <textarea id="bridgeInput" placeholder="e.g. Build a snake game in ~/snake/ with HTML and JS" rows="1" enterkeyhint="send"></textarea>
+            <button id="bridgeSendBtn" class="send-btn is-disabled" type="button" aria-disabled="true" aria-label="Send"><i class="ri-arrow-up-line"></i></button>
+          </div>
+        </div>
+
+        <aside class="bridge-workspace-side">
+          <div class="bridge-side-section">
+            <h4>Connection</h4>
+            <div id="bwStatusBox" class="bw-status-box">
+              <div class="bridge-status-dot offline"></div>
+              <span>Disconnected</span>
+            </div>
+            <label class="bw-label">Name</label>
+            <input id="bwNameInput" class="modal-input" type="text" placeholder="My Laptop" maxlength="60">
+            <label class="bw-label">Model</label>
+            <select id="bwModelSelect" class="modal-select">
+              <option value="mirox-luna-1.2">Luna (fast)</option>
+              <option value="mirox-gen-1">Gen (concise)</option>
+              <option value="mirox-pro-5">Pro (deeper)</option>
+            </select>
+            <label class="bw-label">Port</label>
+            <input id="bwPortInput" class="modal-input" type="number" placeholder="8765" value="8765" min="1024" max="65535">
+            <button id="bwConnectBtn" class="modal-btn primary" type="button" style="width:100%;margin-top:10px;"><i class="ri-link"></i> Connect</button>
+            <button id="bwDisconnectBtn" class="modal-btn danger" type="button" style="width:100%;margin-top:8px;display:none;"><i class="ri-link-unlink"></i> Disconnect</button>
+            <div id="bwConnectHint" class="bw-hint"></div>
+          </div>
+
+          <div class="bridge-side-section">
+            <h4>Activity log</h4>
+            <div class="bridge-log" id="bridgeLog"></div>
+          </div>
+
+          <div class="bridge-side-section">
+            <h4>Quick actions</h4>
+            <button class="bw-quick" data-q="List my home directory and tell me what's there.">List home dir</button>
+            <button class="bw-quick" data-q="Create a new folder ~/mirox_test and write a hello.txt inside it.">Hello world test</button>
+            <button class="bw-quick" data-q="Build a simple Python script in ~/mirox_test/calc.py that adds two numbers, then run it.">Python script</button>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+
+  <!-- Login modal -->
   <div id="loginModal" class="modal-overlay">
     <div class="modal">
       <button class="icon-btn modal-close" type="button" data-close="loginModal" aria-label="Close"><i class="ri-close-line"></i></button>
@@ -193,6 +254,7 @@
     </div>
   </div>
 
+  <!-- Settings modal -->
   <div id="settingsModal" class="modal-overlay">
     <div class="modal modal-wide">
       <button class="icon-btn modal-close" type="button" data-close="settingsModal" aria-label="Close"><i class="ri-close-line"></i></button>
@@ -206,7 +268,6 @@
         <button class="settings-tab" type="button" data-tab="memory">Memory</button>
         <button class="settings-tab" type="button" data-tab="mcp">MCP</button>
         <button class="settings-tab" type="button" data-tab="github">GitHub</button>
-        <button class="settings-tab" type="button" data-tab="bridge">Bridge</button>
       </div>
       <div class="settings-pane active" data-pane="general">
         <div class="setting-group">
@@ -299,25 +360,13 @@
           <p class="setting-desc">Connect your GitHub account to let Mirox edit your repositories.</p>
           <div id="githubStatus" class="msg muted" style="font-size:13px;margin-bottom:10px;">Not connected</div>
           <button id="githubConnectBtn" class="modal-btn primary" type="button"><i class="ri-github-fill"></i> Connect GitHub</button>
-        </div>
-      </div>
-      <div class="settings-pane" data-pane="bridge">
-        <div class="setting-group">
-          <h4>Bridge</h4>
-          <p class="setting-desc">Let Mirox control your laptop. Download the client, run it, and control it from chat.</p>
-          <div class="setting-row"><span>Bridge name</span><input id="settingsBridgeName" class="modal-input" style="max-width:200px;" type="text" placeholder="My Laptop"></div>
-          <div class="setting-row"><span>AI model</span><select id="settingsBridgeModel" class="modal-select" style="max-width:200px;">
-            <option value="mirox-luna-1.2">Luna</option>
-            <option value="mirox-gen-1">Gen</option>
-            <option value="mirox-pro-5">Pro</option>
-          </select></div>
-          <button id="settingsBridgeDownload" class="modal-btn" type="button" style="margin-top:10px;"><i class="ri-download-2-line"></i> Download client package</button>
-          <div id="bridgeAnalysis" class="bridge-analysis"></div>
+          <div id="redirectUriHint" style="font-size:11px;color:var(--text-faint);margin-top:8px;word-break:break-all;"></div>
         </div>
       </div>
     </div>
   </div>
 
+  <!-- Plans modal -->
   <div id="plansModal" class="modal-overlay">
     <div class="modal modal-wide">
       <button class="icon-btn modal-close" type="button" data-close="plansModal" aria-label="Close"><i class="ri-close-line"></i></button>
