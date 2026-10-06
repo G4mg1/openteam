@@ -1,4 +1,11 @@
-/* MiroxAI Backend v80 — unlimited free chat for Luna & Gen */
+/* ============================================================
+   MiroxAI Backend v81
+   - HTTP-only Bridge (works from HTTPS via PNA header)
+   - Environment-aware Bridge prompt (real home dir + OS)
+   - Duplicate-command blocking hints
+   - Plan-based multi-file project tracking
+   ============================================================ */
+
 import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
@@ -25,19 +32,19 @@ const LOGINMENT_CLIENT_ID = 'lm_e8f7193647f744c6ae45a8af85a7cfd3';
 const LOGINMENT_API_KEY = 'lm_sk_96078c548f823c63466abfcaf1e099294056d2f2019a3870';
 const LOGINMENT_DOMAIN = 'https://logint.lovable.app';
 
-const HF_ATTEMPT_MS = 20000;
-const PL_ATTEMPT_MS = 20000;
+const HF_ATTEMPT_MS     = 20000;
+const PL_ATTEMPT_MS     = 20000;
 const OLLAMA_ATTEMPT_MS = 60000;
-const AR_SEARCH_MS = 15000;
-const IMG_TOTAL_MS = 60000;
-const TTS_TOTAL_MS = 90000;
-const MAX_LOGS = 500;
+const AR_SEARCH_MS      = 15000;
+const IMG_TOTAL_MS      = 60000;
+const TTS_TOTAL_MS      = 90000;
+const MAX_LOGS          = 500;
 const GENERIC_ERR = 'Mirox AI encountered an error';
 
 const PROVIDERS = { hf: !!HF_API_KEY, pl: !!PL_KEY, ollama: false, ar: !!AR_KEY, search: true, fish: !!F_API };
-console.log('[Mirox] v80 — unlimited free chat');
+console.log('[Mirox] v81 — env-aware bridge');
 
-/* ----- Helpers ----- */
+/* ---------- Helpers ---------- */
 const safe = (v, max = 100000) => {
   try { if (v == null) return ''; const s = typeof v === 'string' ? v : JSON.stringify(v); return s.length > max ? s.slice(0, max) : s; } catch { return ''; }
 };
@@ -101,7 +108,7 @@ async function fetchT(url, opts = {}, ms = HF_ATTEMPT_MS, extSignal = null) {
   finally { clearTimeout(timer); }
 }
 
-/* ----- Image intent ----- */
+/* ---------- Image intent ---------- */
 const GEN_VERBS = '(generate|create|make|draw|design|render|paint|show|give)';
 const GEN_NOUNS = '(image|picture|photo|illustration|art|drawing|render|painting|pic)';
 const GEN_RE = new RegExp(`\\b${GEN_VERBS}\\b[^.!?]{0,40}?\\b${GEN_NOUNS}\\b\\s*(?:of|showing|with|depicting|featuring|that shows)?\\s*(.+)$`, 'i');
@@ -119,7 +126,7 @@ function detectImageIntent(text, files) {
   return null;
 }
 
-/* ----- DB ----- */
+/* ---------- DB ---------- */
 let db = null, dbReady = false, dbError = null, writeChain = Promise.resolve();
 const emptyDb = () => ({ users: {}, apiKeys: {}, logsChat: [], logsImage: [], counters: { chat: 0, image: 0 } });
 async function loadDb() {
@@ -183,7 +190,7 @@ async function ensureFreshUser(email) {
   return rec;
 }
 
-/* ----- Session ----- */
+/* ---------- Session ---------- */
 function signSession(d) { const p = Buffer.from(JSON.stringify(d)).toString('base64url'); return p + '.' + crypto.createHmac('sha256', SECRET).update(p).digest('base64url'); }
 function verifySession(t) {
   if (!t || typeof t !== 'string') return {};
@@ -217,7 +224,7 @@ async function currentUser(req) {
   return await ensureFreshUser(s.uid);
 }
 
-/* ----- Identity guard ----- */
+/* ---------- Identity guard ---------- */
 const IDENTITY_GUARD = `IDENTITY LOCKDOWN.
 
 You ARE Mirox {{LABEL}}, built by the OpenSurr team.
@@ -229,42 +236,72 @@ You ARE Mirox {{LABEL}}, built by the OpenSurr team.
 Always Mirox {{LABEL}}.`;
 const fillGuard = l => IDENTITY_GUARD.replace(/\{\{LABEL\}\}/g, l);
 
-/* ----- Bridge prompt ----- */
-const BRIDGE_PROMPT = `BRIDGE MODE — You have DIRECT ACCESS to the user's computer.
+/* ---------- Bridge prompt ---------- */
+const BRIDGE_PROMPT = `BRIDGE MODE ACTIVE — You have DIRECT ACCESS to the user's computer.
 
-To run commands or edit files, output these special tags on their own lines:
+ENVIRONMENT
+You will receive a [Bridge environment] block telling you:
+- home: the user's real home directory (e.g. /home/g4mg on Linux, /Users/x on macOS)
+- platform: Linux, Darwin, or Windows
+- allowed_dirs: paths you may write to
 
-1. Run a shell command:
-   <bridge-exec>ls -la /Users/me/project</bridge-exec>
+CRITICAL: NEVER assume paths like /Users/me or /home/me exist.
+ALWAYS use the exact "home" value from the environment block.
 
-2. Write a file:
-   <bridge-write path="/Users/me/project/app.js">
+PLANNING (REQUIRED FOR MULTI-FILE PROJECTS)
+When building anything with more than one file, FIRST output a plan block:
+
+<bridge-plan>
+- path/to/file1.ext
+- path/to/file2.ext
+- path/to/file3.ext
+</bridge-plan>
+
+List EVERY file the project needs. The frontend tracks this list and will remind you
+if any are missing. Do NOT say DONE until all planned files exist.
+
+FILE TOOLS — output these tags on their own lines:
+
+1. Write a file:
+   <bridge-write path="/home/user/project/app.js">
    console.log("hi");
    </bridge-write>
 
+2. Run a shell command:
+   <bridge-exec>cd /home/user/project && npm install</bridge-exec>
+
 3. Read a file:
-   <bridge-read path="/Users/me/project/app.js"/>
+   <bridge-read path="/home/user/project/app.js"/>
 
 4. List a directory:
-   <bridge-list path="/Users/me/project/"/>
+   <bridge-list path="/home/user/project/"/>
 
-5. Ask a question (ONLY when truly needed — 6 max per task):
+5. Ask the user a question (max 6 per task):
    <bridge-ask>
-   Your question here?
-   - Option 1
-   - Option 2
-   - Option 3
+   Which framework should I use?
+   - React
+   - Vue
+   - Svelte
    </bridge-ask>
 
-CRITICAL RULES:
-- ALWAYS use absolute paths. Never use ~ or relative paths.
-- When asked to build something, actually DO it with tags. Do not just paste code.
-- Break tasks into multiple tags: write files first, then install/build/run.
-- Announce briefly, then output tags on their own lines.
-- After outputting tags, STOP. The next message will contain the results.
-- NEVER ask more than 6 questions total. Prefer sensible defaults.
-- Prefer options over free-text questions.
-- When completely done, reply with exactly the word: DONE`;
+6. Report structured progress (optional, improves the progress bar):
+   <bridge-progress step="2" total="5" label="Installing dependencies"/>
+
+RULES (READ CAREFULLY)
+1. Use ONLY the real home directory from [Bridge environment]. Never /Users/me.
+2. NEVER repeat a command that already succeeded OR failed. If a command fails,
+   read the error and try a DIFFERENT approach.
+3. Do NOT re-run \`ls\` on the same path twice. Do NOT re-run \`pwd\` twice.
+4. You MUST write every file listed in your <bridge-plan> before saying DONE.
+5. Announce each action briefly, then output the tag on its own line.
+6. After outputting tags, STOP and wait for the results block. It will contain:
+   - [Bridge environment]
+   - [Bridge progress] files written so far
+   - [Bridge results] stdout/stderr/exit codes
+7. When ALL planned files are written AND verified with ls/cat, reply with EXACTLY: DONE
+8. If the results show a failure, fix it in your NEXT reply with a different command.
+9. NEVER paste large code inline in your reply — always use <bridge-write> tags.
+10. If the frontend blocks a command as a duplicate, do NOT retry it. Use a new approach.`;
 
 const MIROX_MODELS = {
   'mirox-luna-1.2':    { label: 'Luna',    tagline: 'Fast · warm · free', tier: 'free',     default: true, tokens: 1400, basePrompt: 'You are Luna, warm and helpful. Concise replies. Fenced code blocks for code.' },
@@ -274,50 +311,36 @@ const MIROX_MODELS = {
   'mirox-eclipse-2.0': { label: 'Eclipse', tagline: 'Best quality', tier: 'ultimate', tokens: 3200, basePrompt: 'You are Eclipse. Best quality. Fenced code blocks for code.' },
 };
 
-/* ----- Plans: Luna & Gen unlimited for free ----- */
 const PLANS = {
-  free: {
-    label: 'Free',
-    unlimited_chat: true,
-    daily_limit: null,
-    vision_limit: 10,
-    image_limit: 10,
-    eclipse_daily_limit: 5,
-    price_usd: 0,
-    price_afg: 0,
-    api_keys_per_month: 2,
-  },
-  pro: {
-    label: 'Pro',
-    unlimited_chat: true,
-    daily_limit: null,
-    vision_limit: 200,
-    image_limit: 200,
-    eclipse_daily_limit: 0,
-    price_usd: 6.99,
-    price_afg: 490,
-    api_keys_per_month: 5,
-  },
-  ultimate: {
-    label: 'Ultimate',
-    unlimited_chat: true,
-    daily_limit: null,
-    vision_limit: 2000,
-    image_limit: 2000,
-    eclipse_daily_limit: 999,
-    price_usd: 20.99,
-    price_afg: 1470,
-    api_keys_per_month: 20,
-  },
+  free:     { label: 'Free',     unlimited_chat: true, daily_limit: null, vision_limit: 10,   image_limit: 10,   eclipse_daily_limit: 5,   price_usd: 0,     price_afg: 0,    api_keys_per_month: 2 },
+  pro:      { label: 'Pro',      unlimited_chat: true, daily_limit: null, vision_limit: 200,  image_limit: 200,  eclipse_daily_limit: 0,   price_usd: 6.99,  price_afg: 490,  api_keys_per_month: 5 },
+  ultimate: { label: 'Ultimate', unlimited_chat: true, daily_limit: null, vision_limit: 2000, image_limit: 2000, eclipse_daily_limit: 999, price_usd: 20.99, price_afg: 1470, api_keys_per_month: 20 },
 };
 const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
 
 function buildSystemPrompt(cfg, bridge) {
   let p = fillGuard(cfg.label) + '\n\n---\n\n' + cfg.basePrompt;
-  if (bridge && bridge.connected) p += '\n\n---\n\n' + BRIDGE_PROMPT;
+  if (bridge && bridge.connected) {
+    p += '\n\n---\n\n' + BRIDGE_PROMPT;
+    const env = bridge.env || {};
+    p += `\n\n[Bridge environment]\n`;
+    p += `home=${env.home || '(unknown)'}\n`;
+    p += `platform=${env.platform || '(unknown)'}\n`;
+    p += `cwd=${env.cwd || '(unknown)'}\n`;
+    if (Array.isArray(env.allowed_dirs)) p += `allowed_dirs=${env.allowed_dirs.join(', ')}\n`;
+    if (bridge.plannedFiles && bridge.plannedFiles.length) p += `plannedFiles=${bridge.plannedFiles.join(', ')}\n`;
+    if (bridge.filesWritten && bridge.filesWritten.length) p += `filesWritten=${bridge.filesWritten.join(', ')}\n`;
+    if (bridge.commandsRun) p += `commandsRun=${bridge.commandsRun}\n`;
+    p += `Use ONLY these real paths. NEVER invent /Users/me or /home/me.`;
+  }
   return p;
 }
-
+function injectIdentityGuard(messages, cfg, bridge) {
+  const guard = buildSystemPrompt(cfg, bridge);
+  if (!Array.isArray(messages) || !messages.length) return [{ role: 'system', content: guard }];
+  if (messages[0]?.role === 'system') return [{ role: 'system', content: guard + '\n\n---\n\nUSER SYSTEM:\n' + safe(messages[0].content) }, ...messages.slice(1)];
+  return [{ role: 'system', content: guard }, ...messages];
+}
 function sanitizeMessages(raw) {
   const out = [];
   for (const m of safeArr(raw)) {
@@ -334,7 +357,7 @@ function sanitizeMessages(raw) {
   return out;
 }
 
-/* ----- Canned ----- */
+/* ---------- Canned ---------- */
 const norm = t => String(t || '').toLowerCase().replace(/[^a-z0-9'\s]/g, ' ').replace(/\s+/g, ' ').trim();
 function cannedResponse(userText, cfg, hasFiles) {
   const t = norm(userText);
@@ -348,7 +371,7 @@ function cannedResponse(userText, cfg, hasFiles) {
   return null;
 }
 
-/* ----- Provider URLs ----- */
+/* ---------- URLs ---------- */
 const HF_URL = 'https://router.huggingface.co/v1/chat/completions';
 const PL_URL = 'https://gen.pollinations.ai/v1/chat/completions';
 const PL_IMG_BASE = 'https://gen.pollinations.ai/image';
@@ -389,7 +412,7 @@ async function miroxChatChain({ messages, cfg, stream, signal }) {
   throw new Error(GENERIC_ERR);
 }
 
-/* ----- Image gen ----- */
+/* ---------- Image gen ---------- */
 async function toDataUrl(response) {
   const ct = response.headers.get('content-type') || '';
   if (ct.includes('image/')) {
@@ -426,7 +449,7 @@ async function generateImage(prompt) {
   throw new Error(GENERIC_ERR);
 }
 
-/* ----- SSE ----- */
+/* ---------- SSE ---------- */
 function sseInit(res) {
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-store, no-transform');
@@ -445,6 +468,7 @@ function chunkText(n, target) {
   for (let i = 0; i < cps.length; i += size) out.push(cps.slice(i, i + size).join(''));
   return out;
 }
+
 async function fishTTS(text, voiceId) {
   if (!F_API) throw new Error('no_f_api');
   const clean = String(text || '').trim();
@@ -458,7 +482,7 @@ async function fishTTS(text, voiceId) {
   return buf;
 }
 
-/* ----- App ----- */
+/* ---------- App ---------- */
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '30mb' }));
@@ -466,7 +490,7 @@ try { app.use(express.static(path.join(__dirname, '../public'))); } catch {}
 app.use(async (req, res, next) => { try { await loadDb(); } catch {} next(); });
 
 app.get(['/api/health','/health','/ping'], (req, res) => {
-  res.json({ ok: true, app: 'MiroxAI', version: 'v80', providers: PROVIDERS, time: now() });
+  res.json({ ok: true, app: 'MiroxAI', version: 'v81', providers: PROVIDERS, time: now() });
 });
 
 app.post('/api/tts', async (req, res) => {
@@ -482,7 +506,7 @@ app.post('/api/tts', async (req, res) => {
 });
 app.get('/api/voices', async (req, res) => res.json({ ok: true, voices: [] }));
 
-/* ----- Bridge download ----- */
+/* ---------- Bridge download ---------- */
 app.get('/api/bridge/download', async (req, res) => {
   try {
     let archiver;
@@ -497,13 +521,13 @@ app.get('/api/bridge/download', async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
 
     const archive = archiver('zip', { zlib: { level: 9 } });
-    archive.on('error', (err) => { try { res.status(500).end(); } catch {} });
+    archive.on('error', () => { try { res.status(500).end(); } catch {} });
     archive.pipe(res);
 
     const configJson = JSON.stringify({ bridge_name: name, port, allowed_dirs: ['~'], max_output_bytes: 200000 }, null, 2);
     const readme = `# MiroxAI Bridge\n\nInstall: pip install aiohttp\nRun: python runner.py\n`;
     const runner = `#!/usr/bin/env python3
-import os, sys, json, time, subprocess
+import os, sys, json, time, subprocess, platform
 from pathlib import Path
 try:
     from aiohttp import web
@@ -549,12 +573,17 @@ async def cors_mw(request, handler):
 async def ping(req):
     return web.json_response({"ok": True, "name": NAME, "cwd": os.getcwd(), "time": time.time()})
 
+async def env_info(req):
+    home = str(Path.home())
+    return web.json_response({"ok": True, "name": NAME, "home": home, "cwd": os.getcwd(), "platform": platform.system(), "platform_release": platform.release(), "python": platform.python_version(), "allowed_dirs": [str(d) for d in ALLOWED_DIRS], "separator": os.sep, "time": time.time()})
+
 async def exec_cmd(req):
     try: data = await req.json()
     except: return web.json_response({"ok": False, "error": "bad json"})
     cmd = str(data.get("command", "")).strip()
     if not cmd: return web.json_response({"ok": False, "error": "no command"})
     cwd_path = safe_path(data.get("cwd") or str(Path.home())) or Path.home()
+    print(f"[Bridge] exec: {cmd[:120]}")
     try:
         p = subprocess.run(cmd, shell=True, cwd=str(cwd_path), capture_output=True, text=True, timeout=int(data.get("timeout", 120)))
         return web.json_response({"ok": True, "exit_code": p.returncode, "stdout": (p.stdout or "")[:MAX_OUTPUT], "stderr": (p.stderr or "")[:MAX_OUTPUT], "cwd": str(cwd_path)})
@@ -570,6 +599,7 @@ async def write_file(req):
         p.parent.mkdir(parents=True, exist_ok=True)
         content = data.get("content", "")
         p.write_text(content, encoding="utf-8")
+        print(f"[Bridge] wrote: {p}")
         return web.json_response({"ok": True, "path": str(p), "bytes": len(content)})
     except Exception as e: return web.json_response({"ok": False, "error": str(e)})
 
@@ -594,6 +624,7 @@ async def list_dir(req):
 def build_app():
     a = web.Application(middlewares=[cors_mw])
     a.router.add_get("/ping", ping); a.router.add_options("/ping", lambda r: web.Response())
+    a.router.add_get("/env", env_info); a.router.add_options("/env", lambda r: web.Response())
     a.router.add_post("/exec", exec_cmd); a.router.add_options("/exec", lambda r: web.Response())
     a.router.add_post("/write", write_file); a.router.add_options("/write", lambda r: web.Response())
     a.router.add_post("/read", read_file); a.router.add_options("/read", lambda r: web.Response())
@@ -601,7 +632,9 @@ def build_app():
     return a
 
 if __name__ == "__main__":
-    print(f"[Bridge] {NAME} on http://127.0.0.1:{PORT}")
+    print(f"[Bridge] Starting '{NAME}' on http://127.0.0.1:{PORT}")
+    print(f"[Bridge] Home directory: {Path.home()}")
+    print(f"[Bridge] Platform: {platform.system()} {platform.release()}")
     print(f"[Bridge] Health: http://localhost:{PORT}/ping")
     web.run_app(build_app(), host="127.0.0.1", port=PORT, print=None, access_log=None)
 `;
@@ -615,14 +648,14 @@ if __name__ == "__main__":
   }
 });
 
-/* ----- Config ----- */
+/* ---------- Config ---------- */
 app.get(['/api/config','/config'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tagline: m.tagline, tier: m.tier, default: !!m.default }));
-  res.json({ app: { name: 'MiroxAI', version: 'v80' }, models, default_model: models[0].id, plans: PLANS, tts_available: !!F_API });
+  res.json({ app: { name: 'MiroxAI', version: 'v81' }, models, default_model: models[0].id, plans: PLANS, tts_available: !!F_API });
 });
 
-/* ----- Auth ----- */
+/* ---------- Auth ---------- */
 app.post(['/api/auth/simple-login','/auth/simple-login'], async (req, res) => {
   try {
     const { name, email } = req.body || {};
@@ -639,7 +672,6 @@ app.post(['/api/auth/simple-login','/auth/simple-login'], async (req, res) => {
 });
 app.post(['/api/logout','/logout'], (req, res) => { clearSession(res); res.json({ ok: true }); });
 
-/* ----- /api/me (fix: returns all the usage counters) ----- */
 app.get(['/api/me','/me'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   try {
@@ -652,55 +684,31 @@ app.get(['/api/me','/me'], async (req, res) => {
         daily_limit: plan.unlimited_chat ? null : plan.daily_limit,
         daily_used: u.daily_used || 0,
         unlimited_chat: !!plan.unlimited_chat,
-        vision_limit: plan.vision_limit,
-        vision_used: u.vision_used || 0,
-        image_limit: plan.image_limit,
-        image_used: u.image_used || 0,
-        eclipse_limit: plan.eclipse_daily_limit,
-        eclipse_used: u.eclipse_used || 0,
+        vision_limit: plan.vision_limit, vision_used: u.vision_used || 0,
+        image_limit: plan.image_limit, image_used: u.image_used || 0,
+        eclipse_limit: plan.eclipse_daily_limit, eclipse_used: u.eclipse_used || 0,
       }
     });
   } catch { res.json({ user: null }); }
 });
 
-/* ----- Subscription plans ----- */
 app.get(['/api/subscription/plans','/subscription/plans'], (req, res) => {
   const perks = {
-    free: [
-      'Luna & Gen — unlimited, free',
-      '10 image uploads / day',
-      '10 image generations / day',
-      '5 Eclipse messages / day',
-      '2 API keys / month',
-    ],
-    pro: [
-      'Pro & Ultra models',
-      'Unlimited chat',
-      '200 image uploads + generations / day',
-      '5 API keys / month',
-    ],
-    ultimate: [
-      'Eclipse — best model',
-      'Unlimited everything',
-      '2000 image uploads + generations / day',
-      '20 API keys / month',
-    ],
+    free: ['Luna & Gen — unlimited, free', '10 image uploads / day', '10 image generations / day', '5 Eclipse messages / day', '2 API keys / month'],
+    pro: ['Pro & Ultra models', 'Unlimited chat', '200 image uploads + generations / day', '5 API keys / month'],
+    ultimate: ['Eclipse — best model', 'Unlimited everything', '2000 image uploads + generations / day', '20 API keys / month'],
   };
   const out = Object.entries(PLANS).map(([id, p]) => ({
     id, label: p.label,
     tagline: { free: 'Free forever', pro: 'Most popular', ultimate: 'Power users' }[id],
     unlimited_chat: !!p.unlimited_chat,
-    vision_limit: p.vision_limit,
-    image_limit: p.image_limit,
-    eclipse_limit: p.eclipse_daily_limit,
-    price_usd: p.price_usd,
-    price_afg: p.price_afg,
+    vision_limit: p.vision_limit, image_limit: p.image_limit, eclipse_limit: p.eclipse_daily_limit,
+    price_usd: p.price_usd, price_afg: p.price_afg,
     perks: perks[id],
   }));
   res.json({ ok: true, plans: out });
 });
 
-/* ----- Persona ----- */
 app.get('/api/persona', async (req, res) => { const u = await currentUser(req); res.json({ ok: true, persona: u?.persona || '' }); });
 app.post('/api/persona', async (req, res) => {
   const u = await currentUser(req);
@@ -710,21 +718,17 @@ app.post('/api/persona', async (req, res) => {
   res.json({ ok: true });
 });
 
-/* ----- Image gen endpoint ----- */
+/* ---------- Image gen endpoint ---------- */
 app.post('/v1/images/generations', async (req, res) => {
   try {
     const prompt = safe(req.body?.prompt, 2000).trim();
     if (!prompt) return res.status(400).json({ error: { message: 'Prompt required' } });
     const u = await currentUser(req);
     const plan = u ? (PLANS[u.tier] || PLANS.free) : PLANS.free;
-
-    // For free users: enforce image limit
     if (u && u.tier === 'free' && (u.image_used || 0) >= plan.image_limit) {
       return res.status(429).json({ error: { message: `Daily image limit reached (${plan.image_limit}/day). Refills tomorrow.`, code: 'image_limit_reached' } });
     }
-
     const imageUrl = await generateImage(prompt);
-
     if (u) {
       u.image_used = (u.image_used || 0) + 1;
       try { await saveUser(u); } catch {}
@@ -733,7 +737,7 @@ app.post('/v1/images/generations', async (req, res) => {
   } catch { res.status(502).json({ error: { message: GENERIC_ERR } }); }
 });
 
-/* ----- Chat completions ----- */
+/* ---------- Chat completions ---------- */
 app.post('/v1/chat/completions', async (req, res) => {
   const t0 = Date.now();
   const abortCtrl = new AbortController();
@@ -758,15 +762,12 @@ app.post('/v1/chat/completions', async (req, res) => {
     const tier = u?.tier || 'free';
     const plan = PLANS[tier] || PLANS.free;
 
-    // Chat is unlimited for Luna & Gen — no daily limit check for those
     const isUnlimitedModel = cfg.tier === 'free';
     if (!isUnlimitedModel) {
-      // For Pro / Ultra / Eclipse — check tier
       if (cfg.tier === 'pro' && TIER_RANK[tier] < 1) {
         return res.status(403).json({ error: { message: 'Pro model requires Pro plan.', code: 'plan_required' } });
       }
       if (cfg.tier === 'ultimate' && tier !== 'ultimate') {
-        // Free users get eclipse_daily_limit per day
         if (tier === 'free') {
           const used = u?.eclipse_used || 0;
           if (used >= plan.eclipse_daily_limit) {
@@ -778,7 +779,6 @@ app.post('/v1/chat/completions', async (req, res) => {
       }
     }
 
-    // Build messages
     const text = safe(rawMessage, 100000).trim();
     const files = safeArr(rawFiles);
     if (!text && !files.length) return res.status(400).json({ error: { message: 'Empty message' } });
@@ -789,7 +789,6 @@ app.post('/v1/chat/completions', async (req, res) => {
     const textFiles = files.filter(f => f && f.type === 'text');
     const imageFiles = files.filter(f => f && f.type === 'image' && f.dataUrl);
 
-    // Vision limit for free users
     if (u && u.tier === 'free' && imageFiles.length > 0) {
       const remaining = plan.vision_limit - (u.vision_used || 0);
       if (remaining <= 0) return res.status(429).json({ error: { message: `Daily image upload limit reached (${plan.vision_limit}/day).`, code: 'vision_limit_reached' } });
@@ -811,10 +810,8 @@ app.post('/v1/chat/completions', async (req, res) => {
       if ((role === 'user' || role === 'assistant') && txt) msgs.push({ role, content: txt });
     }
 
-    // Detect image intent
     const imgIntent = detectImageIntent(text, files);
 
-    // Update usage counters
     const updateUsage = async (extraImageGen = false) => {
       if (u && u.email) {
         u.daily_used = (u.daily_used || 0) + 1;
@@ -825,7 +822,6 @@ app.post('/v1/chat/completions', async (req, res) => {
       }
     };
 
-    /* ---- Non-stream ---- */
     if (!stream) {
       try {
         if (imgIntent) {
@@ -842,7 +838,6 @@ app.post('/v1/chat/completions', async (req, res) => {
       } catch { return res.status(502).json({ error: { message: GENERIC_ERR } }); }
     }
 
-    /* ---- Stream ---- */
     sseInit(res);
     let streamEnded = false;
     const guard = setTimeout(() => { if (streamEnded || res.writableEnded) return; try { sseWrite(res, { done: true }); } catch {} try { sseDone(res); } catch {} try { res.end(); } catch {} streamEnded = true; }, 240000);
@@ -851,7 +846,6 @@ app.post('/v1/chat/completions', async (req, res) => {
     let finishReason = 'stop';
 
     try {
-      // Image intent
       if (imgIntent) {
         sseWrite(res, { p: 'image' });
         sseWrite(res, { status: 'Drawing it…' });
@@ -869,7 +863,6 @@ app.post('/v1/chat/completions', async (req, res) => {
         return;
       }
 
-      // Canned
       const canned = cannedResponse(text, cfg, files.length > 0);
       if (canned) {
         sseWrite(res, { p: 'canned' });
@@ -951,16 +944,14 @@ app.post('/v1/chat/completions', async (req, res) => {
   }
 });
 
-/* ----- Catch-all ----- */
 app.use((req, res) => {
   if (req.path.startsWith('/api') || req.path.startsWith('/v1')) return res.status(404).json({ ok: false, error: 'Not found: ' + req.path });
   const idx = path.join(__dirname, '../public/index.html');
   res.sendFile(idx, (err) => {
-    if (err) res.json({ ok: true, app: 'MiroxAI', message: 'Backend is running. Public/ folder not found.', hint: 'Add public/index.html, public/style.css, public/script.js to your repo.' });
+    if (err) res.json({ ok: true, app: 'MiroxAI', message: 'Backend is running. Public folder missing.', hint: 'Add public/index.html, public/style.css, public/script.js.' });
   });
 });
 
-/* ----- Boot ----- */
 (async () => {
   try { await loadDb(); } catch (e) { console.warn('[boot]', e.message); }
   if (process.env.VERCEL !== '1') {
