@@ -1,10 +1,8 @@
 /* ============================================================
-   MiroxAI Backend v70
-   NEW:
-   - Chat-driven image generation ("draw me a cat")
-   - Image-to-image ("turn this into a cute boy")
-   - Fish Audio TTS proxy via F_API
-   - Voice list proxy
+   MiroxAI Backend v71
+   - Image transform: caption + regen (preserves subject)
+   - Fish Audio TTS with full diagnostics
+   - Pricing in USD/AFG
    ============================================================ */
 
 import express from 'express';
@@ -29,12 +27,13 @@ const PORT       = process.env.PORT || 3000;
 const OLLAMA_HOST  = process.env.OLLAMA_HOST  || 'http://127.0.0.1:11434';
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:0.5b';
 
-const HF_ATTEMPT_MS       = 20000;
-const PL_ATTEMPT_MS       = 20000;
-const OLLAMA_ATTEMPT_MS   = 60000;
-const AR_SEARCH_MS        = 15000;
-const IMG_TOTAL_MS        = 60000;
-const MAX_LOGS            = 500;
+const HF_ATTEMPT_MS     = 20000;
+const PL_ATTEMPT_MS     = 20000;
+const OLLAMA_ATTEMPT_MS = 60000;
+const AR_SEARCH_MS      = 15000;
+const IMG_TOTAL_MS      = 60000;
+const TTS_TOTAL_MS      = 60000;
+const MAX_LOGS          = 500;
 
 const GENERIC_ERR = 'Mirox AI encountered an error';
 
@@ -51,13 +50,9 @@ console.log('[Mirox] ===== Provider configuration =====');
 console.log('[Mirox]  HF_API_KEY:    ' + (HF_API_KEY ? 'set' : 'MISSING'));
 console.log('[Mirox]  PL_KEY:        ' + (PL_KEY ? 'set' : 'MISSING'));
 console.log('[Mirox]  AR_KEY:        ' + (AR_KEY ? 'set' : 'MISSING'));
-console.log('[Mirox]  F_API (Fish):  ' + (F_API ? 'set' : 'MISSING'));
-console.log('[Mirox]  Ollama host:   ' + OLLAMA_HOST);
-console.log('[Mirox]  Ollama model:  ' + OLLAMA_MODEL);
-console.log('[Mirox]  DB file:       ' + DB_FILE);
+console.log('[Mirox]  F_API:         ' + (F_API ? 'set (' + F_API.slice(0, 8) + '...)' : 'MISSING'));
 console.log('[Mirox] =================================');
 
-/* ---------- Safe helpers ---------- */
 const safe = (v, max = 100000) => {
   try {
     if (v == null) return '';
@@ -146,26 +141,56 @@ const GEN_NOUNS = '(image|picture|photo|illustration|art|drawing|render|painting
 const GEN_RE = new RegExp(`\\b${GEN_VERBS}\\b[^.!?]{0,40}?\\b${GEN_NOUNS}\\b\\s*(?:of|showing|with|depicting|featuring|that shows)?\\s*(.+)$`, 'i');
 const SHORT_GEN_RE = new RegExp(`^${GEN_VERBS}\\s+${GEN_NOUNS}\\s+(?:of\\s+)?(.+)$`, 'i');
 
-const TRANSFORM_RE = /\b(make|turn|transform|convert|change|redo|remake|recreate|stylize|restyle|edit)\b[^.!?]{0,60}?\b(this|it|the image|the photo|the pic|the picture|my image)\b/i;
-const TRANSFORM_RE2 = /\b(this|it)\b[^.!?]{0,30}?\b(into|to|as)\b\s+(.+)/i;
+/* Transform / improve / edit / quality verbs */
+const TRANSFORM_VERBS = '(make|turn|transform|convert|change|redo|remake|recreate|stylize|restyle|edit|improve|enhance|upscale|fix|clean|sharpen|beautify|polish|improve the quality of|make better|make higher quality)';
+const TRANSFORM_RE = new RegExp(`\\b${TRANSFORM_VERBS}\\b[^.!?]{0,80}?\\b(this|it|the image|the photo|the pic|the picture|my image|my photo|quality)\\b`, 'i');
+const TRANSFORM_RE2 = /\b(this|it|the image|the pic|the picture|my image)\b[^.!?]{0,40}?\b(into|to|as|be|be a|look like)\b\s+(.+)/i;
+
+/* Quality-improvement short phrases */
+const QUALITY_RE = /\b(improve|enhance|upscale|fix|clean up|sharpen|beautify|polish|higher quality|better quality|more detail|more realistic|hd|4k|8k)\b/i;
 
 function detectImageIntent(text, files) {
   const t = String(text || '').trim();
   const images = (files || []).filter(f => f && f.type === 'image' && f.dataUrl);
   if (!t) return null;
 
-  const transformIntent = TRANSFORM_RE.test(t) || (images.length > 0 && TRANSFORM_RE2.test(t));
-  if (transformIntent && images.length > 0) {
-    let prompt = '';
-    const m = t.match(TRANSFORM_RE2);
-    if (m && m[3]) prompt = m[3].trim();
-    if (!prompt) {
-      const clean = t.replace(/^(please\s+)?(can you\s+)?(make|turn|transform|convert|change|redo|remake|recreate|stylize|restyle|edit)\s+(this|it|the image|the photo|the pic|the picture|my image)\s*(into|to|as)?\s*/i, '').trim();
-      prompt = clean || 'stylized version';
+  /* Transform with source image */
+  if (images.length > 0) {
+    const isQuality = QUALITY_RE.test(t) && !/\b(into|to|as|be a)\b/i.test(t);
+    const isTransform = TRANSFORM_RE.test(t) || TRANSFORM_RE2.test(t);
+
+    if (isQuality) {
+      let styleNote = '';
+      const styleMatch = t.match(/\b(cartoon|anime|realistic|painting|sketch|oil|watercolor|pixel|3d|cyberpunk|vintage|cinematic|professional|studio)\b/i);
+      if (styleMatch) styleNote = styleMatch[1];
+      return {
+        mode: 'improve',
+        prompt: t.slice(0, 400),
+        sourceImage: images[0].dataUrl,
+        style: styleNote,
+      };
     }
-    return { mode: 'transform', prompt: prompt.slice(0, 400), sourceImage: images[0].dataUrl };
+
+    if (isTransform) {
+      let prompt = '';
+      const m = t.match(TRANSFORM_RE2);
+      if (m && m[3]) prompt = m[3].trim();
+      if (!prompt) {
+        const clean = t.replace(/^(please\s+)?(can you\s+)?(make|turn|transform|convert|change|redo|remake|recreate|stylize|restyle|edit|improve|enhance|upscale)\s+(this|it|the image|the photo|the pic|the picture|my image)\s*(into|to|as)?\s*/i, '').trim();
+        prompt = clean || 'stylized version';
+      }
+      return {
+        mode: 'transform',
+        prompt: prompt.slice(0, 400),
+        sourceImage: images[0].dataUrl,
+      };
+    }
+
+    /* Image attached but not a transform request */
+    return null;
   }
 
+  /* No image — pure generation intent */
   let m = t.match(GEN_RE) || t.match(SHORT_GEN_RE);
   if (m) {
     const subject = (m[m.length - 1] || '').trim().replace(/^[:\-\s]+/, '').replace(/[.!?]+$/, '');
@@ -218,11 +243,7 @@ const now      = () => Math.floor(Date.now() / 1000);
 const today    = () => new Date().toISOString().slice(0, 10);
 const monthKey = () => new Date().toISOString().slice(0, 7);
 
-async function getUser(email) {
-  await loadDb();
-  const u = db.users[email];
-  return u ? { ...u } : null;
-}
+async function getUser(email) { await loadDb(); const u = db.users[email]; return u ? { ...u } : null; }
 async function saveUser(rec) {
   await loadDb();
   if (!rec || !rec.email) return false;
@@ -264,7 +285,6 @@ async function validateApiKey(apiKey) {
   } catch { return null; }
 }
 
-/* ---------- Session ---------- */
 function signSession(d) {
   const p = Buffer.from(JSON.stringify(d)).toString('base64url');
   return p + '.' + crypto.createHmac('sha256', SECRET).update(p).digest('base64url');
@@ -352,10 +372,12 @@ const MIROX_MODELS = {
   'mirox-eclipse-2.0':{ label: 'Eclipse',tagline: 'Best quality',                tier: 'ultimate', tokens: 1500, basePrompt: 'You are Eclipse from OpenSurr. Best quality.' },
 };
 const API_ALLOWED_MODELS = ['mirox-luna-1.2', 'mirox-gen-1'];
+
+/* Updated plans with USD and AFG pricing */
 const PLANS = {
-  free:     { label: 'Free',     daily_limit: 50,   eclipse_daily_limit: 5,   price_robux: 0,    api_keys_per_month: 2 },
-  pro:      { label: 'Pro',      daily_limit: 500,  eclipse_daily_limit: 0,   price_robux: 250,  api_keys_per_month: 5 },
-  ultimate: { label: 'Ultimate', daily_limit: 5000, eclipse_daily_limit: 999, price_robux: 1200, api_keys_per_month: 20 },
+  free:     { label: 'Free',     daily_limit: 50,   eclipse_daily_limit: 5,   price_usd: 0,    price_afg: 0,    api_keys_per_month: 2 },
+  pro:      { label: 'Pro',      daily_limit: 500,  eclipse_daily_limit: 0,   price_usd: 6.99, price_afg: 490,  api_keys_per_month: 5 },
+  ultimate: { label: 'Ultimate', daily_limit: 5000, eclipse_daily_limit: 999, price_usd: 20.99, price_afg: 1470, api_keys_per_month: 20 },
 };
 const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
 
@@ -414,13 +436,13 @@ function cannedResponse(userText, cfg, hasFiles) {
   if (/\b(are|r) (you|u) (a |an )?(gpt|chatgpt|claude|gemini|llama|qwen|deepseek|mistral|openai|anthropic)\b/.test(t))
     return `No — I'm Mirox ${label}, built by OpenSurr.`;
   if (/^(help|what can you do|commands|what do you do)[?!.\s]*$/.test(t))
-    return `I can help with coding, writing, analysis, generating images, and general questions. Just ask.`;
+    return `I can help with coding, writing, analysis, generating images, improving your images, and general questions. Just ask.`;
   if (/^(test|testing|ping|are you there|can you hear me)[?!.\s]*$/.test(t)) return `Loud and clear. What do you need?`;
   return null;
 }
 
 /* ============================================================
-   Provider URLs
+   URLs
    ============================================================ */
 const HF_URL          = 'https://router.huggingface.co/v1/chat/completions';
 const HF_IMG_BASE     = 'https://router.huggingface.co/hf-inference/models';
@@ -455,10 +477,7 @@ async function hfChat(modelId, messages, maxTokens, stream, signal, ms, extra = 
     headers: { Authorization: `Bearer ${HF_API_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   }, ms, signal);
-  if (!res.ok) {
-    const t = await res.text().catch(() => '');
-    throw new Error(`hf_${res.status}: ${t.slice(0, 120)}`);
-  }
+  if (!res.ok) throw new Error(`hf_${res.status}`);
   return res;
 }
 
@@ -479,10 +498,8 @@ async function plChat(modelId, messages, maxTokens, stream, signal, ms, extra = 
   return res;
 }
 
-/* ---------- Ollama ---------- */
 let ollamaReady = false;
 let ollamaStatus = { ready: false, host: OLLAMA_HOST, model: OLLAMA_MODEL, models: [], error: null };
-let ollamaPullPromise = null;
 
 async function ollamaFetch(pathname, opts = {}, ms = 10000) {
   return fetchT(`${OLLAMA_HOST}${pathname}`, opts, ms);
@@ -495,36 +512,13 @@ async function ollamaList() {
     return { ok: true, models: (data.models || []).map(m => m.name) };
   } catch (e) { return { ok: false, error: e.message }; }
 }
-async function ollamaPull(model) {
-  ollamaStatus.pulling = true;
-  try {
-    const res = await ollamaFetch('/api/pull', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: model, stream: true }),
-    }, 600000);
-    if (!res.ok || !res.body) { ollamaStatus.pulling = false; return { ok: false }; }
-    const reader = res.body.getReader();
-    while (true) { const { done } = await reader.read(); if (done) break; }
-    try { reader.releaseLock(); } catch {}
-    ollamaStatus.pulling = false;
-    return { ok: true };
-  } catch (e) { ollamaStatus.pulling = false; return { ok: false, error: e.message }; }
-}
-async function ensureOllama(attempt = 1) {
-  const MAX_ATTEMPTS = 3;
+async function ensureOllama() {
   const list = await ollamaList();
-  if (!list.ok) {
-    ollamaStatus.ready = false; ollamaStatus.error = list.error; PROVIDERS.ollama = false;
-    if (attempt < MAX_ATTEMPTS) { await new Promise(r => setTimeout(r, 2000 * attempt)); return ensureOllama(attempt + 1); }
-    return false;
-  }
+  if (!list.ok) { ollamaStatus.ready = false; PROVIDERS.ollama = false; return false; }
   ollamaStatus.models = list.models;
   const has = list.models.some(n => n === OLLAMA_MODEL || n.startsWith(OLLAMA_MODEL.split(':')[0]));
-  if (!has) {
-    const pulled = await ollamaPull(OLLAMA_MODEL);
-    if (!pulled.ok) { ollamaStatus.ready = false; PROVIDERS.ollama = false; return false; }
-  }
-  ollamaStatus.ready = true; ollamaStatus.error = null; PROVIDERS.ollama = true; ollamaReady = true;
+  if (!has) { ollamaStatus.ready = false; PROVIDERS.ollama = false; return false; }
+  ollamaStatus.ready = true; PROVIDERS.ollama = true; ollamaReady = true;
   console.log(`[Mirox] Ollama ready with ${OLLAMA_MODEL}`);
   return true;
 }
@@ -583,7 +577,6 @@ async function ollamaChatStream(messages, cfg, sseWrite, signal) {
   return full;
 }
 
-/* ---------- searchque ---------- */
 async function searchqueChat(userQuestion, signal, ms) {
   const q = safe(userQuestion, 1500).trim();
   if (!q) throw new Error('bad_query');
@@ -597,9 +590,6 @@ async function searchqueChat(userQuestion, signal, ms) {
   return res;
 }
 
-/* ============================================================
-   Chat chain
-   ============================================================ */
 async function miroxChatChain({ messages, cfg, stream, signal, extra, sseData }) {
   const start = Date.now();
   const userQuestion = extractLastUserQuestion(messages);
@@ -663,7 +653,7 @@ async function miroxChatChain({ messages, cfg, stream, signal, extra, sseData })
 }
 
 /* ============================================================
-   Image generation (with img2img)
+   Image generation + caption
    ============================================================ */
 async function toDataUrl(response) {
   const ct = response.headers.get('content-type') || '';
@@ -690,7 +680,7 @@ async function generateImage(prompt, aspect = '1:1', sourceImage = null) {
   const left = () => deadline - Date.now();
   const trace = [];
 
-  /* Pollinations first — supports img2img via `image` param */
+  /* Pollinations first */
   for (const modelId of PL_IMG_MODELS) {
     if (left() < 3000) break;
     try {
@@ -698,12 +688,8 @@ async function generateImage(prompt, aspect = '1:1', sourceImage = null) {
         model: modelId, width: String(w), height: String(h),
         nologo: 'true', seed: String(Date.now() % 99999),
       });
-      if (sourceImage && sourceImage.startsWith('data:image')) {
+      if (sourceImage && typeof sourceImage === 'string' && sourceImage.startsWith('http')) {
         params.set('image', sourceImage);
-        params.set('strength', '0.65');
-      } else if (sourceImage && sourceImage.startsWith('http')) {
-        params.set('image', sourceImage);
-        params.set('strength', '0.65');
       }
       const url = `${PL_IMG_BASE}/${encodeURIComponent(prompt)}?${params.toString()}`;
       const headers = { 'Accept': 'image/png' };
@@ -711,12 +697,12 @@ async function generateImage(prompt, aspect = '1:1', sourceImage = null) {
       const res = await fetchT(url, { method: 'GET', headers }, Math.min(left() - 1500, 30000));
       if (!res.ok) { trace.push(`pl:${modelId}:${res.status}`); continue; }
       const dataUrl = await toDataUrl(res);
-      if (dataUrl) { console.log(`[Mirox] image ok: pl:${modelId}${sourceImage ? ' (img2img)' : ''}`); return dataUrl; }
+      if (dataUrl) { console.log(`[Mirox] image ok: pl:${modelId}`); return dataUrl; }
       trace.push(`pl:${modelId}:bad_body`);
     } catch (e) { trace.push(`pl:${modelId}:${e.message}`); }
   }
 
-  /* HF fallback (text-only) */
+  /* HF */
   if (HF_API_KEY && !sourceImage) {
     for (const modelId of HF_IMG_MODELS) {
       if (left() < 3000) break;
@@ -733,7 +719,7 @@ async function generateImage(prompt, aspect = '1:1', sourceImage = null) {
     }
   }
 
-  /* AIroute last */
+  /* AIroute */
   if (AR_KEY) {
     for (const modelId of AR_IMG_MODELS) {
       if (left() < 3000) break;
@@ -754,9 +740,6 @@ async function generateImage(prompt, aspect = '1:1', sourceImage = null) {
   throw new Error(GENERIC_ERR);
 }
 
-/* ============================================================
-   Image captioning for text-only models
-   ============================================================ */
 async function captionImage(base64DataUrl) {
   try {
     if (!base64DataUrl || !base64DataUrl.startsWith('data:image')) return null;
@@ -766,13 +749,13 @@ async function captionImage(base64DataUrl) {
           const body = {
             model: modelId,
             messages: [
-              { role: 'system', content: 'Describe the image in one concise sentence. Focus on subject, style, colors, mood.' },
+              { role: 'system', content: 'Describe the image in one detailed sentence. Include subject, colors, style, composition, mood, background.' },
               { role: 'user', content: [
                 { type: 'text', text: 'What is in this image?' },
                 { type: 'image_url', image_url: { url: base64DataUrl } },
               ]},
             ],
-            max_tokens: 120, stream: false,
+            max_tokens: 200, stream: false,
           };
           const res = await fetchT(PL_URL, {
             method: 'POST',
@@ -793,13 +776,13 @@ async function captionImage(base64DataUrl) {
           const body = {
             model: modelId,
             messages: [
-              { role: 'system', content: 'Describe the image in one concise sentence.' },
+              { role: 'system', content: 'Describe the image in one detailed sentence.' },
               { role: 'user', content: [
                 { type: 'text', text: 'What is in this image?' },
                 { type: 'image_url', image_url: { url: base64DataUrl } },
               ]},
             ],
-            max_tokens: 120, stream: false,
+            max_tokens: 200, stream: false,
           };
           const res = await fetchT(HF_URL, {
             method: 'POST',
@@ -845,97 +828,111 @@ function chunkText(n, target) {
 }
 
 /* ============================================================
-   Express app
+   TTS proxy — with verbose logging
+   ============================================================ */
+async function fishTTS(text, voiceId) {
+  if (!F_API) throw new Error('no_f_api');
+  const clean = String(text || '').trim();
+  if (!clean) throw new Error('empty_text');
+
+  const body = {
+    text: clean.slice(0, 2000),
+    format: 'mp3',
+    mp3_bitrate: 128,
+    chunk_length: 200,
+    normalize: true,
+  };
+  if (voiceId) body.reference_id = voiceId;
+
+  console.log(`[Fish] TTS request: ${clean.slice(0, 60)}... voice=${voiceId || 'default'}`);
+
+  const res = await fetchT(FISH_TTS_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${F_API}`,
+      'Content-Type': 'application/json',
+      'Accept': 'audio/mpeg',
+    },
+    body: JSON.stringify(body),
+  }, TTS_TOTAL_MS);
+
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '');
+    console.error(`[Fish] TTS failed: ${res.status} — ${errBody.slice(0, 200)}`);
+    throw new Error(`fish_${res.status}`);
+  }
+
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.byteLength < 100) throw new Error('empty_audio');
+  console.log(`[Fish] TTS ok: ${buf.byteLength} bytes`);
+  return buf;
+}
+
+/* ============================================================
+   Express
    ============================================================ */
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '30mb' }));
 app.use(async (req, res, next) => { try { await loadDb(); } catch {} next(); });
 
-/* Health */
 app.get(['/api/health','/health','/ping'], async (req, res) => {
   await loadDb();
   res.json({
-    ok: true, app: 'MiroxAI', version: 'v70',
+    ok: true, app: 'MiroxAI', version: 'v71',
     providers: PROVIDERS,
     ollama: ollamaStatus,
     db: { driver: 'json-file', file: DB_FILE, ready: dbReady, error: dbError, users: db ? Object.keys(db.users).length : 0 },
+    fish_key_present: !!F_API,
     time: now(),
   });
 });
 
-/* Providers status */
-app.get('/api/providers/status', async (req, res) => {
-  const list = await ollamaList();
-  res.json({
-    ok: true, version: 'v70',
-    chain_order: ['hf', 'pl', 'ollama', 'searchque'],
-    providers: {
-      hf: { configured: !!HF_API_KEY },
-      pl: { configured: !!PL_KEY },
-      ollama: { reachable: list.ok, ready: ollamaReady, model: OLLAMA_MODEL, installed: list.models || [] },
-      searchque: { configured: true },
-      fish: { configured: !!F_API },
-    },
-  });
+/* TTS diagnostic */
+app.get('/api/tts/health', async (req, res) => {
+  if (!F_API) return res.json({ ok: false, configured: false, error: 'F_API not set in environment' });
+  try {
+    const buf = await fishTTS('Test. Mirox is online.', null);
+    res.json({ ok: true, configured: true, bytes: buf.byteLength });
+  } catch (e) {
+    res.json({ ok: false, configured: true, error: e.message });
+  }
 });
 
-/* ============================================================
-   TTS — Fish Audio proxy
-   ============================================================ */
 app.post('/api/tts', async (req, res) => {
   try {
-    if (!F_API) return res.status(503).json({ ok: false, error: 'TTS not configured (F_API missing)' });
+    if (!F_API) return res.status(503).json({ ok: false, error: 'F_API not configured' });
     const text = safe(req.body?.text, 5000).trim();
     if (!text) return res.status(400).json({ ok: false, error: 'text required' });
     const voice = safe(req.body?.voice, 128).trim() || null;
 
-    const body = { text, format: 'mp3' };
-    if (voice) body.reference_id = voice;
-
-    const r = await fetchT(FISH_TTS_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${F_API}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    }, 60000);
-
-    if (!r.ok) {
-      const t = await r.text().catch(() => '');
-      console.error('[Mirox] fish tts failed', r.status, t.slice(0, 200));
-      return res.status(502).json({ ok: false, error: 'TTS failed' });
-    }
-
-    const buf = Buffer.from(await r.arrayBuffer());
-    if (buf.byteLength < 100) return res.status(502).json({ ok: false, error: 'empty audio' });
-
+    const buf = await fishTTS(text, voice);
     res.setHeader('Content-Type', 'audio/mpeg');
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Content-Length', String(buf.byteLength));
     res.send(buf);
   } catch (e) {
-    console.error('[Mirox] tts error', e.message);
-    res.status(500).json({ ok: false, error: 'TTS error' });
+    console.error('[Mirox] tts error:', e.message);
+    res.status(502).json({ ok: false, error: e.message });
   }
 });
 
-/* Voice list */
 app.get('/api/voices', async (req, res) => {
   if (!F_API) return res.json({ ok: true, voices: [] });
   try {
     const r = await fetchT(FISH_MODELS_URL, {
       headers: { Authorization: `Bearer ${F_API}` },
     }, 15000);
-    if (!r.ok) return res.json({ ok: true, voices: [] });
+    if (!r.ok) {
+      console.warn('[Fish] voices list failed:', r.status);
+      return res.json({ ok: true, voices: [] });
+    }
     const data = await r.json().catch(() => ({}));
     const items = data.items || data.models || data.data || [];
     const voices = items.map(m => ({
       id: m._id || m.id,
       name: m.title || m.name || 'Voice',
       lang: (m.languages && m.languages[0]) || m.language || 'en',
-      cover: m.cover_image || null,
     })).filter(v => v.id);
     res.json({ ok: true, voices });
   } catch (e) {
@@ -943,9 +940,7 @@ app.get('/api/voices', async (req, res) => {
   }
 });
 
-/* ============================================================
-   Admin
-   ============================================================ */
+/* Admin */
 function adminSession(req) {
   const token = safe(req.headers['x-admin-token']).trim();
   if (!token) return null;
@@ -954,13 +949,11 @@ function adminSession(req) {
   if (s.exp < Date.now()) return null;
   return s;
 }
-
 app.post('/api/admin/auth', (req, res) => {
   const password = safe(req.body?.password);
   if (!password || password !== ADMIN_PASS) return res.status(401).json({ ok: false, error: 'Invalid password' });
   res.json({ ok: true, token: signSession({ admin: true, exp: Date.now() + 12 * 60 * 60 * 1000 }) });
 });
-
 app.post('/api/admin/set-tier', async (req, res) => {
   try {
     if (!adminSession(req)) return res.status(401).json({ ok: false, error: 'Unauthorized' });
@@ -969,33 +962,21 @@ app.post('/api/admin/set-tier', async (req, res) => {
     const tier = safe(req.body?.tier).trim();
     if (!email || !PLANS[tier]) return res.status(400).json({ ok: false, error: 'Invalid email or tier' });
     if (!db.users[email]) {
-      db.users[email] = {
-        email, name: '', tier, daily_used: 0, eclipse_used: 0,
-        daily_reset: today(), month_key: monthKey(), keys_this_month: 0,
-        created_at: now(), last_login: 0, persona: null, memory: [], voice_id: null,
-      };
-    } else {
-      db.users[email].tier = tier;
-    }
+      db.users[email] = { email, name: '', tier, daily_used: 0, eclipse_used: 0, daily_reset: today(), month_key: monthKey(), keys_this_month: 0, created_at: now(), last_login: 0, persona: null, memory: [], voice_id: null };
+    } else db.users[email].tier = tier;
     await persist();
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ ok: false, error: 'Failed' }); }
 });
-
 app.get('/api/admin/stats', async (req, res) => {
   try {
     if (!adminSession(req)) return res.status(401).json({ ok: false, error: 'Unauthorized' });
     await loadDb();
     const users_data = {};
     for (const [email, u] of Object.entries(db.users || {})) {
-      users_data[email] = {
-        email, name: u.name || '', tier: u.tier || 'free',
-        daily_used: u.daily_used || 0, eclipse_used: u.eclipse_used || 0,
-        keys_this_month: u.keys_this_month || 0,
-        created_at: u.created_at || 0, last_login: u.last_login || 0,
-      };
+      users_data[email] = { email, name: u.name || '', tier: u.tier || 'free', daily_used: u.daily_used || 0, eclipse_used: u.eclipse_used || 0, keys_this_month: u.keys_this_month || 0, created_at: u.created_at || 0, last_login: u.last_login || 0 };
     }
-    const recentChats  = [...(db.logsChat || [])].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 200);
+    const recentChats = [...(db.logsChat || [])].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 200);
     const recentImages = [...(db.logsImage || [])].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 200);
     const recentEvents = [...(db.logsUser || [])].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 200);
     res.json({
@@ -1013,22 +994,16 @@ app.get('/api/admin/stats', async (req, res) => {
         return { email: e.email, event: e.event, ts: e.ts, ...details };
       }),
     });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: 'Failed' });
-  }
+  } catch (e) { res.status(500).json({ ok: false, error: 'Failed' }); }
 });
 
-/* ============================================================
-   Config
-   ============================================================ */
+/* Config */
 app.get(['/api/config','/config'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   let u = null; try { u = await currentUser(req); } catch {}
-  const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({
-    id, label: m.label, tagline: m.tagline, tier: m.tier, default: !!m.default,
-  }));
+  const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tagline: m.tagline, tier: m.tier, default: !!m.default }));
   res.json({
-    app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v70' },
+    app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v71' },
     models, default_model: models[0].id, plans: PLANS,
     user_tier: u ? u.tier : 'free', guest: !u, ready: true,
     providers: PROVIDERS, api_models: API_ALLOWED_MODELS,
@@ -1044,35 +1019,24 @@ app.post(['/api/auth/simple-login','/auth/simple-login'], async (req, res) => {
     const { name, email } = req.body || {};
     const n = safe(name, 60).trim();
     const e = safe(email, 120).trim().toLowerCase();
-    if (!n || !e || !e.includes('@') || !e.split('@')[1].includes('.')) {
-      return res.status(400).json({ ok: false, error: 'Valid name and email required' });
-    }
+    if (!n || !e || !e.includes('@') || !e.split('@')[1].includes('.')) return res.status(400).json({ ok: false, error: 'Valid name and email required' });
     let rec = await getUser(e);
     if (!rec) rec = { email: e, name: n, tier: 'free' };
-    rec.name = n;
-    rec.last_login = now();
+    rec.name = n; rec.last_login = now();
     await saveUser(rec);
     const token = setSession(res, { uid: e, name: n, tier: rec.tier });
     res.json({ ok: true, token, user: { id: e, email: e, name: n, tier: rec.tier, voice_id: rec.voice_id || null } });
   } catch (e) { res.status(500).json({ ok: false, error: 'Login failed' }); }
 });
-
 app.post(['/api/logout','/logout'], (req, res) => { clearSession(res); res.json({ ok: true }); });
-
 app.get(['/api/me','/me'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   try {
     const u = await currentUser(req);
     if (!u) return res.json({ user: null });
-    res.json({ user: {
-      id: u.email, email: u.email, name: u.name, tier: u.tier,
-      keys_this_month: u.keys_this_month || 0, eclipse_used: u.eclipse_used || 0,
-      voice_id: u.voice_id || null,
-    }});
+    res.json({ user: { id: u.email, email: u.email, name: u.name, tier: u.tier, keys_this_month: u.keys_this_month || 0, eclipse_used: u.eclipse_used || 0, voice_id: u.voice_id || null } });
   } catch { res.json({ user: null }); }
 });
-
-/* Voice preference */
 app.post('/api/me/voice', async (req, res) => {
   const u = await currentUser(req);
   if (!u || !u.email) return res.status(401).json({ ok: false });
@@ -1092,7 +1056,10 @@ app.get(['/api/subscription/plans','/subscription/plans'], (req, res) => {
   const out = Object.entries(PLANS).map(([id, p]) => ({
     id, label: p.label,
     tagline: { free: 'Free forever', pro: 'Most popular', ultimate: 'Power users' }[id],
-    daily_limit: p.daily_limit, price_robux: p.price_robux, perks: perks[id],
+    daily_limit: p.daily_limit,
+    price_usd: p.price_usd,
+    price_afg: p.price_afg,
+    perks: perks[id],
   }));
   res.json({ ok: true, plans: out });
 });
@@ -1124,7 +1091,6 @@ app.post('/api/persona', async (req, res) => {
   await saveUser(u);
   res.json({ ok: true });
 });
-
 app.post('/api/support/ticket', async (req, res) => { res.json({ ok: true }); });
 
 /* API keys */
@@ -1148,21 +1114,16 @@ app.post(['/api/keys/generate','/keys/generate'], async (req, res) => {
     res.json({ ok: true, key, prefix, stored: true, used: used + 1, limit });
   } catch { res.status(500).json({ ok: false, error: 'Key generation failed' }); }
 });
-
 app.get(['/api/keys/list','/keys/list'], async (req, res) => {
   try {
     await loadDb();
     const u = await currentUser(req);
     if (!u) return res.json({ ok: true, keys: [], used: 0, limit: 2 });
-    const keys = Object.values(db.apiKeys)
-      .filter(k => k.email === u.email)
-      .map(k => ({ id: k.id, prefix: k.prefix, created: k.created, active: !!k.active }))
-      .sort((a, b) => (b.created || 0) - (a.created || 0));
+    const keys = Object.values(db.apiKeys).filter(k => k.email === u.email).map(k => ({ id: k.id, prefix: k.prefix, created: k.created, active: !!k.active })).sort((a, b) => (b.created || 0) - (a.created || 0));
     res.json({ ok: true, keys, used: u.keys_this_month || 0, limit: PLANS[u.tier]?.api_keys_per_month || 2 });
   } catch { res.json({ ok: true, keys: [], used: 0, limit: 2 }); }
 });
 
-/* Vision caption */
 app.post('/api/vision/caption', async (req, res) => {
   try {
     const dataUrl = safe(req.body?.image, 30_000_000);
@@ -1170,9 +1131,7 @@ app.post('/api/vision/caption', async (req, res) => {
     const caption = await captionImage(dataUrl);
     if (!caption) return res.json({ ok: false, error: 'caption unavailable' });
     res.json({ ok: true, caption });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: 'caption failed' });
-  }
+  } catch (e) { res.status(500).json({ ok: false, error: 'caption failed' }); }
 });
 
 /* Image generation endpoint */
@@ -1198,7 +1157,7 @@ app.post('/v1/images/generations', async (req, res) => {
 });
 
 /* ============================================================
-   Chat completions
+   Chat
    ============================================================ */
 app.post('/v1/chat/completions', async (req, res) => {
   const t0 = Date.now();
@@ -1216,6 +1175,7 @@ app.post('/v1/chat/completions', async (req, res) => {
     const rawFiles = body.files;
     const requestedModel = safe(body.model, 64) || 'mirox-luna-1.2';
     const userVoice = safe(body.voice_id, 128).trim() || null;
+    const wantTts = body.tts === true;
 
     let u = null; try { u = await currentUser(req); } catch {}
     const token = extractToken(req);
@@ -1240,7 +1200,6 @@ app.post('/v1/chat/completions', async (req, res) => {
       }
     }
 
-    /* Build message list */
     let msgs, userQuestionForCanned = '', filesForIntent = [];
     if (Array.isArray(rawMessages) && rawMessages.length) {
       msgs = injectIdentityGuard(sanitizeMessages(rawMessages), cfg);
@@ -1271,15 +1230,8 @@ app.post('/v1/chat/completions', async (req, res) => {
           const c = await captionImage(img.dataUrl);
           captions.push(c || '(image attached)');
         }
-        const supportsVision = false; // disable direct vision passthrough for consistency
-        if (supportsVision) {
-          const content = [{ type: 'text', text: userText || 'Look at the image(s).' }];
-          for (const img of imageFiles) content.push({ type: 'image_url', image_url: { url: img.dataUrl } });
-          msgs.push({ role: 'user', content });
-        } else {
-          const annotated = `[User attached ${imageFiles.length} image(s). Descriptions: ${captions.join(' | ')}]\n\n${userText || ''}`.trim();
-          msgs.push({ role: 'user', content: annotated });
-        }
+        const annotated = `[User attached ${imageFiles.length} image(s). Descriptions: ${captions.join(' | ')}]\n\n${userText || ''}`.trim();
+        msgs.push({ role: 'user', content: annotated });
       } else {
         msgs.push({ role: 'user', content: userText || '(empty)' });
       }
@@ -1291,22 +1243,18 @@ app.post('/v1/chat/completions', async (req, res) => {
       userQuestionForCanned = text;
     }
 
-    /* Daily limit */
     if (u && !u._viaKey && (u.daily_used || 0) >= (PLANS[u.tier]?.daily_limit || 50)) {
       return res.status(429).json({ error: { message: 'Daily limit reached.', code: 'daily_limit_reached' } });
     }
 
-    /* ---- Image intent pipeline ---- */
+    /* Detect image intent */
     const imgIntent = detectImageIntent(userQuestionForCanned, filesForIntent);
 
     /* Log chat */
     if (u && !u._viaKey) {
       await loadDb();
       db.counters.chat = (db.counters.chat || 0) + 1;
-      db.logsChat.push({
-        id: db.counters.chat, email: u.email, model: cfg.label,
-        message: safe(userQuestionForCanned, 1000), ts: now(), canned: 0,
-      });
+      db.logsChat.push({ id: db.counters.chat, email: u.email, model: cfg.label, message: safe(userQuestionForCanned, 1000), ts: now(), canned: 0 });
       if (db.logsChat.length > MAX_LOGS) db.logsChat.splice(0, db.logsChat.length - MAX_LOGS);
       persist();
     }
@@ -1319,18 +1267,37 @@ app.post('/v1/chat/completions', async (req, res) => {
       }
     };
 
-    /* ---- Non-stream ---- */
+    /* Non-stream */
     if (!stream) {
       try {
         if (imgIntent) {
-          const dataUrl = await generateImage(imgIntent.prompt, '1:1', imgIntent.sourceImage);
+          let finalPrompt = imgIntent.prompt;
+          if (imgIntent.mode === 'improve' || imgIntent.mode === 'transform') {
+            const caption = await captionImage(imgIntent.sourceImage);
+            if (caption) {
+              if (imgIntent.mode === 'improve') {
+                finalPrompt = `${caption}, ultra high quality, sharp focus, detailed, 8k, professional, cinematic lighting`;
+              } else {
+                finalPrompt = `${caption}, ${imgIntent.prompt}, high quality, detailed, sharp`;
+              }
+            }
+          }
+          const dataUrl = await generateImage(finalPrompt, '1:1', null);
           await updateUsage();
+          const reply = imgIntent.mode === 'improve'
+            ? `I recreated your image with enhanced quality and detail.`
+            : `Here's your reimagined image.`;
+          let ttsDataUrl = null;
+          if (F_API && wantTts) {
+            try {
+              const buf = await fishTTS(reply, userVoice);
+              ttsDataUrl = 'data:audio/mpeg;base64,' + buf.toString('base64');
+            } catch {}
+          }
           return res.json({
             id: 'chatcmpl-' + Date.now(), object: 'chat.completion', created: now(), model: cfg.label,
-            choices: [{ index: 0, message: { role: 'assistant', content: '', image: dataUrl, caption: imgIntent.prompt }, finish_reason: 'stop' }],
-            image: dataUrl,
-            caption: imgIntent.prompt,
-            _ms: Date.now() - t0,
+            choices: [{ index: 0, message: { role: 'assistant', content: reply, image: dataUrl }, finish_reason: 'stop' }],
+            image: dataUrl, reply, tts: ttsDataUrl, _ms: Date.now() - t0,
           });
         }
         const result = await miroxChatChain({
@@ -1345,17 +1312,24 @@ app.post('/v1/chat/completions', async (req, res) => {
           reply = parsed.reply;
         }
         await updateUsage();
+        let ttsDataUrl = null;
+        if (F_API && wantTts && reply) {
+          try {
+            const buf = await fishTTS(reply, userVoice);
+            ttsDataUrl = 'data:audio/mpeg;base64,' + buf.toString('base64');
+          } catch (e) { console.warn('[Mirox] tts non-stream failed:', e.message); }
+        }
         return res.json({
           id: 'chatcmpl-' + Date.now(), object: 'chat.completion', created: now(), model: cfg.label,
           choices: [{ index: 0, message: { role: 'assistant', content: reply }, finish_reason: 'stop' }],
-          reply, _ms: Date.now() - t0,
+          reply, tts: ttsDataUrl, _ms: Date.now() - t0,
         });
       } catch (e) {
         return res.status(502).json({ error: { message: GENERIC_ERR, type: 'server_error' } });
       }
     }
 
-    /* ---- Stream ---- */
+    /* Stream */
     sseInit(res);
     const sseData = obj => sseWrite(res, obj);
 
@@ -1374,13 +1348,35 @@ app.post('/v1/chat/completions', async (req, res) => {
       /* ---- Image branch ---- */
       if (imgIntent) {
         sseWrite(res, { p: 'image' });
-        sseWrite(res, { status: imgIntent.mode === 'transform' ? 'Reimagining your image…' : 'Drawing it…' });
+
+        /* For improve/transform, first caption the source to preserve subject */
+        let finalPrompt = imgIntent.prompt;
+        if (imgIntent.mode === 'improve' || imgIntent.mode === 'transform') {
+          sseWrite(res, { status: 'Understanding your image…' });
+          const caption = await captionImage(imgIntent.sourceImage);
+          if (caption) {
+            if (imgIntent.mode === 'improve') {
+              finalPrompt = `${caption}, ultra high quality, sharp focus, detailed, 8k resolution, professional photography, cinematic lighting, vibrant colors`;
+              sseWrite(res, { status: 'Enhancing quality…' });
+            } else {
+              finalPrompt = `${caption}, ${imgIntent.prompt}, high quality, detailed, sharp, professional`;
+              sseWrite(res, { status: 'Reimagining your image…' });
+            }
+          } else {
+            sseWrite(res, { status: imgIntent.mode === 'improve' ? 'Enhancing quality…' : 'Reimagining your image…' });
+          }
+        } else {
+          sseWrite(res, { status: 'Drawing it…' });
+        }
 
         let dataUrl = null;
         try {
-          dataUrl = await generateImage(imgIntent.prompt, '1:1', imgIntent.sourceImage);
+          dataUrl = await generateImage(finalPrompt, '1:1', null);
         } catch (e) {
-          sseWrite(res, { d: `I tried to generate that image but all providers failed. ` });
+          const msg = imgIntent.mode === 'improve'
+            ? `I tried to enhance your image but all providers failed. Try again in a moment.`
+            : `I tried to generate that image but all providers failed. Try again in a moment.`;
+          sseWrite(res, { d: msg });
           sseWrite(res, { done: true });
           sseDone(res);
           try { res.end(); } catch {}
@@ -1389,13 +1385,13 @@ app.post('/v1/chat/completions', async (req, res) => {
         }
 
         if (dataUrl) {
-          sseWrite(res, { img: dataUrl, imgAlt: imgIntent.prompt });
+          sseWrite(res, { img: dataUrl, imgAlt: finalPrompt.slice(0, 100) });
         }
 
-        /* Now stream a short caption/description using the model */
+        /* Stream description */
         const describeMsgs = [
-          { role: 'system', content: cfg.basePrompt + '\n\nYou just generated an image. Write a SHORT one or two sentence description of what you created. Do not use headers, bullet points, or lists. Plain prose only.' },
-          { role: 'user', content: `The image prompt was: "${imgIntent.prompt}". Describe the image you created.` },
+          { role: 'system', content: cfg.basePrompt + `\n\nYou just ${imgIntent.mode === 'improve' ? 'enhanced' : 'generated'} an image. Write a SHORT one or two sentence description of what you made. Plain prose only, no lists or headers.` },
+          { role: 'user', content: `The image was based on: "${finalPrompt}". Describe what you created.` },
         ];
 
         try {
@@ -1405,13 +1401,18 @@ app.post('/v1/chat/completions', async (req, res) => {
           });
           if (cres.provider === 'ollama') {
             fullReplyText = cres.reply || imgIntent.prompt;
+            for (const piece of chunkText(fullReplyText, 30)) {
+              if (clientClosed || res.writableEnded) break;
+              sseWrite(res, { d: piece });
+              await new Promise(r => setTimeout(r, 6));
+            }
           } else if (cres.provider === 'fallback') {
             const parsed = await readProviderBody(cres.res);
             if (parsed.ok) {
+              fullReplyText = parsed.reply;
               for (const piece of chunkText(parsed.reply, 30)) {
                 if (clientClosed || res.writableEnded) break;
                 sseWrite(res, { d: piece });
-                fullReplyText += piece;
                 await new Promise(r => setTimeout(r, 8));
               }
             }
@@ -1444,31 +1445,19 @@ app.post('/v1/chat/completions', async (req, res) => {
             try { reader.releaseLock(); } catch {}
           }
         } catch {
-          const fallbackCaption = `Here's the image I made for "${imgIntent.prompt}".`;
+          const fallbackCaption = imgIntent.mode === 'improve'
+            ? `Here's your enhanced image.`
+            : `Here's the image I made for "${imgIntent.prompt}".`;
           fullReplyText = fallbackCaption;
           sseWrite(res, { d: fallbackCaption });
         }
 
-        /* Optional: TTS */
-        if (F_API && !clientClosed && !res.writableEnded) {
+        /* TTS on request */
+        if (F_API && wantTts && fullReplyText && !clientClosed && !res.writableEnded) {
           try {
-            const speech = (fullReplyText || imgIntent.prompt).slice(0, 600);
-            const voice = userVoice || u?.voice_id || null;
-            const ttsBody = { text: speech, format: 'mp3' };
-            if (voice) ttsBody.reference_id = voice;
-            const tr = await fetchT(FISH_TTS_URL, {
-              method: 'POST',
-              headers: { Authorization: `Bearer ${F_API}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify(ttsBody),
-            }, 45000);
-            if (tr.ok) {
-              const buf = Buffer.from(await tr.arrayBuffer());
-              if (buf.byteLength > 100) {
-                const dataUrlTts = 'data:audio/mpeg;base64,' + buf.toString('base64');
-                sseWrite(res, { tts: dataUrlTts });
-              }
-            }
-          } catch (e) { /* silent */ }
+            const buf = await fishTTS(fullReplyText, userVoice);
+            sseWrite(res, { tts: 'data:audio/mpeg;base64,' + buf.toString('base64') });
+          } catch (e) { console.warn('[Mirox] tts stream error:', e.message); }
         }
 
         if (!clientClosed && !res.writableEnded) {
@@ -1482,7 +1471,7 @@ app.post('/v1/chat/completions', async (req, res) => {
         return;
       }
 
-      /* ---- Normal text branch ---- */
+      /* ---- Normal text ---- */
       const canned = cannedResponse(userQuestionForCanned, cfg, filesForIntent.length > 0);
       if (canned) {
         sseWrite(res, { p: 'canned' });
@@ -1492,21 +1481,11 @@ app.post('/v1/chat/completions', async (req, res) => {
           fullReplyText += piece;
           await new Promise(r => setTimeout(r, 8));
         }
-        if (F_API && !clientClosed && !res.writableEnded) {
+        if (F_API && wantTts && !clientClosed && !res.writableEnded) {
           try {
-            const voice = userVoice || u?.voice_id || null;
-            const ttsBody = { text: canned, format: 'mp3' };
-            if (voice) ttsBody.reference_id = voice;
-            const tr = await fetchT(FISH_TTS_URL, {
-              method: 'POST',
-              headers: { Authorization: `Bearer ${F_API}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify(ttsBody),
-            }, 45000);
-            if (tr.ok) {
-              const buf = Buffer.from(await tr.arrayBuffer());
-              if (buf.byteLength > 100) sseWrite(res, { tts: 'data:audio/mpeg;base64,' + buf.toString('base64') });
-            }
-          } catch {}
+            const buf = await fishTTS(canned, userVoice);
+            sseWrite(res, { tts: 'data:audio/mpeg;base64,' + buf.toString('base64') });
+          } catch (e) { console.warn('[Mirox] tts canned error:', e.message); }
         }
         sseWrite(res, { done: true });
         sseDone(res);
@@ -1588,23 +1567,11 @@ app.post('/v1/chat/completions', async (req, res) => {
         try { reader.releaseLock(); } catch {}
       }
 
-      /* Optional TTS for normal replies */
-      if (F_API && fullReplyText && !clientClosed && !res.writableEnded) {
+      if (F_API && wantTts && fullReplyText && !clientClosed && !res.writableEnded) {
         try {
-          const speech = fullReplyText.slice(0, 800);
-          const voice = userVoice || u?.voice_id || null;
-          const ttsBody = { text: speech, format: 'mp3' };
-          if (voice) ttsBody.reference_id = voice;
-          const tr = await fetchT(FISH_TTS_URL, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${F_API}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(ttsBody),
-          }, 45000);
-          if (tr.ok) {
-            const buf = Buffer.from(await tr.arrayBuffer());
-            if (buf.byteLength > 100) sseWrite(res, { tts: 'data:audio/mpeg;base64,' + buf.toString('base64') });
-          }
-        } catch {}
+          const buf = await fishTTS(fullReplyText, userVoice);
+          sseWrite(res, { tts: 'data:audio/mpeg;base64,' + buf.toString('base64') });
+        } catch (e) { console.warn('[Mirox] tts stream error:', e.message); }
       }
 
       if (!clientClosed && !res.writableEnded) {
@@ -1613,7 +1580,7 @@ app.post('/v1/chat/completions', async (req, res) => {
       }
       await updateUsage();
     } catch (e) {
-      if (e.name !== 'AbortError') console.warn('[Mirox] stream error:', e.message, e.trace || []);
+      if (e.name !== 'AbortError') console.warn('[Mirox] stream error:', e.message);
       if (!clientClosed && !res.writableEnded) {
         try { sseWrite(res, { error: { message: GENERIC_ERR } }); } catch {}
         try { sseDone(res); } catch {}
@@ -1639,15 +1606,14 @@ app.use((err, req, res, next) => {
   if (!res.headersSent) res.status(500).json({ error: { message: GENERIC_ERR } });
 });
 
-/* Startup */
 (async () => {
   await loadDb();
   ensureOllama().catch(() => {});
   if (process.env.VERCEL !== '1') {
     app.listen(PORT, () => {
       console.log(`[Mirox] Server ready at http://localhost:${PORT}`);
-      console.log(`[Mirox] Chain: HF → Pollinations → Ollama → searchque`);
       console.log(`[Mirox] TTS: ${F_API ? 'Fish Audio enabled' : 'disabled (F_API missing)'}`);
+      console.log(`[Mirox] Test TTS: http://localhost:${PORT}/api/tts/health`);
     });
   }
 })();
