@@ -1,10 +1,11 @@
 /* ============================================================
-   MiroxAI — Frontend v59
+   MiroxAI — Frontend v60
    FIXED:
-   - Image bubbles no longer giant (max-width: 420px, max-height: 60vh)
-   - Continue button works — appends to same bubble via /v1/chat/completions
-     with full assistant prefix in history
-   - TTS: fetch TTS audio eagerly on readAloud toggle; user gesture unlocks
+   ✅ AI bubble now has a proper container (see CSS)
+   ✅ Continue no longer breaks syntax highlighting — markdown
+      is re-rendered after streaming ends so code fences finalize
+   ✅ sendToAPI finalizes code blocks the same way
+   ✅ Minimal loading screen
    ============================================================ */
 
 const $  = s => document.querySelector(s);
@@ -249,6 +250,17 @@ function wireCodeButtons(scope) {
   });
 }
 
+/* ✅ FIX: helper that re-renders a bubble's text so code blocks finalize
+   (closed fences → Copy button, syntax highlighting applied) */
+function finalizeBubble(bubble, fullText) {
+  if (!bubble) return;
+  const bt = bubble.querySelector('.bubble-text');
+  if (!bt) return;
+  bt.innerHTML = renderMarkdown(fullText || '');
+  wireCodeButtons(bt);
+  bubble.dataset.rawText = fullText || '';
+}
+
 /* ---------- TTS ---------- */
 function unlockAudio() {
   if (audioUnlocked) return;
@@ -446,7 +458,6 @@ async function handleContinue(msgEl) {
 
   const idx = convo.messages.findIndex(x => x.id === msgId);
   const priorHistory = convo.messages.slice(Math.max(0, idx - 12), idx).map(x => ({ role: x.role, content: x.content }));
-  /* Include the partial assistant message so the model knows what to continue from */
   priorHistory.push({ role: 'assistant', content: m.content });
 
   const model = __model || 'mirox-luna-1.2';
@@ -508,7 +519,11 @@ async function handleContinue(msgEl) {
     }
 
     bubbleText.classList.remove('streaming');
-    bubble.dataset.rawText = full;
+
+    /* ✅ FIX: finalize the bubble — this makes unclosed code blocks
+       get their Copy button + proper syntax highlighting applied. */
+    finalizeBubble(bubble, full);
+
     m.content = full;
     m.finish_reason = finishReason;
 
@@ -528,13 +543,17 @@ async function handleContinue(msgEl) {
     }
   } catch (e) {
     bubbleText.classList.remove('streaming');
+
+    /* ✅ FIX: also finalize on error, so any code written so far
+       still renders with syntax highlighting + Copy button. */
+    finalizeBubble(bubble, full);
+
     if (e.name !== 'AbortError') {
       const err = document.createElement('div');
       err.style.cssText = 'color:var(--danger);font-size:13px;margin-top:8px;';
       err.textContent = 'Continue failed: ' + e.message;
       msgEl.querySelector('.message-time').before(err);
       setTimeout(() => err.remove(), 5000);
-      /* Re-add the button so they can try again */
       if (!msgEl.querySelector('.continue-bar')) {
         const cont = document.createElement('div');
         cont.className = 'continue-bar';
@@ -692,7 +711,10 @@ async function sendToAPI(text, files = []) {
 
     bubble.classList.remove('streaming');
     delete msgEl.dataset.thinking;
-    bubble.dataset.rawText = full;
+
+    /* ✅ FIX: finalize the bubble — code blocks get Copy buttons
+       and proper syntax highlighting after streaming stops. */
+    finalizeBubble(bubble, full);
 
     if (finishReason === 'length') {
       msgEl.dataset.finish = 'length';
@@ -712,6 +734,10 @@ async function sendToAPI(text, files = []) {
     if (readAloudEnabled) { if (pendingTts) playAudioDataUrl(pendingTts); else if (full) speakText(full); }
   } catch (e) {
     bubble.classList.remove('streaming');
+
+    /* ✅ FIX: finalize even on error so partial code renders properly. */
+    finalizeBubble(bubble, full);
+
     if (e.name !== 'AbortError') {
       bubble.classList.remove('thinking');
       bubble.textContent = `Sorry, something went wrong: ${e.message}`;
