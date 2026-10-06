@@ -1,11 +1,14 @@
 /* ============================================================
-   MiroxAI — Frontend v61
-   FIXES:
-   ✅ Persona save now shows status + works for guests w/ sign-in prompt
-   ✅ Continue preserves syntax highlighting (finalizeBubble)
-   ✅ Credit bar (5 msgs / 10 vision / 10 images per day for free users)
-   ✅ Secure image viewer (canvas + download + regenerate)
-   ✅ Sidebar search (messages + images) and image history tab
+   MiroxAI — Frontend v62
+   NEW:
+   - Bridge panel + WebSocket client
+   - GitHub OAuth connect
+   - Download client ZIP
+   - Persona save fix
+   - Continue finalization fix
+   - Credit bar
+   - Secure image viewer
+   - Sidebar search + image history
    ============================================================ */
 
 const $  = s => document.querySelector(s);
@@ -28,16 +31,19 @@ const MCP_KEY = 'miroxai_mcp_v23';
 const FEEDBACK_KEY = 'miroxai_feedback_v23';
 const KEYS_CACHE = 'miroxai_keys_cache_v23';
 const IMG_HISTORY_KEY = 'miroxai_image_history_v23';
+const BRIDGE_KEY = 'miroxai_bridge_v23';
 
 let __config = null, __user = null, __tier = 'free', __model = 'mirox-luna-1.2';
 let currentConversationId = null, isReplying = false, __conversations = [], pendingFiles = [];
 let recognition = null, activeStreamController = null;
 let userSettings = { soundOn: true, notifOn: true, highlightOn: true, lineNumbers: false, language: 'en-US', voiceRate: 1, autoSpeak: false, voice_id: null };
 let ttsAvailable = false, currentAudio = null, readAloudEnabled = false, lastSpokenText = '', audioUnlocked = false;
-let __usage = null; // { daily_limit, vision_limit, image_limit, daily_used, vision_used, image_used, ... }
-let __imageHistory = []; // [{ id, prompt, dataUrl, ts }]
+let __usage = null;
+let __imageHistory = [];
 let __sidebarTab = 'chats';
 let __searchQuery = '';
+let __bridge = { name: 'My Laptop', model: 'mirox-luna-1.2', port: 8765, ws: null, connected: false, log: [] };
+let __githubToken = null;
 
 const LANGUAGE_ICONS = {
   js:'ri-javascript-fill', javascript:'ri-javascript-fill', jsx:'ri-reactjs-line',
@@ -131,15 +137,106 @@ function saveUserSettings() { try { localStorage.setItem(USER_SETTINGS_KEY, JSON
 function loadFeedback() { try { return JSON.parse(localStorage.getItem(FEEDBACK_KEY) || '{}'); } catch { return {}; } }
 function saveFeedback(fb) { try { localStorage.setItem(FEEDBACK_KEY, JSON.stringify(fb)); } catch {} }
 
-/* ---------- Image history (local) ---------- */
+/* ---------- Bridge persistence ---------- */
+function loadBridgeLS() { try { const b = JSON.parse(localStorage.getItem(BRIDGE_KEY) || '{}'); __bridge = { ...__bridge, ...b, ws: null, connected: false, log: b.log || [] }; } catch {} }
+function saveBridgeLS() { try { localStorage.setItem(BRIDGE_KEY, JSON.stringify({ name: __bridge.name, model: __bridge.model, port: __bridge.port, log: __bridge.log.slice(0, 100) })); } catch {} }
+function bridgeLog(msg, type = 'info') {
+  const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  __bridge.log.unshift({ ts: t, msg, type });
+  __bridge.log = __bridge.log.slice(0, 100);
+  saveBridgeLS();
+  renderBridgeLog();
+}
+function renderBridgeLog() {
+  const el = $('#bridgeLog'); if (!el) return;
+  if (!__bridge.log.length) { el.innerHTML = '<div style="color:var(--text-faint);">No bridge activity yet.</div>'; return; }
+  el.innerHTML = __bridge.log.map(l => `<div class="log-line"><span class="log-time">${l.ts}</span>${escapeHtml(l.msg)}</div>`).join('');
+}
+function renderBridgeStatus() {
+  const dot = $('#bridgeStatus')?.querySelector('.bridge-status-dot');
+  const txt = $('#bridgeStatus')?.querySelector('span');
+  if (dot) { dot.classList.toggle('online', __bridge.connected); dot.classList.toggle('offline', !__bridge.connected); }
+  if (txt) txt.textContent = __bridge.connected ? 'Connected' : 'Disconnected';
+  const startBtn = $('#bridgeStartBtn'), stopBtn = $('#bridgeStopBtn');
+  if (startBtn) startBtn.style.display = __bridge.connected ? 'none' : 'flex';
+  if (stopBtn) stopBtn.style.display = __bridge.connected ? 'flex' : 'none';
+}
+function startBridge() {
+  const name = $('#bridgeNameInput')?.value.trim() || __bridge.name;
+  const model = $('#bridgeModelSelect')?.value || __bridge.model;
+  const port = parseInt($('#bridgePortInput')?.value || __bridge.port, 10);
+  __bridge.name = name; __bridge.model = model; __bridge.port = port;
+  saveBridgeLS();
+  if (__bridge.ws) { try { __bridge.ws.close(); } catch {} }
+  try {
+    __bridge.ws = new WebSocket(`ws://localhost:${port}`);
+    __bridge.ws.onopen = () => { __bridge.connected = true; renderBridgeStatus(); bridgeLog('Bridge connected on port ' + port, 'ok'); };
+    __bridge.ws.onclose = () => { __bridge.connected = false; renderBridgeStatus(); bridgeLog('Bridge disconnected', 'err'); };
+    __bridge.ws.onerror = () => { __bridge.connected = false; renderBridgeStatus(); bridgeLog('Bridge connection error', 'err'); };
+    __bridge.ws.onmessage = (e) => { try { const d = JSON.parse(e.data); bridgeLog('Server: ' + (d.message || JSON.stringify(d)), 'info'); } catch { bridgeLog('Server: ' + e.data, 'info'); } };
+    bridgeLog('Connecting to ws://localhost:' + port + '…', 'info');
+  } catch (e) {
+    bridgeLog('Failed to create WebSocket: ' + e.message, 'err');
+  }
+  renderBridgeStatus();
+}
+function stopBridge() {
+  if (__bridge.ws) { try { __bridge.ws.close(); } catch {} __bridge.ws = null; }
+  __bridge.connected = false; renderBridgeStatus(); bridgeLog('Bridge stopped', 'info');
+}
+function sendBridgeCommand(cmd, args = {}) {
+  if (!__bridge.ws || __bridge.ws.readyState !== WebSocket.OPEN) { bridgeLog('Not connected — cannot send command', 'err'); return false; }
+  const payload = { id: uid(), command: cmd, args, ts: Date.now() };
+  try { __bridge.ws.send(JSON.stringify(payload)); bridgeLog('→ ' + cmd + ' ' + JSON.stringify(args), 'info'); return true; }
+  catch (e) { bridgeLog('Send failed: ' + e.message, 'err'); return false; }
+}
+function downloadBridgeClient() {
+  const params = new URLSearchParams({ name: __bridge.name, port: String(__bridge.port), model: __bridge.model });
+  const url = '/api/bridge/download?' + params.toString();
+  const a = document.createElement('a');
+  a.href = url; a.download = 'mirox_client_bridge.zip';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  bridgeLog('Downloading client package…', 'info');
+}
+
+/* ---------- GitHub OAuth ---------- */
+const GITHUB_CLIENT_ID = 'lm_e8f7193647f744c6ae45a8af85a7cfd3';
+const GITHUB_REDIRECT = 'https://miroxai.org/api/auth/github/callback';
+function connectGitHub() {
+  const state = uid();
+  sessionStorage.setItem('gh_state', state);
+  const url = `https://logint.lovable.app/authorize?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(GITHUB_REDIRECT)}&state=${state}`;
+  window.location.href = url;
+}
+function handleGitHubCallback() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  const state = params.get('state');
+  if (!code) return;
+  const saved = sessionStorage.getItem('gh_state');
+  if (state !== saved) { alert('State mismatch'); return; }
+  fetch('/api/auth/github/exchange', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code })
+  }).then(r => r.json()).then(data => {
+    if (data.success) {
+      __githubToken = data.github_token;
+      const st = $('#githubStatus'); if (st) { st.textContent = 'Connected as ' + (data.user?.email || 'GitHub user'); st.className = 'msg ok'; }
+      bridgeLog('GitHub connected: ' + (data.user?.email || ''), 'ok');
+      window.history.replaceState({}, '', window.location.pathname);
+    } else alert('GitHub login failed: ' + (data.error || 'unknown'));
+  }).catch(e => alert('GitHub exchange error: ' + e.message));
+}
+
+/* ---------- Image history ---------- */
 function loadImageHistoryLS() { try { __imageHistory = JSON.parse(localStorage.getItem(IMG_HISTORY_KEY) || '[]'); } catch { __imageHistory = []; } }
 function saveImageHistoryLS() { try { localStorage.setItem(IMG_HISTORY_KEY, JSON.stringify(__imageHistory.slice(0, 200))); } catch {} }
 function addImageToHistory(prompt, dataUrl) {
   if (!dataUrl) return;
   __imageHistory.unshift({ id: uid(), prompt: String(prompt || '').slice(0, 500), dataUrl, ts: Date.now() });
   __imageHistory = __imageHistory.slice(0, 200);
-  saveImageHistoryLS();
-  renderImageHistory();
+  saveImageHistoryLS(); renderImageHistory();
 }
 
 /* ---------- Appearance ---------- */
@@ -266,7 +363,6 @@ function wireCodeButtons(scope) {
     });
   });
 }
-/* ✅ FIX: re-render bubble with finalized markdown (closes any streaming code block) */
 function finalizeBubble(bubble, fullText) {
   if (!bubble) return;
   const bt = bubble.querySelector('.bubble-text');
@@ -339,8 +435,6 @@ function openConversationLS(id) {
   for (const msg of c.messages || []) addMessageToDOM(msg.role, msg.content, msg.ts, false, msg.id, msg.files || [], msg.image || null, msg.finish_reason || null);
   renderHistory(); scrollToBottom();
 }
-
-/* ✅ search-aware history render */
 function getFilteredConversations() {
   const q = __searchQuery.trim().toLowerCase();
   if (!q) return __conversations;
@@ -382,8 +476,6 @@ function renderHistory() {
     return `<li class="history-item${c.id === currentConversationId ? ' active' : ''}" data-id="${c.id}"><i class="ri-chat-3-line"></i><div class="history-item-wrap"><span class="history-title">${escapeHtml(c.title || 'Chat')}</span>${snip ? `<span class="history-snippet">${highlightSnippet(snip, __searchQuery)}</span>` : ''}</div><button class="history-delete icon-btn"><i class="ri-delete-bin-line"></i></button></li>`;
   }).join('');
 }
-
-/* ✅ image history render */
 function renderImageHistory() {
   const grid = $('#imageHistoryGrid'); if (!grid) return;
   const q = __searchQuery.trim().toLowerCase();
@@ -599,7 +691,6 @@ async function handleContinue(msgEl) {
     }
 
     bubbleText.classList.remove('streaming');
-    /* ✅ FIX: finalize the bubble so closed code blocks get proper highlighting + Copy */
     finalizeBubble(bubble, full);
 
     m.content = full;
@@ -707,13 +798,12 @@ async function sendToAPI(text, files = []) {
   let full = '', generatedImage = null, pendingTts = null, finishReason = 'stop';
   let imageWasSet = false;
   let bubbleText = null;
-  let imagePromptUsed = '';
 
   try {
     const res = await fetch('/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, history, model, stream: true, files, voice_id: userSettings.voice_id || null, tts: readAloudEnabled }),
+      body: JSON.stringify({ message: text, history, model, stream: true, files, voice_id: userSettings.voice_id || null, tts: readAloudEnabled, bridge: __bridge.connected ? { name: __bridge.name, model: __bridge.model } : null }),
       signal: activeStreamController.signal,
     });
     if (!res.ok) {
@@ -745,11 +835,11 @@ async function sendToAPI(text, files = []) {
             else if (o.p === 'canned') { if (thinkingText) thinkingText.textContent = 'Replying'; }
           }
           if (o.status && thinkingText) thinkingText.textContent = o.status;
+          if (o.bridge) { bridgeLog('Server bridge: ' + JSON.stringify(o.bridge), 'info'); }
 
           if (o.img) {
             generatedImage = o.img;
             imageWasSet = true;
-            imagePromptUsed = text;
             bubble.classList.remove('thinking');
             bubble.innerHTML = `${renderGeneratedImage(o.img, text)}<div class="bubble-text"></div>`;
             bubbleText = bubble.querySelector('.bubble-text');
@@ -788,7 +878,6 @@ async function sendToAPI(text, files = []) {
 
     bubble.classList.remove('streaming');
     delete msgEl.dataset.thinking;
-    /* ✅ FIX: finalize bubble so closed code blocks are properly highlighted */
     finalizeBubble(bubble, full);
 
     if (finishReason === 'length') {
@@ -904,11 +993,8 @@ function downloadDataUrl(dataUrl, filename = 'mirox-image.png') {
   if (!dataUrl) return;
   try {
     const a = document.createElement('a');
-    a.href = dataUrl;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    a.href = dataUrl; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
   } catch {}
 }
 async function regenerateImage(prompt) {
@@ -1223,7 +1309,6 @@ async function loadPersona() {
   const res = await authJson('/api/persona', {}, null);
   if (res?.persona && $('#personaInput')) $('#personaInput').value = res.persona;
 }
-/* ✅ FIX: proper feedback + guest handling */
 async function savePersona() {
   const statusEl = $('#personaStatus');
   const inp = $('#personaInput');
@@ -1250,7 +1335,7 @@ function setSidebarTab(tab) {
   __sidebarTab = tab;
   $$('.sidebar-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   $$('.sidebar-section').forEach(s => { s.style.display = (s.dataset.pane === tab) ? '' : 'none'; });
-  if (tab === 'images') renderImageHistory(); else renderHistory();
+  if (tab === 'images') renderImageHistory(); else if (tab === 'bridge') renderBridgeLog(); else renderHistory();
 }
 function wireSidebar() {
   $$('.sidebar-tab').forEach(t => t.addEventListener('click', () => setSidebarTab(t.dataset.tab)));
@@ -1260,7 +1345,7 @@ function wireSidebar() {
     inp.addEventListener('input', () => {
       __searchQuery = inp.value;
       if (clearBtn) clearBtn.style.display = __searchQuery ? 'grid' : 'none';
-      if (__sidebarTab === 'images') renderImageHistory(); else renderHistory();
+      if (__sidebarTab === 'images') renderImageHistory(); else if (__sidebarTab === 'chats') renderHistory();
     });
   }
   if (clearBtn) clearBtn.addEventListener('click', () => {
@@ -1275,6 +1360,7 @@ function wireSidebar() {
 function wireToolButtons() {
   $('#talkModeBtn')?.addEventListener('click', startCall);
   $('#imageModeBtn')?.addEventListener('click', () => openModal('imageModal'));
+  $('#bridgeModeBtn')?.addEventListener('click', () => { setSidebarTab('bridge'); openSidebar(); });
   $('#plansModeBtn')?.addEventListener('click', () => { openModal('plansModal'); loadPlans(); loadUserKeys(); });
   $('#supportModeBtn')?.addEventListener('click', () => openModal('supportModal'));
   $('#supportModeBtn2')?.addEventListener('click', () => openModal('supportModal'));
@@ -1312,11 +1398,30 @@ function wireToolButtons() {
   $('#userChip')?.addEventListener('click', () => { if (!__user) openModal('loginModal'); });
   $('#voiceSelect')?.addEventListener('change', async () => { const sel = $('#voiceSelect'); userSettings.voice_id = sel?.value || null; saveUserSettings(); authJson('/api/me/voice', { method: 'POST', body: JSON.stringify({ voice_id: sel?.value || null }) }, null); });
 
-  // Image viewer buttons
+  // Bridge controls
+  $('#bridgeStartBtn')?.addEventListener('click', startBridge);
+  $('#bridgeStopBtn')?.addEventListener('click', stopBridge);
+  $('#bridgeDownloadBtn')?.addEventListener('click', downloadBridgeClient);
+  $('#settingsBridgeDownload')?.addEventListener('click', downloadBridgeClient);
+  $('#bridgeNameInput')?.addEventListener('change', () => { __bridge.name = $('#bridgeNameInput').value.trim() || 'My Laptop'; saveBridgeLS(); });
+  $('#bridgeModelSelect')?.addEventListener('change', () => { __bridge.model = $('#bridgeModelSelect').value; saveBridgeLS(); });
+  $('#bridgePortInput')?.addEventListener('change', () => { __bridge.port = parseInt($('#bridgePortInput').value || 8765, 10); saveBridgeLS(); });
+  $('#settingsBridgeName')?.addEventListener('change', () => { __bridge.name = $('#settingsBridgeName').value.trim() || 'My Laptop'; saveBridgeLS(); });
+  $('#settingsBridgeModel')?.addEventListener('change', () => { __bridge.model = $('#settingsBridgeModel').value; saveBridgeLS(); });
+
+  // GitHub
+  $('#githubConnectBtn')?.addEventListener('click', connectGitHub);
+
+  // Image viewer
   document.querySelectorAll('[data-iv-close]').forEach(el => el.addEventListener('click', closeImageViewer));
   $('#ivDownload')?.addEventListener('click', () => downloadDataUrl(__ivCurrentDataUrl, `mirox-${Date.now()}.png`));
   $('#ivRegenerate')?.addEventListener('click', () => regenerateImage(__ivCurrentPrompt));
   $('#ivCopyPrompt')?.addEventListener('click', async () => { try { if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(__ivCurrentPrompt || ''); } catch {} });
+
+  // OAuth buttons
+  $('#oauthGoogleBtn')?.addEventListener('click', connectGitHub);
+  $('#oauthAppleBtn')?.addEventListener('click', connectGitHub);
+  $('#oauthEmailBtn')?.addEventListener('click', () => { const form = $('#simpleLoginForm'); if (form) form.style.display = 'flex'; });
 }
 
 document.addEventListener('click', function (e) {
@@ -1324,7 +1429,7 @@ document.addEventListener('click', function (e) {
   const closer = closest('[data-close]'); if (closer) { closeModal(closer.dataset.close); return; }
   if (t.classList.contains('modal-overlay')) { t.classList.remove('open'); return; }
   const tab = closest('.settings-tab');
-  if (tab) { document.querySelectorAll('.settings-tab').forEach(x => x.classList.remove('active')); document.querySelectorAll('.settings-pane').forEach(x => x.classList.remove('active')); tab.classList.add('active'); document.querySelector(`.settings-pane[data-pane="${tab.dataset.tab}"]`)?.classList.add('active'); if (tab.dataset.tab === 'mcp') loadMcp(); if (tab.dataset.tab === 'voice') loadVoices(); return; }
+  if (tab) { document.querySelectorAll('.settings-tab').forEach(x => x.classList.remove('active')); document.querySelectorAll('.settings-pane').forEach(x => x.classList.remove('active')); tab.classList.add('active'); document.querySelector(`.settings-pane[data-pane="${tab.dataset.tab}"]`)?.classList.add('active'); if (tab.dataset.tab === 'mcp') loadMcp(); if (tab.dataset.tab === 'voice') loadVoices(); if (tab.dataset.tab === 'github') { const st = $('#githubStatus'); if (st) st.textContent = __githubToken ? 'Connected' : 'Not connected'; } if (tab.dataset.tab === 'bridge') { renderBridgeStatus(); const bn = $('#settingsBridgeName'); if (bn) bn.value = __bridge.name; const bm = $('#settingsBridgeModel'); if (bm) bm.value = __bridge.model; } return; }
   const mb = closest('[data-mode]'); if (mb && mb.closest('#modeOptions')) { applyAppearance({ mode: mb.dataset.mode }); return; }
   const sw = closest('.swatch'); if (sw?.dataset.theme) { applyAppearance({ theme: sw.dataset.theme }); return; }
   const cb = closest('[data-corner]'); if (cb && cb.closest('#cornerOptions')) { applyAppearance({ corner: cb.dataset.corner }); return; }
@@ -1367,16 +1472,17 @@ document.addEventListener('contextmenu', (e) => {
 
 /* ---------- Init ---------- */
 async function init() {
-  loadUserSettings(); loadAppearance();
+  loadUserSettings(); loadAppearance(); loadBridgeLS();
   loadImageHistoryLS();
   wireModelPicker(); wireSendButton(); wireToolButtons(); wireReadAloud(); wirePttButton(); wireSidebar();
-  renderModelPicker();
+  renderModelPicker(); renderBridgeStatus(); renderBridgeLog();
   readAloudEnabled = !!userSettings.autoSpeak;
   updateReadAloudIcon();
   await loadConfig();
   await loadUser();
   bindSuggestionClicks(); updateUserUI(); loadMcp();
   renderImageHistory();
+  handleGitHubCallback();
   document.addEventListener('keydown', e => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); $('#messageInput')?.focus(); }
     if (e.key === 'Escape') closeImageViewer();
