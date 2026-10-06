@@ -1,7 +1,9 @@
 /* ============================================================
-   MiroxAI Backend v76
-   - HTTP-only Bridge (fixes mixed-content handshake error)
-   - Injects bridge system prompt when bridge is connected
+   MiroxAI Backend v77
+   - HTTP-only Bridge (works from HTTPS via PNA header)
+   - Developer Bridge mode: AI outputs <bridge-*> tags and loops
+   - Loginment OAuth
+   - Free plan credits
    ============================================================ */
 
 import express from 'express';
@@ -41,8 +43,9 @@ const MAX_LOGS          = 500;
 const GENERIC_ERR = 'Mirox AI encountered an error';
 
 const PROVIDERS = { hf: !!HF_API_KEY, pl: !!PL_KEY, ollama: false, ar: !!AR_KEY, search: true, fish: !!F_API };
-console.log('[Mirox] v76 — HTTP Bridge');
+console.log('[Mirox] v77 — HTTP Bridge + Developer Mode');
 
+/* ---------- Helpers ---------- */
 const safe = (v, max = 100000) => {
   try { if (v == null) return ''; const s = typeof v === 'string' ? v : JSON.stringify(v); return s.length > max ? s.slice(0, max) : s; } catch { return ''; }
 };
@@ -263,15 +266,15 @@ Always Mirox {{LABEL}}.`;
 
 const fillGuard = label => IDENTITY_GUARD.replace(/\{\{LABEL\}\}/g, label);
 
-/* ---------- Bridge system prompt ---------- */
+/* ---------- Bridge system prompt (Developer mode) ---------- */
 const BRIDGE_PROMPT = `BRIDGE MODE ACTIVE — You have DIRECT ACCESS to the user's computer.
 
-You can run commands and manipulate files on their machine by outputting these special tags. The user's browser will execute them and show you the result. Do NOT wrap these tags in code fences — output them as plain text.
+You can run commands and manipulate files on their machine by outputting these special tags. The frontend will execute them and feed you the results. Do NOT wrap these tags in code fences — output them as plain text.
 
 1. Run a shell command:
    <bridge-exec>ls -la ~</bridge-exec>
 
-2. Write (or overwrite) a file — use the tag with path attribute, content between tags:
+2. Write (or overwrite) a file:
    <bridge-write path="/Users/me/project/app.js">
    console.log("hi");
    </bridge-write>
@@ -282,13 +285,14 @@ You can run commands and manipulate files on their machine by outputting these s
 4. List a directory:
    <bridge-list path="/Users/me/project/"/>
 
-RULES:
-- ALWAYS use absolute paths. Never use ~ or relative paths.
+CRITICAL RULES:
+- ALWAYS use absolute paths. Never use ~ or relative paths in bridge tags.
 - When the user asks you to "make a project", "build an app", "create files", "run this", etc., you MUST use these tags. Do not just paste code — actually write it.
 - Break large tasks into multiple tags: write files first, then run install/build/start commands.
 - Announce briefly what you're doing, then output the tag on its own line.
-- After you output the tags, STOP and wait. The user's next message will contain the results (stdout/stderr/exit codes). Then you can decide the next step.
+- After you output the tags, STOP. The user's next message will contain the results (stdout/stderr/exit codes). Then you decide the next step.
 - If a command fails, read the error and try to fix it in your next reply.
+- When the task is completely done, reply with exactly the word: DONE
 - Never output bridge tags if the user hasn't asked you to run or create anything.
 - Paths must be within the user's allowed directories (usually their home).`;
 
@@ -310,7 +314,9 @@ const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
 
 function buildSystemPrompt(cfg, bridge) {
   let p = fillGuard(cfg.label) + '\n\n---\n\n' + cfg.basePrompt;
-  if (bridge && bridge.connected) p += '\n\n---\n\n' + BRIDGE_PROMPT;
+  if (bridge && bridge.connected) {
+    p += '\n\n---\n\n' + BRIDGE_PROMPT;
+  }
   return p;
 }
 
@@ -483,7 +489,6 @@ async function miroxChatChain({ messages, cfg, stream, signal, sseData }) {
   throw Object.assign(new Error(GENERIC_ERR), { trace });
 }
 
-/* ---------- Image gen ---------- */
 async function toDataUrl(response) {
   const ct = response.headers.get('content-type') || '';
   if (ct.includes('image/')) {
@@ -580,7 +585,6 @@ async function captionImage(base64DataUrl) {
   return null;
 }
 
-/* ---------- SSE ---------- */
 function sseInit(res) {
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-store, no-transform');
@@ -600,7 +604,6 @@ function chunkText(n, target) {
   return out;
 }
 
-/* ---------- Fish TTS ---------- */
 async function fishTTS(text, voiceId) {
   if (!F_API) throw new Error('no_f_api');
   const clean = String(text || '').trim();
@@ -618,12 +621,13 @@ async function fishTTS(text, voiceId) {
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '30mb' }));
+app.options('*', cors({ origin: true, credentials: true }));
 app.use(express.static(path.join(__dirname, '../public')));
 app.use(async (req, res, next) => { try { await loadDb(); } catch {} next(); });
 
 app.get(['/api/health','/health','/ping'], async (req, res) => {
   await loadDb();
-  res.json({ ok: true, app: 'MiroxAI', version: 'v76', providers: PROVIDERS, ollama: ollamaStatus, db: { ready: dbReady, error: dbError }, fish_key_present: !!F_API, time: now() });
+  res.json({ ok: true, app: 'MiroxAI', version: 'v77', providers: PROVIDERS, ollama: ollamaStatus, db: { ready: dbReady, error: dbError }, fish_key_present: !!F_API, time: now() });
 });
 app.get('/api/tts/health', async (req, res) => {
   if (!F_API) return res.json({ ok: false, configured: false, error: 'F_API not set' });
@@ -654,7 +658,7 @@ app.get('/api/voices', async (req, res) => {
   } catch { res.json({ ok: true, voices: [] }); }
 });
 
-/* ---------- Bridge download (aiohttp-based, HTTP-only) ---------- */
+/* ---------- Bridge download (HTTP-only, PNA-enabled) ---------- */
 app.get('/api/bridge/download', async (req, res) => {
   try {
     const name = safe(req.query.name, 60) || 'My Laptop';
@@ -677,7 +681,7 @@ app.get('/api/bridge/download', async (req, res) => {
       max_output_bytes: 200000,
     }, null, 2);
 
-    const readme = `# MiroxAI Bridge Client (HTTP-only)
+    const readme = `# MiroxAI Bridge Client (HTTP-only + PNA)
 
 Bridge name: ${name}
 Port: ${port}
@@ -689,23 +693,22 @@ Model: ${model}
 2. Install aiohttp:  pip install aiohttp
 3. Run:  python runner.py
 
-Then open MiroxAI, go to the Bridge tab, and click "Start Bridge".
+Then open MiroxAI → Bridge → Connect.
 
 ## Test it works
 
-After starting, open a browser and go to:
+Open in your browser:
   http://localhost:${port}/ping
 
-You should see JSON like: {"ok": true, "name": "${name}"}
+You should see JSON: {"ok": true, "name": "${name}"}
 
 ## Notes
 
-This runs an HTTP server (not WebSocket), so it works even when MiroxAI
-is loaded over HTTPS. If your browser blocks http://localhost, allow it
-when prompted.
+This runs an HTTP server on 127.0.0.1. It sends the
+"Access-Control-Allow-Private-Network: true" header so that
+HTTPS pages (like https://miroxai.org) can reach it.
 `;
 
-    // The Python bridge — HTTP-only, uses aiohttp
     const runner = `#!/usr/bin/env python3
 """
 MiroxAI Bridge Client - HTTP-only (works over HTTPS pages)
@@ -773,6 +776,7 @@ async def cors_mw(request, handler):
     resp.headers["Access-Control-Allow-Origin"] = "*"
     resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    resp.headers["Access-Control-Allow-Private-Network"] = "true"
     resp.headers["Access-Control-Max-Age"] = "86400"
     return resp
 
@@ -879,7 +883,7 @@ def build_app():
 if __name__ == "__main__":
     print(f"[Bridge] Starting '{NAME}' on http://127.0.0.1:{PORT}")
     print(f"[Bridge] Allowed dirs: {[str(d) for d in ALLOWED_DIRS]}")
-    print(f"[Bridge] Ready. Open MiroxAI and click 'Start Bridge'.")
+    print(f"[Bridge] Ready. Open MiroxAI and click 'Connect'.")
     print(f"[Bridge] Health check: http://localhost:{PORT}/ping")
     web.run_app(build_app(), host="127.0.0.1", port=PORT, print=None, access_log=None)
 `;
@@ -909,8 +913,9 @@ app.get('/api/auth/github/start', async (req, res) => {
     const state = crypto.randomBytes(16).toString('hex');
     res.setHeader('Set-Cookie', `mirox_oauth_state=${state}; Path=/; HttpOnly; SameSite=Lax; Max-Age=600`);
     const url = `${LOGINMENT_DOMAIN}/authorize?client_id=${encodeURIComponent(LOGINMENT_CLIENT_ID)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}`;
+    console.log('[OAuth] Redirecting to:', url);
     res.redirect(url);
-  } catch (e) { res.redirect('/?github=error&error=start_failed'); }
+  } catch (e) { console.error('[OAuth start]', e.message); res.redirect('/?github=error&error=start_failed'); }
 });
 app.get('/api/auth/github/callback', async (req, res) => {
   try {
@@ -922,19 +927,23 @@ app.get('/api/auth/github/callback', async (req, res) => {
     if (!state || !cookieState || state !== cookieState) return res.redirect('/?github=bad_state');
     res.setHeader('Set-Cookie', 'mirox_oauth_state=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
     if (!code) return res.redirect('/?github=error&error=missing_code');
+
     const r = await fetchT(`${LOGINMENT_DOMAIN}/api/public/v1/token`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${LOGINMENT_API_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ code }),
     }, 20000);
+
     const data = await r.json().catch(() => ({}));
     if (!r.ok || !data.success || !data.user) {
       const errCode = data.error || `http_${r.status}`;
       return res.redirect('/?github=error&error=' + encodeURIComponent(errCode));
     }
+
     const email = safe(data.user.email, 200).trim().toLowerCase();
     const name = safe(data.user.name, 60).trim() || (email.split('@')[0] || 'User');
     if (!email) return res.redirect('/?github=error&error=no_email');
+
     let rec = await getUser(email);
     if (!rec) {
       rec = { email, name, tier: 'free', daily_used: 0, vision_used: 0, image_used: 0, eclipse_used: 0, daily_reset: today(), month_key: monthKey(), keys_this_month: 0, created_at: now(), last_login: now(), persona: null, memory: [], voice_id: null, github_token: 'gh_' + crypto.randomBytes(16).toString('hex') };
@@ -945,7 +954,7 @@ app.get('/api/auth/github/callback', async (req, res) => {
     await saveUser(rec);
     setSession(res, { uid: email, name, tier: rec.tier });
     res.redirect('/?github=ok');
-  } catch (e) { res.redirect('/?github=error&error=' + encodeURIComponent(e.message)); }
+  } catch (e) { console.error('[OAuth callback]', e.message); res.redirect('/?github=error&error=' + encodeURIComponent(e.message)); }
 });
 
 /* ---------- Admin ---------- */
@@ -992,7 +1001,7 @@ app.get(['/api/config','/config'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   let u = null; try { u = await currentUser(req); } catch {}
   const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tagline: m.tagline, tier: m.tier, default: !!m.default }));
-  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v76' }, models, default_model: models[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: true, providers: PROVIDERS, api_models: API_ALLOWED_MODELS, ollama: ollamaStatus, tts_available: !!F_API, user_voice: u?.voice_id || null });
+  res.json({ app: { name: 'MiroxAI', made_by: 'OpenSurr', version: 'v77' }, models, default_model: models[0].id, plans: PLANS, user_tier: u ? u.tier : 'free', guest: !u, ready: true, providers: PROVIDERS, api_models: API_ALLOWED_MODELS, ollama: ollamaStatus, tts_available: !!F_API, user_voice: u?.voice_id || null });
 });
 
 /* ---------- Auth ---------- */
@@ -1261,7 +1270,7 @@ app.post('/v1/chat/completions', async (req, res) => {
 
         let dataUrl = null;
         try { dataUrl = await generateImage(finalPrompt, '1:1'); }
-        catch { sseWrite(res, { d: 'Image generation failed.' }); sseWrite(res, { done: true }); sseDone(res); try { res.end(); } catch {} clearTimeout(guard); return; }
+        catch { sseWrite(res, { d: 'Image generation failed. Try again in a moment.' }); sseWrite(res, { done: true }); sseDone(res); try { res.end(); } catch {} clearTimeout(guard); return; }
 
         if (dataUrl) sseWrite(res, { img: dataUrl, imgAlt: finalPrompt.slice(0, 100) });
 
