@@ -1,9 +1,9 @@
 /* ============================================================
-   MiroxAI — Frontend v56
-   - Custom in-JS syntax highlighter (no CDN dependency)
-   - Continue button on truncation
-   - Reliable TTS with audio unlock
-   - Call push-to-talk
+   MiroxAI — Frontend v57
+   - Code blocks themed to accent color
+   - Image re-imagining fixed (image preserved during description stream)
+   - Continue appends to same bubble (easy copy)
+   - Cool new loading screen
    ============================================================ */
 
 const $  = s => document.querySelector(s);
@@ -17,14 +17,14 @@ const FALLBACK_MODELS = [
   { id: 'mirox-eclipse-2.0', label: 'Eclipse', tagline: 'Best quality · Ultimate only', tier: 'ultimate' },
 ];
 const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
-const LS_KEY = 'miroxai_conversations_v21';
+const LS_KEY = 'miroxai_conversations_v22';
 const TOKEN_KEY = 'mirox_token';
-const USER_SETTINGS_KEY = 'miroxai_user_settings_v21';
+const USER_SETTINGS_KEY = 'miroxai_user_settings_v22';
 const DEVICE_ID_KEY = 'mirox_device_id';
-const APPEARANCE_KEY = 'miroxai_appearance_v21';
-const MCP_KEY = 'miroxai_mcp_v21';
-const FEEDBACK_KEY = 'miroxai_feedback_v21';
-const KEYS_CACHE = 'miroxai_keys_cache_v21';
+const APPEARANCE_KEY = 'miroxai_appearance_v22';
+const MCP_KEY = 'miroxai_mcp_v22';
+const FEEDBACK_KEY = 'miroxai_feedback_v22';
+const KEYS_CACHE = 'miroxai_keys_cache_v22';
 
 let __config = null, __user = null, __tier = 'free', __model = 'mirox-luna-1.2';
 let currentConversationId = null, isReplying = false, __conversations = [], pendingFiles = [];
@@ -49,12 +49,12 @@ const LANGUAGE_ICONS = {
 const langIcon = l => LANGUAGE_ICONS[String(l || '').toLowerCase()] || 'ri-code-line';
 
 /* ============================================================
-   SYNTAX HIGHLIGHTER (self-contained)
+   SELF-CONTAINED SYNTAX HIGHLIGHTER
    ============================================================ */
 const HL = (() => {
   const KW = {
     js: 'const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|new|this|class|extends|super|import|export|from|as|default|async|await|try|catch|finally|throw|typeof|instanceof|in|of|null|undefined|true|false|yield|delete|void|static|get|set',
-    ts: 'const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|new|this|class|extends|implements|interface|type|enum|namespace|module|declare|abstract|public|private|protected|readonly|as|async|await|try|catch|finally|throw|typeof|instanceof|in|of|null|undefined|true|false|yield|never|unknown|any|void|string|number|boolean|symbol|bigint|object',
+    ts: 'const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|new|this|class|extends|implements|interface|type|enum|namespace|module|declare|abstract|public|private|protected|readonly|as|async|await|try|catch|finally|throw|typeof|instanceof|in|of|null|undefined|true|false|never|unknown|any|void|string|number|boolean|symbol|bigint|object',
     py: 'def|class|return|if|elif|else|for|while|break|continue|pass|import|from|as|try|except|finally|raise|with|lambda|yield|global|nonlocal|assert|del|in|is|not|and|or|None|True|False|async|await|self',
     bash: 'if|then|else|elif|fi|for|while|do|done|case|esac|function|return|exit|local|export|source|alias|unset|readonly|declare|eval|exec',
     go: 'package|import|func|return|if|else|for|range|switch|case|break|continue|var|const|type|struct|interface|map|chan|go|defer|select|nil|true|false|make|new|len|cap|append|copy|delete|close|panic|recover',
@@ -63,67 +63,51 @@ const HL = (() => {
     cpp: 'int|char|long|short|float|double|void|bool|class|struct|union|enum|public|private|protected|virtual|override|static|const|constexpr|inline|namespace|using|template|typename|typedef|auto|new|delete|return|if|else|for|while|do|switch|case|break|continue|try|catch|throw|true|false|nullptr|this|sizeof',
     sql: 'SELECT|FROM|WHERE|INSERT|INTO|VALUES|UPDATE|SET|DELETE|CREATE|TABLE|ALTER|DROP|INDEX|JOIN|LEFT|RIGHT|INNER|OUTER|ON|AS|AND|OR|NOT|NULL|IS|IN|LIKE|BETWEEN|GROUP|BY|ORDER|HAVING|LIMIT|OFFSET|UNION|DISTINCT|COUNT|SUM|AVG|MAX|MIN|PRIMARY|KEY|FOREIGN|REFERENCES',
   };
+  function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
-  function escape(s) {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  }
-
-  /* Tokenize using placeholders so we never re-match inside inserted tags */
   function highlight(code, lang) {
     const l = String(lang || '').toLowerCase();
-    let src = escape(code);
+    let src = esc(code);
 
-    /* Strings first — protect from keyword matching */
     const strings = [];
-    src = src.replace(/(&quot;|&#39;|")((?:\\.|(?!\1).)*)\1/g, (m) => {
-      strings.push(m); return `\u0001S${strings.length - 1}\u0001`;
-    });
+    src = src.replace(/"((?:\\.|(?!").)*)"/g, (m) => { strings.push(m); return `\u0001S${strings.length - 1}\u0001`; });
     src = src.replace(/'((?:\\.|(?!').)*)'/g, (m) => { strings.push(m); return `\u0001S${strings.length - 1}\u0001`; });
     src = src.replace(/`((?:\\.|(?!`).)*)`/g, (m) => { strings.push(m); return `\u0001S${strings.length - 1}\u0001`; });
 
-    /* Comments */
     const comments = [];
     if (['js','ts','java','cpp','go','rust','c'].includes(l)) {
       src = src.replace(/(\/\/[^\n]*)/g, (m) => { comments.push(m); return `\u0001C${comments.length - 1}\u0001`; });
       src = src.replace(/(\/\*[\s\S]*?\*\/)/g, (m) => { comments.push(m); return `\u0001C${comments.length - 1}\u0001`; });
-    } else if (l === 'py') {
-      src = src.replace(/(#[^\n]*)/g, (m) => { comments.push(m); return `\u0001C${comments.length - 1}\u0001`; });
-    } else if (['bash','sh','shell','zsh','yaml','yml'].includes(l)) {
+    } else if (l === 'py' || l === 'bash' || l === 'sh' || l === 'shell' || l === 'zsh' || l === 'yaml' || l === 'yml') {
       src = src.replace(/(#[^\n]*)/g, (m) => { comments.push(m); return `\u0001C${comments.length - 1}\u0001`; });
     } else if (l === 'sql') {
       src = src.replace(/(--[^\n]*)/g, (m) => { comments.push(m); return `\u0001C${comments.length - 1}\u0001`; });
     }
 
-    /* Numbers */
     src = src.replace(/\b(0x[0-9a-fA-F]+|\d+\.?\d*(?:[eE][+\-]?\d+)?)\b/g, '<span class="hl-num">$1</span>');
 
-    /* Keywords */
     const kw = KW[l];
-    if (kw) {
-      const re = new RegExp(`\\b(${kw})\\b`, l === 'sql' ? 'g' : 'g');
-      src = src.replace(re, '<span class="hl-kw">$1</span>');
-    }
+    if (kw) src = src.replace(new RegExp(`\\b(${kw})\\b`, 'g'), '<span class="hl-kw">$1</span>');
 
-    /* Function calls */
     src = src.replace(/\b([A-Za-z_$][\w$]*)\s*\(/g, '<span class="hl-fn">$1</span>(');
 
-    /* Restore comments and strings */
     src = src.replace(/\u0001C(\d+)\u0001/g, (_, i) => `<span class="hl-cm">${comments[+i]}</span>`);
     src = src.replace(/\u0001S(\d+)\u0001/g, (_, i) => `<span class="hl-str">${strings[+i]}</span>`);
 
     return src;
   }
-
   return { highlight };
 })();
 
 /* ============================================================
-   LOADING
+   LOADING SCREEN
    ============================================================ */
-function killLoader() { const l = document.getElementById('loadingScreen'); if (l) { l.classList.add('hidden'); setTimeout(() => l.style.display = 'none', 400); } }
-killLoader();
-setTimeout(killLoader, 500);
-setTimeout(killLoader, 1800);
+function killLoader() {
+  const l = document.getElementById('loadingScreen');
+  if (l) { l.classList.add('hidden'); setTimeout(() => l.style.display = 'none', 700); }
+}
+setTimeout(killLoader, 900);
+setTimeout(killLoader, 2200);
 
 const uid = () => 'c_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 const escapeHtml = s => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
@@ -185,7 +169,7 @@ function renderMcp(servers) {
 }
 
 /* ============================================================
-   MARKDOWN RENDERING
+   MARKDOWN
    ============================================================ */
 function renderMarkdown(text) {
   if (!text) return '';
@@ -193,7 +177,6 @@ function renderMarkdown(text) {
   const entireWrap = src.match(/^\s*```([a-zA-Z0-9+#._-]*)\s*\n([\s\S]*?)\n?```\s*$/);
   if (entireWrap && ['', 'markdown', 'md', 'text'].includes((entireWrap[1] || '').toLowerCase())) src = entireWrap[2];
   const parts = [];
-  /* Handle closed fences */
   const fenceRe = /```([a-zA-Z0-9+#._-]*)\n?([\s\S]*?)```/g;
   let last = 0, m;
   while ((m = fenceRe.exec(src)) !== null) {
@@ -201,16 +184,13 @@ function renderMarkdown(text) {
     parts.push({ type: 'code', lang: (m[1] || '').trim(), content: m[2], closed: true });
     last = fenceRe.lastIndex;
   }
-  /* Handle unclosed fence (mid-stream) */
   const rest = src.slice(last);
   const openMatch = rest.match(/```([a-zA-Z0-9+#._-]*)\n?([\s\S]*)$/);
   if (openMatch) {
     const before = rest.slice(0, openMatch.index);
     if (before) parts.push({ type: 'text', content: before });
     parts.push({ type: 'code', lang: (openMatch[1] || '').trim(), content: openMatch[2], closed: false });
-  } else if (rest) {
-    parts.push({ type: 'text', content: rest });
-  }
+  } else if (rest) parts.push({ type: 'text', content: rest });
   return parts.map(p => p.type === 'code' ? renderCodeBlock(p.lang, p.content, p.closed) : renderTextBlock(p.content)).join('');
 }
 
@@ -234,7 +214,7 @@ function renderCodeBlock(lang, code, closed) {
       <span class="code-lang-label"><i class="${icon}"></i> ${escapeHtml(label)}</span>
       ${copyBtn}
     </div>
-    <div class="code-block-body">${gutter}<pre><code class="language-${escapeHtml(cleanLang)} hljs">${highlighted}</code></pre></div>
+    <div class="code-block-body">${gutter}<pre><code class="language-${escapeHtml(cleanLang)}">${highlighted}</code></pre></div>
   </div>`;
 }
 
@@ -305,43 +285,25 @@ function wireCodeButtons(scope) {
    ============================================================ */
 function unlockAudio() {
   if (audioUnlocked) return;
-  try {
-    const a = new Audio();
-    a.volume = 0;
-    a.play().then(() => { a.pause(); audioUnlocked = true; }).catch(() => {});
-  } catch {}
+  try { const a = new Audio(); a.volume = 0; a.play().then(() => { a.pause(); audioUnlocked = true; }).catch(() => {}); } catch {}
   audioUnlocked = true;
 }
 document.addEventListener('click', unlockAudio, { once: true });
 document.addEventListener('touchstart', unlockAudio, { once: true });
 
 function stopSpeaking() {
-  if (currentAudio) {
-    try { currentAudio.pause(); currentAudio.currentTime = 0; } catch {}
-    currentAudio = null;
-  }
+  if (currentAudio) { try { currentAudio.pause(); currentAudio.currentTime = 0; } catch {} currentAudio = null; }
 }
-
 async function fetchTtsAudio(text, voiceId) {
   const clean = stripForSpeech(text);
   if (!clean) return null;
-  const r = await fetch('/api/tts', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text: clean.slice(0, 800), voice: voiceId || null }),
-  });
-  if (!r.ok) {
-    let err = '';
-    try { const j = await r.json(); err = j.error || ''; } catch {}
-    console.warn('[TTS] failed', r.status, err);
-    return null;
-  }
+  const r = await fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: clean.slice(0, 800), voice: voiceId || null }) });
+  if (!r.ok) return null;
   const blob = await r.blob();
   return URL.createObjectURL(blob);
 }
-
 async function speakText(text) {
-  if (!ttsAvailable) { console.warn('[TTS] not configured'); return false; }
+  if (!ttsAvailable) return false;
   stopSpeaking();
   lastSpokenText = text;
   unlockAudio();
@@ -354,9 +316,8 @@ async function speakText(text) {
     a.onended = () => { URL.revokeObjectURL(url); currentAudio = null; };
     await a.play();
     return true;
-  } catch (e) { console.warn('[TTS] speak failed', e.message); return false; }
+  } catch { return false; }
 }
-
 function playAudioDataUrl(dataUrl) {
   if (!dataUrl) return;
   stopSpeaking();
@@ -365,10 +326,9 @@ function playAudioDataUrl(dataUrl) {
     const a = new Audio(dataUrl);
     currentAudio = a;
     a.onended = () => { currentAudio = null; };
-    a.play().catch(e => console.warn('[TTS] play blocked', e.message));
-  } catch (e) { console.warn('[TTS] play failed', e.message); }
+    a.play().catch(() => {});
+  } catch {}
 }
-
 function stripForSpeech(text) {
   return String(text || '').replace(/```[\s\S]*?```/g, ' code block ').replace(/`([^`]+)`/g, '$1').replace(/[#*_>~]/g, ' ').replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1').replace(/\s+/g, ' ').trim();
 }
@@ -405,7 +365,7 @@ function renderHistory() {
 function scrollToBottom() { const c = $('#chatMessages'); if (c) c.scrollTop = c.scrollHeight; }
 
 /* ============================================================
-   MESSAGE RENDERING
+   MESSAGES
    ============================================================ */
 function buildActions(role, msgId) {
   if (role === 'ai') return `<div class="message-actions" data-msg-id="${msgId}"><button class="action-btn" data-action="copy" title="Copy"><i class="ri-file-copy-line"></i></button><button class="action-btn" data-action="speak" title="Read aloud"><i class="ri-volume-up-line"></i></button><button class="action-btn" data-action="retry" title="Regenerate"><i class="ri-refresh-line"></i></button><button class="action-btn" data-action="good" title="Good"><i class="ri-thumb-up-line"></i></button><button class="action-btn" data-action="bad" title="Bad"><i class="ri-thumb-down-line"></i></button></div>`;
@@ -421,6 +381,12 @@ function renderGeneratedImage(dataUrl, alt) { if (!dataUrl) return ''; return `<
 function buildContinueBar(msgId) {
   return `<div class="continue-bar" data-continue-id="${msgId}"><button class="continue-btn" data-continue="${msgId}"><i class="ri-arrow-down-line"></i> Continue</button></div>`;
 }
+function wireLightbox(el) {
+  el.querySelectorAll('[data-lightbox]').forEach(el2 => el2.addEventListener('click', () => { const lb = $('#lightbox'); if (lb) { lb.querySelector('img').src = el2.dataset.lightbox; lb.classList.add('open'); } }));
+}
+function wireContinueBtn(msgEl) {
+  msgEl.querySelectorAll('[data-continue]').forEach(btn => { if (btn.__wired) return; btn.__wired = true; btn.addEventListener('click', () => handleContinue(msgEl)); });
+}
 
 function addMessageToDOM(role, content, ts, animate = true, msgId = null, files = [], generatedImage = null, finishReason = null) {
   const container = $('#chatMessages'); if (!container) return null;
@@ -433,18 +399,29 @@ function addMessageToDOM(role, content, ts, animate = true, msgId = null, files 
   const attachmentsHtml = role === 'user' ? renderMessageAttachments(files) : '';
   const generatedHtml = role === 'ai' && generatedImage ? renderGeneratedImage(generatedImage, content) : '';
   const continueHtml = (role === 'ai' && finishReason === 'length') ? buildContinueBar(id) : '';
-  msgEl.innerHTML = `<div class="message-content"><div class="bubble">${attachmentsHtml}${generatedHtml}<div class="bubble-text"></div></div>${continueHtml}${buildActions(role, id)}<div class="message-time">${ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</div></div>`;
+  msgEl.innerHTML = `<div class="message-content">
+    <div class="bubble">
+      ${attachmentsHtml}
+      ${generatedHtml}
+      <div class="bubble-text"></div>
+    </div>
+    ${continueHtml}
+    ${buildActions(role, id)}
+    <div class="message-time">${ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</div>
+  </div>`;
   container.appendChild(msgEl);
   const bubble = msgEl.querySelector('.bubble');
   const bubbleText = msgEl.querySelector('.bubble-text');
   if (role === 'user') { bubbleText.textContent = content || ''; if (!content) bubbleText.style.display = 'none'; }
   else {
     bubble.dataset.rawText = content;
-    if (generatedImage) { bubbleText.innerHTML = renderMarkdown(content || ''); wireCodeButtons(bubbleText); }
-    else { bubble.innerHTML = ''; bubble.insertAdjacentHTML('afterbegin', renderMarkdown(content || '') + '<div class="bubble-text" style="display:none"></div>'); wireCodeButtons(bubble); }
+    if (content) {
+      bubbleText.innerHTML = renderMarkdown(content || '');
+      wireCodeButtons(bubbleText);
+    }
   }
-  msgEl.querySelectorAll('[data-lightbox]').forEach(el => el.addEventListener('click', () => { const lb = $('#lightbox'); if (lb) { lb.querySelector('img').src = el.dataset.lightbox; lb.classList.add('open'); } }));
-  msgEl.querySelectorAll('[data-continue]').forEach(btn => btn.addEventListener('click', () => handleContinue(msgEl)));
+  wireLightbox(msgEl);
+  wireContinueBtn(msgEl);
   wireMessageActions(msgEl);
   applyStoredFeedback(msgEl);
   if (animate) scrollToBottom();
@@ -489,7 +466,7 @@ function wireMessageActions(msgEl) {
       if (action === 'retry') { if (role !== 'ai') return; handleRetry(msgEl); return; }
       if (action === 'edit') {
         if (role !== 'user') return;
-        const cur = bubble?.querySelector('.bubble-text')?.textContent || bubble?.textContent || '';
+        const cur = bubble?.querySelector('.bubble-text')?.textContent || '';
         const next = prompt('Edit message', cur);
         if (next === null || !next.trim()) return;
         const bt = bubble.querySelector('.bubble-text');
@@ -515,7 +492,9 @@ function applyStoredFeedback(msgEl) {
   else if (fb[id] === 'bad') msgEl.querySelector('.action-btn[data-action="bad"]')?.classList.add('active-bad');
 }
 
-/* ---------- Continue handling ---------- */
+/* ============================================================
+   CONTINUE — appends to the SAME bubble
+   ============================================================ */
 async function handleContinue(msgEl) {
   if (isReplying) return;
   const convo = currentConvo(); if (!convo) return;
@@ -524,95 +503,100 @@ async function handleContinue(msgEl) {
   if (!m) return;
 
   msgEl.querySelector('.continue-bar')?.remove();
+  delete msgEl.dataset.finish;
+
   isReplying = true; updateSendButtonState();
   const stopBtn = $('#stopBtn'); if (stopBtn) stopBtn.style.display = 'grid';
-
-  const history = convo.messages.slice(-14).map(x => ({ role: x.role, content: x.content }));
-  const model = __model || 'mirox-luna-1.2';
-  const continuationUserMsg = 'continue from where you left off. do not repeat, just continue seamlessly.';
-
-  const newMsgEl = addThinkingBubble();
-  const bubble = newMsgEl.querySelector('.bubble');
-  const thinkingText = newMsgEl.querySelector('.thinking-text');
-  const timeEl = newMsgEl.querySelector('.message-time');
-  const newId = newMsgEl.dataset.msgId;
   activeStreamController = new AbortController();
 
-  let full = '', generatedImage = null, pendingTts = null, finishReason = 'stop';
+  const idx = convo.messages.findIndex(x => x.id === msgId);
+  const history = convo.messages.slice(Math.max(0, idx - 12), idx).map(x => ({ role: x.role, content: x.content }));
+  history.push({ role: 'assistant', content: m.content });
+
+  const model = __model || 'mirox-luna-1.2';
+  let full = m.content || '';
+  let firstChunk = true;
+  let pendingTts = null;
+  let finishReason = 'stop';
+
+  const bubble = msgEl.querySelector('.bubble');
+  let bubbleText = bubble.querySelector('.bubble-text');
+  if (!bubbleText) { bubbleText = document.createElement('div'); bubbleText.className = 'bubble-text'; bubble.appendChild(bubbleText); }
+
+  /* Show inline continuation cursor */
+  bubbleText.classList.add('streaming');
 
   try {
     const res = await fetch('/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: continuationUserMsg, history, model, stream: true, files: [], voice_id: userSettings.voice_id || null, tts: readAloudEnabled }),
+      body: JSON.stringify({
+        message: 'continue from where you left off. do not repeat, do not add a preface, just continue the exact same text seamlessly.',
+        history: history.slice(-14),
+        model, stream: true, files: [],
+        voice_id: userSettings.voice_id || null,
+        tts: readAloudEnabled,
+      }),
       signal: activeStreamController.signal,
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     const reader = res.body.getReader(); const dec = new TextDecoder();
-    let buf = '', firstChunk = true;
+    let buf = '';
 
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
       buf += dec.decode(value, { stream: true });
-      let idx;
-      while ((idx = buf.indexOf('\n')) !== -1) {
-        const line = buf.slice(0, idx).trim(); buf = buf.slice(idx + 1);
+      let i;
+      while ((i = buf.indexOf('\n')) !== -1) {
+        const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
         if (!line.startsWith('data:')) continue;
         const pl = line.slice(5).trim();
         if (!pl || pl === '[DONE]') continue;
         try {
           const o = JSON.parse(pl);
-          if (o.p && thinkingText) thinkingText.textContent = o.p === 'ollama' ? 'Running local model' : o.p === 'hf' || o.p === 'pl' ? 'Thinking' : o.p === 'image' ? 'Drawing…' : thinkingText.textContent;
-          if (o.status && thinkingText) thinkingText.textContent = o.status;
-          if (o.img) {
-            generatedImage = o.img;
-            bubble.classList.remove('thinking');
-            bubble.innerHTML = `<div class="bubble-generated-image" data-lightbox="${escapeHtml(o.img)}"><img src="${o.img}" alt="${escapeHtml(o.imgAlt || 'Generated image')}" loading="lazy"></div><div class="bubble-text"></div>`;
-            bubble.querySelector('[data-lightbox]')?.addEventListener('click', () => { const lb = $('#lightbox'); if (lb) { lb.querySelector('img').src = o.img; lb.classList.add('open'); } });
-            const act = newMsgEl.querySelector('.message-actions'); if (act) { act.style.opacity = ''; act.style.pointerEvents = ''; }
-            scrollToBottom(); firstChunk = false;
-            continue;
-          }
           if (o.d) {
             full += o.d;
-            if (firstChunk) { bubble.classList.remove('thinking'); bubble.classList.add('streaming'); bubble.innerHTML = ''; firstChunk = false; const act = newMsgEl.querySelector('.message-actions'); if (act) { act.style.opacity = ''; act.style.pointerEvents = ''; } }
-            bubble.innerHTML = renderMarkdown(full);
-            wireCodeButtons(bubble);
-            if (!bubble.classList.contains('streaming')) bubble.classList.add('streaming');
+            bubbleText.innerHTML = renderMarkdown(full);
+            wireCodeButtons(bubbleText);
             scrollToBottom();
+            firstChunk = false;
           }
           if (o.tts) pendingTts = o.tts;
-          if (o.done) { bubble.classList.remove('streaming'); if (o.finish_reason) finishReason = o.finish_reason; }
+          if (o.done) { if (o.finish_reason) finishReason = o.finish_reason; }
         } catch {}
       }
     }
 
-    bubble.classList.remove('streaming');
-    delete newMsgEl.dataset.thinking;
+    bubbleText.classList.remove('streaming');
     bubble.dataset.rawText = full;
 
+    m.content = full;
+    m.finish_reason = finishReason;
+
     if (finishReason === 'length') {
+      msgEl.dataset.finish = 'length';
       const cont = document.createElement('div');
       cont.className = 'continue-bar';
-      cont.dataset.continueId = newId;
-      cont.innerHTML = `<button class="continue-btn" data-continue="${newId}"><i class="ri-arrow-down-line"></i> Continue</button>`;
-      newMsgEl.querySelector('.message-time').before(cont);
-      cont.querySelector('[data-continue]').addEventListener('click', () => handleContinue(newMsgEl));
-      newMsgEl.dataset.finish = 'length';
+      cont.innerHTML = `<button class="continue-btn" data-continue="${msgId}"><i class="ri-arrow-down-line"></i> Continue</button>`;
+      msgEl.querySelector('.message-time').before(cont);
+      wireContinueBtn(msgEl);
     }
 
-    const c = currentConvo();
-    if (c) { c.messages.push({ id: newId, role: 'assistant', content: full, ts: Date.now(), image: generatedImage, finish_reason: finishReason }); c.updated = Date.now(); }
     saveChatsToLS();
-    wireMessageActions(newMsgEl);
-    if (timeEl) timeEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     if (readAloudEnabled) { if (pendingTts) playAudioDataUrl(pendingTts); else if (full) speakText(full); }
   } catch (e) {
-    bubble.classList.remove('streaming');
-    bubble.classList.remove('thinking');
-    if (e.name !== 'AbortError') bubble.textContent = `Continue failed: ${e.message}`;
+    bubbleText.classList.remove('streaming');
+    if (e.name !== 'AbortError') {
+      const err = document.createElement('div');
+      err.style.color = 'var(--danger)';
+      err.style.fontSize = '13px';
+      err.style.marginTop = '8px';
+      err.textContent = 'Continue failed: ' + e.message;
+      msgEl.querySelector('.message-time').before(err);
+      setTimeout(() => err.remove(), 5000);
+    }
   } finally {
     isReplying = false;
     activeStreamController = null;
@@ -666,7 +650,7 @@ function handleSend() {
 }
 
 /* ============================================================
-   SEND TO API
+   SEND TO API — with image preservation
    ============================================================ */
 async function sendToAPI(text, files = []) {
   isReplying = true; updateSendButtonState();
@@ -683,6 +667,8 @@ async function sendToAPI(text, files = []) {
   activeStreamController = new AbortController();
 
   let full = '', generatedImage = null, pendingTts = null, finishReason = 'stop';
+  let imageWasSet = false;         /* ← tracks whether the bubble already has an image */
+  let bubbleText = null;            /* ← holds the text sub-element when image is set */
 
   try {
     const res = await fetch('/v1/chat/completions', {
@@ -713,6 +699,7 @@ async function sendToAPI(text, files = []) {
         if (!pl || pl === '[DONE]') continue;
         try {
           const o = JSON.parse(pl);
+
           if (o.p) {
             if (o.p === 'ar-search' || o.p === 'fallback') { if (thinkingText) thinkingText.textContent = 'Reading current data'; }
             else if (o.p === 'ollama') { if (thinkingText) thinkingText.textContent = 'Running local model'; }
@@ -721,23 +708,44 @@ async function sendToAPI(text, files = []) {
             else if (o.p === 'canned') { if (thinkingText) thinkingText.textContent = 'Replying'; }
           }
           if (o.status && thinkingText) thinkingText.textContent = o.status;
+
+          /* Image event — replace bubble content, keep a .bubble-text child */
           if (o.img) {
             generatedImage = o.img;
+            imageWasSet = true;
             bubble.classList.remove('thinking');
             bubble.innerHTML = `<div class="bubble-generated-image" data-lightbox="${escapeHtml(o.img)}"><img src="${o.img}" alt="${escapeHtml(o.imgAlt || 'Generated image')}" loading="lazy"></div><div class="bubble-text"></div>`;
-            bubble.querySelector('[data-lightbox]')?.addEventListener('click', () => { const lb = $('#lightbox'); if (lb) { lb.querySelector('img').src = o.img; lb.classList.add('open'); } });
-            const act = msgEl.querySelector('.message-actions'); if (act) { act.style.opacity = ''; act.style.pointerEvents = ''; }
-            scrollToBottom(); firstChunk = false;
+            bubbleText = bubble.querySelector('.bubble-text');
+            wireLightbox(msgEl);
+            const act = msgEl.querySelector('.message-actions');
+            if (act) { act.style.opacity = ''; act.style.pointerEvents = ''; }
+            scrollToBottom();
+            firstChunk = false;
             continue;
           }
+
           if (o.d) {
             full += o.d;
-            if (firstChunk) { bubble.classList.remove('thinking'); bubble.classList.add('streaming'); bubble.innerHTML = ''; firstChunk = false; const act = msgEl.querySelector('.message-actions'); if (act) { act.style.opacity = ''; act.style.pointerEvents = ''; } }
-            bubble.innerHTML = renderMarkdown(full);
-            wireCodeButtons(bubble);
+            if (firstChunk) {
+              bubble.classList.remove('thinking');
+              bubble.classList.add('streaming');
+              if (!imageWasSet) {
+                /* No image — replace whole bubble with a text container */
+                bubble.innerHTML = '<div class="bubble-text"></div>';
+                bubbleText = bubble.querySelector('.bubble-text');
+              }
+              firstChunk = false;
+              const act = msgEl.querySelector('.message-actions');
+              if (act) { act.style.opacity = ''; act.style.pointerEvents = ''; }
+            }
+            /* Write into the text container, never overwrite the image */
+            const target = bubbleText || bubble.querySelector('.bubble-text') || bubble;
+            target.innerHTML = renderMarkdown(full);
+            wireCodeButtons(target);
             if (!bubble.classList.contains('streaming')) bubble.classList.add('streaming');
             scrollToBottom();
           }
+
           if (o.tts) pendingTts = o.tts;
           if (o.error) throw new Error(o.error.message || o.error);
           if (o.done) { bubble.classList.remove('streaming'); if (o.finish_reason) finishReason = o.finish_reason; }
@@ -753,10 +761,9 @@ async function sendToAPI(text, files = []) {
       msgEl.dataset.finish = 'length';
       const cont = document.createElement('div');
       cont.className = 'continue-bar';
-      cont.dataset.continueId = aiMsgId;
       cont.innerHTML = `<button class="continue-btn" data-continue="${aiMsgId}"><i class="ri-arrow-down-line"></i> Continue</button>`;
       msgEl.querySelector('.message-time').before(cont);
-      cont.querySelector('[data-continue]').addEventListener('click', () => handleContinue(msgEl));
+      wireContinueBtn(msgEl);
     }
 
     const c = currentConvo();
@@ -1127,7 +1134,12 @@ document.addEventListener('click', function (e) {
     const k = tg.dataset.toggle; userSettings[k] = !userSettings[k];
     tg.textContent = userSettings[k] ? 'ON' : 'OFF'; tg.classList.toggle('active', userSettings[k]); saveUserSettings();
     if (k === 'lineNumbers' || k === 'highlightOn') {
-      document.querySelectorAll('.message.ai .bubble').forEach(b => { const txt = b.dataset.rawText; if (txt !== undefined) { b.innerHTML = renderMarkdown(txt); wireCodeButtons(b); } });
+      document.querySelectorAll('.message.ai .bubble').forEach(b => {
+        const txt = b.dataset.rawText; if (txt === undefined) return;
+        const bt = b.querySelector('.bubble-text');
+        if (bt) { bt.innerHTML = renderMarkdown(txt); wireCodeButtons(bt); }
+        else { b.innerHTML = renderMarkdown(txt); wireCodeButtons(b); }
+      });
     }
     if (k === 'autoSpeak') { readAloudEnabled = userSettings.autoSpeak; updateReadAloudIcon(); if (!readAloudEnabled) stopSpeaking(); }
     return;
