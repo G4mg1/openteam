@@ -11,7 +11,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/remixicon@4.9.0/fonts/remixicon.css" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -177,9 +176,7 @@
         <div class="setting-group">
           <h4>Voice</h4>
           <p class="setting-desc">Choose how Mirox sounds when reading responses aloud.</p>
-          <select id="voiceSelect" class="modal-select">
-            <option value="">Default voice</option>
-          </select>
+          <select id="voiceSelect" class="modal-select"><option value="">Default voice</option></select>
           <button id="previewVoiceBtn" class="modal-btn" type="button" style="margin-top:10px;"><i class="ri-play-line"></i> Preview voice</button>
           <div id="voiceStatus" class="msg muted" style="font-size:12px;margin-top:8px;"></div>
         </div>
@@ -285,7 +282,6 @@
     </div>
   </div>
 
-  <!-- Payment coming soon modal -->
   <div id="paymentSoonModal" class="modal-overlay">
     <div class="modal">
       <button class="icon-btn modal-close" type="button" data-close="paymentSoonModal" aria-label="Close"><i class="ri-close-line"></i></button>
@@ -295,7 +291,6 @@
     </div>
   </div>
 
-  <!-- Call overlay with push-to-talk -->
   <div id="callOverlay" class="call-overlay">
     <div class="call-content">
       <div class="call-avatar" id="callAvatar"><i class="ri-mic-line"></i></div>
@@ -315,8 +310,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/javascript.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/typescript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/css.min.js"></script>
