@@ -1,0 +1,7 @@
+{
+  "bridge_name": "My Laptop",
+  "port": 8765,
+  "model": "mirox-luna-1.2",
+  "allowed_dirs": ["~"],
+  "max_output_bytes": 200000
+}
