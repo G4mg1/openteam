@@ -80,6 +80,7 @@
     <div class="sidebar-links">
       <a href="#" id="settingsBtn" class="sidebar-link"><i class="ri-settings-3-line"></i> Settings</a>
       <a href="#" id="supportModeBtn" class="sidebar-link"><i class="ri-customer-service-2-line"></i> Support</a>
+      <a href="/developers/" id="developerLink" class="sidebar-link"><i class="ri-code-s-slash-line"></i> Developers</a>
     </div>
     <div class="made-by">Made by OpenSurr</div>
   </div>
@@ -119,12 +120,12 @@
       <img src="/logo.png" alt="MiroxAI" class="welcome-logo theme-aware-logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';">
       <div class="logo-fallback logo-fallback-lg" style="display:none;">M</div>
       <h1 class="welcome-title">Hi, I'm Mirox</h1>
-      <p class="welcome-sub">Luna and Gen are unlimited and free.</p>
+      <p class="welcome-sub">Luna and Gen are unlimited and free. Try asking me to search the web.</p>
       <div class="suggestion-grid">
+        <button class="suggestion-card" type="button" data-prompt="Search the web for the latest AI news"><i class="ri-global-line"></i><span>Search the web for AI news</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Search the web for the best restaurants in Tokyo"><i class="ri-search-line"></i><span>Search for restaurants in Tokyo</span></button>
         <button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span>Generate me an image of a cat</span></button>
         <button class="suggestion-card" type="button" data-prompt="Help me write code"><i class="ri-code-line"></i><span>Help me write code</span></button>
-        <button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span>Explain a concept simply</span></button>
-        <button class="suggestion-card" type="button" data-prompt="Open the Bridge workspace"><i class="ri-link"></i><span>Bridge to my laptop</span></button>
       </div>
     </div>
   </div>
@@ -136,6 +137,7 @@
     </div>
 
     <div class="tools-row">
+      <button id="searchModeBtn" class="tool-btn" type="button"><i class="ri-global-line"></i><span>Search</span></button>
       <button id="imageModeBtn" class="tool-btn" type="button"><i class="ri-image-line"></i><span>Lumenal</span></button>
       <button id="bridgeModeBtn" class="tool-btn" type="button"><i class="ri-link"></i><span>Bridge</span></button>
       <button id="plansModeBtn" class="tool-btn" type="button"><i class="ri-vip-crown-line"></i><span>Plans</span></button>
@@ -187,7 +189,7 @@
           <div class="bridge-empty" id="bridgeEmpty">
             <i class="ri-terminal-box-line"></i>
             <h3>Bridge Workspace</h3>
-            <p>Give Mirox direct control over your laptop. It writes files, runs commands, and builds full projects automatically.</p>
+            <p>Give Mirox direct control over your laptop. It writes files, runs commands, sends emails, checks system health, uses git, and builds full projects automatically.</p>
             <ol class="bridge-empty-steps">
               <li>Click <strong>Download client</strong> (top right) → extract the ZIP.</li>
               <li>Run <code>pip install aiohttp</code> then <code>python runner.py</code>.</li>
@@ -227,7 +229,10 @@
           <h4>Quick actions</h4>
           <button class="bw-quick" data-q="List my home directory and tell me what's in it.">List home dir</button>
           <button class="bw-quick" data-q="Build a snake game in my home folder as a folder called snake-game with index.html and game.js">Snake game</button>
+          <button class="bw-quick" data-q="Run a full system health check and tell me if anything is wrong">System health check</button>
+          <button class="bw-quick" data-q="Show me the top CPU processes running right now">Top processes</button>
           <button class="bw-quick" data-q="Write a Python script in my home folder called hello.py that prints 'Hello from Mirox' and run it">Hello Python</button>
+          <button class="bw-quick" data-q="Take a screenshot and save it to my Desktop">Screenshot to Desktop</button>
         </div>
       </aside>
     </div>
@@ -270,11 +275,15 @@
   <div class="modal">
     <button class="icon-btn modal-close" type="button" data-close="loginModal"><i class="ri-close-line"></i></button>
     <h2 class="modal-title">Sign in</h2>
-    <p class="modal-sub">Save your chats and unlock higher limits.</p>
+    <p class="modal-sub">Sign in with Google, Apple, or email — powered by Loginment.</p>
+    <button id="loginmentBtn" class="modal-btn primary" type="button" style="width:100%;margin-bottom:14px;">
+      <i class="ri-shield-user-line"></i> Continue with Loginment
+    </button>
+    <div style="text-align:center;font-size:12px;color:var(--text-faint);margin:6px 0 14px;">or use a quick demo login</div>
     <form id="simpleLoginForm" class="modal-form">
       <input type="text" id="loginName" class="modal-input" placeholder="Name" required maxlength="60">
       <input type="email" id="loginEmail" class="modal-input" placeholder="Email" required>
-      <button type="submit" class="modal-btn primary">Continue</button>
+      <button type="submit" class="modal-btn">Continue</button>
     </form>
   </div>
 </div>
@@ -291,6 +300,7 @@
     </div>
     <div class="settings-pane active" data-pane="general">
       <div class="setting-group"><h4>Session</h4><button id="logoutBtn" class="modal-btn danger" type="button">Sign out</button></div>
+      <div class="setting-group"><h4>Developer</h4><a href="/developers/" class="modal-btn" style="text-decoration:none;"><i class="ri-code-s-slash-line"></i> Open Developer Console</a></div>
     </div>
     <div class="settings-pane" data-pane="appearance">
       <div class="setting-group"><h4>Mode</h4>
@@ -359,6 +369,7 @@
       <input type="text" id="supportSubject" class="modal-input" placeholder="Subject">
       <textarea id="supportMessage" class="modal-textarea" rows="4" placeholder="Message"></textarea>
       <button id="submitReportBtn" class="modal-btn primary" type="button">Submit</button>
+      <a href="/developers/" class="modal-btn" style="text-decoration:none;margin-top:6px;"><i class="ri-code-s-slash-line"></i> Developers</a>
     </div>
   </div>
 </div>
