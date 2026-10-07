@@ -31,9 +31,9 @@
 
   const MAX_BRIDGE_QUESTIONS = 6;
   const MAX_BRIDGE_ITER = 40;
-  const MAX_AUTO_CONTINUES = 20;              // much higher so it never stops
+  const MAX_AUTO_CONTINUES = 20;
   const MAX_DUP_COMMANDS = 1;
-  const AUTO_CONTINUE_DELAY_MS = 2000;        // <-- 2 seconds auto-continue
+  const AUTO_CONTINUE_DELAY_MS = 2000;
 
   let __config = null, __user = null, __tier = 'free', __model = 'mirox-luna-1.2';
   let currentConversationId = null, isReplying = false;
@@ -418,6 +418,35 @@
   }
   function closeImageViewer() { $('#imageViewer')?.classList.remove('open'); }
 
+  async function renderImageHistory() {
+    const wrap = $('#imageHistory'); if (!wrap) return;
+    wrap.innerHTML = '<div style="padding:14px;color:var(--text-muted);font-size:13px;">Loading…</div>';
+    try {
+      const res = await fetch('/api/images/history', { credentials: 'same-origin', cache: 'no-store' });
+      const data = await res.json();
+      const items = (data && data.images) || [];
+      if (!items.length) {
+        wrap.innerHTML = '<div style="padding:14px;color:var(--text-faint);font-size:13px;text-align:center;grid-column:1/-1;">No images yet.</div>';
+        return;
+      }
+      wrap.innerHTML = items.map((it, i) => `
+        <div class="image-history-item" data-idx="${i}">
+          <img src="${it.image}" alt="" loading="lazy">
+          <div class="image-history-prompt">${escapeHtml(it.prompt || '')}</div>
+        </div>
+      `).join('');
+      wrap.querySelectorAll('.image-history-item').forEach(el => {
+        el.onclick = () => {
+          const i = parseInt(el.dataset.idx, 10);
+          const it = items[i];
+          if (it) openImageViewer(it.image);
+        };
+      });
+    } catch {
+      wrap.innerHTML = '<div style="padding:14px;color:#dc2626;font-size:13px;grid-column:1/-1;">Failed to load history.</div>';
+    }
+  }
+
   function getModelsList() { return __config?.models?.length ? __config.models : FALLBACK_MODELS; }
   function canUseModel(tier) { if (tier === 'free') return true; if (tier === 'ultimate') return true; return TIER_RANK[__tier] >= TIER_RANK[tier]; }
   function renderModelPicker() {
@@ -514,7 +543,7 @@
     try {
       const res = await fetch('/v1/images/generations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, aspect_ratio: '1:1' }) });
       const data = await res.json().catch(() => ({}));
-      if (res.ok && data.ok && data.image) { if (result) result.innerHTML = `<img src="${data.image}" alt="${escapeHtml(prompt)}">`; refreshUsage(); }
+      if (res.ok && data.ok && data.image) { if (result) result.innerHTML = `<img src="${data.image}" alt="${escapeHtml(prompt)}">`; refreshUsage(); renderImageHistory(); }
       else if (result) result.innerHTML = `<div style="color:#dc2626;font-size:13px;">Failed: ${escapeHtml(data.error?.message || 'Unknown')}</div>`;
     } catch (e) { if (result) result.innerHTML = `<div style="color:#dc2626;font-size:13px;">Error: ${escapeHtml(e.message)}</div>`; }
     finally { if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-image-add-line"></i> Generate'; } }
@@ -872,29 +901,19 @@
     return data.reply || data.choices?.[0]?.message?.content || '';
   }
 
-  /* ============================================================
-     AUTO-CONTINUE HELPER — waits 2s, then sends "Continue"
-     ============================================================ */
   async function autoContinueAfterDelay(label = 'Auto-continuing') {
     addBridgeSystemMsg(`${label} in ${AUTO_CONTINUE_DELAY_MS / 1000}s…`);
     setProgressText(`${label} in ${AUTO_CONTINUE_DELAY_MS / 1000}s…`);
-    // Update the label every second
     let remaining = AUTO_CONTINUE_DELAY_MS / 1000;
     const ticker = setInterval(() => {
       remaining--;
-      if (remaining > 0) {
-        setProgressText(`${label} in ${remaining}s…`);
-      } else {
-        clearInterval(ticker);
-      }
+      if (remaining > 0) setProgressText(`${label} in ${remaining}s…`);
+      else clearInterval(ticker);
     }, 1000);
     await new Promise(r => setTimeout(r, AUTO_CONTINUE_DELAY_MS));
     clearInterval(ticker);
   }
 
-  /* ============================================================
-     MAIN LOOP
-     ============================================================ */
   async function runBridgeTurn(userText, isResume = false) {
     if (!__bridge.connected) { setBwHint('Bridge is not connected.', 'err'); return; }
     if (bridgeRunning) return;
@@ -923,7 +942,6 @@
         catch (e) { if (thinkingEl) thinkingEl.remove(); addBridgeSystemMsg('AI error: ' + e.message); break; }
         if (thinkingEl) thinkingEl.remove();
 
-        // ---- Empty response → auto-continue ----
         if (!reply || !reply.trim()) {
           if (autoContinues < MAX_AUTO_CONTINUES) {
             autoContinues++;
@@ -957,7 +975,6 @@
         bridgeConversation.push({ role: 'assistant', content: reply });
         if (bridgeConversation.length > 40) bridgeConversation = bridgeConversation.slice(-40);
 
-        // ---- Questions ----
         const questions = extractBridgeQuestions(reply);
         if (questions.length > 0) {
           const remaining = MAX_BRIDGE_QUESTIONS - bridgeQuestionCount;
@@ -989,7 +1006,6 @@
           }
         }
 
-        // ---- Commands ----
         const cmds = extractBridgeCommands(reply);
         if (cmds.length > 0) {
           const resultLines = [];
@@ -1031,12 +1047,6 @@
               `If all files written, reply DONE. Otherwise output next batch.`,
             ].join('\n'),
           });
-
-          // ---- AUTO-CONTINUE after commands, even if AI didn't say DONE ----
-          // If the AI produced commands but did not explicitly say DONE and
-          // the plan isn't complete, this iteration will just loop again.
-          // But we also want a visible 2s pause + auto-continue in case the
-          // next reply is empty. That's handled by the empty-response branch above.
           continue;
         }
 
@@ -1044,10 +1054,8 @@
         const hasPlan = bridgeTurn.plannedFiles.size > 0;
         const allFilesWritten = hasPlan && bridgeTurn.writtenFiles.size >= bridgeTurn.plannedFiles.size;
 
-        // ---- Success: said DONE + all files written ----
         if (saidDone && (allFilesWritten || !hasPlan)) { updateBridgeProgress(100, 'Complete'); addBridgeSuccessMsg('Project complete'); break; }
 
-        // ---- Said DONE but files missing → keep going ----
         if (saidDone && hasPlan && !allFilesWritten) {
           const missing = [...bridgeTurn.plannedFiles].filter(f => !bridgeTurn.writtenFiles.has(f));
           addBridgeSystemMsg(`Still ${missing.length} file(s) missing — continuing.`);
@@ -1055,7 +1063,6 @@
           continue;
         }
 
-        // ---- Didn't say DONE → AUTO-CONTINUE after 2s ----
         if (!saidDone) {
           if (autoContinues < MAX_AUTO_CONTINUES) {
             autoContinues++;
@@ -1063,13 +1070,11 @@
             bridgeConversation.push({ role: 'user', content: `[System] Continue building. Write the next files now.` });
             continue;
           }
-          // Even after max auto-continues, keep the loop alive
           addBridgeSystemMsg('Paused by iteration limit. You can type "continue" to keep going.');
           break;
         }
       }
 
-      // ---- After the loop: if incomplete, auto-resume after 2s ----
       const hasPlan = bridgeTurn.plannedFiles.size > 0;
       const allFilesWritten = hasPlan && bridgeTurn.writtenFiles.size >= bridgeTurn.plannedFiles.size;
       const missing = hasPlan ? [...bridgeTurn.plannedFiles].filter(f => !bridgeTurn.writtenFiles.has(f)) : [];
@@ -1140,7 +1145,7 @@
     on('#stopBtn', 'click', stopStreaming);
     on('#modelPickerBtn', 'click', (e) => { e.stopPropagation(); const menu = $('#modelPickerMenu'); if (menu?.classList.contains('open')) closeModelPicker(); else openModelPicker(); });
     document.addEventListener('click', (e) => { if (!e.target.closest('#modelPicker')) closeModelPicker(); });
-    on('#imageModeBtn', 'click', () => openModal('imageModal'));
+    on('#imageModeBtn', 'click', () => { openModal('imageModal'); renderImageHistory(); });
     on('#plansModeBtn', 'click', () => { openModal('plansModal'); loadPlans(); });
     on('#supportModeBtn', 'click', () => openModal('supportModal'));
     on('#supportModeBtn2', 'click', () => openModal('supportModal'));
