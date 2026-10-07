@@ -1,7 +1,6 @@
 (function () {
   'use strict';
 
-  /* Loader failsafe */
   function killLoader() {
     const el = document.getElementById('loadingScreen');
     if (!el) return;
@@ -17,7 +16,6 @@
   const $$ = (s) => document.querySelectorAll(s);
   const on = (sel, ev, fn) => { const el = $(sel); if (el) el.addEventListener(ev, fn); };
 
-  /* Config */
   const FALLBACK_MODELS = [
     { id: 'mirox-luna-1.2', label: 'Luna', tagline: 'Fast · warm · unlimited', tier: 'free', default: true },
     { id: 'mirox-gen-1', label: 'Gen', tagline: 'Ultra concise · unlimited', tier: 'free' },
@@ -35,7 +33,6 @@
   const MAX_AUTO_CONTINUES = 3;
   const MAX_DUP_COMMANDS = 1;
 
-  /* State */
   let __config = null;
   let __user = null;
   let __tier = 'free';
@@ -46,22 +43,16 @@
   let pendingFiles = [];
   let activeStreamController = null;
   let __usage = null;
-
-  let __bridge = {
-    name: 'My Laptop',
-    model: 'mirox-luna-1.2',
-    port: 8765,
-    connected: false,
-    baseUrl: null,
-    env: null,
-  };
+  let __bridge = { name: 'My Laptop', model: 'mirox-luna-1.2', port: 8765, connected: false, baseUrl: null, env: null };
   let bridgeConversation = [];
   let bridgeRunning = false;
   let bridgeQuestionCount = 0;
   let bridgeProgress = 0;
   let bridgeTurn = null;
+  let __pendingQuestions = [];
+  let __bqResolver = null;
+  let __bqSelected = null;
 
-  /* Utilities */
   const uid = () => 'c_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
   const escapeHtml = (s) => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
   function safeGet(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } }
@@ -86,7 +77,6 @@
   const openSidebar = () => { $('#sidebar')?.classList.add('open'); $('#sidebarScrim')?.classList.add('open'); };
   const closeSidebar = () => { $('#sidebar')?.classList.remove('open'); $('#sidebarScrim')?.classList.remove('open'); };
 
-  /* Appearance */
   function applyAppearance(prefs) {
     const root = document.documentElement;
     const mode = prefs.mode || 'light';
@@ -103,7 +93,6 @@
     applyAppearance(prefs);
   }
 
-  /* Markdown */
   function renderMarkdown(text) {
     if (!text) return '';
     let src = String(text);
@@ -172,7 +161,6 @@
     });
   }
 
-  /* Conversations */
   function currentConvo() { return __conversations.find(c => c.id === currentConversationId) || null; }
   function saveChats() { safeSet(LS_KEY, __conversations); }
   function loadChats() { __conversations = safeGet(LS_KEY, []); }
@@ -210,23 +198,18 @@
     });
   }
   function renderHistory() {
-    const list = $('#historyList');
-    if (!list) return;
-    if (!__conversations.length) {
-      list.innerHTML = '<li class="history-empty">No conversations yet</li>';
-      return;
-    }
+    const list = $('#historyList'); if (!list) return;
+    if (!__conversations.length) { list.innerHTML = '<li class="history-empty">No conversations yet</li>'; return; }
     list.innerHTML = __conversations.map(c =>
       `<li class="history-item${c.id === currentConversationId ? ' active' : ''}" data-id="${c.id}">
         <i class="ri-chat-3-line"></i>
         <span class="history-title">${escapeHtml(c.title || 'Chat')}</span>
-        <button class="history-delete icon-btn" aria-label="Delete"><i class="ri-delete-bin-line"></i></button>
+        <button class="history-delete icon-btn"><i class="ri-delete-bin-line"></i></button>
       </li>`
     ).join('');
   }
   function scrollToBottom() { const c = $('#chatMessages'); if (c) c.scrollTop = c.scrollHeight; }
 
-  /* Message rendering */
   function addMessageToDOM(role, content, ts, msgId, files, image) {
     const container = $('#chatMessages'); if (!container) return null;
     const welcome = container.querySelector('.welcome-screen'); if (welcome) welcome.remove();
@@ -235,7 +218,6 @@
     el.className = 'message ' + (role === 'user' ? 'user' : 'ai');
     el.dataset.msgId = id;
     el.dataset.role = role;
-
     let inner = '';
     if (role === 'user' && files && files.length) {
       inner += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;">';
@@ -249,28 +231,18 @@
       inner += `<div style="margin-bottom:10px;border-radius:14px;overflow:hidden;border:1px solid var(--border);max-width:100%;cursor:zoom-in;"><img src="${image}" style="display:block;width:100%;" draggable="false"></div>`;
     }
     inner += '<div class="bubble-text"></div>';
-
     el.innerHTML = `<div class="bubble">${inner}</div>
       <div class="message-actions">
-        <button class="action-btn" data-action="copy" title="Copy" aria-label="Copy"><i class="ri-file-copy-line"></i></button>
-        ${role === 'ai' ? '<button class="action-btn" data-action="retry" title="Retry" aria-label="Retry"><i class="ri-refresh-line"></i></button>' : ''}
+        <button class="action-btn" data-action="copy"><i class="ri-file-copy-line"></i></button>
+        ${role === 'ai' ? '<button class="action-btn" data-action="retry"><i class="ri-refresh-line"></i></button>' : ''}
       </div>
       <div class="message-time">${ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</div>`;
-
     container.appendChild(el);
     const bt = el.querySelector('.bubble-text');
     const bubble = el.querySelector('.bubble');
-    if (role === 'user') {
-      bt.textContent = content || '';
-      if (!content) bt.style.display = 'none';
-    } else {
-      bubble.dataset.rawText = content || '';
-      if (content) { bt.innerHTML = renderMarkdown(content); wireCopyButtons(bt); }
-    }
-    if (role === 'ai' && image) {
-      const img = el.querySelector('img');
-      if (img) img.onclick = () => openImageViewer(image);
-    }
+    if (role === 'user') { bt.textContent = content || ''; if (!content) bt.style.display = 'none'; }
+    else { bubble.dataset.rawText = content || ''; if (content) { bt.innerHTML = renderMarkdown(content); wireCopyButtons(bt); } }
+    if (role === 'ai' && image) { const img = el.querySelector('img'); if (img) img.onclick = () => openImageViewer(image); }
     wireMessageActions(el);
     scrollToBottom();
     return el;
@@ -295,11 +267,7 @@
         const action = btn.dataset.action;
         const bubble = el.querySelector('.bubble');
         if (action === 'copy') {
-          try {
-            await navigator.clipboard.writeText(bubble?.innerText || '');
-            btn.innerHTML = '<i class="ri-check-line"></i>';
-            setTimeout(() => { btn.innerHTML = '<i class="ri-file-copy-line"></i>'; }, 1200);
-          } catch {}
+          try { await navigator.clipboard.writeText(bubble?.innerText || ''); btn.innerHTML = '<i class="ri-check-line"></i>'; setTimeout(() => { btn.innerHTML = '<i class="ri-file-copy-line"></i>'; }, 1200); } catch {}
         } else if (action === 'retry') {
           if (isReplying) return;
           handleRetry(el);
@@ -314,9 +282,7 @@
     const idx = (convo.messages || []).findIndex(m => m.id === id);
     if (idx < 0) return;
     let userMsg = null;
-    for (let i = idx - 1; i >= 0; i--) {
-      if (convo.messages[i].role === 'user') { userMsg = convo.messages[i]; break; }
-    }
+    for (let i = idx - 1; i >= 0; i--) if (convo.messages[i].role === 'user') { userMsg = convo.messages[i]; break; }
     if (!userMsg) return;
     convo.messages = convo.messages.slice(0, idx);
     saveChats();
@@ -342,29 +308,19 @@
     const files = pendingFiles.slice();
     if (!currentConversationId) {
       currentConversationId = uid();
-      __conversations.unshift({
-        id: currentConversationId,
-        title: text.slice(0, 60) || 'New chat',
-        messages: [],
-        created: Date.now()
-      });
+      __conversations.unshift({ id: currentConversationId, title: text.slice(0, 60) || 'New chat', messages: [], created: Date.now() });
     }
     const msgId = uid();
     const convo = currentConvo();
     if (convo) convo.messages.push({ id: msgId, role: 'user', content: text, ts: Date.now(), files });
     addMessageToDOM('user', text, Date.now(), msgId, files);
-    inp.value = '';
-    inp.style.height = 'auto';
-    pendingFiles = [];
-    updatePreview();
-    updateSendButtonState();
-    saveChats();
-    renderHistory();
+    inp.value = ''; inp.style.height = 'auto';
+    pendingFiles = []; updatePreview(); updateSendButtonState();
+    saveChats(); renderHistory();
     sendToAPI(text, files);
   }
   async function sendToAPI(text, files) {
-    isReplying = true;
-    updateSendButtonState();
+    isReplying = true; updateSendButtonState();
     const stopBtn = $('#stopBtn'); if (stopBtn) stopBtn.style.display = 'grid';
     const convo = currentConvo();
     const history = convo ? convo.messages.slice(-14).map(m => ({ role: m.role, content: m.content })) : [];
@@ -375,32 +331,17 @@
     const timeEl = el.querySelector('.message-time');
     const aiMsgId = el.dataset.msgId;
     activeStreamController = new AbortController();
-    let full = '';
-    let generatedImage = null;
-    let finishReason = 'stop';
-    let bubbleText = null;
-    let firstChunk = true;
+    let full = '', generatedImage = null, finishReason = 'stop';
+    let bubbleText = null, firstChunk = true;
 
     try {
       const res = await fetch('/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: text,
-          history,
-          model,
-          stream: true,
-          files,
-          bridge: __bridge.connected
-            ? { connected: true, name: __bridge.name, model: __bridge.model, env: __bridge.env }
-            : null,
-        }),
+        body: JSON.stringify({ message: text, history, model, stream: true, files, bridge: __bridge.connected ? { connected: true, name: __bridge.name, model: __bridge.model, env: __bridge.env } : null }),
         signal: activeStreamController.signal,
       });
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        throw new Error(d.error?.message || `HTTP ${res.status}`);
-      }
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error?.message || `HTTP ${res.status}`); }
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let buf = '';
@@ -410,8 +351,7 @@
         buf += dec.decode(value, { stream: true });
         let idx;
         while ((idx = buf.indexOf('\n')) !== -1) {
-          const line = buf.slice(0, idx).trim();
-          buf = buf.slice(idx + 1);
+          const line = buf.slice(0, idx).trim(); buf = buf.slice(idx + 1);
           if (!line.startsWith('data:')) continue;
           const pl = line.slice(5).trim();
           if (!pl || pl === '[DONE]') continue;
@@ -422,21 +362,14 @@
               bubble.classList.remove('thinking');
               bubble.innerHTML = `<div style="margin-bottom:10px;border-radius:14px;overflow:hidden;border:1px solid var(--border);max-width:100%;cursor:zoom-in;"><img src="${o.img}" style="display:block;width:100%;" draggable="false"></div><div class="bubble-text"></div>`;
               bubbleText = bubble.querySelector('.bubble-text');
-              const img = bubble.querySelector('img');
-              if (img) img.onclick = () => openImageViewer(o.img);
-              firstChunk = false;
-              scrollToBottom();
-              refreshUsage();
-              continue;
+              const img = bubble.querySelector('img'); if (img) img.onclick = () => openImageViewer(o.img);
+              firstChunk = false; scrollToBottom(); refreshUsage(); continue;
             }
             if (o.d) {
               full += o.d;
               if (firstChunk) {
                 bubble.classList.remove('thinking');
-                if (!generatedImage) {
-                  bubble.innerHTML = '<div class="bubble-text"></div>';
-                  bubbleText = bubble.querySelector('.bubble-text');
-                }
+                if (!generatedImage) { bubble.innerHTML = '<div class="bubble-text"></div>'; bubbleText = bubble.querySelector('.bubble-text'); }
                 firstChunk = false;
               }
               const target = bubbleText || bubble.querySelector('.bubble-text');
@@ -450,10 +383,7 @@
       }
       const bt = bubble.querySelector('.bubble-text');
       if (bt) { bt.innerHTML = renderMarkdown(full); wireCopyButtons(bt); }
-      if (convo) convo.messages.push({
-        id: aiMsgId, role: 'assistant', content: full, ts: Date.now(),
-        image: generatedImage, finish_reason: finishReason
-      });
+      if (convo) convo.messages.push({ id: aiMsgId, role: 'assistant', content: full, ts: Date.now(), image: generatedImage, finish_reason: finishReason });
       saveChats();
       if (timeEl) timeEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       refreshUsage();
@@ -461,8 +391,7 @@
       bubble.classList.remove('thinking');
       bubble.textContent = e.name === 'AbortError' ? '(stopped)' : 'Error: ' + e.message;
     } finally {
-      isReplying = false;
-      activeStreamController = null;
+      isReplying = false; activeStreamController = null;
       if (stopBtn) stopBtn.style.display = 'none';
       updateSendButtonState();
     }
@@ -473,7 +402,6 @@
     const s = $('#stopBtn'); if (s) s.style.display = 'none';
     updateSendButtonState();
   }
-
   function handleFiles(fileList) {
     if (!fileList || !fileList.length) return;
     const arr = Array.from(fileList);
@@ -492,12 +420,7 @@
         r.readAsText(f);
       }
     });
-    function finish() {
-      newFiles.sort((a, b) => (a.order || 0) - (b.order || 0));
-      pendingFiles = pendingFiles.concat(newFiles);
-      updatePreview();
-      updateSendButtonState();
-    }
+    function finish() { newFiles.sort((a, b) => (a.order || 0) - (b.order || 0)); pendingFiles = pendingFiles.concat(newFiles); updatePreview(); updateSendButtonState(); }
   }
   function updatePreview() {
     const p = $('#attachmentPreview'), list = $('#attachmentList');
@@ -563,15 +486,13 @@
     __model = id;
     const m = getModelsList().find(x => x.id === id);
     if (m) { const lbl = $('#currentModelLabel'); if (lbl) lbl.textContent = m.label; }
-    renderModelPicker();
-    closeModelPicker();
+    renderModelPicker(); closeModelPicker();
   }
   function openModelPicker() { $('#modelPicker')?.classList.add('open'); $('#modelPickerMenu')?.classList.add('open'); }
   function closeModelPicker() { $('#modelPicker')?.classList.remove('open'); $('#modelPickerMenu')?.classList.remove('open'); }
 
   function renderCreditBar() {
-    const bar = $('#creditBar');
-    if (!bar) return;
+    const bar = $('#creditBar'); if (!bar) return;
     if (!__usage || __tier !== 'free') { bar.style.display = 'none'; return; }
     bar.style.display = 'flex';
     const setPill = (sel, used, limit) => {
@@ -703,10 +624,7 @@
         const wrap = document.querySelector(sel); if (!wrap) return;
         const dot = wrap.querySelector(dotSel);
         const txt = wrap.querySelector('span');
-        if (dot) {
-          dot.classList.toggle('online', __bridge.connected);
-          dot.classList.toggle('offline', !__bridge.connected);
-        }
+        if (dot) { dot.classList.toggle('online', __bridge.connected); dot.classList.toggle('offline', !__bridge.connected); }
         if (txt) txt.textContent = __bridge.connected ? 'Connected' : 'Disconnected';
       });
     const c = $('#bwConnectBtn'), d = $('#bwDisconnectBtn');
@@ -754,9 +672,7 @@
       setBwHint(`Connected · Home: ${home} · OS: ${os}`, 'ok');
       addBridgeSystemMsg(`Connected to ${res.data.name} · Home directory: ${home} · OS: ${os}`);
     } else {
-      __bridge.connected = false;
-      __bridge.baseUrl = null;
-      __bridge.env = null;
+      __bridge.connected = false; __bridge.baseUrl = null; __bridge.env = null;
       renderBridgeStatus();
       setBwHint(`Could not reach the bridge on port ${port}.\n\n1. Make sure you ran "python runner.py".\n2. Test in browser: http://localhost:${port}/ping`, 'err');
     }
@@ -767,11 +683,7 @@
   }
   async function bridgeCall(endpoint, payload) {
     if (!__bridge.connected || !__bridge.baseUrl) throw new Error('Bridge not connected');
-    const r = await fetch(__bridge.baseUrl + endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload || {}),
-    });
+    const r = await fetch(__bridge.baseUrl + endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}) });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return await r.json();
   }
@@ -795,16 +707,6 @@
     btn.classList.toggle('is-disabled', !enabled);
     btn.setAttribute('aria-disabled', String(!enabled));
   }
-  function showContinueBar(text) {
-    const bar = $('#bwContinueBar');
-    const t = $('#bwContinueText');
-    if (t && text) t.textContent = text;
-    if (bar) bar.style.display = 'flex';
-  }
-  function hideContinueBar() {
-    const bar = $('#bwContinueBar');
-    if (bar) bar.style.display = 'none';
-  }
   function openBridgeWorkspace() {
     $('#bridgeWorkspace')?.classList.add('open');
     document.body.style.overflow = 'hidden';
@@ -820,9 +722,9 @@
     bridgeQuestionCount = 0;
     bridgeProgress = 0;
     bridgeTurn = null;
+    __pendingQuestions = [];
     updateBridgeProgress(0, 'Ready');
     const w = $('#bwProgress'); if (w) w.style.display = 'none';
-    hideContinueBar();
   }
   function scrollBridgeBottom() { const c = $('#bridgeMessages'); if (c) c.scrollTop = c.scrollHeight; }
 
@@ -880,7 +782,7 @@
     const container = $('#bridgeMessages'); if (!container) return null;
     const el = document.createElement('div');
     el.className = 'bridge-msg ai';
-    el.innerHTML = `<div class="bridge-question-bubble"><div class="qb-head"><i class="ri-question-line"></i> Question for you</div><div class="qb-text">${escapeHtml(question)}</div></div>`;
+    el.innerHTML = `<div class="bridge-question-bubble"><div class="qb-head"><i class="ri-question-line"></i> Waiting for your answer…</div><div class="qb-text">${escapeHtml(question)}</div></div>`;
     container.appendChild(el);
     scrollBridgeBottom();
     return el;
@@ -906,8 +808,7 @@
     container.querySelectorAll('.bp-file').forEach(f => {
       if (f.dataset.path === path) {
         f.classList.add('done');
-        const ic = f.querySelector('i');
-        if (ic) ic.className = 'ri-check-line';
+        const ic = f.querySelector('i'); if (ic) ic.className = 'ri-check-line';
       }
     });
   }
@@ -921,11 +822,7 @@
     if (cmd.type === 'list') return { icon: 'ri-folder-line', iconClass: 'list', label: `Listing <code>${escapeHtml(getBaseName(cmd.path) || cmd.path)}</code>` };
     return { icon: 'ri-terminal-line', iconClass: '', label: cmd.type };
   }
-  function getBaseName(p) {
-    if (!p) return '';
-    const parts = String(p).split('/');
-    return parts[parts.length - 1] || p;
-  }
+  function getBaseName(p) { if (!p) return ''; const parts = String(p).split('/'); return parts[parts.length - 1] || p; }
   function addBridgeActionBubble(cmd) {
     const container = $('#bridgeMessages'); if (!container) return null;
     const el = document.createElement('div');
@@ -949,13 +846,8 @@
     const output = el.querySelector('.bridge-action-output');
     if (!status || !output) return;
     const ok = result && result.ok;
-    if (ok) {
-      status.className = 'bridge-action-status ok';
-      status.innerHTML = '<i class="ri-check-line"></i> Done';
-    } else {
-      status.className = 'bridge-action-status err';
-      status.innerHTML = '<i class="ri-close-line"></i> Failed';
-    }
+    if (ok) { status.className = 'bridge-action-status ok'; status.innerHTML = '<i class="ri-check-line"></i> Done'; }
+    else { status.className = 'bridge-action-status err'; status.innerHTML = '<i class="ri-close-line"></i> Failed'; }
     let body = '';
     if (ok) {
       if (cmd.type === 'exec') {
@@ -965,9 +857,7 @@
       } else if (cmd.type === 'write') body = `Wrote ${result.bytes} bytes`;
       else if (cmd.type === 'read') body = (result.content || '').slice(0, 500) || '(empty)';
       else if (cmd.type === 'list') body = (result.items || []).slice(0, 20).map(i => (i.is_dir ? '📁 ' : '📄 ') + i.name).join('\n');
-    } else {
-      body = (result && result.error) || 'Unknown error';
-    }
+    } else body = (result && result.error) || 'Unknown error';
     if (body) {
       output.textContent = body.length > 800 ? body.slice(0, 800) + '\n…' : body;
       output.style.display = 'block';
@@ -977,7 +867,7 @@
   }
   function updateBridgeProgress(pct, text) {
     bridgeProgress = Math.max(0, Math.min(100, Math.round(pct)));
-    const bar = $('#bwProgress'); const fill = $('#bwProgressFill'); const pctEl = $('#bwProgressPct'); const txtEl = $('#bwProgressText');
+    const bar = $('#bwProgress'), fill = $('#bwProgressFill'), pctEl = $('#bwProgressPct'), txtEl = $('#bwProgressText');
     if (bar) bar.style.display = 'block';
     if (fill) { fill.style.width = bridgeProgress + '%'; fill.classList.toggle('done', bridgeProgress >= 100); }
     if (pctEl) { pctEl.textContent = bridgeProgress + '%'; pctEl.classList.toggle('done', bridgeProgress >= 100); }
@@ -1009,7 +899,9 @@
     return files.length ? files : null;
   }
   function extractBridgeQuestions(text) {
-    const qs = []; const re = /<bridge-ask>([\s\S]*?)<\/bridge-ask>/g; let m;
+    const qs = [];
+    const re = /<bridge-ask>([\s\S]*?)<\/bridge-ask>/g;
+    let m;
     while ((m = re.exec(text)) !== null) {
       const body = m[1].trim();
       const lines = body.split('\n').map(l => l.trim()).filter(Boolean);
@@ -1066,46 +958,102 @@
     if (cmd.type === 'list') return 'list:' + cmd.path;
     return 'unknown';
   }
-  let __bqResolver = null;
-  let __bqSelected = null;
-  function showBridgeQuestionModal(q, counterText) {
+  function shouldBlockSignature(sig) {
+    if (!bridgeTurn) return false;
+    const count = bridgeTurn.commandLog.get(sig) || 0;
+    if (bridgeTurn.failedSignatures.has(sig)) return true;
+    if (count >= MAX_DUP_COMMANDS) return true;
+    return false;
+  }
+
+  /* ============================================================
+     QUESTION MODAL — pause & resume
+     ============================================================ */
+  function showBridgeQuestionModal(q, index, total) {
     return new Promise((resolve) => {
       __bqResolver = resolve;
       __bqSelected = null;
-      const modal = $('#bridgeQuestionModal'); if (!modal) { resolve(''); return; }
+      const modal = $('#bridgeQuestionModal');
+      if (!modal) { resolve(''); return; }
+
       const txt = $('#bqText'); if (txt) txt.textContent = q.question || '';
-      const ctr = $('#bqCounter'); if (ctr) ctr.textContent = counterText;
-      const optsWrap = $('#bqOptions'); if (!optsWrap) { resolve(''); return; }
-      optsWrap.innerHTML = '';
-      const cw = $('#bqCustomWrap');
-      if (q.options && q.options.length) {
-        if (cw) cw.style.display = 'none';
-        q.options.forEach(opt => {
-          const b = document.createElement('button');
-          b.type = 'button';
-          b.className = 'bridge-q-option';
-          b.textContent = opt;
-          b.onclick = () => {
-            __bqSelected = opt;
-            optsWrap.querySelectorAll('.bridge-q-option').forEach(x => x.classList.remove('selected'));
-            b.classList.add('selected');
-          };
-          optsWrap.appendChild(b);
-        });
-      } else { if (cw) cw.style.display = 'block'; }
-      const ci = $('#bqCustomInput'); if (ci) ci.value = '';
+      const ctr = $('#bqCounter'); if (ctr) ctr.textContent = `Question ${index} of ${total}`;
+      const progFill = $('#bqProgressFill');
+      if (progFill) progFill.style.width = Math.round(((index - 1) / total) * 100) + '%';
+
+      const optsWrap = $('#bqOptions');
+      if (optsWrap) {
+        optsWrap.innerHTML = '';
+        const cw = $('#bqCustomWrap');
+        if (q.options && q.options.length) {
+          if (cw) cw.style.display = 'none';
+          q.options.forEach(opt => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'bridge-q-option';
+            b.textContent = opt;
+            b.onclick = () => {
+              __bqSelected = opt;
+              optsWrap.querySelectorAll('.bridge-q-option').forEach(x => x.classList.remove('selected'));
+              b.classList.add('selected');
+              const ci = $('#bqCustomInput'); if (ci) ci.value = '';
+            };
+            optsWrap.appendChild(b);
+          });
+        } else {
+          if (cw) cw.style.display = 'block';
+        }
+      }
+
+      const ci = $('#bqCustomInput');
+      if (ci) {
+        ci.value = '';
+        ci.oninput = () => {
+          if (ci.value.trim()) {
+            __bqSelected = null;
+            const optsWrap2 = $('#bqOptions');
+            if (optsWrap2) optsWrap2.querySelectorAll('.bridge-q-option').forEach(x => x.classList.remove('selected'));
+          }
+        };
+      }
+
       modal.classList.add('open');
-      setTimeout(() => { $('#bqCustomInput')?.focus(); }, 100);
+      setTimeout(() => {
+        const firstOpt = document.querySelector('.bridge-q-option');
+        if (firstOpt) firstOpt.focus();
+        else $('#bqCustomInput')?.focus();
+      }, 100);
     });
   }
   function closeBridgeQuestionModal() { $('#bridgeQuestionModal')?.classList.remove('open'); }
   function submitBridgeQuestion() {
     const custom = $('#bqCustomInput')?.value.trim();
     const answer = custom || __bqSelected || '';
-    if (!answer) return;
+    if (!answer && !__bqSelected) {
+      // Nothing selected — flash hint
+      const wrap = $('#bqOptions');
+      if (wrap) {
+        wrap.style.animation = 'none';
+        setTimeout(() => { wrap.style.animation = ''; }, 10);
+      }
+      return;
+    }
     closeBridgeQuestionModal();
+    const progFill = $('#bqProgressFill');
+    if (progFill && __pendingQuestions.length > 0) {
+      const done = __pendingQuestions._currentIndex || 1;
+      progFill.style.width = Math.round((done / __pendingQuestions.length) * 100) + '%';
+    }
     if (__bqResolver) { __bqResolver(answer); __bqResolver = null; }
   }
+  function skipBridgeQuestion() {
+    closeBridgeQuestionModal();
+    if (__bqResolver) { __bqResolver('[Skipped by user]'); __bqResolver = null; }
+  }
+
+  /* ============================================================
+     Fetch AI reply for bridge
+     ============================================================ */
   async function fetchBridgeReply(history) {
     const env = __bridge.env || {};
     const res = await fetch('/v1/chat/completions', {
@@ -1133,18 +1081,14 @@
     if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
     return data.reply || data.choices?.[0]?.message?.content || '';
   }
-  function shouldBlockSignature(sig) {
-    if (!bridgeTurn) return false;
-    const count = bridgeTurn.commandLog.get(sig) || 0;
-    if (bridgeTurn.failedSignatures.has(sig)) return true;
-    if (count >= MAX_DUP_COMMANDS) return true;
-    return false;
-  }
+
+  /* ============================================================
+     MAIN LOOP — pauses on questions, resumes on answers
+     ============================================================ */
   async function runBridgeTurn(userText, isResume = false) {
     if (!__bridge.connected) { setBwHint('Bridge is not connected.', 'err'); return; }
     if (bridgeRunning) return;
     bridgeRunning = true;
-    hideContinueBar();
     updateBridgeSendBtn();
 
     if (!isResume) {
@@ -1166,7 +1110,6 @@
 
     let iter = 0;
     let autoContinues = 0;
-    let endedNormally = false;
 
     try {
       while (iter++ < MAX_BRIDGE_ITER) {
@@ -1190,6 +1133,7 @@
           }
           break;
         }
+
         const prog = extractProgressTag(reply);
         if (prog && prog.total > 0) {
           const pct = Math.min(98, Math.round((prog.step / prog.total) * 100));
@@ -1202,31 +1146,65 @@
           if (totalPlanned > 0) text = `Files written: ${doneCount} / ${totalPlanned}`;
           updateBridgeProgress(pct, text);
         }
+
         const plan = extractBridgePlan(reply);
         if (plan && plan.length) {
           for (const f of plan) bridgeTurn.plannedFiles.add(f);
           addBridgePlanBubble(plan);
         }
+
+        // Narration (no tags shown)
         const narration = getNarrationText(reply);
         if (narration) addBridgeAiMsg(narration);
+
         bridgeConversation.push({ role: 'assistant', content: reply });
         if (bridgeConversation.length > 40) bridgeConversation = bridgeConversation.slice(-40);
+
+        /* ============================================================
+           PAUSE — Ask ALL questions in this reply, wait for answers
+           ============================================================ */
         const questions = extractBridgeQuestions(reply);
-        if (questions.length > 0 && bridgeQuestionCount < MAX_BRIDGE_QUESTIONS) {
-          const q = questions[0];
-          addBridgeQuestionBubble(q.question);
-          const counterText = `Question ${bridgeQuestionCount + 1} of ${MAX_BRIDGE_QUESTIONS}`;
-          const answer = await showBridgeQuestionModal(q, counterText);
-          bridgeQuestionCount++;
-          addBridgeUserMsg(answer);
-          bridgeConversation.push({ role: 'user', content: `[Answer to "${q.question}"] ${answer}` });
-          continue;
+        if (questions.length > 0) {
+          const remaining = MAX_BRIDGE_QUESTIONS - bridgeQuestionCount;
+          const toAsk = questions.slice(0, Math.max(0, remaining));
+
+          if (toAsk.length > 0) {
+            addBridgeSystemMsg(`Paused — Mirox needs ${toAsk.length} answer${toAsk.length === 1 ? '' : 's'} before continuing.`);
+
+            // Ask each question, one at a time, in the modal
+            for (let qi = 0; qi < toAsk.length; qi++) {
+              const q = toAsk[qi];
+              addBridgeQuestionBubble(q.question);
+              bridgeQuestionCount++;
+
+              const answer = await showBridgeQuestionModal(q, qi + 1, toAsk.length);
+              addBridgeUserMsg(answer);
+              bridgeConversation.push({
+                role: 'user',
+                content: `[Answer to "${q.question}"] ${answer}`,
+              });
+            }
+
+            addBridgeSystemMsg('Answers received — resuming build.');
+            bridgeConversation.push({
+              role: 'user',
+              content: `[System] User answered all pending questions. Continue building now using <bridge-write> and <bridge-exec> tags. Do not repeat the questions.`,
+            });
+            // Loop continues → AI receives the answers → keeps building
+            continue;
+          } else {
+            addBridgeSystemMsg(`Question limit (${MAX_BRIDGE_QUESTIONS}) reached.`);
+            bridgeConversation.push({
+              role: 'user',
+              content: `[System] Question limit reached. Continue with best-effort defaults. Do not ask more questions.`,
+            });
+            continue;
+          }
         }
-        if (questions.length > 0 && bridgeQuestionCount >= MAX_BRIDGE_QUESTIONS) {
-          addBridgeSystemMsg(`Question limit (${MAX_BRIDGE_QUESTIONS}) reached.`);
-          bridgeConversation.push({ role: 'user', content: `[System] Question limit reached. Continue with best-effort defaults.` });
-          continue;
-        }
+
+        /* ============================================================
+           Run commands
+           ============================================================ */
         const cmds = extractBridgeCommands(reply);
         if (cmds.length > 0) {
           const resultLines = [];
@@ -1261,12 +1239,14 @@
             }
             resultLines.push(formatResultForAI(cmd, result));
           }
+
           const env = __bridge.env || {};
           const doneCount = bridgeTurn.writtenFiles.size;
           const totalPlanned = bridgeTurn.plannedFiles.size;
           const progressLine = totalPlanned > 0
             ? `Progress: ${doneCount}/${totalPlanned} planned files written.`
             : `Progress: ${doneCount} file(s) written.`;
+
           const bridgeResults = [
             `[Bridge environment] home=${env.home || '?'} platform=${env.platform || '?'}`,
             `[Bridge progress] ${progressLine}`,
@@ -1277,27 +1257,34 @@
             `Continue with the next step. If ALL planned files are written AND verified, reply with exactly: DONE.`,
             `Otherwise, output the next batch of <bridge-*> tags to keep building.`,
           ].filter(Boolean).join('\n');
+
           bridgeConversation.push({ role: 'user', content: bridgeResults });
           continue;
         }
+
+        /* ============================================================
+           No commands, no questions — decide done / continue
+           ============================================================ */
         const saidDone = /\bDONE\b/i.test(reply);
         const hasPlan = bridgeTurn.plannedFiles.size > 0;
         const allFilesWritten = hasPlan && bridgeTurn.writtenFiles.size >= bridgeTurn.plannedFiles.size;
+
         if (saidDone && (allFilesWritten || !hasPlan)) {
           updateBridgeProgress(100, 'Complete');
           addBridgeSuccessMsg('Project complete');
-          endedNormally = true;
           break;
         }
+
         if (saidDone && hasPlan && !allFilesWritten) {
-          const remaining = [...bridgeTurn.plannedFiles].filter(f => !bridgeTurn.writtenFiles.has(f));
-          addBridgeSystemMsg(`AI said DONE but ${remaining.length} planned file(s) are missing. Asking it to finish.`);
+          const missing = [...bridgeTurn.plannedFiles].filter(f => !bridgeTurn.writtenFiles.has(f));
+          addBridgeSystemMsg(`AI said DONE but ${missing.length} file(s) are missing — asking it to finish.`);
           bridgeConversation.push({
             role: 'user',
-            content: `[System] You said DONE but these files are still missing:\n${remaining.map(r => '- ' + r).join('\n')}\n\nWrite them all using <bridge-write> tags, then verify. Do NOT say DONE until every file exists.`
+            content: `[System] You said DONE but these files are missing:\n${missing.map(r => '- ' + r).join('\n')}\n\nWrite them with <bridge-write> tags, then verify. Do NOT say DONE until every file exists.`
           });
           continue;
         }
+
         if (!saidDone) {
           if (autoContinues < MAX_AUTO_CONTINUES) {
             autoContinues++;
@@ -1312,17 +1299,20 @@
           break;
         }
       }
+
+      /* ============================================================
+         Post-loop — did we actually finish?
+         ============================================================ */
       const hasPlan = bridgeTurn.plannedFiles.size > 0;
       const allFilesWritten = hasPlan && bridgeTurn.writtenFiles.size >= bridgeTurn.plannedFiles.size;
       const missing = hasPlan ? [...bridgeTurn.plannedFiles].filter(f => !bridgeTurn.writtenFiles.has(f)) : [];
-      if (endedNormally && (allFilesWritten || !hasPlan)) {
-        // good
-      } else if (missing.length > 0 || !endedNormally) {
+
+      if (!(allFilesWritten || !hasPlan)) {
         updateBridgeProgress(Math.min(95, bridgeProgress), `Paused at ${bridgeTurn.writtenFiles.size}/${bridgeTurn.plannedFiles.size || '?'} files`);
-        showContinueBar(
+        addBridgeSystemMsg(
           missing.length > 0
-            ? `Paused — ${missing.length} file${missing.length === 1 ? '' : 's'} left to write`
-            : 'Paused — AI ran out of turns'
+            ? `Paused — ${missing.length} file${missing.length === 1 ? '' : 's'} left. Type anything to keep building.`
+            : 'Paused — AI ran out of turns. Type anything to keep building.'
         );
       }
     } finally {
@@ -1330,6 +1320,7 @@
       updateBridgeSendBtn();
     }
   }
+
   function handleBridgeSend() {
     const inp = $('#bridgeInput'); if (!inp) return;
     const text = inp.value.trim();
@@ -1338,18 +1329,8 @@
     updateBridgeSendBtn();
     runBridgeTurn(text, false);
   }
-  function handleBridgeContinue() {
-    if (bridgeRunning || !__bridge.connected) return;
-    if (!bridgeTurn) return;
-    const hasPlan = bridgeTurn.plannedFiles.size > 0;
-    const missing = hasPlan ? [...bridgeTurn.plannedFiles].filter(f => !bridgeTurn.writtenFiles.has(f)) : [];
-    const msg = missing.length
-      ? `Continue. Still missing these files:\n${missing.map(m => '- ' + m).join('\n')}\n\nWrite them with <bridge-write> tags.`
-      : `Continue. Output the next batch of <bridge-write> or <bridge-exec> tags to keep building.`;
-    bridgeConversation.push({ role: 'user', content: `[System] ${msg}` });
-    runBridgeTurn('', true);
-  }
 
+  /* Wiring */
   function wireAll() {
     on('#hamburgerBtn', 'click', openSidebar);
     on('#sidebarCloseBtn', 'click', closeSidebar);
@@ -1456,7 +1437,6 @@
     on('#bridgeDownloadBtn', 'click', downloadBridgeClient);
     on('#bwConnectBtn', 'click', startBridge);
     on('#bwDisconnectBtn', 'click', stopBridge);
-    on('#bwContinueBtn', 'click', handleBridgeContinue);
     const bwInp = $('#bridgeInput');
     if (bwInp) {
       bwInp.addEventListener('input', () => {
@@ -1479,14 +1459,21 @@
     });
     on('#bqCustomToggle', 'click', () => {
       const cw = $('#bqCustomWrap');
-      if (cw) { cw.style.display = cw.style.display === 'none' ? 'block' : 'none'; if (cw.style.display === 'block') $('#bqCustomInput')?.focus(); }
+      if (cw) {
+        cw.style.display = cw.style.display === 'none' ? 'block' : 'none';
+        if (cw.style.display === 'block') $('#bqCustomInput')?.focus();
+      }
     });
     on('#bqSubmit', 'click', submitBridgeQuestion);
-    on('#bqCustomInput', 'keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitBridgeQuestion(); } });
+    on('#bqSkipOne', 'click', skipBridgeQuestion);
+    on('#bqCustomInput', 'keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); submitBridgeQuestion(); }
+    });
     bindSuggestionClicks();
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         closeImageViewer(); closeModelPicker();
+        if ($('#bridgeQuestionModal')?.classList.contains('open')) return; // don't close question
         if ($('#bridgeWorkspace')?.classList.contains('open')) closeBridgeWorkspace();
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); $('#messageInput')?.focus(); }
