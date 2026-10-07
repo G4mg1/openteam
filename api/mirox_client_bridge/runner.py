@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
-MiroxAI Bridge Client v3 — HTTP-only (aiohttp).
-Fixed: middleware signature (request, handler) as required by aiohttp 3.10+/Py3.13+.
+MiroxAI Bridge Client v4
+- Fixed aiohttp middleware signature
+- Sudo support (/sudo-exec, password kept in memory only)
+- SMTP email support
+- Full file / system / git / clipboard / screenshot endpoints
 """
 
 import os
@@ -15,7 +18,6 @@ import shutil
 import smtplib
 import ssl
 import urllib.request
-import urllib.parse
 from pathlib import Path
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -23,7 +25,10 @@ from email.mime.multipart import MIMEMultipart
 try:
     from aiohttp import web
 except ImportError:
-    print("pip install aiohttp")
+    print("=" * 60)
+    print("Missing dependency: aiohttp")
+    print("Install it with:  pip install aiohttp")
+    print("=" * 60)
     sys.exit(1)
 
 
@@ -49,6 +54,9 @@ PORT = int(CONFIG["port"])
 NAME = CONFIG["bridge_name"]
 MAX_OUTPUT = int(CONFIG["max_output_bytes"])
 SMTP = CONFIG.get("smtp") or {}
+
+IS_WINDOWS = platform.system() == "Windows"
+IS_MAC = platform.system() == "Darwin"
 
 
 # ---------------- Allowed dirs ----------------
@@ -93,10 +101,9 @@ def safe_path(raw: str):
     return p if is_path_allowed(p) else None
 
 
-# ---------------- CORS middleware (FIXED) ----------------
+# ---------------- CORS middleware (aiohttp 3.10+ compatible) ----------------
 @web.middleware
 async def cors_mw(request, handler, **kwargs):
-    # aiohttp >= 3.10 calls middleware with (request=..., handler=...)
     if handler is None:
         handler = kwargs.get("handler")
     if request is None:
@@ -122,7 +129,14 @@ async def cors_mw(request, handler, **kwargs):
 
 # ---------------- Endpoints ----------------
 async def ping(req):
-    return web.json_response({"ok": True, "name": NAME, "cwd": os.getcwd(), "time": time.time()})
+    return web.json_response({
+        "ok": True,
+        "name": NAME,
+        "cwd": os.getcwd(),
+        "platform": platform.system(),
+        "sudo_available": bool(shutil.which("sudo")) or IS_WINDOWS,
+        "time": time.time(),
+    })
 
 
 async def env_info(req):
@@ -133,9 +147,30 @@ async def env_info(req):
         "python": platform.python_version(),
         "allowed_dirs": [str(d) for d in ALLOWED_DIRS],
         "smtp_configured": bool(SMTP.get("host")),
+        "sudo_available": bool(shutil.which("sudo")) or IS_WINDOWS,
         "separator": os.sep,
         "time": time.time(),
     })
+
+
+def _run_command(cmd, cwd, timeout=120, env=None, stdin=None):
+    """Run a shell command; return (ok, exit_code, stdout, stderr, error)."""
+    try:
+        proc = subprocess.run(
+            cmd,
+            shell=True,
+            cwd=str(cwd) if cwd else None,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+            input=stdin if stdin is not None else None,
+        )
+        return (True, proc.returncode, proc.stdout or "", proc.stderr or "", None)
+    except subprocess.TimeoutExpired:
+        return (False, -1, "", "", "Command timed out")
+    except Exception as e:
+        return (False, -1, "", "", str(e))
 
 
 async def exec_cmd(req):
@@ -146,16 +181,103 @@ async def exec_cmd(req):
     cmd = str(data.get("command", "")).strip()
     if not cmd:
         return web.json_response({"ok": False, "error": "No command provided"})
-    cwd = safe_path(data.get("cwd") or str(Path.home())) or Path.home()
-    try:
-        proc = subprocess.run(cmd, shell=True, cwd=str(cwd),
-                              capture_output=True, text=True,
-                              timeout=int(data.get("timeout", 120)))
+
+    # Refuse sudo commands here — they must go through /sudo-exec so we can
+    # prompt the user for their password.
+    if _looks_like_sudo(cmd):
         return web.json_response({
-            "ok": True, "exit_code": proc.returncode,
-            "stdout": (proc.stdout or "")[:MAX_OUTPUT],
-            "stderr": (proc.stderr or "")[:MAX_OUTPUT],
+            "ok": False,
+            "needs_sudo": True,
+            "command": _strip_sudo(cmd),
+            "error": "This command needs sudo. Provide a password via /sudo-exec.",
+        })
+
+    cwd = safe_path(data.get("cwd") or str(Path.home())) or Path.home()
+    timeout = int(data.get("timeout", 120))
+    ok, code, out, err, err2 = _run_command(cmd, cwd, timeout=timeout)
+    if not ok:
+        return web.json_response({"ok": False, "error": err2 or "failed"})
+    return web.json_response({
+        "ok": True, "exit_code": code,
+        "stdout": out[:MAX_OUTPUT], "stderr": err[:MAX_OUTPUT],
+        "cwd": str(cwd),
+    })
+
+
+def _looks_like_sudo(cmd):
+    if not cmd:
+        return False
+    # match "sudo" as its own word at start or after a shell separator
+    import re
+    return bool(re.search(r"(?:^|[\s&|;])sudo(?:\s|$)", cmd))
+
+
+def _strip_sudo(cmd):
+    import re
+    return re.sub(r"(?:^|[\s&|;])sudo\s+", lambda m: (m.group(0)[0] if m.group(0)[0] in "&|;" else ""), cmd, count=1).strip()
+
+
+async def sudo_exec(req):
+    """Run a command via sudo. The password is used once and NOT stored."""
+    try:
+        data = await req.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "Invalid JSON"})
+
+    raw_cmd = str(data.get("command", "")).strip()
+    password = str(data.get("password", ""))
+    if not raw_cmd:
+        return web.json_response({"ok": False, "error": "No command provided"})
+    if not password:
+        return web.json_response({"ok": False, "error": "No password provided"})
+
+    # Remove leading "sudo " if present so we don't double-wrap
+    inner = raw_cmd
+    if _looks_like_sudo(inner):
+        inner = _strip_sudo(inner)
+
+    cwd = safe_path(data.get("cwd") or str(Path.home())) or Path.home()
+    timeout = int(data.get("timeout", 120))
+
+    if IS_WINDOWS:
+        # Windows: use runas is interactive; we cannot pipe password safely.
+        # Return a clear message.
+        return web.json_response({
+            "ok": False,
+            "error": "sudo is not available on Windows. Run the bridge in an elevated terminal if you need admin."
+        })
+
+    # Use sudo -S with empty prompt so it reads from stdin
+    full = ["sudo", "-S", "-p", "", "--"] + [inner]
+    try:
+        proc = subprocess.run(
+            full,
+            shell=False,
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            input=password + "\n",
+        )
+        out = proc.stdout or ""
+        err = proc.stderr or ""
+        # Clean the [sudo] password prompt line if it appears
+        err = err.replace("[sudo] password for", "").strip() if err.startswith("[sudo]") else err
+        ok = (proc.returncode == 0)
+        # Detect wrong password
+        wrong = (
+            "incorrect password" in err.lower()
+            or "sorry, try again" in err.lower()
+            or "authentication failure" in err.lower()
+        )
+        return web.json_response({
+            "ok": ok,
+            "exit_code": proc.returncode,
+            "stdout": out[:MAX_OUTPUT],
+            "stderr": err[:MAX_OUTPUT],
             "cwd": str(cwd),
+            "wrong_password": wrong,
+            "error": ("Wrong sudo password" if wrong and not ok else (None if ok else "sudo failed")),
         })
     except subprocess.TimeoutExpired:
         return web.json_response({"ok": False, "error": "Command timed out"})
@@ -349,7 +471,7 @@ async def syscheck(req):
 
 async def processes(req):
     try:
-        cmd = "ps aux --sort=-%cpu | head -n 16" if platform.system() != "Windows" else "tasklist"
+        cmd = "ps aux --sort=-%cpu | head -n 16" if not IS_WINDOWS else "tasklist"
         p = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=8)
         return web.json_response({"ok": True, "raw": p.stdout[:MAX_OUTPUT]})
     except Exception as e:
@@ -362,7 +484,7 @@ async def send_email(req):
     except Exception:
         return web.json_response({"ok": False, "error": "Invalid JSON"})
     if not SMTP.get("host"):
-        return web.json_response({"ok": False, "error": "SMTP not configured in config.json"})
+        return web.json_response({"ok": False, "error": "SMTP not configured. Run smtp_setup.py."})
     to = str(data.get("to", "")).strip()
     subject = str(data.get("subject", "")).strip() or "(no subject)"
     body = str(data.get("body", ""))
@@ -404,7 +526,7 @@ async def http_call(req):
         return web.json_response({"ok": False, "error": "Only http(s) allowed"})
     try:
         req2 = urllib.request.Request(url, method=method, data=(body.encode() if body else None))
-        req2.add_header("User-Agent", "MiroxBridge/3.0")
+        req2.add_header("User-Agent", "MiroxBridge/4.0")
         if body:
             req2.add_header("Content-Type", "application/json")
         with urllib.request.urlopen(req2, timeout=20) as r:
@@ -431,13 +553,13 @@ async def clipboard(req):
     except ImportError:
         pass
     try:
-        if platform.system() == "Darwin":
+        if IS_MAC:
             if action == "set":
                 subprocess.run("pbcopy", shell=True, input=content, text=True)
                 return web.json_response({"ok": True})
             p = subprocess.run("pbpaste", shell=True, capture_output=True, text=True)
             return web.json_response({"ok": True, "content": p.stdout})
-        if platform.system() == "Windows":
+        if IS_WINDOWS:
             if action == "set":
                 subprocess.run("clip", shell=True, input=content, text=True)
                 return web.json_response({"ok": True})
@@ -467,7 +589,7 @@ async def screenshot(req):
         return web.json_response({"ok": True, "path": str(p)})
     except ImportError:
         try:
-            if platform.system() == "Darwin":
+            if IS_MAC:
                 p.parent.mkdir(parents=True, exist_ok=True)
                 r = subprocess.run(f"screencapture -x {str(p)}", shell=True,
                                    capture_output=True, text=True, timeout=15)
@@ -546,6 +668,7 @@ def build_app():
     add("/ping", "GET", ping)
     add("/env", "GET", env_info)
     add("/exec", "POST", exec_cmd)
+    add("/sudo-exec", "POST", sudo_exec)
     add("/write", "POST", write_file)
     add("/append", "POST", append_file)
     add("/read", "POST", read_file)
@@ -573,6 +696,7 @@ if __name__ == "__main__":
     for d in ALLOWED_DIRS:
         print(f"[Bridge]   allowed: {d}")
     print(f"[Bridge] SMTP configured: {bool(SMTP.get('host'))}")
+    print(f"[Bridge] Sudo available: {bool(shutil.which('sudo')) or IS_WINDOWS}")
     print("=" * 60)
     try:
         web.run_app(build_app(), host="127.0.0.1", port=PORT, print=None, access_log=None)
