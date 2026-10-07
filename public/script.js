@@ -34,14 +34,14 @@
   const MAX_AUTO_CONTINUES = 30;
   const MAX_DUP_COMMANDS = 1;
   const AUTO_CONTINUE_DELAY_MS = 2000;
-  const MAX_IMAGE_DIM = 1280; // resize large images before sending
+  const MAX_IMAGE_DIM = 1280;
 
   let __config = null, __user = null, __tier = 'free', __model = 'mirox-luna-1.2';
   let currentConversationId = null, isReplying = false;
   let __conversations = [], pendingFiles = [], activeStreamController = null, __usage = null;
   let __bridge = { name: 'My Laptop', model: 'mirox-luna-1.2', port: 8765, connected: false, baseUrl: null, env: null };
   let bridgeConversation = [], bridgeRunning = false, bridgeQuestionCount = 0, bridgeProgress = 0;
-  let bridgeTurn = null, bridgeAutoTimer = null;
+  let bridgeTurn = null, bridgeAutoTimer = null, bridgeTaskComplete = true;
   let __bqResolver = null, __bqSelected = null;
   let forceSearchNext = false;
 
@@ -450,7 +450,7 @@
               bubble.innerHTML = searchHTML + `<div style="margin-bottom:10px;border-radius:14px;overflow:hidden;border:1px solid var(--border);max-width:100%;cursor:zoom-in;"><img src="${o.img}" style="display:block;width:100%;" draggable="false"></div><div class="bubble-text"></div>`;
               bubbleText = bubble.querySelector('.bubble-text');
               const img = bubble.querySelector('img'); if (img) img.onclick = () => openImageViewer(o.img);
-              firstChunk = false; scrollToBottom(); refreshUsage(); continue;
+              firstChunk = false; scrollToBottom(); refreshUsage(); renderSidebarImageHistory(); continue;
             }
             if (o.d) {
               full += o.d;
@@ -502,7 +502,6 @@
     updateSendButtonState();
   }
 
-  /* ---------- File handling (with image resize) ---------- */
   function readImageAsResizedDataUrl(file) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -519,12 +518,7 @@
           const c = document.createElement('canvas');
           c.width = width; c.height = height;
           c.getContext('2d').drawImage(img, 0, 0, width, height);
-          try {
-            const out = c.toDataURL('image/jpeg', 0.85);
-            resolve(out);
-          } catch {
-            resolve(dataUrl);
-          }
+          try { resolve(c.toDataURL('image/jpeg', 0.85)); } catch { resolve(dataUrl); }
         };
         img.onerror = () => resolve(dataUrl);
         img.src = dataUrl;
@@ -580,33 +574,61 @@
   }
   function closeImageViewer() { $('#imageViewer')?.classList.remove('open'); }
 
-  async function renderImageHistory() {
-    const wrap = $('#imageHistory'); if (!wrap) return;
-    wrap.innerHTML = '<div style="padding:14px;color:var(--text-muted);font-size:13px;">Loading…</div>';
+  let __imageCache = [];
+
+  async function fetchImageHistory() {
     try {
       const res = await fetch('/api/images/history', { credentials: 'same-origin', cache: 'no-store' });
       const data = await res.json();
-      const items = (data && data.images) || [];
-      if (!items.length) {
-        wrap.innerHTML = '<div style="padding:14px;color:var(--text-faint);font-size:13px;text-align:center;grid-column:1/-1;">No images yet.</div>';
-        return;
-      }
-      wrap.innerHTML = items.map((it, i) => `
-        <div class="image-history-item" data-idx="${i}">
-          <img src="${it.image}" alt="" loading="lazy">
-          <div class="image-history-prompt">${escapeHtml(it.prompt || '')}</div>
-        </div>
-      `).join('');
-      wrap.querySelectorAll('.image-history-item').forEach(el => {
-        el.onclick = () => {
-          const i = parseInt(el.dataset.idx, 10);
-          const it = items[i];
-          if (it) openImageViewer(it.image);
-        };
-      });
-    } catch {
-      wrap.innerHTML = '<div style="padding:14px;color:#dc2626;font-size:13px;grid-column:1/-1;">Failed to load history.</div>';
+      return (data && data.images) || [];
+    } catch { return []; }
+  }
+
+  async function renderImageHistory() {
+    const wrap = $('#imageHistory'); if (!wrap) return;
+    wrap.innerHTML = '<div style="padding:14px;color:var(--text-muted);font-size:13px;">Loading…</div>';
+    const items = await fetchImageHistory();
+    __imageCache = items;
+    if (!items.length) {
+      wrap.innerHTML = '<div style="padding:14px;color:var(--text-faint);font-size:13px;text-align:center;grid-column:1/-1;">No images yet.</div>';
+      return;
     }
+    wrap.innerHTML = items.map((it, i) => `
+      <div class="image-history-item" data-idx="${i}">
+        <img src="${it.image}" alt="" loading="lazy">
+        <div class="image-history-prompt">${escapeHtml(it.prompt || '')}</div>
+      </div>
+    `).join('');
+    wrap.querySelectorAll('.image-history-item').forEach(el => {
+      el.onclick = () => {
+        const i = parseInt(el.dataset.idx, 10);
+        const it = items[i];
+        if (it) openImageViewer(it.image);
+      };
+    });
+  }
+
+  async function renderSidebarImageHistory() {
+    const wrap = $('#sidebarImageHistory'); if (!wrap) return;
+    wrap.innerHTML = '<div class="sidebar-empty">Loading…</div>';
+    const items = await fetchImageHistory();
+    __imageCache = items;
+    if (!items.length) {
+      wrap.innerHTML = '<div class="sidebar-empty">No images yet.<br><span style="font-size:11px;">Ask Mirox to generate one.</span></div>';
+      return;
+    }
+    wrap.innerHTML = items.map((it, i) => `
+      <div class="sidebar-image-item" data-idx="${i}" title="${escapeHtml(it.prompt || '')}">
+        <img src="${it.image}" alt="" loading="lazy">
+      </div>
+    `).join('');
+    wrap.querySelectorAll('.sidebar-image-item').forEach(el => {
+      el.onclick = () => {
+        const i = parseInt(el.dataset.idx, 10);
+        const it = items[i];
+        if (it) openImageViewer(it.image);
+      };
+    });
   }
 
   function getModelsList() { return __config?.models?.length ? __config.models : FALLBACK_MODELS; }
@@ -706,7 +728,12 @@
     try {
       const res = await fetch('/v1/images/generations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, aspect_ratio: '1:1' }) });
       const data = await res.json().catch(() => ({}));
-      if (res.ok && data.ok && data.image) { if (result) result.innerHTML = `<img src="${data.image}" alt="${escapeHtml(prompt)}">`; refreshUsage(); renderImageHistory(); }
+      if (res.ok && data.ok && data.image) {
+        if (result) result.innerHTML = `<img src="${data.image}" alt="${escapeHtml(prompt)}">`;
+        refreshUsage();
+        renderImageHistory();
+        renderSidebarImageHistory();
+      }
       else if (result) result.innerHTML = `<div style="color:#dc2626;font-size:13px;">Failed: ${escapeHtml(data.error?.message || 'Unknown')}</div>`;
     } catch (e) { if (result) result.innerHTML = `<div style="color:#dc2626;font-size:13px;">Error: ${escapeHtml(e.message)}</div>`; }
     finally { if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-image-add-line"></i> Generate'; } }
@@ -792,6 +819,7 @@
   function clearBridgeChat() {
     const m = $('#bridgeMessages'); if (m) m.innerHTML = '';
     bridgeConversation = []; bridgeQuestionCount = 0; bridgeProgress = 0; bridgeTurn = null;
+    bridgeTaskComplete = true;
     if (bridgeAutoTimer) { clearTimeout(bridgeAutoTimer); bridgeAutoTimer = null; }
     updateBridgeProgress(0, 'Ready');
     const w = $('#bwProgress'); if (w) w.style.display = 'none';
@@ -1112,6 +1140,7 @@
     if (__bqResolver) { __bqResolver(answer); __bqResolver = null; }
   }
   function skipBridgeQuestion() { closeBridgeQuestionModal(); if (__bqResolver) { __bqResolver('[Skipped by user]'); __bqResolver = null; } }
+
   async function fetchBridgeReply(history) {
     const env = __bridge.env || {};
     const envBlock = buildEnvBlockString();
@@ -1153,6 +1182,7 @@
     updateBridgeSendBtn();
     if (!isResume) {
       bridgeQuestionCount = 0;
+      bridgeTaskComplete = false;
       bridgeTurn = { runs: 0, plannedFiles: new Set(), writtenFiles: new Set(), commandLog: new Map(), failedSignatures: new Set(), commandsRun: 0 };
       bridgeProgress = 0;
       updateBridgeProgress(2, 'Starting…');
@@ -1248,7 +1278,12 @@
         const saidDone = /\bDONE\b/i.test(reply);
         const hasPlan = bridgeTurn.plannedFiles.size > 0;
         const allFilesWritten = hasPlan && bridgeTurn.writtenFiles.size >= bridgeTurn.plannedFiles.size;
-        if (saidDone && (allFilesWritten || !hasPlan)) { updateBridgeProgress(100, 'Complete'); addBridgeSuccessMsg('Task complete'); break; }
+        if (saidDone && (allFilesWritten || !hasPlan)) {
+          updateBridgeProgress(100, 'Complete');
+          addBridgeSuccessMsg('Task complete');
+          bridgeTaskComplete = true;
+          break;
+        }
         if (saidDone && hasPlan && !allFilesWritten) {
           const missing = [...bridgeTurn.plannedFiles].filter(f => !bridgeTurn.writtenFiles.has(f));
           addBridgeSystemMsg(`Still ${missing.length} file(s) missing — continuing.`);
@@ -1269,7 +1304,7 @@
       const hasPlan = bridgeTurn.plannedFiles.size > 0;
       const allFilesWritten = hasPlan && bridgeTurn.writtenFiles.size >= bridgeTurn.plannedFiles.size;
       const missing = hasPlan ? [...bridgeTurn.plannedFiles].filter(f => !bridgeTurn.writtenFiles.has(f)) : [];
-      if (!(allFilesWritten || !hasPlan)) {
+      if (!(allFilesWritten || !hasPlan) && !bridgeTaskComplete) {
         setProgressText(`Resuming in ${AUTO_CONTINUE_DELAY_MS / 1000}s…`);
         bridgeAutoTimer = setTimeout(() => {
           if (!__bridge.connected) return;
@@ -1283,10 +1318,17 @@
       updateBridgeSendBtn();
     }
   }
+
   function handleBridgeSend() {
     const inp = $('#bridgeInput'); if (!inp) return;
     const text = inp.value.trim();
     if (!text || bridgeRunning || !__bridge.connected) return;
+
+    bridgeConversation = [];
+    bridgeTaskComplete = true;
+    if (bridgeAutoTimer) { clearTimeout(bridgeAutoTimer); bridgeAutoTimer = null; }
+    bridgeTurn = null;
+
     inp.value = ''; inp.style.height = 'auto';
     updateBridgeSendBtn();
     runBridgeTurn(text, false);
@@ -1298,13 +1340,16 @@
     on('#sidebarScrim', 'click', closeSidebar);
     on('#brandLogo', 'click', (e) => { e.preventDefault(); startNewChat(); if (window.innerWidth <= 860) closeSidebar(); });
     on('#newChatBtn', 'click', () => { startNewChat(); if (window.innerWidth <= 860) closeSidebar(); });
+
     $$('.sidebar-tab').forEach(tab => {
       tab.onclick = () => {
         const t = tab.dataset.tab;
         $$('.sidebar-tab').forEach(x => x.classList.toggle('active', x.dataset.tab === t));
         $$('.sidebar-section').forEach(s => { s.style.display = s.dataset.pane === t ? '' : 'none'; });
+        if (t === 'images') renderSidebarImageHistory();
       };
     });
+
     on('#historyList', 'click', (e) => {
       const item = e.target.closest('.history-item'); if (!item) return;
       if (e.target.closest('.history-delete')) {
