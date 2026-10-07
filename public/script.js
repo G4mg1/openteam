@@ -30,9 +30,9 @@
   const BRIDGE_KEY = 'miroxai_bridge_v23';
   const MAX_BRIDGE_QUESTIONS = 6;
   const MAX_BRIDGE_ITER = 40;
-  const MAX_AUTO_CONTINUES = 6;          // more auto-continues for real "keep going"
+  const MAX_AUTO_CONTINUES = 6;
   const MAX_DUP_COMMANDS = 1;
-  const AUTO_CONTINUE_DELAY_MS = 2000;   // wait 2s then auto-continue
+  const AUTO_CONTINUE_DELAY_MS = 2000;
 
   let __config = null;
   let __user = null;
@@ -48,7 +48,7 @@
   let bridgeConversation = [];
   let bridgeRunning = false;
   let bridgeQuestionCount = 0;
-  let bridgeProgress = 0;
+  let bridgeProgress = 0;              // monotonic — never decreases
   let bridgeTurn = null;
   let bridgeAutoTimer = null;
   let __bqResolver = null;
@@ -722,9 +722,9 @@
     bridgeQuestionCount = 0;
     bridgeProgress = 0;
     bridgeTurn = null;
+    if (bridgeAutoTimer) { clearTimeout(bridgeAutoTimer); bridgeAutoTimer = null; }
     updateBridgeProgress(0, 'Ready');
     const w = $('#bwProgress'); if (w) w.style.display = 'none';
-    if (bridgeAutoTimer) { clearTimeout(bridgeAutoTimer); bridgeAutoTimer = null; }
   }
   function scrollBridgeBottom() { const c = $('#bridgeMessages'); if (c) c.scrollTop = c.scrollHeight; }
 
@@ -738,19 +738,14 @@
     container.appendChild(el);
     scrollBridgeBottom();
   }
-
-  /* ---- AI message: NEVER show code, only narration ---- */
   function addBridgeAiMsg(text) {
-    // Strip ALL code fences and inline code first
     let clean = String(text || '');
     clean = clean.replace(/```[\s\S]*?```/g, '');
     clean = clean.replace(/~~~[\s\S]*?~~~/g, '');
     clean = clean.replace(/`[^`]+`/g, '');
-    clean = clean.replace(/<[^>]+>/g, '');      // strip stray tags
+    clean = clean.replace(/<[^>]+>/g, '');
     clean = clean.replace(/\n{2,}/g, '\n').trim();
-
     if (!clean) return null;
-
     const container = $('#bridgeMessages'); if (!container) return null;
     const empty = $('#bridgeEmpty'); if (empty) empty.remove();
     const el = document.createElement('div');
@@ -761,20 +756,6 @@
     scrollBridgeBottom();
     return el;
   }
-
-  /* ---- Thinking bubble ---- */
-  function addBridgeThinkingBubble() {
-    const container = $('#bridgeMessages'); if (!container) return null;
-    const empty = $('#bridgeEmpty'); if (empty) empty.remove();
-    const el = document.createElement('div');
-    el.className = 'bridge-msg ai';
-    el.innerHTML = `<div class="bridge-thinking"><span>Thinking</span><span class="thinking-dots"><span></span><span></span><span></span></span></div>`;
-    container.appendChild(el);
-    scrollBridgeBottom();
-    return el;
-  }
-
-  /* ---- System ---- */
   function addBridgeSystemMsg(text) {
     const container = $('#bridgeMessages'); if (!container) return;
     const empty = $('#bridgeEmpty'); if (empty) empty.remove();
@@ -792,26 +773,38 @@
     container.appendChild(el);
     scrollBridgeBottom();
   }
-
-  /* ---- Action bubble: "Adding file", "Running command" ---- */
+  function addBridgeThinkingBubble() {
+    const container = $('#bridgeMessages'); if (!container) return null;
+    const empty = $('#bridgeEmpty'); if (empty) empty.remove();
+    const el = document.createElement('div');
+    el.className = 'bridge-msg ai';
+    el.innerHTML = `<div class="bridge-thinking"><span>Thinking</span><span class="thinking-dots"><span></span><span></span><span></span></span></div>`;
+    container.appendChild(el);
+    scrollBridgeBottom();
+    return el;
+  }
   function getActionData(cmd) {
     if (cmd.type === 'write') return { icon: 'ri-file-add-line', iconClass: 'write', label: `Adding <code>${escapeHtml(getBaseName(cmd.path))}</code>` };
     if (cmd.type === 'exec') {
-      // Never show the raw command — just say what it's doing
-      const short = cmd.command.length > 55 ? cmd.command.slice(0, 55) + '…' : cmd.command;
-      // Try to humanize common commands
-      let friendly = short;
-      if (/^npm\s+(install|i)/i.test(cmd.command)) friendly = 'Installing packages';
-      else if (/^pip\s+install/i.test(cmd.command)) friendly = 'Installing Python packages';
-      else if (/^mkdir/i.test(cmd.command)) friendly = 'Creating folder';
-      else if (/^(ls|dir)\b/i.test(cmd.command)) friendly = 'Listing files';
-      else if (/^(cat|type)\b/i.test(cmd.command)) friendly = 'Reading file';
-      else if (/^(python|python3)\s/i.test(cmd.command)) friendly = 'Running Python script';
-      else if (/^node\s/i.test(cmd.command)) friendly = 'Running Node script';
-      else if (/^git\s/i.test(cmd.command)) friendly = 'Git operation';
-      else if (/^(cd|pwd)\b/i.test(cmd.command)) friendly = 'Checking directory';
-      else friendly = short;
-      return { icon: 'ri-play-line', iconClass: 'exec', label: `Running <code>${escapeHtml(friendly)}</code>` };
+      let friendly = 'Running command';
+      const c = cmd.command;
+      if (/^npm\s+(install|i)/i.test(c)) friendly = 'Installing packages';
+      else if (/^pip\s+install/i.test(c)) friendly = 'Installing Python packages';
+      else if (/^mkdir/i.test(c)) friendly = 'Creating folder';
+      else if (/^(ls|dir)\b/i.test(c)) friendly = 'Listing files';
+      else if (/^(cat|type)\b/i.test(c)) friendly = 'Reading file';
+      else if (/^(python|python3)\s/i.test(c)) friendly = 'Running Python script';
+      else if (/^node\s/i.test(c)) friendly = 'Running Node script';
+      else if (/^git\s/i.test(c)) friendly = 'Git operation';
+      else if (/^(cd|pwd)\b/i.test(c)) friendly = 'Checking directory';
+      else if (/^npm\s+run/i.test(c)) friendly = 'Running project script';
+      else if (/^yarn\s/i.test(c)) friendly = 'Yarn operation';
+      else if (/^pnpm\s/i.test(c)) friendly = 'pnpm operation';
+      else if (/^curl\s/i.test(c)) friendly = 'Fetching URL';
+      else if (/^wget\s/i.test(c)) friendly = 'Downloading file';
+      else if (/^(cp|mv)\b/i.test(c)) friendly = 'Moving files';
+      else if (/^rm\b/i.test(c)) friendly = 'Removing files';
+      return { icon: 'ri-play-line', iconClass: 'exec', label: friendly };
     }
     if (cmd.type === 'read') return { icon: 'ri-file-text-line', iconClass: 'read', label: `Reading <code>${escapeHtml(getBaseName(cmd.path))}</code>` };
     if (cmd.type === 'list') return { icon: 'ri-folder-line', iconClass: 'list', label: `Listing <code>${escapeHtml(getBaseName(cmd.path) || cmd.path)}</code>` };
@@ -845,13 +838,30 @@
     scrollBridgeBottom();
   }
 
-  function updateBridgeProgress(pct, text) {
-    bridgeProgress = Math.max(0, Math.min(100, Math.round(pct)));
-    const bar = $('#bwProgress'), fill = $('#bwProgressFill'), pctEl = $('#bwProgressPct'), txtEl = $('#bwProgressText');
-    if (bar) bar.style.display = 'block';
-    if (fill) { fill.style.width = bridgeProgress + '%'; fill.classList.toggle('done', bridgeProgress >= 100); }
-    if (pctEl) { pctEl.textContent = bridgeProgress + '%'; pctEl.classList.toggle('done', bridgeProgress >= 100); }
+  /* ============================================================
+     Progress bar — MONOTONIC. Never decreases.
+     ============================================================ */
+  function setProgressText(text) {
+    const txtEl = $('#bwProgressText');
     if (txtEl && text) txtEl.textContent = text;
+  }
+  function updateBridgeProgress(pct, text) {
+    // Only increase — never go backwards
+    const newPct = Math.max(0, Math.min(100, Math.round(pct)));
+    if (newPct > bridgeProgress) {
+      bridgeProgress = newPct;
+    }
+    const bar = $('#bwProgress'), fill = $('#bwProgressFill'), pctEl = $('#bwProgressPct');
+    if (bar) bar.style.display = 'block';
+    if (fill) {
+      fill.style.width = bridgeProgress + '%';
+      fill.classList.toggle('done', bridgeProgress >= 100);
+    }
+    if (pctEl) {
+      pctEl.textContent = bridgeProgress + '%';
+      pctEl.classList.toggle('done', bridgeProgress >= 100);
+    }
+    if (text) setProgressText(text);
   }
 
   /* ---- Extractors ---- */
@@ -918,7 +928,6 @@
     return t;
   }
 
-  /* ---- Execute ---- */
   async function executeBridgeCommand(cmd) {
     if (cmd.type === 'exec') return bridgeCall('/exec', { command: cmd.command });
     if (cmd.type === 'write') return bridgeCall('/write', { path: cmd.path, content: cmd.content });
@@ -993,8 +1002,8 @@
         ci.oninput = () => {
           if (ci.value.trim()) {
             __bqSelected = null;
-            const optsWrap2 = $('#bqOptions');
-            if (optsWrap2) optsWrap2.querySelectorAll('.question-option').forEach(x => x.classList.remove('selected'));
+            const ow = $('#bqOptions');
+            if (ow) ow.querySelectorAll('.question-option').forEach(x => x.classList.remove('selected'));
           }
         };
       }
@@ -1020,7 +1029,6 @@
     if (__bqResolver) { __bqResolver('[Skipped by user]'); __bqResolver = null; }
   }
 
-  /* ---- Fetch AI reply for bridge ---- */
   async function fetchBridgeReply(history) {
     const env = __bridge.env || {};
     const res = await fetch('/v1/chat/completions', {
@@ -1065,11 +1073,13 @@
         failedSignatures: new Set(),
         commandsRun: 0,
       };
+      bridgeProgress = 0;                 // reset only on a fresh turn
       updateBridgeProgress(2, 'Starting…');
       addBridgeUserMsg(userText);
       bridgeConversation.push({ role: 'user', content: userText });
     } else {
-      updateBridgeProgress(Math.max(20, bridgeProgress - 15), 'Continuing…');
+      // On resume, keep current progress and just update the label
+      setProgressText('Continuing…');
     }
 
     let iter = 0;
@@ -1092,6 +1102,7 @@
           if (autoContinues < MAX_AUTO_CONTINUES) {
             autoContinues++;
             addBridgeSystemMsg(`Waiting ${AUTO_CONTINUE_DELAY_MS / 1000}s, then continuing…`);
+            setProgressText('Waiting…');
             await new Promise(r => setTimeout(r, AUTO_CONTINUE_DELAY_MS));
             bridgeConversation.push({ role: 'user', content: '[System] Continue building.' });
             continue;
@@ -1099,17 +1110,21 @@
           break;
         }
 
+        // ---- Progress: use plan completion if available, otherwise step-based ----
         const prog = extractProgressTag(reply);
-        if (prog && prog.total > 0) {
-          const pct = Math.min(98, Math.round((prog.step / prog.total) * 100));
+        const totalPlanned = bridgeTurn.plannedFiles.size;
+        const doneCount = bridgeTurn.writtenFiles.size;
+        if (totalPlanned > 0) {
+          // 2% start → up to 95% based on files written
+          const filePct = 2 + Math.round((doneCount / totalPlanned) * 93);
+          updateBridgeProgress(filePct, `Files: ${doneCount} / ${totalPlanned}`);
+        } else if (prog && prog.total > 0) {
+          const pct = Math.min(95, 2 + Math.round((prog.step / prog.total) * 93));
           updateBridgeProgress(pct, prog.label || `Step ${prog.step} of ${prog.total}`);
         } else {
+          // Fallback: slowly creep up based on iteration count, but never beyond 90
           const pct = Math.min(90, 5 + iter * 4);
-          const doneCount = bridgeTurn.writtenFiles.size;
-          const totalPlanned = bridgeTurn.plannedFiles.size;
-          let text = `Working… (step ${iter})`;
-          if (totalPlanned > 0) text = `Files written: ${doneCount} / ${totalPlanned}`;
-          updateBridgeProgress(pct, text);
+          updateBridgeProgress(pct, `Working… (step ${iter})`);
         }
 
         const plan = extractBridgePlan(reply);
@@ -1124,7 +1139,6 @@
         bridgeConversation.push({ role: 'assistant', content: reply });
         if (bridgeConversation.length > 40) bridgeConversation = bridgeConversation.slice(-40);
 
-        /* ---- Questions: pause & ask ---- */
         const questions = extractBridgeQuestions(reply);
         if (questions.length > 0) {
           const remaining = MAX_BRIDGE_QUESTIONS - bridgeQuestionCount;
@@ -1132,6 +1146,7 @@
 
           if (toAsk.length > 0) {
             addBridgeSystemMsg(`Paused — ${toAsk.length} question${toAsk.length === 1 ? '' : 's'} pending.`);
+            setProgressText('Waiting for your answer…');
             for (let qi = 0; qi < toAsk.length; qi++) {
               const q = toAsk[qi];
               bridgeQuestionCount++;
@@ -1140,6 +1155,7 @@
               bridgeConversation.push({ role: 'user', content: `[Answer to "${q.question}"] ${answer}` });
             }
             addBridgeSystemMsg('Answers received — resuming.');
+            setProgressText('Resuming…');
             bridgeConversation.push({ role: 'user', content: `[System] User answered. Continue building now.` });
             continue;
           } else {
@@ -1148,7 +1164,6 @@
           }
         }
 
-        /* ---- Commands ---- */
         const cmds = extractBridgeCommands(reply);
         if (cmds.length > 0) {
           const resultLines = [];
@@ -1173,17 +1188,19 @@
             }
             resultLines.push(formatResultForAI(cmd, result));
           }
+          // Bump progress after commands run if we have a plan
+          const tp = bridgeTurn.plannedFiles.size;
+          const dc = bridgeTurn.writtenFiles.size;
+          if (tp > 0) {
+            const filePct = 2 + Math.round((dc / tp) * 93);
+            updateBridgeProgress(filePct, `Files: ${dc} / ${tp}`);
+          }
           const env = __bridge.env || {};
-          const doneCount = bridgeTurn.writtenFiles.size;
-          const totalPlanned = bridgeTurn.plannedFiles.size;
-          const progressLine = totalPlanned > 0
-            ? `Progress: ${doneCount}/${totalPlanned} files.`
-            : `Progress: ${doneCount} file(s).`;
           bridgeConversation.push({
             role: 'user',
             content: [
               `[Bridge env] home=${env.home || '?'} platform=${env.platform || '?'}`,
-              `[Progress] ${progressLine}`,
+              `[Progress] ${dc}/${tp || '?'} files written`,
               `[Results]`, resultLines.join('\n\n'),
               `If all files written, reply DONE. Otherwise output next batch.`,
             ].join('\n'),
@@ -1191,7 +1208,6 @@
           continue;
         }
 
-        /* ---- Done / continue ---- */
         const saidDone = /\bDONE\b/i.test(reply);
         const hasPlan = bridgeTurn.plannedFiles.size > 0;
         const allFilesWritten = hasPlan && bridgeTurn.writtenFiles.size >= bridgeTurn.plannedFiles.size;
@@ -1213,6 +1229,7 @@
           if (autoContinues < MAX_AUTO_CONTINUES) {
             autoContinues++;
             addBridgeSystemMsg(`Waiting ${AUTO_CONTINUE_DELAY_MS / 1000}s, then continuing…`);
+            setProgressText('Waiting…');
             await new Promise(r => setTimeout(r, AUTO_CONTINUE_DELAY_MS));
             bridgeConversation.push({ role: 'user', content: `[System] Continue building.` });
             continue;
@@ -1221,15 +1238,13 @@
         }
       }
 
-      /* ---- Auto-continue after 2s if iteration limit hit ---- */
+      // ---- Auto-continue after 2s if the iteration limit was reached ----
       const hasPlan = bridgeTurn.plannedFiles.size > 0;
       const allFilesWritten = hasPlan && bridgeTurn.writtenFiles.size >= bridgeTurn.plannedFiles.size;
       const missing = hasPlan ? [...bridgeTurn.plannedFiles].filter(f => !bridgeTurn.writtenFiles.has(f)) : [];
 
       if (!(allFilesWritten || !hasPlan)) {
-        updateBridgeProgress(Math.min(95, bridgeProgress), `Paused at ${bridgeTurn.writtenFiles.size}/${bridgeTurn.plannedFiles.size || '?'} files`);
-        addBridgeSystemMsg(`Reached limit — auto-continuing in ${AUTO_CONTINUE_DELAY_MS / 1000}s…`);
-        // Let the finally block release the lock first
+        setProgressText(`Auto-continuing in ${AUTO_CONTINUE_DELAY_MS / 1000}s…`);
         bridgeAutoTimer = setTimeout(() => {
           if (!__bridge.connected) return;
           const msg = missing.length
@@ -1399,7 +1414,6 @@
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         closeImageViewer(); closeModelPicker();
-        // Do NOT close the question modal on Escape — it must be answered or skipped
         if ($('#bridgeQuestionModal')?.classList.contains('open')) return;
         if ($('#bridgeWorkspace')?.classList.contains('open')) closeBridgeWorkspace();
       }
