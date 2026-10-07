@@ -196,7 +196,7 @@
           </div>
         </div>
         <div class="bridge-input-row">
-          <textarea id="bridgeInput" placeholder="e.g. Build a snake game in /home/you/snake/" rows="1"></textarea>
+          <textarea id="bridgeInput" placeholder="e.g. Build a snake game in my home folder" rows="1"></textarea>
           <button id="bridgeSendBtn" class="send-btn is-disabled" type="button" aria-disabled="true"><i class="ri-arrow-up-line"></i></button>
         </div>
       </div>
@@ -234,31 +234,31 @@
   </div>
 </div>
 
-<!-- ================== BRIDGE QUESTION MODAL ================== -->
-<div id="bridgeQuestionModal" class="modal-overlay">
-  <div class="modal bridge-question-modal">
-    <div class="bridge-q-header">
-      <div class="bridge-q-badge"><i class="ri-question-line"></i></div>
-      <div style="flex:1;min-width:0;">
-        <div class="bridge-q-title">Mirox needs your input</div>
-        <div class="bridge-q-counter" id="bqCounter">Question 1 of 1</div>
+<!-- ================== QUESTION MODAL (top-most layer) ================== -->
+<div id="bridgeQuestionModal" class="question-overlay">
+  <div class="question-panel">
+    <div class="question-top">
+      <div class="question-badge"><i class="ri-question-line"></i></div>
+      <div class="question-heading">
+        <div class="question-title">Mirox needs your input</div>
+        <div class="question-sub" id="bqCounter">Question 1 of 1</div>
       </div>
-      <button class="icon-btn" id="bqSkipOne" type="button" title="Skip this question"><i class="ri-skip-forward-line"></i></button>
+      <button class="icon-btn" id="bqSkipOne" type="button" title="Skip"><i class="ri-skip-forward-line"></i></button>
     </div>
 
-    <div class="bridge-q-progress">
-      <div class="bridge-q-progress-fill" id="bqProgressFill" style="width:0%;"></div>
+    <div class="question-progress">
+      <div class="question-progress-fill" id="bqProgressFill" style="width:0%;"></div>
     </div>
 
-    <p class="bridge-q-text" id="bqText"></p>
+    <p class="question-text" id="bqText"></p>
 
-    <div class="bridge-q-options" id="bqOptions"></div>
+    <div class="question-options" id="bqOptions"></div>
 
-    <div class="bridge-q-custom" id="bqCustomWrap" style="display:none;">
+    <div class="question-custom" id="bqCustomWrap" style="display:none;">
       <input type="text" id="bqCustomInput" class="modal-input" placeholder="Or type your own answer…">
     </div>
 
-    <div class="bridge-q-footer">
+    <div class="question-footer">
       <button id="bqCustomToggle" class="modal-btn" type="button"><i class="ri-edit-line"></i> Custom</button>
       <button id="bqSubmit" class="modal-btn primary" type="button">Submit &amp; continue <i class="ri-arrow-right-line"></i></button>
     </div>
