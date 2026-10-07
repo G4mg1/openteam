@@ -1,5 +1,5 @@
 /* ============================================================
-   MiroxAI — Fully Responsive Styles v82
+   MiroxAI — Styles v83
    ============================================================ */
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -37,17 +37,8 @@
 :root[data-theme="plum"] { --accent: #8b5a83; --accent-hover: #74466c; --accent-soft: rgba(139,90,131,.12); }
 :root[data-theme="amber"] { --accent: #c48a3f; --accent-hover: #a97330; --accent-soft: rgba(196,138,63,.12); }
 
-html, body {
-  height: 100%; font-family: var(--font-family); background: var(--bg); color: var(--text);
-  font-size: var(--base-font); line-height: 1.55;
-  -webkit-font-smoothing: antialiased; overflow: hidden;
-  -webkit-tap-highlight-color: transparent; overscroll-behavior: none;
-}
-body {
-  display: flex;
-  padding-top: var(--safe-top); padding-bottom: var(--safe-bottom);
-  padding-left: var(--safe-left); padding-right: var(--safe-right);
-}
+html, body { height: 100%; font-family: var(--font-family); background: var(--bg); color: var(--text); font-size: var(--base-font); line-height: 1.55; -webkit-font-smoothing: antialiased; overflow: hidden; -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
+body { display: flex; padding-top: var(--safe-top); padding-bottom: var(--safe-bottom); padding-left: var(--safe-left); padding-right: var(--safe-right); }
 button { font: inherit; cursor: pointer; background: none; border: none; color: inherit; }
 input, textarea, select { font: inherit; color: inherit; }
 ul { list-style: none; } img { max-width: 100%; display: block; } a { color: inherit; text-decoration: none; }
@@ -299,10 +290,6 @@ ul { list-style: none; } img { max-width: 100%; display: block; } a { color: inh
 .bridge-question-bubble .qb-text { color: var(--text); }
 .bridge-success { max-width: 85%; padding: 12px 16px; border-radius: 12px; background: rgba(78,168,46,.10); border: 1px solid rgba(78,168,46,.30); font-size: 13.5px; font-weight: 500; color: var(--success); display: flex; align-items: center; gap: 10px; }
 .bridge-success i { font-size: 18px; }
-.bridge-continue-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 20px; background: linear-gradient(90deg, rgba(234,179,8,.10), rgba(234,179,8,.04)); border-top: 1px solid rgba(234,179,8,.35); border-bottom: 1px solid var(--border); flex-shrink: 0; }
-.bridge-continue-info { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 500; color: #92400e; min-width: 0; }
-.bridge-continue-info i { font-size: 18px; color: #b45309; animation: spin 1.4s linear infinite; flex-shrink: 0; }
-.bridge-continue-bar .modal-btn.primary { flex-shrink: 0; padding: 9px 16px; font-size: 13px; }
 .bridge-input-row { display: flex; align-items: flex-end; gap: 8px; padding: 14px 20px 20px; border-top: 1px solid var(--border); background: var(--panel); flex-shrink: 0; }
 .bridge-input-row textarea { flex: 1; resize: none; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 11px 14px; font-size: 14px; outline: none; background: var(--panel-2); max-height: 140px; min-height: 44px; font-family: inherit; }
 .bridge-input-row textarea:focus { border-color: var(--accent); }
@@ -318,61 +305,81 @@ ul { list-style: none; } img { max-width: 100%; display: block; } a { color: inh
 .bw-quick { display: block; width: 100%; text-align: left; padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--panel-2); font-size: 12.5px; color: var(--text-muted); margin-bottom: 6px; transition: all .15s; }
 .bw-quick:hover { background: var(--panel-3); color: var(--text); border-color: var(--accent); }
 
-/* Bridge plan */
-.bridge-plan-bubble { max-width: 85%; padding: 12px 14px; border-radius: 12px; background: rgba(91,124,168,.10); border: 1px solid rgba(91,124,168,.30); font-size: 13.5px; display: flex; flex-direction: column; gap: 8px; }
-.bridge-plan-bubble .bp-head { display: flex; align-items: center; gap: 8px; font-weight: 600; color: #5b7ca8; }
-.bridge-plan-bubble .bp-list { display: flex; flex-direction: column; gap: 4px; padding-left: 6px; }
-.bridge-plan-bubble .bp-file { display: flex; align-items: center; gap: 8px; font-family: 'SF Mono', monospace; font-size: 12px; color: var(--text-muted); }
-.bridge-plan-bubble .bp-file.done { color: var(--success); text-decoration: line-through; opacity: .7; }
-.bridge-plan-bubble .bp-file i { font-size: 13px; }
-
-/* ============== BRIDGE QUESTION MODAL ============== */
-.bridge-question-modal {
-  max-width: 560px;
+/* ============================================================
+   QUESTION MODAL — highest z-index, minimal style
+   ============================================================ */
+.question-overlay {
+  position: fixed; inset: 0;
+  z-index: 5000;                /* above EVERYTHING */
+  background: rgba(20,15,10,.55);
+  display: none; align-items: center; justify-content: center;
+  padding: 20px;
+  padding-top: calc(20px + var(--safe-top));
+  padding-bottom: calc(20px + var(--safe-bottom));
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.question-overlay.open { display: flex; }
+.question-panel {
+  width: 100%; max-width: 520px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--accent);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
   padding: 24px 24px 20px;
-  border-top: 4px solid #eab308;
+  position: relative;
+  animation: questionIn .35s cubic-bezier(.34,1.15,.64,1);
+  max-height: 90vh; overflow-y: auto;
 }
-.bridge-q-header { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
-.bridge-q-badge {
-  width: 42px; height: 42px; border-radius: 12px;
-  background: rgba(234,179,8,.15);
-  color: #b45309;
-  display: grid; place-items: center; font-size: 22px; flex-shrink: 0;
-  animation: badgePulse 1.6s ease-in-out infinite;
+@keyframes questionIn {
+  from { opacity: 0; transform: translateY(16px) scale(.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
-@keyframes badgePulse {
-  0%,100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(234,179,8,.4); }
-  50% { transform: scale(1.05); box-shadow: 0 0 0 8px rgba(234,179,8,0); }
+.question-top { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.question-badge {
+  width: 40px; height: 40px; border-radius: 12px;
+  background: var(--accent-soft); color: var(--accent);
+  display: grid; place-items: center; font-size: 20px;
+  flex-shrink: 0;
 }
-.bridge-q-title { font-family: var(--font-serif); font-size: 18px; font-weight: 400; }
-.bridge-q-counter { font-size: 11.5px; color: var(--text-faint); margin-top: 2px; }
-.bridge-q-progress {
-  width: 100%; height: 4px; border-radius: 99px;
+.question-heading { flex: 1; min-width: 0; }
+.question-title { font-family: var(--font-serif); font-size: 18px; font-weight: 400; }
+.question-sub { font-size: 11.5px; color: var(--text-faint); margin-top: 2px; }
+.question-progress {
+  width: 100%; height: 3px; border-radius: 99px;
   background: var(--panel-3); overflow: hidden;
   margin-bottom: 18px;
 }
-.bridge-q-progress-fill {
+.question-progress-fill {
   height: 100%; width: 0%; border-radius: 99px;
-  background: linear-gradient(90deg, #eab308, #f59e0b);
+  background: linear-gradient(90deg, var(--accent), var(--accent-hover));
   transition: width .4s cubic-bezier(.4,0,.2,1);
 }
-.bridge-q-text { font-size: 15px; line-height: 1.55; margin-bottom: 18px; color: var(--text); font-weight: 500; }
-.bridge-q-options { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
-.bridge-q-option {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  padding: 13px 16px; border-radius: var(--radius); border: 1px solid var(--border);
-  background: var(--panel-2); font-size: 14px; text-align: left;
-  transition: all .15s; cursor: pointer;
+.question-text {
+  font-size: 15px; line-height: 1.55;
+  margin-bottom: 18px;
+  color: var(--text);
+  font-weight: 500;
 }
-.bridge-q-option:hover { background: var(--panel-3); border-color: var(--accent); transform: translateY(-1px); }
-.bridge-q-option.selected { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 500; }
-.bridge-q-option::after { content: '\ea6e'; font-family: 'remixicon'; font-size: 18px; color: var(--text-faint); }
-.bridge-q-option.selected::after { color: var(--accent); content: '\eb7b'; }
-.bridge-q-custom { margin-bottom: 14px; }
-.bridge-q-footer { display: flex; gap: 8px; justify-content: space-between; align-items: center; }
-.bridge-q-footer .modal-btn { flex: 1; }
-.bridge-q-footer .modal-btn.primary { flex: 1.5; background: #eab308; }
-.bridge-q-footer .modal-btn.primary:hover { background: #ca8a04; }
+.question-options { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.question-option {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 16px; border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  font-size: 14px; text-align: left;
+  transition: all .15s; cursor: pointer;
+  color: var(--text);
+}
+.question-option:hover { background: var(--panel-3); border-color: var(--accent); }
+.question-option.selected { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+.question-option::after { content: '\ea6e'; font-family: 'remixicon'; font-size: 18px; color: var(--text-faint); flex-shrink: 0; }
+.question-option.selected::after { color: var(--accent); content: '\eb7b'; }
+.question-custom { margin-bottom: 14px; }
+.question-footer { display: flex; gap: 8px; justify-content: space-between; align-items: center; }
+.question-footer .modal-btn { flex: 1; }
+.question-footer .modal-btn.primary { flex: 1.5; }
 
 /* Image viewer */
 .image-viewer { position: fixed; inset: 0; z-index: 500; display: none; align-items: center; justify-content: center; padding: 20px; }
@@ -438,10 +445,12 @@ ul { list-style: none; } img { max-width: 100%; display: block; } a { color: inh
   .bridge-workspace-title span { display: none; }
   .bridge-workspace-status { font-size: 11px; padding: 4px 9px; }
   .bridge-msg .bridge-bubble, .bridge-action, .bridge-question-bubble, .bridge-success { max-width: 92%; }
-  .bridge-q-footer { flex-direction: column; }
-  .bridge-q-footer .modal-btn { flex: 1; width: 100%; }
-  .bridge-continue-bar { flex-direction: column; align-items: stretch; }
-  .bridge-continue-bar .modal-btn.primary { width: 100%; }
+  .question-panel { padding: 20px 18px 16px; max-width: 100%; }
+  .question-title { font-size: 16px; }
+  .question-text { font-size: 14.5px; }
+  .question-option { padding: 11px 14px; font-size: 13.5px; }
+  .question-footer { flex-direction: column; }
+  .question-footer .modal-btn { flex: 1; width: 100%; }
 }
 @media (max-width: 400px) {
   :root { --base-font: 14px; --sidebar-width: 240px; }
@@ -455,13 +464,6 @@ ul { list-style: none; } img { max-width: 100%; display: block; } a { color: inh
   .modal { padding: 20px 14px; }
   .modal-title { font-size: 20px; }
 }
-@media (max-width: 320px) {
-  .chat-header { padding: 6px 8px; }
-  .chat-title { font-size: 14px; }
-  .tool-btn { padding: 5px 10px; font-size: 11.5px; }
-  .composer { padding: 4px; }
-  .send-btn, .icon-btn { width: 30px; height: 30px; font-size: 15px; }
-}
 @media (min-width: 1280px) { :root { --content-max: 820px; } }
 @media (min-width: 1600px) { :root { --content-max: 900px; --base-font: 15.5px; --sidebar-width: 320px; } .bridge-workspace-panel { max-width: 1500px; max-height: 1000px; } .bridge-workspace-body { grid-template-columns: 1fr 380px; } }
 @media (min-width: 1920px) { :root { --content-max: 1000px; --base-font: 16px; --sidebar-width: 340px; } .bridge-workspace-panel { max-width: 1700px; max-height: 1100px; } .bridge-workspace-body { grid-template-columns: 1fr 420px; } }
@@ -469,7 +471,7 @@ ul { list-style: none; } img { max-width: 100%; display: block; } a { color: inh
 @media (hover: none) {
   .icon-btn { min-width: 40px; min-height: 40px; }
   .action-btn { min-width: 34px; min-height: 34px; }
-  .suggestion-card, .tool-btn, .sidebar-tab, .modal-btn, .bw-quick, .bridge-q-option { min-height: 44px; }
+  .suggestion-card, .tool-btn, .sidebar-tab, .modal-btn, .bw-quick, .question-option { min-height: 44px; }
   .send-btn { min-width: 40px; min-height: 40px; }
   .message-actions { opacity: 1; pointer-events: auto; }
   .history-delete { opacity: 1; }
