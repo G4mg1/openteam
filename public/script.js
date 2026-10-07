@@ -45,6 +45,12 @@
   let __bqResolver = null, __bqSelected = null;
   let forceSearchNext = false;
 
+  // Sudo handling — kept in memory only, never persisted
+  let __sudoPassword = '';              // current session password
+  let __sudoRemember = false;           // if user chose to remember
+  let __sudoResolver = null;            // pending sudo prompt resolver
+  let __sudoPendingCmd = null;          // the command waiting for password
+
   const uid = () => 'c_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
   const escapeHtml = (s) => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
   function safeGet(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } }
@@ -66,6 +72,7 @@
     if (/\b(deploy|ship|release|publish|push)\b/.test(t)) return 'Deploying';
     if (/\b(email|mail|smtp)\b/.test(t)) return 'Drafting email';
     if (/\b(system|health|status|disk|memory|cpu|performance)\b/.test(t)) return 'Checking system';
+    if (/\b(sudo|root|admin|privilege)\b/.test(t)) return 'Elevating privileges';
     return 'Thinking';
   }
 
@@ -755,7 +762,75 @@
     if (c) c.style.display = __bridge.connected ? 'none' : 'flex';
     if (d) d.style.display = __bridge.connected ? 'flex' : 'none';
     updateBridgeSendBtn();
+    renderSudoStatus();
   }
+
+  function renderSudoStatus() {
+    const s = $('#bwSudoStatus');
+    if (!s) return;
+    if (__sudoPassword) {
+      s.textContent = __sudoRemember ? 'Password saved (session)' : 'Password set (temporary)';
+      s.style.color = 'var(--success)';
+    } else {
+      s.textContent = 'No password saved';
+      s.style.color = '';
+    }
+  }
+
+  /* ---------- Sudo password modal ---------- */
+  function showSudoModal(command) {
+    return new Promise((resolve) => {
+      __sudoResolver = resolve;
+      __sudoPendingCmd = command;
+      const modal = $('#sudoModal'); if (!modal) { resolve(null); return; }
+      const cmdEl = $('#sudoCommandText');
+      if (cmdEl) cmdEl.textContent = command || '';
+      const pwd = $('#sudoPasswordInput');
+      if (pwd) { pwd.value = ''; pwd.type = 'password'; }
+      const rev = $('#sudoRevealBtn'); if (rev) rev.innerHTML = '<i class="ri-eye-line"></i>';
+      const hint = $('#sudoHint'); if (hint) { hint.textContent = ''; hint.className = 'sudo-hint'; }
+      modal.classList.add('open');
+      setTimeout(() => { pwd?.focus(); }, 100);
+    });
+  }
+  function closeSudoModal() { $('#sudoModal')?.classList.remove('open'); }
+  function submitSudo() {
+    const pwd = $('#sudoPasswordInput')?.value || '';
+    const remember = !!$('#sudoRememberChk')?.checked;
+    const hint = $('#sudoHint');
+    if (!pwd) { if (hint) { hint.textContent = 'Enter your password to continue.'; hint.className = 'sudo-hint err'; } return; }
+    if (remember) { __sudoPassword = pwd; __sudoRemember = true; }
+    else { __sudoPassword = pwd; __sudoRemember = false; }
+    closeSudoModal();
+    renderSudoStatus();
+    if (__sudoResolver) { __sudoResolver({ password: pwd, remember }); __sudoResolver = null; }
+  }
+  function skipSudo() {
+    closeSudoModal();
+    if (__sudoResolver) { __sudoResolver(null); __sudoResolver = null; }
+  }
+  function forgetSudo() {
+    __sudoPassword = '';
+    __sudoRemember = false;
+    renderSudoStatus();
+    toast('Sudo password forgotten.');
+  }
+  async function askSudo(command) {
+    // If we already have a password in memory, offer to reuse it silently
+    if (__sudoPassword) {
+      return { password: __sudoPassword, remember: __sudoRemember, reused: true };
+    }
+    return await showSudoModal(command);
+  }
+
+  function toast(msg) {
+    const t = document.createElement('div');
+    t.textContent = msg;
+    t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--panel);color:var(--text);border:1px solid var(--border);padding:10px 16px;border-radius:12px;font-size:13px;box-shadow:var(--shadow-lg);z-index:9999;';
+    document.body.appendChild(t);
+    setTimeout(() => { t.style.transition = 'opacity .3s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 350); }, 1800);
+  }
+
   async function testBridge(port) {
     for (const host of ['localhost', '127.0.0.1']) {
       try {
@@ -794,7 +869,11 @@
       setBwHint(`Could not reach the bridge on port ${port}.`, 'err');
     }
   }
-  function stopBridge() { __bridge.connected = false; __bridge.baseUrl = null; __bridge.env = null; renderBridgeStatus(); setBwHint('', ''); }
+  function stopBridge() {
+    __bridge.connected = false; __bridge.baseUrl = null; __bridge.env = null;
+    __sudoPassword = ''; __sudoRemember = false; // drop sudo password on disconnect
+    renderBridgeStatus(); setBwHint('', '');
+  }
   async function bridgeCall(endpoint, payload) {
     if (!__bridge.connected || !__bridge.baseUrl) throw new Error('Bridge not connected');
     const r = await fetch(__bridge.baseUrl + endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}) });
@@ -887,12 +966,14 @@
     const status = el.querySelector('.bridge-action-status'); if (!status) return;
     const ok = result && result.ok;
     if (ok) { status.className = 'bridge-action-status ok'; status.innerHTML = '<i class="ri-check-line"></i> Done'; }
+    else if (result && result.cancelled) { status.className = 'bridge-action-status err'; status.innerHTML = '<i class="ri-close-line"></i> Cancelled'; }
     else { status.className = 'bridge-action-status err'; status.innerHTML = '<i class="ri-close-line"></i> Failed'; }
     scrollBridgeBottom();
   }
   function getActionData(cmd) {
     const t = cmd.type;
     const base = getBaseName(cmd.path) || getBaseName(cmd.from) || '';
+    if (t === 'sudo') return { icon: 'ri-shield-keyhole-line', iconClass: 'exec', label: `Running with sudo: <code>${escapeHtml((cmd.command || '').slice(0, 60))}</code>` };
     if (t === 'write') return { icon: 'ri-file-add-line', iconClass: 'write', label: `Adding <code>${escapeHtml(base)}</code>` };
     if (t === 'append') return { icon: 'ri-file-edit-line', iconClass: 'write', label: `Appending to <code>${escapeHtml(base)}</code>` };
     if (t === 'delete') return { icon: 'ri-delete-bin-line', iconClass: 'exec', label: `Deleting <code>${escapeHtml(base)}</code>` };
@@ -942,6 +1023,8 @@
     const cmds = []; let m;
     const add = (type, m, extra) => cmds.push(Object.assign({ type, index: m.index }, extra));
     let re;
+    re = /<bridge-sudo>([\s\S]*?)<\/bridge-sudo>/g;
+    while ((m = re.exec(text)) !== null) add('sudo', m, { command: m[1].trim() });
     re = /<bridge-exec>([\s\S]*?)<\/bridge-exec>/g;
     while ((m = re.exec(text)) !== null) add('exec', m, { command: m[1].trim() });
     re = /<bridge-write\s+path="([^"]+)">([\s\S]*?)<\/bridge-write>/g;
@@ -1031,9 +1114,33 @@
     const allowed = Array.isArray(env.allowed_dirs) && env.allowed_dirs.length ? env.allowed_dirs.join(', ') : '(none)';
     return [`[Bridge environment]`, `home=${env.home || '(unknown)'}`, `cwd=${env.cwd || '(unknown)'}`, `platform=${env.platform || '(unknown)'}`, `allowed_dirs=${allowed}`].join('\n');
   }
+
   async function executeBridgeCommand(cmd) {
     const t = cmd.type;
-    if (t === 'exec') return bridgeCall('/exec', { command: cmd.command });
+    if (t === 'sudo') {
+      // Ask the user for their sudo password
+      addBridgeSystemMsg(`Mirox needs root access for: ${cmd.command}`);
+      const sudo = await askSudo(cmd.command);
+      if (!sudo || !sudo.password) {
+        return { ok: false, error: 'user_cancelled_sudo', cancelled: true };
+      }
+      try {
+        return await bridgeCall('/sudo-exec', { command: cmd.command, password: sudo.password, timeout: 120 });
+      } catch (e) {
+        return { ok: false, error: 'sudo call failed: ' + e.message };
+      }
+    }
+    if (t === 'exec') {
+      // Even regular exec can hit a sudo path — detect before running
+      const rawCmd = String(cmd.command || '').trim();
+      if (/(?:^|[\s&|;])sudo\b/.test(rawCmd) && !__sudoPassword) {
+        addBridgeSystemMsg('This command needs sudo. Asking for your password…');
+        const sudo = await askSudo(rawCmd);
+        if (!sudo || !sudo.password) return { ok: false, error: 'user_cancelled_sudo', cancelled: true };
+        return bridgeCall('/sudo-exec', { command: rawCmd, password: sudo.password, timeout: 120 });
+      }
+      return bridgeCall('/exec', { command: cmd.command });
+    }
     if (t === 'write') return bridgeCall('/write', { path: cmd.path, content: cmd.content });
     if (t === 'append') return bridgeCall('/append', { path: cmd.path, content: cmd.content });
     if (t === 'delete') return bridgeCall('/delete', { path: cmd.path });
@@ -1060,6 +1167,7 @@
     }
     const trunc = (s, n = 3000) => String(s || '').slice(0, n);
     switch (cmd.type) {
+      case 'sudo':
       case 'exec': return `[exec] exit=${result.exit_code}\nSTDOUT:\n${trunc(result.stdout)}\nSTDERR:\n${trunc(result.stderr, 1500)}`;
       case 'write': return `[write] ok path=${result.path} bytes=${result.bytes}`;
       case 'append': return `[append] ok path=${result.path}`;
@@ -1082,7 +1190,7 @@
   }
   function cmdSignature(cmd) {
     const t = cmd.type;
-    if (t === 'exec') return 'exec:' + cmd.command.trim();
+    if (t === 'exec' || t === 'sudo') return t + ':' + cmd.command.trim();
     if (t === 'write') return 'write:' + cmd.path + ':' + (cmd.content || '').length;
     if (t === 'append') return 'append:' + cmd.path + ':' + (cmd.content || '').length;
     if (t === 'delete') return 'delete:' + cmd.path;
@@ -1155,6 +1263,7 @@
         model: __bridge.model, stream: false,
         bridge: {
           connected: true, name: __bridge.name, model: __bridge.model, mode: 'developer', env,
+          sudoAvailable: true,
           filesWritten: bridgeTurn ? [...bridgeTurn.writtenFiles] : [],
           plannedFiles: bridgeTurn ? [...bridgeTurn.plannedFiles] : [],
           failedSignatures: bridgeTurn ? [...bridgeTurn.failedSignatures] : [],
@@ -1386,14 +1495,9 @@
       forceSearchNext = !forceSearchNext;
       const btn = $('#searchModeBtn');
       if (btn) btn.classList.toggle('active', forceSearchNext);
-      const msg = forceSearchNext ? 'Web search enabled — your next message will be searched.' : 'Web search disabled.';
+      toast(forceSearchNext ? 'Web search enabled — your next message will be searched.' : 'Web search disabled.');
       const ta = $('#messageInput');
       if (ta) { ta.placeholder = forceSearchNext ? 'What should I search the web for?' : 'How can I help you today? (Tip: attach an image and ask about it)'; ta.focus(); }
-      const t = document.createElement('div');
-      t.textContent = msg;
-      t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--panel);color:var(--text);border:1px solid var(--border);padding:10px 16px;border-radius:12px;font-size:13px;box-shadow:var(--shadow-lg);z-index:9999;';
-      document.body.appendChild(t);
-      setTimeout(() => { t.style.transition = 'opacity .3s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 350); }, 1800);
     });
 
     on('#imageModeBtn', 'click', () => { openModal('imageModal'); renderImageHistory(); });
@@ -1430,6 +1534,20 @@
     on('#bridgeDownloadBtn', 'click', downloadBridgeClient);
     on('#bwConnectBtn', 'click', startBridge);
     on('#bwDisconnectBtn', 'click', stopBridge);
+    on('#bwSudoForgetBtn', 'click', forgetSudo);
+
+    // Sudo modal handlers
+    on('#sudoSubmitBtn', 'click', submitSudo);
+    on('#sudoSkipBtn', 'click', skipSudo);
+    on('#sudoCloseBtn', 'click', skipSudo);
+    on('#sudoRevealBtn', 'click', () => {
+      const pwd = $('#sudoPasswordInput'); if (!pwd) return;
+      const rev = $('#sudoRevealBtn');
+      if (pwd.type === 'password') { pwd.type = 'text'; if (rev) rev.innerHTML = '<i class="ri-eye-off-line"></i>'; }
+      else { pwd.type = 'password'; if (rev) rev.innerHTML = '<i class="ri-eye-line"></i>'; }
+    });
+    on('#sudoPasswordInput', 'keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitSudo(); } });
+
     const bwInp = $('#bridgeInput');
     if (bwInp) {
       bwInp.addEventListener('input', () => { bwInp.style.height = 'auto'; bwInp.style.height = Math.min(bwInp.scrollHeight, 140) + 'px'; updateBridgeSendBtn(); });
@@ -1445,6 +1563,7 @@
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         closeImageViewer(); closeModelPicker();
+        if ($('#sudoModal')?.classList.contains('open')) { skipSudo(); return; }
         if ($('#bridgeQuestionModal')?.classList.contains('open')) return;
         if ($('#bridgeWorkspace')?.classList.contains('open')) closeBridgeWorkspace();
       }
