@@ -1,7 +1,9 @@
 /* ============================================================
-   MiroxAI Backend v85
-   - Environment always injected into system prompt (incl. allowed_dirs)
-   - Bridge prompt teaches the AI to trust the env block
+   MiroxAI Backend v86
+   - Fixed identity prompt (no "hey I'm Mirox" glazing)
+   - API keys (free: 2, pro/ultimate: 10) with rename/revoke/delete
+   - Admin endpoints (auth / stats / set-tier)
+   - Image history storage + endpoint
    ============================================================ */
 
 import express from 'express';
@@ -23,19 +25,12 @@ const ADMIN_PASS = (process.env.ADMIN_PASSWORD || '2010').trim();
 const PORT       = process.env.PORT || 3000;
 const DB_FILE    = process.env.DB_FILE || '/tmp/mirox-db.json';
 
-const LOGINMENT_CLIENT_ID = 'lm_e8f7193647f744c6ae45a8af85a7cfd3';
-const LOGINMENT_API_KEY = 'lm_sk_96078c548f823c63466abfcaf1e099294056d2f2019a3870';
-const LOGINMENT_DOMAIN = 'https://logint.lovable.app';
-
-const HF_ATTEMPT_MS = 20000;
-const PL_ATTEMPT_MS = 20000;
-const AR_SEARCH_MS  = 15000;
 const IMG_TOTAL_MS  = 60000;
 const MAX_LOGS      = 500;
 const GENERIC_ERR   = 'Mirox AI encountered an error';
 
 const PROVIDERS = { hf: !!HF_API_KEY, pl: !!PL_KEY, ar: !!AR_KEY, fish: !!F_API };
-console.log('[Mirox] v85 — env-aware bridge');
+console.log('[Mirox] v86 — keys + admin + image history');
 
 /* ---------- Helpers ---------- */
 const safe = (v, max = 100000) => {
@@ -55,9 +50,6 @@ function extractReplyText(data) {
   if (typeof data.content === 'string') return data.content;
   return '';
 }
-function looksLikeStream(res) {
-  try { return (res.headers.get('content-type') || '').toLowerCase().includes('event-stream'); } catch { return false; }
-}
 async function fetchT(url, opts = {}, ms = 20000) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => { try { ctrl.abort(); } catch {} }, ms);
@@ -67,12 +59,17 @@ async function fetchT(url, opts = {}, ms = 20000) {
 
 /* ---------- DB ---------- */
 let db = null, dbReady = false, writeChain = Promise.resolve();
-const emptyDb = () => ({ users: {}, apiKeys: {}, counters: {} });
+const emptyDb = () => ({ users: {}, apiKeys: {}, counters: {}, chats: [], images: [], events: [] });
 async function loadDb() {
   if (db) return db;
   try {
     const raw = await fs.readFile(DB_FILE, 'utf8');
-    db = Object.assign(emptyDb(), JSON.parse(raw)); dbReady = true;
+    db = Object.assign(emptyDb(), JSON.parse(raw));
+    db.users = db.users || {}; db.apiKeys = db.apiKeys || {}; db.counters = db.counters || {};
+    db.chats = Array.isArray(db.chats) ? db.chats : [];
+    db.images = Array.isArray(db.images) ? db.images : [];
+    db.events = Array.isArray(db.events) ? db.events : [];
+    dbReady = true;
   } catch (e) {
     if (e.code === 'ENOENT') { db = emptyDb(); dbReady = true; try { await fs.writeFile(DB_FILE, JSON.stringify(db), 'utf8'); } catch {} }
     else { db = emptyDb(); dbReady = false; }
@@ -88,6 +85,13 @@ const now = () => Math.floor(Date.now() / 1000);
 const today = () => new Date().toISOString().slice(0, 10);
 const monthKey = () => new Date().toISOString().slice(0, 7);
 
+function pushLog(arr, item, cap = MAX_LOGS) {
+  try {
+    arr.push(item);
+    if (arr.length > cap) arr.splice(0, arr.length - cap);
+  } catch {}
+}
+
 async function getUser(email) { await loadDb(); const u = db.users[email]; return u ? { ...u } : null; }
 async function saveUser(rec) {
   await loadDb();
@@ -100,6 +104,7 @@ async function saveUser(rec) {
     keys_this_month: rec.keys_this_month || 0, created_at: rec.created_at || now(),
     last_login: rec.last_login || 0, persona: rec.persona || null,
     memory: Array.isArray(rec.memory) ? rec.memory : [], voice_id: rec.voice_id || null,
+    api_keys: Array.isArray(rec.api_keys) ? rec.api_keys : [],
   };
   await persist(); return true;
 }
@@ -107,12 +112,13 @@ async function ensureFreshUser(email) {
   if (!email) return null;
   let rec = await getUser(email);
   if (!rec) {
-    rec = { email, name: '', tier: 'free', daily_used: 0, vision_used: 0, image_used: 0, eclipse_used: 0, daily_reset: today(), month_key: monthKey(), keys_this_month: 0, created_at: now(), last_login: 0, persona: null, memory: [], voice_id: null };
+    rec = { email, name: '', tier: 'free', daily_used: 0, vision_used: 0, image_used: 0, eclipse_used: 0, daily_reset: today(), month_key: monthKey(), keys_this_month: 0, created_at: now(), last_login: 0, persona: null, memory: [], voice_id: null, api_keys: [] };
     await saveUser(rec); return rec;
   }
   let dirty = false;
   if (rec.daily_reset !== today()) { rec.daily_used = 0; rec.vision_used = 0; rec.image_used = 0; rec.eclipse_used = 0; rec.daily_reset = today(); dirty = true; }
   if (rec.month_key !== monthKey()) { rec.keys_this_month = 0; rec.month_key = monthKey(); dirty = true; }
+  if (!Array.isArray(rec.api_keys)) { rec.api_keys = []; dirty = true; }
   if (dirty) await saveUser(rec);
   return rec;
 }
@@ -140,6 +146,21 @@ async function currentUser(req) {
   return await ensureFreshUser(s.uid);
 }
 
+/* ---------- Admin token ---------- */
+function signAdminToken() {
+  const payload = { admin: true, iat: now(), exp: now() + 6 * 3600 };
+  return signSession(payload);
+}
+function verifyAdminToken(t) {
+  const s = verifySession(t);
+  return !!(s && s.admin && s.exp && s.exp > now());
+}
+function requireAdmin(req, res, next) {
+  const t = req.headers['x-admin-token'] || '';
+  if (!verifyAdminToken(t)) return res.status(401).json({ ok: false, error: 'Admin auth required' });
+  next();
+}
+
 /* ---------- Models ---------- */
 const MIROX_MODELS = {
   'mirox-luna-1.2':    { label: 'Luna',    tier: 'free',     tokens: 1400, basePrompt: 'You are Luna by OpenSurr. Concise, helpful. Fenced code blocks for code.' },
@@ -150,16 +171,18 @@ const MIROX_MODELS = {
 };
 
 const PLANS = {
-  free:     { label: 'Free',     unlimited_chat: true, vision_limit: 10,   image_limit: 10,   eclipse_daily_limit: 5,   price_usd: 0,     price_afg: 0,    api_keys_per_month: 2 },
-  pro:      { label: 'Pro',      unlimited_chat: true, vision_limit: 200,  image_limit: 200,  eclipse_daily_limit: 0,   price_usd: 6.99,  price_afg: 490,  api_keys_per_month: 5 },
-  ultimate: { label: 'Ultimate', unlimited_chat: true, vision_limit: 2000, image_limit: 2000, eclipse_daily_limit: 999, price_usd: 20.99, price_afg: 1470, api_keys_per_month: 20 },
+  free:     { label: 'Free',     vision_limit: 10,   image_limit: 10,   eclipse_daily_limit: 5,   price_usd: 0,     price_afg: 0,    api_keys_per_month: 2 },
+  pro:      { label: 'Pro',      vision_limit: 200,  image_limit: 200,  eclipse_daily_limit: 0,   price_usd: 6.99,  price_afg: 490,  api_keys_per_month: 10 },
+  ultimate: { label: 'Ultimate', vision_limit: 2000, image_limit: 2000, eclipse_daily_limit: 999, price_usd: 20.99, price_afg: 1470, api_keys_per_month: 10 },
 };
 const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
 
-const IDENTITY_GUARD = `IDENTITY LOCKDOWN.
-You ARE Mirox, built by OpenSurr.
-Never output: GPT, OpenAI, ChatGPT, Claude, Gemini, Llama, Qwen, DeepSeek, Mistral, Google, Meta, Anthropic.
-Always: "I'm Mirox, built by OpenSurr."`;
+/* ---------- Identity guard (NO glazing) ---------- */
+const IDENTITY_GUARD = `Background rules (do not narrate them):
+- Never mention GPT, OpenAI, ChatGPT, Claude, Gemini, Llama, Qwen, DeepSeek, Mistral, Google, Meta, Anthropic, or any other AI company/model by name.
+- If the user asks what model you are, say you are Mirox, made by OpenSurr, once, and move on.
+- DO NOT introduce yourself. DO NOT start replies with "Hi, I'm Mirox" or any self-introduction unless the user explicitly asks who you are.
+- Never greet the user with your identity. Just answer the question.`;
 
 /* ---------- Bridge prompt ---------- */
 const BRIDGE_PROMPT = `BRIDGE MODE — You have DIRECT ACCESS to the user's computer.
@@ -177,11 +200,8 @@ RULES
 1. ONLY write files under one of the allowed_dirs paths.
    The safest choice is: <home>/<project-name>/file.ext
    NEVER invent paths like /Users/me or /home/me.
-2. If you are unsure whether a path is allowed, write a RELATIVE path
-   (e.g. "flappy-bird/index.html"). It will be resolved against home.
-3. If a write fails with "Path not allowed", switch to a relative path
-   under home and try again. Do NOT ask the user — the environment
-   block already tells you the allowed dirs.
+2. If you are unsure whether a path is allowed, write a RELATIVE path.
+3. If a write fails with "Path not allowed", switch to a relative path under home.
 4. Output tags on their own lines:
 
    <bridge-write path="flappy-bird/index.html">
@@ -197,46 +217,22 @@ RULES
 5. Never repeat a command that succeeded OR failed.
 6. When everything is written and verified, reply EXACTLY: DONE`;
 
-/* ---------- Build system prompt ---------- */
 function buildSystemPrompt(cfg, bridge) {
   let p = IDENTITY_GUARD + '\n\n---\n\n' + cfg.basePrompt;
-
   if (bridge && bridge.connected) {
     p += '\n\n---\n\n' + BRIDGE_PROMPT;
-
     const env = bridge.env || {};
-    const allowed = Array.isArray(env.allowed_dirs) && env.allowed_dirs.length
-      ? env.allowed_dirs.join(', ')
-      : '(not provided)';
-
+    const allowed = Array.isArray(env.allowed_dirs) && env.allowed_dirs.length ? env.allowed_dirs.join(', ') : '(not provided)';
     p += `\n\n=== [Bridge environment] ===\n`;
     p += `home=${env.home || '(unknown)'}\n`;
     p += `cwd=${env.cwd || '(unknown)'}\n`;
     p += `platform=${env.platform || '(unknown)'}\n`;
     p += `allowed_dirs=${allowed}\n`;
-    if (bridge.filesWritten && bridge.filesWritten.length) {
-      p += `filesWritten=${bridge.filesWritten.join(', ')}\n`;
-    }
-    if (bridge.plannedFiles && bridge.plannedFiles.length) {
-      p += `plannedFiles=${bridge.plannedFiles.join(', ')}\n`;
-    }
+    if (bridge.filesWritten && bridge.filesWritten.length) p += `filesWritten=${bridge.filesWritten.join(', ')}\n`;
+    if (bridge.plannedFiles && bridge.plannedFiles.length) p += `plannedFiles=${bridge.plannedFiles.join(', ')}\n`;
     p += `Use ONLY these paths. Never ask the user for this block.`;
   }
-
   return p;
-}
-
-function sanitizeMessages(raw) {
-  const out = [];
-  for (const m of safeArr(raw)) {
-    if (!m || typeof m !== 'object') continue;
-    const role = safe(m.role, 20);
-    if (!['system','user','assistant'].includes(role)) continue;
-    const c = m.content;
-    let content = typeof c === 'string' ? c : safe(c);
-    out.push({ role, content });
-  }
-  return out;
 }
 
 /* ---------- Provider URLs ---------- */
@@ -330,7 +326,162 @@ try { app.use(express.static(path.join(__dirname, '../public'))); } catch {}
 app.use(async (req, res, next) => { try { await loadDb(); } catch {} next(); });
 
 app.get(['/api/health','/health','/ping'], (req, res) => {
-  res.json({ ok: true, app: 'MiroxAI', version: 'v85', providers: PROVIDERS, time: now() });
+  res.json({ ok: true, app: 'MiroxAI', version: 'v86', providers: PROVIDERS, time: now() });
+});
+
+/* ============================================================
+   API KEYS
+   ============================================================ */
+function publicKeyView(k) {
+  return { id: k.id, name: k.name, key: k.key, prefix: k.key.slice(0, 14) + '…', created: k.created, last_used: k.last_used || 0, revoked: !!k.revoked };
+}
+function maxKeysForTier(tier) { return tier === 'free' ? 2 : 10; }
+
+app.get(['/api/keys','/keys'], async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const u = await currentUser(req);
+  if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
+  const keys = (u.api_keys || []).map(publicKeyView);
+  const limit = maxKeysForTier(u.tier);
+  const active = keys.filter(k => !k.revoked).length;
+  res.json({ ok: true, keys, limit, active, tier: u.tier });
+});
+
+app.post(['/api/keys','/keys'], async (req, res) => {
+  const u = await currentUser(req);
+  if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
+  const limit = maxKeysForTier(u.tier);
+  const list = Array.isArray(u.api_keys) ? u.api_keys : [];
+  const active = list.filter(k => !k.revoked).length;
+  if (active >= limit) return res.status(400).json({ ok: false, error: `Key limit reached (${limit} for ${u.tier})` });
+  const name = safe(req.body?.name, 60).trim() || ('Key ' + (list.length + 1));
+  const raw = 'mxk_live_' + crypto.randomBytes(24).toString('hex');
+  const key = { id: 'k_' + crypto.randomBytes(6).toString('hex'), name, key: raw, created: now(), last_used: 0, revoked: false };
+  list.push(key);
+  u.api_keys = list;
+  u.keys_this_month = (u.keys_this_month || 0) + 1;
+  await saveUser(u);
+  pushLog(db.events, { email: u.email, event: 'key_created', ts: now(), id: key.id });
+  await persist();
+  res.json({ ok: true, key: publicKeyView(key) });
+});
+
+app.post(['/api/keys/rename','/keys/rename'], async (req, res) => {
+  const u = await currentUser(req);
+  if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
+  const id = safe(req.body?.id, 40);
+  const name = safe(req.body?.name, 60).trim();
+  if (!id || !name) return res.status(400).json({ ok: false, error: 'id and name required' });
+  const list = Array.isArray(u.api_keys) ? u.api_keys : [];
+  const key = list.find(k => k.id === id);
+  if (!key) return res.status(404).json({ ok: false, error: 'Key not found' });
+  key.name = name;
+  u.api_keys = list;
+  await saveUser(u);
+  pushLog(db.events, { email: u.email, event: 'key_renamed', ts: now(), id });
+  await persist();
+  res.json({ ok: true, key: publicKeyView(key) });
+});
+
+app.post(['/api/keys/revoke','/keys/revoke'], async (req, res) => {
+  const u = await currentUser(req);
+  if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
+  const id = safe(req.body?.id, 40);
+  const list = Array.isArray(u.api_keys) ? u.api_keys : [];
+  const key = list.find(k => k.id === id);
+  if (!key) return res.status(404).json({ ok: false, error: 'Key not found' });
+  key.revoked = true;
+  u.api_keys = list;
+  await saveUser(u);
+  pushLog(db.events, { email: u.email, event: 'key_revoked', ts: now(), id });
+  await persist();
+  res.json({ ok: true });
+});
+
+app.post(['/api/keys/delete','/keys/delete'], async (req, res) => {
+  const u = await currentUser(req);
+  if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
+  const id = safe(req.body?.id, 40);
+  const list = Array.isArray(u.api_keys) ? u.api_keys : [];
+  u.api_keys = list.filter(k => k.id !== id);
+  await saveUser(u);
+  pushLog(db.events, { email: u.email, event: 'key_deleted', ts: now(), id });
+  await persist();
+  res.json({ ok: true });
+});
+
+/* ============================================================
+   IMAGE HISTORY
+   ============================================================ */
+app.get(['/api/images/history','/images/history'], async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const u = await currentUser(req);
+  if (!u) return res.json({ ok: true, images: [] });
+  const mine = (db.images || []).filter(x => x.email === u.email).slice(-60).reverse();
+  res.json({ ok: true, images: mine });
+});
+
+/* ============================================================
+   ADMIN
+   ============================================================ */
+app.post(['/api/admin/auth','/admin/auth'], async (req, res) => {
+  try {
+    const pass = safe(req.body?.password, 200);
+    if (!pass || pass !== ADMIN_PASS) return res.status(401).json({ ok: false, error: 'Invalid password' });
+    const token = signAdminToken();
+    res.json({ ok: true, token });
+  } catch { res.status(500).json({ ok: false, error: 'Server error' }); }
+});
+
+app.get(['/api/admin/stats','/admin/stats'], requireAdmin, async (req, res) => {
+  try {
+    const users = db.users || {};
+    const usersArr = Object.values(users);
+    const images = db.images || [];
+    const chats = db.chats || [];
+    const events = db.events || [];
+
+    const users_data = {};
+    for (const [email, u] of Object.entries(users)) {
+      users_data[email] = {
+        name: u.name || '',
+        tier: u.tier || 'free',
+        eclipse_used: u.eclipse_used || 0,
+        daily_used: u.daily_used || 0,
+        last_login: u.last_login || 0,
+      };
+    }
+
+    res.json({
+      ok: true,
+      warning: process.env.VERCEL === '1' ? 'Running on Vercel — file DB is ephemeral (/tmp).' : null,
+      users: usersArr.length,
+      chats: chats.length,
+      images: images.length,
+      events: events.length,
+      users_data,
+      chats_data: chats.slice(-100).reverse(),
+      images_data: images.slice(-60).reverse().map(i => ({ ts: i.ts, email: i.email, prompt: i.prompt })),
+      events_data: events.slice(-100).reverse(),
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post(['/api/admin/set-tier','/admin/set-tier'], requireAdmin, async (req, res) => {
+  try {
+    const email = safe(req.body?.email, 200).trim().toLowerCase();
+    const tier = safe(req.body?.tier, 20).trim();
+    if (!email || !tier) return res.status(400).json({ ok: false, error: 'email and tier required' });
+    if (!['free','pro','ultimate'].includes(tier)) return res.status(400).json({ ok: false, error: 'Invalid tier' });
+    const u = await ensureFreshUser(email);
+    u.tier = tier;
+    await saveUser(u);
+    pushLog(db.events, { email, event: 'tier_set', ts: now(), tier });
+    await persist();
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
 /* ---------- Bridge download ---------- */
@@ -352,44 +503,36 @@ app.get('/api/bridge/download', async (req, res) => {
     archive.pipe(res);
 
     const configJson = JSON.stringify({ bridge_name: name, port, allowed_dirs: ['~'], max_output_bytes: 200000 }, null, 2);
-    const readme = `# MiroxAI Bridge\n\n1. pip install aiohttp\n2. python runner.py\n3. Open MiroxAI → Bridge → Connect\n`;
+    const readme = `# MiroxAI Bridge\n\n1. pip install aiohttp\n2. python runner.py\n3. Open MiroxAI -> Bridge -> Connect\n`;
 
     const runner = `#!/usr/bin/env python3
-"""MiroxAI Bridge — HTTP (aiohttp). Always allows home/cwd/temp."""
+"""MiroxAI Bridge - HTTP (aiohttp)."""
 import os, sys, json, time, platform, tempfile, subprocess
 from pathlib import Path
 try:
     from aiohttp import web
 except ImportError:
     print("pip install aiohttp"); sys.exit(1)
-
 CONFIG_FILE = Path(__file__).parent / "config.json"
 CONFIG = json.load(open(CONFIG_FILE, encoding="utf-8")) if CONFIG_FILE.exists() else {}
-CONFIG.setdefault("bridge_name", "My Laptop")
-CONFIG.setdefault("port", 8765)
-CONFIG.setdefault("allowed_dirs", ["~"])
-CONFIG.setdefault("max_output_bytes", 200000)
-
-PORT = int(CONFIG["port"])
-NAME = CONFIG["bridge_name"]
-MAX_OUTPUT = int(CONFIG["max_output_bytes"])
+CONFIG.setdefault("bridge_name","My Laptop"); CONFIG.setdefault("port",8765)
+CONFIG.setdefault("allowed_dirs",["~"]); CONFIG.setdefault("max_output_bytes",200000)
+PORT=int(CONFIG["port"]); NAME=CONFIG["bridge_name"]; MAX_OUTPUT=int(CONFIG["max_output_bytes"])
 
 def _resolve(p):
     try: return Path(p).expanduser().resolve()
     except: return None
 
-raw = CONFIG.get("allowed_dirs") or ["~"]
-raw = [d for d in raw if d and d != "."]
-ALLOWED_DIRS = [r for r in (_resolve(d) for d in raw) if r]
+raw = [d for d in (CONFIG.get("allowed_dirs") or ["~"]) if d and d != "."]
+ALLOWED = [r for r in (_resolve(d) for d in raw) if r]
 for extra in (_resolve("~"), _resolve("."), _resolve(tempfile.gettempdir())):
-    if extra and extra not in ALLOWED_DIRS:
-        ALLOWED_DIRS.append(extra)
+    if extra and extra not in ALLOWED: ALLOWED.append(extra)
 
-def is_path_allowed(p):
+def allowed(p):
     try: p = p.expanduser().resolve()
     except: return False
-    for base in ALLOWED_DIRS:
-        try: p.relative_to(base); return True
+    for b in ALLOWED:
+        try: p.relative_to(b); return True
         except: pass
     return False
 
@@ -399,49 +542,43 @@ def safe_path(raw):
     if not p.is_absolute(): p = Path.home() / p
     try: p = p.resolve()
     except: return None
-    return p if is_path_allowed(p) else None
+    return p if allowed(p) else None
 
 @web.middleware
-async def cors_mw(request, handler):
-    if request.method == "OPTIONS": resp = web.Response()
+async def cors_mw(req, h):
+    if req.method == "OPTIONS": r = web.Response()
     else:
-        try: resp = await handler(request)
-        except web.HTTPException as e: resp = e
-        except Exception as e: resp = web.json_response({"ok": False, "error": str(e)}, status=500)
-    resp.headers["Access-Control-Allow-Origin"] = "*"
-    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-    resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
-    resp.headers["Access-Control-Allow-Private-Network"] = "true"
-    return resp
+        try: r = await h()
+        except web.HTTPException as e: r = e
+        except Exception as e: r = web.json_response({"ok": False, "error": str(e)}, status=500)
+    r.headers["Access-Control-Allow-Origin"] = "*"
+    r.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    r.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    r.headers["Access-Control-Allow-Private-Network"] = "true"
+    return r
 
 async def ping(req):
     return web.json_response({"ok": True, "name": NAME, "cwd": os.getcwd(), "time": time.time()})
 
 async def env_info(req):
-    return web.json_response({
-        "ok": True, "name": NAME, "home": str(Path.home()), "cwd": os.getcwd(),
-        "platform": platform.system(), "platform_release": platform.release(),
-        "allowed_dirs": [str(d) for d in ALLOWED_DIRS], "time": time.time(),
-    })
+    return web.json_response({"ok": True, "name": NAME, "home": str(Path.home()), "cwd": os.getcwd(), "platform": platform.system(), "allowed_dirs": [str(d) for d in ALLOWED], "time": time.time()})
 
 async def exec_cmd(req):
     try: data = await req.json()
     except: return web.json_response({"ok": False, "error": "bad json"})
     cmd = str(data.get("command", "")).strip()
     if not cmd: return web.json_response({"ok": False, "error": "no command"})
-    cwd_path = safe_path(data.get("cwd") or str(Path.home())) or Path.home()
+    cwd = safe_path(data.get("cwd") or str(Path.home())) or Path.home()
     try:
-        p = subprocess.run(cmd, shell=True, cwd=str(cwd_path), capture_output=True, text=True, timeout=int(data.get("timeout", 120)))
-        return web.json_response({"ok": True, "exit_code": p.returncode, "stdout": (p.stdout or "")[:MAX_OUTPUT], "stderr": (p.stderr or "")[:MAX_OUTPUT], "cwd": str(cwd_path)})
-    except subprocess.TimeoutExpired: return web.json_response({"ok": False, "error": "timeout"})
+        p = subprocess.run(cmd, shell=True, cwd=str(cwd), capture_output=True, text=True, timeout=int(data.get("timeout", 120)))
+        return web.json_response({"ok": True, "exit_code": p.returncode, "stdout": (p.stdout or "")[:MAX_OUTPUT], "stderr": (p.stderr or "")[:MAX_OUTPUT], "cwd": str(cwd)})
     except Exception as e: return web.json_response({"ok": False, "error": str(e)})
 
 async def write_file(req):
     try: data = await req.json()
     except: return web.json_response({"ok": False, "error": "bad json"})
     p = safe_path(data.get("path", ""))
-    if not p:
-        return web.json_response({"ok": False, "error": "Path not allowed", "allowed_dirs": [str(d) for d in ALLOWED_DIRS]})
+    if not p: return web.json_response({"ok": False, "error": "Path not allowed", "allowed_dirs": [str(d) for d in ALLOWED]})
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
         content = data.get("content", "")
@@ -480,7 +617,7 @@ def build_app():
 if __name__ == "__main__":
     print(f"[Bridge] {NAME} on http://127.0.0.1:{PORT}")
     print(f"[Bridge] Home: {Path.home()}")
-    for d in ALLOWED_DIRS: print(f"[Bridge]   allowed: {d}")
+    for d in ALLOWED: print(f"[Bridge]   allowed: {d}")
     web.run_app(build_app(), host="127.0.0.1", port=PORT, print=None, access_log=None)
 `;
 
@@ -497,7 +634,7 @@ if __name__ == "__main__":
 app.get(['/api/config','/config'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tier: m.tier }));
-  res.json({ app: { name: 'MiroxAI', version: 'v85' }, models, default_model: models[0].id, plans: PLANS, tts_available: !!F_API });
+  res.json({ app: { name: 'MiroxAI', version: 'v86' }, models, default_model: models[0].id, plans: PLANS, tts_available: !!F_API });
 });
 
 /* ---------- Auth ---------- */
@@ -508,9 +645,12 @@ app.post(['/api/auth/simple-login','/auth/simple-login'], async (req, res) => {
     const e = safe(email, 120).trim().toLowerCase();
     if (!n || !e || !e.includes('@')) return res.status(400).json({ ok: false, error: 'Name and email required' });
     let rec = await getUser(e);
-    if (!rec) rec = { email: e, name: n, tier: 'free' };
+    if (!rec) rec = { email: e, name: n, tier: 'free', api_keys: [] };
+    if (!Array.isArray(rec.api_keys)) rec.api_keys = [];
     rec.name = n; rec.last_login = now();
     await saveUser(rec);
+    pushLog(db.events, { email: e, event: 'login', ts: now() });
+    await persist();
     const token = setSession(res, { uid: e, name: n, tier: rec.tier });
     res.json({ ok: true, token, user: { id: e, email: e, name: n, tier: rec.tier } });
   } catch { res.status(500).json({ ok: false }); }
@@ -527,6 +667,8 @@ app.get(['/api/me','/me'], async (req, res) => {
       vision_limit: plan.vision_limit, vision_used: u.vision_used || 0,
       image_limit: plan.image_limit, image_used: u.image_used || 0,
       eclipse_limit: plan.eclipse_daily_limit, eclipse_used: u.eclipse_used || 0,
+      api_keys_used: (u.api_keys || []).filter(k => !k.revoked).length,
+      api_keys_limit: maxKeysForTier(u.tier),
     }});
   } catch { res.json({ user: null }); }
 });
@@ -536,9 +678,10 @@ app.get(['/api/subscription/plans','/subscription/plans'], (req, res) => {
     tagline: { free: 'Free forever', pro: 'Most popular', ultimate: 'Power users' }[id],
     vision_limit: p.vision_limit, image_limit: p.image_limit, eclipse_limit: p.eclipse_daily_limit,
     price_usd: p.price_usd, price_afg: p.price_afg,
-    perks: id === 'free' ? ['Luna & Gen unlimited', '10 image uploads/day', '10 image gens/day', '5 Eclipse/day']
-      : id === 'pro' ? ['Pro & Ultra models', '200 image uploads/gens/day', '5 API keys/month']
-      : ['Eclipse — best model', '2000 image uploads/gens/day', '20 API keys/month'],
+    api_keys_limit: p.api_keys_per_month,
+    perks: id === 'free' ? ['Luna & Gen unlimited', '10 image uploads/day', '10 image gens/day', '5 Eclipse/day', '2 API keys']
+      : id === 'pro' ? ['Pro & Ultra models', '200 image uploads/gens/day', '10 API keys']
+      : ['Eclipse — best model', '2000 image uploads/gens/day', '10 API keys'],
   }));
   res.json({ ok: true, plans: out });
 });
@@ -550,6 +693,8 @@ app.post('/api/persona', async (req, res) => {
   await saveUser(u);
   res.json({ ok: true });
 });
+
+/* ---------- Image generation ---------- */
 app.post('/v1/images/generations', async (req, res) => {
   try {
     const prompt = safe(req.body?.prompt, 2000).trim();
@@ -560,6 +705,9 @@ app.post('/v1/images/generations', async (req, res) => {
     }
     const imageUrl = await generateImage(prompt);
     if (u) { u.image_used = (u.image_used || 0) + 1; try { await saveUser(u); } catch {} }
+    pushLog(db.images, { email: u?.email || 'guest', prompt, image: imageUrl, ts: now() }, 300);
+    pushLog(db.events, { email: u?.email || 'guest', event: 'image_generated', ts: now() });
+    try { await persist(); } catch {}
     res.json({ ok: true, image: imageUrl });
   } catch { res.status(502).json({ error: { message: GENERIC_ERR } }); }
 });
@@ -567,9 +715,8 @@ app.post('/v1/images/generations', async (req, res) => {
 /* ---------- Chat completions ---------- */
 app.post('/v1/chat/completions', async (req, res) => {
   const t0 = Date.now();
-  const abortCtrl = new AbortController();
   let clientClosed = false;
-  req.on('close', () => { clientClosed = true; try { abortCtrl.abort(); } catch {} });
+  req.on('close', () => { clientClosed = true; });
 
   try {
     const body = req.body || {};
@@ -598,13 +745,10 @@ app.post('/v1/chat/completions', async (req, res) => {
     const sys = buildSystemPrompt(cfg, bridge) + (u?.persona ? `\n\nUser preference: ${safe(u.persona, 500)}` : '');
     const msgs = [{ role: 'system', content: sys }];
 
-    // Prepend the env block to the user message so the AI always sees it
     let userText = text;
     if (bridge && bridge.connected) {
       const env = bridge.env || {};
-      const allowed = Array.isArray(env.allowed_dirs) && env.allowed_dirs.length
-        ? env.allowed_dirs.join(', ')
-        : '(not provided)';
+      const allowed = Array.isArray(env.allowed_dirs) && env.allowed_dirs.length ? env.allowed_dirs.join(', ') : '(not provided)';
       const envHeader =
         `[Bridge environment]\n` +
         `home=${env.home || '(unknown)'}\n` +
@@ -626,6 +770,8 @@ app.post('/v1/chat/completions', async (req, res) => {
         if (requestedModel === 'mirox-eclipse-2.0') u.eclipse_used = (u.eclipse_used || 0) + 1;
         try { await saveUser(u); } catch {}
       }
+      pushLog(db.chats, { email: u?.email || 'guest', model: requestedModel, message: text.slice(0, 400), ts: now() });
+      try { await persist(); } catch {}
     };
 
     if (!stream) {
@@ -642,52 +788,27 @@ app.post('/v1/chat/completions', async (req, res) => {
     let streamEnded = false;
     const guard = setTimeout(() => { if (streamEnded || res.writableEnded) return; try { sseDone(res); } catch {} try { res.end(); } catch {} streamEnded = true; }, 240000);
 
-    let fullReplyText = '';
-
     try {
       const result = await miroxChatChain({ messages: msgs, cfg, stream: true });
-
-      if (result.provider === 'pl' && looksLikeStream(result.res)) {
-        sseWrite(res, { p: 'pl' });
-        const reader = result.res.body.getReader(); const dec = new TextDecoder();
-        let buf = '';
-        while (true) {
-          if (clientClosed || res.writableEnded) break;
-          const { value, done } = await reader.read(); if (done) break;
-          buf += dec.decode(value, { stream: true });
-          let idx;
-          while ((idx = buf.indexOf('\n')) !== -1) {
-            let line = buf.slice(0, idx); buf = buf.slice(idx + 1);
-            if (line.endsWith('\r')) line = line.slice(0, -1);
-            const t = line.trim();
-            if (!t.startsWith('data:')) continue;
-            const raw = t.slice(5).trim();
-            if (!raw || raw === '[DONE]') continue;
-            try { const o = JSON.parse(raw); const d = o.choices?.[0]?.delta?.content; if (d) { fullReplyText += d; sseWrite(res, { d }); } } catch {}
-          }
+      sseWrite(res, { p: result.provider });
+      const reader = result.res.body.getReader(); const dec = new TextDecoder();
+      let buf = '';
+      while (true) {
+        if (clientClosed || res.writableEnded) break;
+        const { value, done } = await reader.read(); if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let idx;
+        while ((idx = buf.indexOf('\n')) !== -1) {
+          let line = buf.slice(0, idx); buf = buf.slice(idx + 1);
+          if (line.endsWith('\r')) line = line.slice(0, -1);
+          const t = line.trim();
+          if (!t.startsWith('data:')) continue;
+          const raw = t.slice(5).trim();
+          if (!raw || raw === '[DONE]') continue;
+          try { const o = JSON.parse(raw); const d = o.choices?.[0]?.delta?.content; if (d) sseWrite(res, { d }); } catch {}
         }
-        try { reader.releaseLock(); } catch {}
-      } else {
-        sseWrite(res, { p: 'hf' });
-        const reader = result.res.body.getReader(); const dec = new TextDecoder();
-        let buf = '';
-        while (true) {
-          if (clientClosed || res.writableEnded) break;
-          const { value, done } = await reader.read(); if (done) break;
-          buf += dec.decode(value, { stream: true });
-          let idx;
-          while ((idx = buf.indexOf('\n')) !== -1) {
-            let line = buf.slice(0, idx); buf = buf.slice(idx + 1);
-            if (line.endsWith('\r')) line = line.slice(0, -1);
-            const t = line.trim();
-            if (!t.startsWith('data:')) continue;
-            const raw = t.slice(5).trim();
-            if (!raw || raw === '[DONE]') continue;
-            try { const o = JSON.parse(raw); const d = o.choices?.[0]?.delta?.content; if (d) { fullReplyText += d; sseWrite(res, { d }); } } catch {}
-          }
-        }
-        try { reader.releaseLock(); } catch {}
       }
+      try { reader.releaseLock(); } catch {}
 
       if (!clientClosed && !res.writableEnded) { sseWrite(res, { done: true }); sseDone(res); }
       await updateUsage();
