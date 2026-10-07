@@ -2,7 +2,7 @@
 """
 MiroxAI Bridge Client — HTTP-only (aiohttp).
 
-Fix: allowed_dirs always includes home + cwd + temp so the AI can
+allowed_dirs always includes home + cwd + temp so the AI can
 write projects without getting "Path not allowed" errors.
 """
 
@@ -57,7 +57,6 @@ def _resolve(p):
 
 
 raw_dirs = CONFIG.get("allowed_dirs", ["~"]) or ["~"]
-# If config says "." or is empty, use home instead
 raw_dirs = [d for d in raw_dirs if d and d != "."]
 
 resolved = []
@@ -66,7 +65,6 @@ for d in raw_dirs:
     if r:
         resolved.append(r)
 
-# ALWAYS add home, cwd, and temp so the AI never gets blocked
 home_path = _resolve("~")
 cwd_path = _resolve(".")
 tmp_path = _resolve(tempfile.gettempdir())
@@ -94,9 +92,6 @@ def is_path_allowed(p: Path) -> bool:
 
 
 def safe_path(raw: str):
-    """Return a resolved Path if allowed, else None.
-    Bare relative names are resolved against home (not cwd) so the AI
-    can just say 'project/file.js' and it lands in the home dir."""
     if not raw:
         return None
     p = Path(raw).expanduser()
@@ -207,7 +202,6 @@ async def write_file(req):
             "error": "Path not allowed",
             "requested": raw,
             "allowed_dirs": [str(d) for d in ALLOWED_DIRS],
-            "hint": "Use an absolute path under one of allowed_dirs, or a relative path (resolved against home)."
         })
 
     try:
