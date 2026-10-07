@@ -30,8 +30,8 @@
   const BRIDGE_KEY = 'miroxai_bridge_v23';
 
   const MAX_BRIDGE_QUESTIONS = 6;
-  const MAX_BRIDGE_ITER = 40;
-  const MAX_AUTO_CONTINUES = 20;
+  const MAX_BRIDGE_ITER = 60;
+  const MAX_AUTO_CONTINUES = 30;
   const MAX_DUP_COMMANDS = 1;
   const AUTO_CONTINUE_DELAY_MS = 2000;
 
@@ -42,6 +42,7 @@
   let bridgeConversation = [], bridgeRunning = false, bridgeQuestionCount = 0, bridgeProgress = 0;
   let bridgeTurn = null, bridgeAutoTimer = null;
   let __bqResolver = null, __bqSelected = null;
+  let forceSearchNext = false;
 
   const uid = () => 'c_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
   const escapeHtml = (s) => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
@@ -49,6 +50,23 @@
   function safeSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
   function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
   function setToken(t) { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch {} }
+
+  /* ---------- Working label picker ---------- */
+  function pickStatusLabel(text) {
+    const t = String(text || '').toLowerCase();
+    if (!t) return 'Thinking';
+    if (/\b(fix|debug|bug|error|broken|crash|issue|problem|wrong|fail|not work|isn'?t work|doesn'?t work|stack ?trace|exception)\b/.test(t)) return 'Looking into problems';
+    if (/\b(search|find|look up|research|look for|where is|locate|google)\b/.test(t)) return 'Searching the web';
+    if (/\b(build|create|make|generate|write|scaffold|implement|add|set ?up|new|develop|code)\b/.test(t)) return 'Building';
+    if (/\b(analyze|analyse|inspect|review|audit|check|examine|verify)\b/.test(t)) return 'Analyzing';
+    if (/\b(explain|how|why|what|help me understand|describe|tell me)\b/.test(t)) return 'Thinking';
+    if (/\b(refactor|improve|optimize|clean ?up|rewrite|simplify)\b/.test(t)) return 'Refactoring';
+    if (/\b(test|unit test|integration)\b/.test(t)) return 'Running tests';
+    if (/\b(deploy|ship|release|publish|push)\b/.test(t)) return 'Deploying';
+    if (/\b(email|mail|smtp)\b/.test(t)) return 'Drafting email';
+    if (/\b(system|health|status|disk|memory|cpu|performance)\b/.test(t)) return 'Checking system';
+    return 'Thinking';
+  }
 
   async function authJson(url, opts = {}, fallback = null) {
     try {
@@ -154,12 +172,12 @@
       <img src="/logo.png" alt="MiroxAI" class="welcome-logo theme-aware-logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';">
       <div class="logo-fallback logo-fallback-lg" style="display:none;">M</div>
       <h1 class="welcome-title">Hi, I'm Mirox</h1>
-      <p class="welcome-sub">Luna and Gen are unlimited and free.</p>
+      <p class="welcome-sub">Luna and Gen are unlimited and free. Try asking me to search the web.</p>
       <div class="suggestion-grid">
+        <button class="suggestion-card" type="button" data-prompt="Search the web for the latest AI news"><i class="ri-global-line"></i><span>Search the web for AI news</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Search the web for the best restaurants in Tokyo"><i class="ri-search-line"></i><span>Search for restaurants in Tokyo</span></button>
         <button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span>Generate me an image of a cat</span></button>
         <button class="suggestion-card" type="button" data-prompt="Help me write code"><i class="ri-code-line"></i><span>Help me write code</span></button>
-        <button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span>Explain a concept simply</span></button>
-        <button class="suggestion-card" type="button" data-prompt="Open the Bridge workspace"><i class="ri-link"></i><span>Bridge to my laptop</span></button>
       </div>
     </div>`;
   }
@@ -228,16 +246,19 @@
     wireMessageActions(el); scrollToBottom();
     return el;
   }
-  function addThinkingBubble() {
+
+  function addThinkingBubble(label) {
     const container = $('#chatMessages'); if (!container) return null;
     const welcome = container.querySelector('.welcome-screen'); if (welcome) welcome.remove();
     const id = uid();
     const el = document.createElement('div');
     el.className = 'message ai'; el.dataset.msgId = id; el.dataset.role = 'ai';
-    el.innerHTML = `<div class="bubble thinking"><span class="thinking-text">Thinking</span><span class="thinking-dots"><span></span><span></span><span></span></span></div><div class="message-time"></div>`;
+    const text = escapeHtml(label || 'Thinking');
+    el.innerHTML = `<div class="bubble thinking"><span class="thinking-text">${text}</span><span class="thinking-dots"><span></span><span></span><span></span></span></div><div class="message-time"></div>`;
     container.appendChild(el); scrollToBottom();
     return el;
   }
+
   function wireMessageActions(el) {
     el.querySelectorAll('.action-btn').forEach(btn => {
       if (btn.__wired) return; btn.__wired = true;
@@ -283,6 +304,7 @@
     const text = inp.value.trim();
     if (!text && !pendingFiles.length) return;
     const files = pendingFiles.slice();
+    const searchFlag = forceSearchNext; forceSearchNext = false;
     if (!currentConversationId) {
       currentConversationId = uid();
       __conversations.unshift({ id: currentConversationId, title: text.slice(0, 60) || 'New chat', messages: [], created: Date.now() });
@@ -294,27 +316,68 @@
     inp.value = ''; inp.style.height = 'auto';
     pendingFiles = []; updatePreview(); updateSendButtonState();
     saveChats(); renderHistory();
-    sendToAPI(text, files);
+    sendToAPI(text, files, searchFlag);
   }
-  async function sendToAPI(text, files) {
+
+  /* ---------- Search block HTML builder ---------- */
+  function buildSearchBlockHTML(query) {
+    return `<div class="search-block" data-done="false">
+      <div class="search-block-header">
+        <span class="search-pulse"><i class="ri-search-line"></i></span>
+        <span class="search-block-status">Searching for <b class="search-block-query">${escapeHtml(query)}</b></span>
+      </div>
+      <div class="search-block-sources"></div>
+    </div>`;
+  }
+  function finalizeSearchBlock(block, count) {
+    if (!block) return;
+    block.setAttribute('data-done', 'true');
+    const status = block.querySelector('.search-block-status');
+    if (status) status.innerHTML = `Searched the web · ${count} source${count === 1 ? '' : 's'}`;
+    const pulse = block.querySelector('.search-pulse');
+    if (pulse) { pulse.classList.remove('search-pulse'); pulse.classList.add('search-globe'); pulse.innerHTML = '<i class="ri-global-line"></i>'; }
+  }
+  function appendSearchSource(block, src) {
+    if (!block) return;
+    const list = block.querySelector('.search-block-sources');
+    if (!list) return;
+    const a = document.createElement('a');
+    a.className = 'search-block-source';
+    a.href = src.url || '#';
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    const initial = (src.domain || '?').charAt(0).toUpperCase();
+    a.innerHTML = `
+      <span class="ss-favicon">${escapeHtml(initial)}</span>
+      <span class="ss-info">
+        <span class="ss-title">${escapeHtml(src.title || src.url || '')}</span>
+        <span class="ss-domain">${escapeHtml(src.domain || '')}</span>
+      </span>`;
+    list.appendChild(a);
+    requestAnimationFrame(() => a.classList.add('in'));
+  }
+
+  async function sendToAPI(text, files, forceSearch) {
     isReplying = true; updateSendButtonState();
     const stopBtn = $('#stopBtn'); if (stopBtn) stopBtn.style.display = 'grid';
     const convo = currentConvo();
     const history = convo ? convo.messages.slice(-14).map(m => ({ role: m.role, content: m.content })) : [];
     const model = __model || 'mirox-luna-1.2';
-    const el = addThinkingBubble();
+    const label = pickStatusLabel(text);
+    const el = addThinkingBubble(label);
     if (!el) { isReplying = false; return; }
     const bubble = el.querySelector('.bubble');
     const timeEl = el.querySelector('.message-time');
     const aiMsgId = el.dataset.msgId;
     activeStreamController = new AbortController();
     let full = '', generatedImage = null, finishReason = 'stop', bubbleText = null, firstChunk = true;
+    let searchBlock = null, savedSearchData = null;
 
     try {
       const res = await fetch('/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, history, model, stream: true, files,
+        body: JSON.stringify({ message: text, history, model, stream: true, files, search: !!forceSearch,
           bridge: __bridge.connected ? { connected: true, name: __bridge.name, model: __bridge.model, env: __bridge.env } : null }),
         signal: activeStreamController.signal,
       });
@@ -332,19 +395,58 @@
           if (!pl || pl === '[DONE]') continue;
           try {
             const o = JSON.parse(pl);
+
+            // Search started
+            if (o.search) {
+              bubble.classList.remove('thinking');
+              bubble.innerHTML = buildSearchBlockHTML(o.search.query || '');
+              searchBlock = bubble.querySelector('.search-block');
+              scrollToBottom();
+              continue;
+            }
+            // Source found
+            if (o.source) {
+              if (!savedSearchData) savedSearchData = { query: '', sources: [] };
+              savedSearchData.sources.push(o.source);
+              appendSearchSource(searchBlock, o.source);
+              scrollToBottom();
+              continue;
+            }
+            // Search done
+            if (o.search_done) {
+              finalizeSearchBlock(searchBlock, o.count || 0);
+              scrollToBottom();
+              continue;
+            }
+            // Image
             if (o.img) {
               generatedImage = o.img;
               bubble.classList.remove('thinking');
-              bubble.innerHTML = `<div style="margin-bottom:10px;border-radius:14px;overflow:hidden;border:1px solid var(--border);max-width:100%;cursor:zoom-in;"><img src="${o.img}" style="display:block;width:100%;" draggable="false"></div><div class="bubble-text"></div>`;
+              const searchHTML = searchBlock ? searchBlock.outerHTML : '';
+              bubble.innerHTML = searchHTML + `<div style="margin-bottom:10px;border-radius:14px;overflow:hidden;border:1px solid var(--border);max-width:100%;cursor:zoom-in;"><img src="${o.img}" style="display:block;width:100%;" draggable="false"></div><div class="bubble-text"></div>`;
               bubbleText = bubble.querySelector('.bubble-text');
               const img = bubble.querySelector('img'); if (img) img.onclick = () => openImageViewer(o.img);
               firstChunk = false; scrollToBottom(); refreshUsage(); continue;
             }
+            // Text delta
             if (o.d) {
               full += o.d;
               if (firstChunk) {
                 bubble.classList.remove('thinking');
-                if (!generatedImage) { bubble.innerHTML = '<div class="bubble-text"></div>'; bubbleText = bubble.querySelector('.bubble-text'); }
+                if (!generatedImage) {
+                  // Keep the search block if present, add bubble-text below
+                  if (searchBlock) {
+                    if (!bubble.querySelector('.bubble-text')) {
+                      const bt = document.createElement('div');
+                      bt.className = 'bubble-text';
+                      bubble.appendChild(bt);
+                    }
+                    bubbleText = bubble.querySelector('.bubble-text');
+                  } else {
+                    bubble.innerHTML = '<div class="bubble-text"></div>';
+                    bubbleText = bubble.querySelector('.bubble-text');
+                  }
+                }
                 firstChunk = false;
               }
               const target = bubbleText || bubble.querySelector('.bubble-text');
@@ -512,6 +614,9 @@
     if (res?.ok) { setToken(res.token); closeModal('loginModal'); await refreshUsage(); }
     else alert(res?.error || 'Login failed');
   }
+  function doLoginment() {
+    window.location.href = '/api/auth/loginment/start';
+  }
   async function doLogout() { await authJson('/api/logout', { method: 'POST' }, null); setToken(''); await refreshUsage(); closeModal('settingsModal'); }
   async function loadPlans() {
     const grid = $('#plansGrid'); if (!grid) return;
@@ -668,11 +773,12 @@
     el.innerHTML = `<div class="bridge-success"><i class="ri-checkbox-circle-fill"></i><span>${escapeHtml(text)}</span></div>`;
     container.appendChild(el); scrollBridgeBottom();
   }
-  function addBridgeThinkingBubble() {
+  function addBridgeThinkingBubble(label) {
     const container = $('#bridgeMessages'); if (!container) return null;
     const empty = $('#bridgeEmpty'); if (empty) empty.remove();
     const el = document.createElement('div'); el.className = 'bridge-msg ai';
-    el.innerHTML = `<div class="bridge-thinking"><span>Thinking</span><span class="thinking-dots"><span></span><span></span><span></span></span></div>`;
+    const text = escapeHtml(label || 'Thinking');
+    el.innerHTML = `<div class="bridge-thinking"><span>${text}</span><span class="thinking-dots"><span></span><span></span><span></span></span></div>`;
     container.appendChild(el); scrollBridgeBottom();
     return el;
   }
@@ -699,8 +805,25 @@
     scrollBridgeBottom();
   }
   function getActionData(cmd) {
-    if (cmd.type === 'write') return { icon: 'ri-file-add-line', iconClass: 'write', label: `Adding <code>${escapeHtml(getBaseName(cmd.path))}</code>` };
-    if (cmd.type === 'exec') {
+    const t = cmd.type;
+    const base = getBaseName(cmd.path) || getBaseName(cmd.from) || '';
+    if (t === 'write') return { icon: 'ri-file-add-line', iconClass: 'write', label: `Adding <code>${escapeHtml(base)}</code>` };
+    if (t === 'append') return { icon: 'ri-file-edit-line', iconClass: 'write', label: `Appending to <code>${escapeHtml(base)}</code>` };
+    if (t === 'delete') return { icon: 'ri-delete-bin-line', iconClass: 'exec', label: `Deleting <code>${escapeHtml(base)}</code>` };
+    if (t === 'move') return { icon: 'ri-drag-move-line', iconClass: 'exec', label: `Moving <code>${escapeHtml(base)}</code>` };
+    if (t === 'copy') return { icon: 'ri-file-copy-2-line', iconClass: 'exec', label: `Copying <code>${escapeHtml(base)}</code>` };
+    if (t === 'read') return { icon: 'ri-file-text-line', iconClass: 'read', label: `Reading <code>${escapeHtml(base)}</code>` };
+    if (t === 'list') return { icon: 'ri-folder-line', iconClass: 'list', label: `Listing <code>${escapeHtml(base || cmd.path)}</code>` };
+    if (t === 'sysinfo') return { icon: 'ri-cpu-line', iconClass: 'list', label: 'Reading system info' };
+    if (t === 'syscheck') return { icon: 'ri-heart-pulse-line', iconClass: 'list', label: 'Checking system health' };
+    if (t === 'processes') return { icon: 'ri-list-check-2', iconClass: 'list', label: 'Listing processes' };
+    if (t === 'email') return { icon: 'ri-mail-send-line', iconClass: 'write', label: `Sending email to <code>${escapeHtml(cmd.to || '')}</code>` };
+    if (t === 'http') return { icon: 'ri-global-line', iconClass: 'exec', label: `HTTP ${escapeHtml(cmd.method || 'GET')} ${escapeHtml(cmd.url || '')}` };
+    if (t === 'clipboard') return { icon: 'ri-clipboard-line', iconClass: 'read', label: cmd.action === 'set' ? 'Copying to clipboard' : 'Reading clipboard' };
+    if (t === 'screenshot') return { icon: 'ri-screenshot-2-line', iconClass: 'list', label: 'Taking screenshot' };
+    if (t === 'git') return { icon: 'ri-git-branch-line', iconClass: 'exec', label: `Git ${escapeHtml(cmd.action || 'status')}` };
+    if (t === 'pkgs') return { icon: 'ri-archive-line', iconClass: 'list', label: `Listing ${escapeHtml(cmd.pkgType || 'pip')} packages` };
+    if (t === 'exec') {
       let friendly = 'Running command';
       const c = cmd.command;
       if (/^npm\s+(install|i)/i.test(c)) friendly = 'Installing packages';
@@ -711,12 +834,9 @@
       else if (/^(python|python3)\s/i.test(c)) friendly = 'Running Python';
       else if (/^node\s/i.test(c)) friendly = 'Running Node';
       else if (/^git\s/i.test(c)) friendly = 'Git operation';
-      else if (/^(cd|pwd)\b/i.test(c)) friendly = 'Checking directory';
       else if (/^npm\s+run/i.test(c)) friendly = 'Running project';
       return { icon: 'ri-play-line', iconClass: 'exec', label: friendly };
     }
-    if (cmd.type === 'read') return { icon: 'ri-file-text-line', iconClass: 'read', label: `Reading <code>${escapeHtml(getBaseName(cmd.path))}</code>` };
-    if (cmd.type === 'list') return { icon: 'ri-folder-line', iconClass: 'list', label: `Listing <code>${escapeHtml(getBaseName(cmd.path) || cmd.path)}</code>` };
     return { icon: 'ri-terminal-line', iconClass: '', label: 'Working' };
   }
   function getBaseName(p) { if (!p) return ''; const parts = String(p).split('/'); return parts[parts.length - 1] || p; }
@@ -734,14 +854,42 @@
 
   function extractBridgeCommands(text) {
     const cmds = []; let m;
-    const execRe = /<bridge-exec>([\s\S]*?)<\/bridge-exec>/g;
-    while ((m = execRe.exec(text)) !== null) cmds.push({ type: 'exec', command: m[1].trim(), index: m.index });
-    const writeRe = /<bridge-write\s+path="([^"]+)">([\s\S]*?)<\/bridge-write>/g;
-    while ((m = writeRe.exec(text)) !== null) cmds.push({ type: 'write', path: m[1], content: m[2], index: m.index });
-    const readRe = /<bridge-read\s+path="([^"]+)"\s*\/>/g;
-    while ((m = readRe.exec(text)) !== null) cmds.push({ type: 'read', path: m[1], index: m.index });
-    const listRe = /<bridge-list\s+path="([^"]+)"\s*\/>/g;
-    while ((m = listRe.exec(text)) !== null) cmds.push({ type: 'list', path: m[1], index: m.index });
+    const add = (type, m, extra) => cmds.push(Object.assign({ type, index: m.index }, extra));
+    let re;
+    re = /<bridge-exec>([\s\S]*?)<\/bridge-exec>/g;
+    while ((m = re.exec(text)) !== null) add('exec', m, { command: m[1].trim() });
+    re = /<bridge-write\s+path="([^"]+)">([\s\S]*?)<\/bridge-write>/g;
+    while ((m = re.exec(text)) !== null) add('write', m, { path: m[1], content: m[2] });
+    re = /<bridge-append\s+path="([^"]+)">([\s\S]*?)<\/bridge-append>/g;
+    while ((m = re.exec(text)) !== null) add('append', m, { path: m[1], content: m[2] });
+    re = /<bridge-delete\s+path="([^"]+)"\s*\/>/g;
+    while ((m = re.exec(text)) !== null) add('delete', m, { path: m[1] });
+    re = /<bridge-move\s+from="([^"]+)"\s+to="([^"]+)"\s*\/>/g;
+    while ((m = re.exec(text)) !== null) add('move', m, { from: m[1], to: m[2] });
+    re = /<bridge-copy\s+from="([^"]+)"\s+to="([^"]+)"\s*\/>/g;
+    while ((m = re.exec(text)) !== null) add('copy', m, { from: m[1], to: m[2] });
+    re = /<bridge-read\s+path="([^"]+)"\s*\/>/g;
+    while ((m = re.exec(text)) !== null) add('read', m, { path: m[1] });
+    re = /<bridge-list\s+path="([^"]+)"\s*\/>/g;
+    while ((m = re.exec(text)) !== null) add('list', m, { path: m[1] });
+    re = /<bridge-sysinfo\s*\/>/g;
+    while ((m = re.exec(text)) !== null) add('sysinfo', m, {});
+    re = /<bridge-syscheck\s*\/>/g;
+    while ((m = re.exec(text)) !== null) add('syscheck', m, {});
+    re = /<bridge-processes\s*\/>/g;
+    while ((m = re.exec(text)) !== null) add('processes', m, {});
+    re = /<bridge-email\s+to="([^"]+)"\s+subject="([^"]*)">([\s\S]*?)<\/bridge-email>/g;
+    while ((m = re.exec(text)) !== null) add('email', m, { to: m[1], subject: m[2], body: m[3] });
+    re = /<bridge-http\s+url="([^"]+)"(?:\s+method="([^"]*)")?(?:\s*\/>|>([\s\S]*?)<\/bridge-http>)/g;
+    while ((m = re.exec(text)) !== null) add('http', m, { url: m[1], method: m[2] || 'GET', body: m[3] || '' });
+    re = /<bridge-clipboard\s+action="(get|set)"(?:\s*>([\s\S]*?)<\/bridge-clipboard>|\s*\/>)/g;
+    while ((m = re.exec(text)) !== null) add('clipboard', m, { action: m[1], content: m[2] || '' });
+    re = /<bridge-screenshot(?:\s+path="([^"]*)")?\s*\/>/g;
+    while ((m = re.exec(text)) !== null) add('screenshot', m, { path: m[1] || '' });
+    re = /<bridge-git\s+action="([^"]+)"(?:\s+cwd="([^"]*)")?(?:\s+message="([^"]*)")?\s*\/>/g;
+    while ((m = re.exec(text)) !== null) add('git', m, { action: m[1], cwd: m[2] || '', message: m[3] || '' });
+    re = /<bridge-pkgs\s+type="([^"]+)"(?:\s+cwd="([^"]*)")?\s*\/>/g;
+    while ((m = re.exec(text)) !== null) add('pkgs', m, { pkgType: m[1], cwd: m[2] || '' });
     cmds.sort((a, b) => a.index - b.index);
     return cmds;
   }
@@ -777,13 +925,8 @@
   }
   function getNarrationText(text) {
     let t = String(text || '');
-    t = t.replace(/<bridge-exec>[\s\S]*?<\/bridge-exec>/g, '');
-    t = t.replace(/<bridge-write\s+[^>]*>[\s\S]*?<\/bridge-write>/g, '');
-    t = t.replace(/<bridge-read\s+[^>]*\/>/g, '');
-    t = t.replace(/<bridge-list\s+[^>]*\/>/g, '');
-    t = t.replace(/<bridge-ask>[\s\S]*?<\/bridge-ask>/g, '');
-    t = t.replace(/<bridge-plan>[\s\S]*?<\/bridge-plan>/g, '');
-    t = t.replace(/<bridge-progress[^>]*\/>/g, '');
+    t = t.replace(/<bridge-[a-z]+[^>]*>[\s\S]*?<\/bridge-[a-z]+>/g, '');
+    t = t.replace(/<bridge-[a-z]+\s+[^>]*\/>/g, '');
     t = t.replace(/```[\s\S]*?```/g, '');
     t = t.replace(/\bDONE\b/g, '');
     t = t.replace(/\s+/g, ' ').trim();
@@ -802,12 +945,25 @@
     const allowed = Array.isArray(env.allowed_dirs) && env.allowed_dirs.length ? env.allowed_dirs.join(', ') : '(none)';
     return [`[Bridge environment]`, `home=${env.home || '(unknown)'}`, `cwd=${env.cwd || '(unknown)'}`, `platform=${env.platform || '(unknown)'}`, `allowed_dirs=${allowed}`].join('\n');
   }
-
   async function executeBridgeCommand(cmd) {
-    if (cmd.type === 'exec') return bridgeCall('/exec', { command: cmd.command });
-    if (cmd.type === 'write') return bridgeCall('/write', { path: cmd.path, content: cmd.content });
-    if (cmd.type === 'read') return bridgeCall('/read', { path: cmd.path });
-    if (cmd.type === 'list') return bridgeCall('/list', { path: cmd.path });
+    const t = cmd.type;
+    if (t === 'exec') return bridgeCall('/exec', { command: cmd.command });
+    if (t === 'write') return bridgeCall('/write', { path: cmd.path, content: cmd.content });
+    if (t === 'append') return bridgeCall('/append', { path: cmd.path, content: cmd.content });
+    if (t === 'delete') return bridgeCall('/delete', { path: cmd.path });
+    if (t === 'move') return bridgeCall('/move', { from: cmd.from, to: cmd.to });
+    if (t === 'copy') return bridgeCall('/copy', { from: cmd.from, to: cmd.to });
+    if (t === 'read') return bridgeCall('/read', { path: cmd.path });
+    if (t === 'list') return bridgeCall('/list', { path: cmd.path });
+    if (t === 'sysinfo') return bridgeCall('/sysinfo', {});
+    if (t === 'syscheck') return bridgeCall('/syscheck', {});
+    if (t === 'processes') return bridgeCall('/processes', {});
+    if (t === 'email') return bridgeCall('/email', { to: cmd.to, subject: cmd.subject, body: cmd.body });
+    if (t === 'http') return bridgeCall('/http', { url: cmd.url, method: cmd.method, body: cmd.body });
+    if (t === 'clipboard') return bridgeCall('/clipboard', { action: cmd.action, content: cmd.content });
+    if (t === 'screenshot') return bridgeCall('/screenshot', { path: cmd.path });
+    if (t === 'git') return bridgeCall('/git', { action: cmd.action, cwd: cmd.cwd, message: cmd.message });
+    if (t === 'pkgs') return bridgeCall('/pkgs', { type: cmd.pkgType, cwd: cmd.cwd });
     return { ok: false, error: 'Unknown' };
   }
   function formatResultForAI(cmd, result) {
@@ -816,18 +972,45 @@
       const extra = result?.allowed_dirs ? `\nALLOWED: ${result.allowed_dirs.join(', ')}` : '';
       return `[${cmd.type}] ERROR: ${(result && result.error) || 'unknown'}${extra}`;
     }
-    if (cmd.type === 'exec') return `[exec] exit=${result.exit_code}\nSTDOUT:\n${(result.stdout || '').slice(0, 3000)}\nSTDERR:\n${(result.stderr || '').slice(0, 1500)}`;
-    if (cmd.type === 'write') return `[write] ok path=${result.path} bytes=${result.bytes}`;
-    if (cmd.type === 'read') return `[read] path=${result.path}\n${(result.content || '').slice(0, 3000)}`;
-    if (cmd.type === 'list') return `[list] path=${result.path}\n` + (result.items || []).map(i => (i.is_dir ? 'D ' : 'F ') + i.name).join('\n');
-    return '[unknown]';
+    const trunc = (s, n = 3000) => String(s || '').slice(0, n);
+    switch (cmd.type) {
+      case 'exec': return `[exec] exit=${result.exit_code}\nSTDOUT:\n${trunc(result.stdout)}\nSTDERR:\n${trunc(result.stderr, 1500)}`;
+      case 'write': return `[write] ok path=${result.path} bytes=${result.bytes}`;
+      case 'append': return `[append] ok path=${result.path}`;
+      case 'delete': return `[delete] ok path=${result.path}`;
+      case 'move': return `[move] ${result.from} → ${result.to}`;
+      case 'copy': return `[copy] ${result.from} → ${result.to}`;
+      case 'read': return `[read] path=${result.path}\n${trunc(result.content)}`;
+      case 'list': return `[list] path=${result.path}\n` + (result.items || []).map(i => (i.is_dir ? 'D ' : 'F ') + i.name).join('\n');
+      case 'sysinfo': return `[sysinfo] ${JSON.stringify(result, null, 2).slice(0, 2500)}`;
+      case 'syscheck': return `[syscheck] ${JSON.stringify(result.check || {}, null, 2)}`;
+      case 'processes': return `[processes] ${trunc(result.raw || '', 2500)}`;
+      case 'email': return `[email] sent to ${result.sent_to} subject="${result.subject}"`;
+      case 'http': return `[http] status=${result.status}\n${trunc(result.body, 2500)}`;
+      case 'clipboard': return `[clipboard] ${cmd.action === 'get' ? 'content:\n' + trunc(result.content, 2000) : 'set ok'}`;
+      case 'screenshot': return `[screenshot] saved to ${result.path}`;
+      case 'git': return `[git ${cmd.action}] ${trunc(result.stdout, 2000)}\n${trunc(result.stderr, 800)}`;
+      case 'pkgs': return `[pkgs ${cmd.pkgType}] ${trunc(result.raw, 2000)}`;
+      default: return `[${cmd.type}] ok`;
+    }
   }
   function cmdSignature(cmd) {
-    if (cmd.type === 'exec') return 'exec:' + cmd.command.trim();
-    if (cmd.type === 'write') return 'write:' + cmd.path + ':' + (cmd.content || '').length;
-    if (cmd.type === 'read') return 'read:' + cmd.path;
-    if (cmd.type === 'list') return 'list:' + cmd.path;
-    return 'unknown';
+    const t = cmd.type;
+    if (t === 'exec') return 'exec:' + cmd.command.trim();
+    if (t === 'write') return 'write:' + cmd.path + ':' + (cmd.content || '').length;
+    if (t === 'append') return 'append:' + cmd.path + ':' + (cmd.content || '').length;
+    if (t === 'delete') return 'delete:' + cmd.path;
+    if (t === 'move') return 'move:' + cmd.from + '→' + cmd.to;
+    if (t === 'copy') return 'copy:' + cmd.from + '→' + cmd.to;
+    if (t === 'read') return 'read:' + cmd.path;
+    if (t === 'list') return 'list:' + cmd.path;
+    if (t === 'email') return 'email:' + cmd.to + ':' + (cmd.subject || '');
+    if (t === 'http') return 'http:' + cmd.method + ':' + cmd.url;
+    if (t === 'clipboard') return 'clipboard:' + cmd.action;
+    if (t === 'screenshot') return 'screenshot:' + (cmd.path || 'default');
+    if (t === 'git') return 'git:' + cmd.action + ':' + (cmd.cwd || '');
+    if (t === 'pkgs') return 'pkgs:' + cmd.pkgType;
+    return t;
   }
   function shouldBlockSignature(sig) {
     if (!bridgeTurn) return false;
@@ -836,7 +1019,6 @@
     if (count >= MAX_DUP_COMMANDS) return true;
     return false;
   }
-
   function showBridgeQuestionModal(q, index, total) {
     return new Promise((resolve) => {
       __bqResolver = resolve; __bqSelected = null;
@@ -872,21 +1054,18 @@
     if (__bqResolver) { __bqResolver(answer); __bqResolver = null; }
   }
   function skipBridgeQuestion() { closeBridgeQuestionModal(); if (__bqResolver) { __bqResolver('[Skipped by user]'); __bqResolver = null; } }
-
   async function fetchBridgeReply(history) {
     const env = __bridge.env || {};
     const envBlock = buildEnvBlockString();
     const lastMsg = history[history.length - 1];
     const messageWithEnv = `${envBlock}\n\n${lastMsg.content}`;
-
     const res = await fetch('/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         message: messageWithEnv,
         history: history.slice(0, -1).map(h => ({ role: h.role, content: h.content })),
-        model: __bridge.model,
-        stream: false,
+        model: __bridge.model, stream: false,
         bridge: {
           connected: true, name: __bridge.name, model: __bridge.model, mode: 'developer', env,
           filesWritten: bridgeTurn ? [...bridgeTurn.writtenFiles] : [],
@@ -900,27 +1079,20 @@
     if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
     return data.reply || data.choices?.[0]?.message?.content || '';
   }
-
   async function autoContinueAfterDelay(label = 'Auto-continuing') {
     addBridgeSystemMsg(`${label} in ${AUTO_CONTINUE_DELAY_MS / 1000}s…`);
     setProgressText(`${label} in ${AUTO_CONTINUE_DELAY_MS / 1000}s…`);
     let remaining = AUTO_CONTINUE_DELAY_MS / 1000;
-    const ticker = setInterval(() => {
-      remaining--;
-      if (remaining > 0) setProgressText(`${label} in ${remaining}s…`);
-      else clearInterval(ticker);
-    }, 1000);
+    const ticker = setInterval(() => { remaining--; if (remaining > 0) setProgressText(`${label} in ${remaining}s…`); else clearInterval(ticker); }, 1000);
     await new Promise(r => setTimeout(r, AUTO_CONTINUE_DELAY_MS));
     clearInterval(ticker);
   }
-
   async function runBridgeTurn(userText, isResume = false) {
     if (!__bridge.connected) { setBwHint('Bridge is not connected.', 'err'); return; }
     if (bridgeRunning) return;
     bridgeRunning = true;
     if (bridgeAutoTimer) { clearTimeout(bridgeAutoTimer); bridgeAutoTimer = null; }
     updateBridgeSendBtn();
-
     if (!isResume) {
       bridgeQuestionCount = 0;
       bridgeTurn = { runs: 0, plannedFiles: new Set(), writtenFiles: new Set(), commandLog: new Map(), failedSignatures: new Set(), commandsRun: 0 };
@@ -928,20 +1100,18 @@
       updateBridgeProgress(2, 'Starting…');
       addBridgeUserMsg(userText);
       bridgeConversation.push({ role: 'user', content: userText });
-    } else {
-      setProgressText('Continuing…');
-    }
-
+    } else setProgressText('Continuing…');
     let iter = 0, autoContinues = 0;
     try {
       while (iter++ < MAX_BRIDGE_ITER) {
         bridgeTurn.runs++;
-        const thinkingEl = addBridgeThinkingBubble();
+        const lastUser = bridgeConversation.filter(h => h.role === 'user').slice(-1)[0];
+        const label = pickStatusLabel(lastUser?.content || '') || 'Working';
+        const thinkingEl = addBridgeThinkingBubble(label);
         let reply = '';
         try { reply = await fetchBridgeReply(bridgeConversation); }
         catch (e) { if (thinkingEl) thinkingEl.remove(); addBridgeSystemMsg('AI error: ' + e.message); break; }
         if (thinkingEl) thinkingEl.remove();
-
         if (!reply || !reply.trim()) {
           if (autoContinues < MAX_AUTO_CONTINUES) {
             autoContinues++;
@@ -951,30 +1121,18 @@
           }
           break;
         }
-
         const prog = extractProgressTag(reply);
         const totalPlanned = bridgeTurn.plannedFiles.size;
         const doneCount = bridgeTurn.writtenFiles.size;
-        if (totalPlanned > 0) {
-          const filePct = 2 + Math.round((doneCount / totalPlanned) * 93);
-          updateBridgeProgress(filePct, `Files: ${doneCount} / ${totalPlanned}`);
-        } else if (prog && prog.total > 0) {
-          const pct = Math.min(95, 2 + Math.round((prog.step / prog.total) * 93));
-          updateBridgeProgress(pct, prog.label || `Step ${prog.step} of ${prog.total}`);
-        } else {
-          const pct = Math.min(90, 5 + iter * 4);
-          updateBridgeProgress(pct, `Working… (step ${iter})`);
-        }
-
+        if (totalPlanned > 0) { updateBridgeProgress(2 + Math.round((doneCount / totalPlanned) * 93), `Files: ${doneCount} / ${totalPlanned}`); }
+        else if (prog && prog.total > 0) { updateBridgeProgress(Math.min(95, 2 + Math.round((prog.step / prog.total) * 93)), prog.label || `Step ${prog.step} of ${prog.total}`); }
+        else { updateBridgeProgress(Math.min(90, 5 + iter * 3), `Working… (step ${iter})`); }
         const plan = extractBridgePlan(reply);
         if (plan && plan.length) { for (const f of plan) bridgeTurn.plannedFiles.add(f); addBridgeSystemMsg(`Planned ${plan.length} file(s)`); }
-
         const narration = getNarrationText(reply);
         if (narration) addBridgeAiMsg(narration);
-
         bridgeConversation.push({ role: 'assistant', content: reply });
-        if (bridgeConversation.length > 40) bridgeConversation = bridgeConversation.slice(-40);
-
+        if (bridgeConversation.length > 50) bridgeConversation = bridgeConversation.slice(-50);
         const questions = extractBridgeQuestions(reply);
         if (questions.length > 0) {
           const remaining = MAX_BRIDGE_QUESTIONS - bridgeQuestionCount;
@@ -988,7 +1146,7 @@
                 const envBlock = buildEnvBlockString();
                 addBridgeSystemMsg('Auto-answering environment request.');
                 addBridgeUserMsg(envBlock);
-                bridgeConversation.push({ role: 'user', content: `[Answer to "${q.question}"]\n${envBlock}\n\nNow continue building. Do not ask for the environment again.` });
+                bridgeConversation.push({ role: 'user', content: `[Answer to "${q.question}"]\n${envBlock}\n\nNow continue building.` });
                 continue;
               }
               setProgressText('Waiting for your answer…');
@@ -997,28 +1155,22 @@
               bridgeConversation.push({ role: 'user', content: `[Answer to "${q.question}"] ${answer}` });
             }
             addBridgeSystemMsg('Answers received — resuming.');
-            setProgressText('Resuming…');
-            bridgeConversation.push({ role: 'user', content: `[System] User answered. Continue building now. The [Bridge environment] block is at the top of every message — use it.` });
-            continue;
-          } else {
-            bridgeConversation.push({ role: 'user', content: `[System] Question limit reached. Continue with defaults.` });
+            bridgeConversation.push({ role: 'user', content: `[System] User answered. Continue building now.` });
             continue;
           }
         }
-
         const cmds = extractBridgeCommands(reply);
         if (cmds.length > 0) {
           const resultLines = [];
           for (let i = 0; i < cmds.length; i++) {
             const cmd = cmds[i];
             const sig = cmdSignature(cmd);
-            if (shouldBlockSignature(sig)) { resultLines.push(`[${cmd.type}] BLOCKED: ${sig}`); continue; }
+            if (shouldBlockSignature(sig)) { resultLines.push(`[${cmd.type}] BLOCKED (already tried): ${sig}`); continue; }
             bridgeTurn.commandLog.set(sig, (bridgeTurn.commandLog.get(sig) || 0) + 1);
             bridgeTurn.commandsRun++;
             const bubble = addBridgeActionBubble(cmd);
             let result;
-            try { result = await executeBridgeCommand(cmd); }
-            catch (e) { result = { ok: false, error: e.message }; }
+            try { result = await executeBridgeCommand(cmd); } catch (e) { result = { ok: false, error: e.message }; }
             updateBridgeActionBubble(bubble, cmd, result);
             if (result && result.ok) { if (cmd.type === 'write') bridgeTurn.writtenFiles.add(cmd.path); }
             else { bridgeTurn.failedSignatures.add(sig); }
@@ -1026,55 +1178,36 @@
           }
           const tp = bridgeTurn.plannedFiles.size;
           const dc = bridgeTurn.writtenFiles.size;
-          if (tp > 0) {
-            const filePct = 2 + Math.round((dc / tp) * 93);
-            updateBridgeProgress(filePct, `Files: ${dc} / ${tp}`);
-          }
+          if (tp > 0) updateBridgeProgress(2 + Math.round((dc / tp) * 93), `Files: ${dc} / ${tp}`);
           const env = __bridge.env || {};
           const allowed = (env.allowed_dirs || []).join(', ') || '(none)';
           bridgeConversation.push({
             role: 'user',
-            content: [
-              `[Bridge environment]`,
-              `home=${env.home || '?'}`,
-              `cwd=${env.cwd || '?'}`,
-              `platform=${env.platform || '?'}`,
-              `allowed_dirs=${allowed}`,
-              ``,
-              `[Progress] ${dc}/${tp || '?'} files written`,
-              `[Results]`, resultLines.join('\n\n'),
-              `Write to paths inside allowed_dirs only.`,
-              `If all files written, reply DONE. Otherwise output next batch.`,
-            ].join('\n'),
+            content: [`[Bridge environment]`, `home=${env.home || '?'}`, `cwd=${env.cwd || '?'}`, `platform=${env.platform || '?'}`, `allowed_dirs=${allowed}`, ``, `[Progress] ${dc}/${tp || '?'} files written`, `[Results]`, resultLines.join('\n\n'), `Write to paths inside allowed_dirs only.`, `If all done, reply DONE. Otherwise output next batch.`].join('\n'),
           });
           continue;
         }
-
         const saidDone = /\bDONE\b/i.test(reply);
         const hasPlan = bridgeTurn.plannedFiles.size > 0;
         const allFilesWritten = hasPlan && bridgeTurn.writtenFiles.size >= bridgeTurn.plannedFiles.size;
-
-        if (saidDone && (allFilesWritten || !hasPlan)) { updateBridgeProgress(100, 'Complete'); addBridgeSuccessMsg('Project complete'); break; }
-
+        if (saidDone && (allFilesWritten || !hasPlan)) { updateBridgeProgress(100, 'Complete'); addBridgeSuccessMsg('Task complete'); break; }
         if (saidDone && hasPlan && !allFilesWritten) {
           const missing = [...bridgeTurn.plannedFiles].filter(f => !bridgeTurn.writtenFiles.has(f));
           addBridgeSystemMsg(`Still ${missing.length} file(s) missing — continuing.`);
-          bridgeConversation.push({ role: 'user', content: `[System] Missing: ${missing.join(', ')}. Write them under home, then verify.` });
+          bridgeConversation.push({ role: 'user', content: `[System] Missing: ${missing.join(', ')}.` });
           continue;
         }
-
         if (!saidDone) {
           if (autoContinues < MAX_AUTO_CONTINUES) {
             autoContinues++;
             await autoContinueAfterDelay('Auto-continuing');
-            bridgeConversation.push({ role: 'user', content: `[System] Continue building. Write the next files now.` });
+            bridgeConversation.push({ role: 'user', content: `[System] Continue. Output the next actions now.` });
             continue;
           }
-          addBridgeSystemMsg('Paused by iteration limit. You can type "continue" to keep going.');
+          addBridgeSystemMsg('Paused by iteration limit. Type "continue" to keep going.');
           break;
         }
       }
-
       const hasPlan = bridgeTurn.plannedFiles.size > 0;
       const allFilesWritten = hasPlan && bridgeTurn.writtenFiles.size >= bridgeTurn.plannedFiles.size;
       const missing = hasPlan ? [...bridgeTurn.plannedFiles].filter(f => !bridgeTurn.writtenFiles.has(f)) : [];
@@ -1092,7 +1225,6 @@
       updateBridgeSendBtn();
     }
   }
-
   function handleBridgeSend() {
     const inp = $('#bridgeInput'); if (!inp) return;
     const text = inp.value.trim();
@@ -1145,6 +1277,24 @@
     on('#stopBtn', 'click', stopStreaming);
     on('#modelPickerBtn', 'click', (e) => { e.stopPropagation(); const menu = $('#modelPickerMenu'); if (menu?.classList.contains('open')) closeModelPicker(); else openModelPicker(); });
     document.addEventListener('click', (e) => { if (!e.target.closest('#modelPicker')) closeModelPicker(); });
+
+    // Search tool button
+    on('#searchModeBtn', 'click', (e) => {
+      e.preventDefault();
+      forceSearchNext = !forceSearchNext;
+      const btn = $('#searchModeBtn');
+      if (btn) btn.classList.toggle('active', forceSearchNext);
+      const msg = forceSearchNext ? 'Web search enabled — your next message will be searched.' : 'Web search disabled.';
+      const ta = $('#messageInput');
+      if (ta) { ta.placeholder = forceSearchNext ? 'What should I search the web for?' : 'How can I help you today?'; ta.focus(); }
+      // Quick toast
+      const t = document.createElement('div');
+      t.textContent = msg;
+      t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--panel);color:var(--text);border:1px solid var(--border);padding:10px 16px;border-radius:12px;font-size:13px;box-shadow:var(--shadow-lg);z-index:9999;';
+      document.body.appendChild(t);
+      setTimeout(() => { t.style.transition = 'opacity .3s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 350); }, 1800);
+    });
+
     on('#imageModeBtn', 'click', () => { openModal('imageModal'); renderImageHistory(); });
     on('#plansModeBtn', 'click', () => { openModal('plansModal'); loadPlans(); });
     on('#supportModeBtn', 'click', () => openModal('supportModal'));
@@ -1156,6 +1306,7 @@
     on('#settingsBtn', 'click', () => { openModal('settingsModal'); loadPersona(); });
     on('#logoutBtn', 'click', doLogout);
     on('#savePersonaBtn', 'click', savePersona);
+    on('#loginmentBtn', 'click', doLoginment);
     $$('.settings-tab').forEach(tab => {
       tab.onclick = () => { const t = tab.dataset.tab;
         $$('.settings-tab').forEach(x => x.classList.toggle('active', x.dataset.tab === t));
