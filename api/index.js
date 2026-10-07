@@ -1,9 +1,9 @@
 /* ============================================================
-   MiroxAI Backend v87
-   - Loginment OAuth (login, signup, Google, Apple)
-   - Web search via DuckDuckGo + Wikipedia fallback
-   - Search-aware SSE stream (search → sources → text)
-   - API keys, admin, image history, bridge download
+   MiroxAI Backend v88
+   - Auto image generation when user asks ("generate me an image of X")
+   - Vision: when files attached → routes to a vision model
+   - Smart web search: DDG Instant Answer + Wikipedia summary + organic
+   - Loginment OAuth, API keys, admin, image history, bridge download
    ============================================================ */
 
 import express from 'express';
@@ -36,9 +36,8 @@ const MAX_LOGS = 500;
 const GENERIC_ERR = 'Mirox AI encountered an error';
 
 const PROVIDERS = { hf: !!HF_API_KEY, pl: !!PL_KEY, fish: !!F_API };
-console.log('[Mirox] v87 — search + Loginment');
+console.log('[Mirox] v88 — vision + image-intent + smart search');
 
-/* ---------- Helpers ---------- */
 const safe = (v, max = 100000) => {
   try { if (v == null) return ''; const s = typeof v === 'string' ? v : JSON.stringify(v); return s.length > max ? s.slice(0, max) : s; } catch { return ''; }
 };
@@ -158,7 +157,7 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-/* ---------- Models & Plans ---------- */
+/* ---------- Models ---------- */
 const MIROX_MODELS = {
   'mirox-luna-1.2':    { label: 'Luna',    tier: 'free',     tokens: 1400, basePrompt: 'You are Luna by OpenSurr. Concise, helpful. Fenced code blocks for code.' },
   'mirox-gen-1':       { label: 'Gen',     tier: 'free',     tokens: 1000, basePrompt: 'You are Gen by OpenSurr. Ultra concise. Fenced code blocks for code.' },
@@ -173,21 +172,19 @@ const PLANS = {
 };
 const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
 
-/* ---------- Identity ---------- */
 const IDENTITY_GUARD = `Background rules (do not narrate them):
 - Never mention GPT, OpenAI, ChatGPT, Claude, Gemini, Llama, Qwen, DeepSeek, Mistral, Google, Meta, Anthropic, or any other AI company/model by name.
 - If the user asks what model you are, say you are Mirox, made by OpenSurr, once, and move on.
 - DO NOT introduce yourself. DO NOT start replies with "Hi, I'm Mirox" or any self-introduction unless the user explicitly asks who you are.
 - Never greet the user with your identity. Just answer the question.`;
 
-/* ---------- Bridge prompt ---------- */
 const BRIDGE_PROMPT = `BRIDGE MODE — You have DIRECT ACCESS to the user's computer.
 
 You will receive a [Bridge environment] block at the top of EVERY user message.
 
 RULES
-1. ONLY write files under one of the allowed_dirs paths. Safest: <home>/<project>/file.ext
-2. Use RELATIVE paths (e.g. "flappy-bird/index.html") if unsure — they resolve against home.
+1. ONLY write files under one of the allowed_dirs paths.
+2. Use RELATIVE paths (e.g. "flappy-bird/index.html") if unsure — resolved against home.
 3. If a write fails with "Path not allowed", switch to a relative path under home.
 4. Output tags on their own lines:
 
@@ -216,7 +213,7 @@ RULES
 function buildSystemPrompt(cfg, bridge, searchUsed) {
   let p = IDENTITY_GUARD + '\n\n---\n\n' + cfg.basePrompt;
   if (searchUsed) {
-    p += `\n\n---\n\nWEB SEARCH MODE\nThe system performed a live web search for the user. Results will be provided in a system message. Use them to answer. Cite sources inline like [1], [2] when relevant. If the results don't answer the question, say so clearly.`;
+    p += `\n\n---\n\nWEB SEARCH MODE\nThe system performed a live web search. Results will be provided in a system message. Use them to answer. Cite sources inline like [1], [2] when relevant.`;
   }
   if (bridge && bridge.connected) {
     p += '\n\n---\n\n' + BRIDGE_PROMPT;
@@ -229,23 +226,32 @@ function buildSystemPrompt(cfg, bridge, searchUsed) {
     p += `allowed_dirs=${allowed}\n`;
     if (bridge.filesWritten?.length) p += `filesWritten=${bridge.filesWritten.join(', ')}\n`;
     if (bridge.plannedFiles?.length) p += `plannedFiles=${bridge.plannedFiles.join(', ')}\n`;
-    p += `Use ONLY these paths. Never ask the user for this block.`;
+    p += `Use ONLY these paths.`;
   }
   return p;
 }
 
-/* ---------- Search intent detection ---------- */
+/* ---------- Intent detection ---------- */
 function detectSearchIntent(text) {
   const t = String(text || '').trim();
   if (!t) return null;
-  // "search the web for X", "google X", "look up X", "find info about X"
   let m = t.match(/(?:^|\b)(?:search(?:\s+(?:the\s+)?(?:web|internet|online))?|google|look\s+up|find\s+(?:info|information|details))\s+(?:for\s+|about\s+|on\s+)?(.+?)[\s.?!,;:]*$/i);
   if (m && m[1]) return m[1].trim();
-  // "search for X"
   m = t.match(/^search\s+(?:for\s+)?(.+?)[\s.?!,;:]*$/i);
   if (m && m[1]) return m[1].trim();
-  // "X?" combined with "latest news about X"
   m = t.match(/(?:latest|recent|current)\s+(?:news|info|information)\s+(?:on|about)\s+(.+?)[\s.?!,;:]*$/i);
+  if (m && m[1]) return m[1].trim();
+  return null;
+}
+
+function detectImageIntent(text) {
+  const t = String(text || '').trim();
+  if (!t) return null;
+  // "generate me an image of X" / "draw X" / "make a picture of X"
+  let m = t.match(/^(?:please\s+)?(?:can\s+you\s+|could\s+you\s+|i\s+want\s+(?:you\s+)?to\s+)?(?:generate|create|make|draw|render|paint|show\s+me|give\s+me|i\s+want|i\s+need)\s+(?:me\s+)?(?:an?\s+|the\s+)?(?:image|picture|photo|illustration|art(?:work)?|drawing|render|painting)\s+(?:of\s+|with\s+|showing\s+|depicting\s+|that\s+shows\s+)?(.+?)[\s.?!,;:]*$/i);
+  if (m && m[1]) return m[1].trim();
+  // "image of X"
+  m = t.match(/^(?:an?\s+)?(?:image|picture|photo|illustration)\s+of\s+(.+?)[\s.?!,;:]*$/i);
   if (m && m[1]) return m[1].trim();
   return null;
 }
@@ -264,15 +270,15 @@ async function duckSearch(query, max = 5) {
     }, SEARCH_TIMEOUT_MS);
     if (!r.ok) return [];
     const html = await r.text();
-    const out = [];
-    const re = /<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]{0,2500}?(?:<a[^>]*class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>)?/g;
-    let m;
     const strip = s => String(s || '')
       .replace(/<[^>]+>/g, '')
       .replace(/&amp;/g, '&').replace(/&#x27;/g, "'").replace(/&#39;/g, "'")
       .replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
       .replace(/&nbsp;/g, ' ')
       .replace(/\s+/g, ' ').trim();
+    const out = [];
+    const re = /<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]{0,3000}?(?:<a[^>]*class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>)?/g;
+    let m;
     while ((m = re.exec(html)) !== null && out.length < max) {
       let href = m[1];
       const uddg = href.match(/[?&]uddg=([^&]+)/);
@@ -281,12 +287,46 @@ async function duckSearch(query, max = 5) {
       const title = strip(m[2]);
       const snippet = strip(m[3]);
       if (!title || !href) continue;
-      if (href.includes('duckduckgo.com/y.js')) continue;
-      if (href.includes('duckduckgo.com/l/?')) continue;
-      out.push({ title, url: href, snippet });
+      if (href.includes('duckduckgo.com/y.js') || href.includes('duckduckgo.com/l/?')) continue;
+      let domain = '';
+      try { domain = new URL(href).hostname.replace(/^www\./, ''); } catch {}
+      out.push({ title, url: href, snippet, domain });
     }
     return out;
   } catch { return []; }
+}
+
+async function ddgInstantAnswer(query) {
+  try {
+    const r = await fetchT(`https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`, {}, 8000);
+    if (!r.ok) return null;
+    const d = await r.json();
+    const hasContent = d.Abstract || d.Answer || d.Definition || d.Heading;
+    if (!hasContent) return null;
+    return {
+      heading: d.Heading || '',
+      abstract: d.Abstract || '',
+      abstractSource: d.AbstractSource || '',
+      abstractURL: d.AbstractURL || '',
+      answer: d.Answer || '',
+      definition: d.Definition || '',
+      definitionSource: d.DefinitionSource || '',
+    };
+  } catch { return null; }
+}
+
+async function wikiSummary(title) {
+  try {
+    const r = await fetchT(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`, {}, 7000);
+    if (!r.ok) return null;
+    const d = await r.json();
+    if (!d.extract) return null;
+    return {
+      title: d.title || title,
+      extract: d.extract,
+      url: d.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${encodeURIComponent(title)}`,
+    };
+  } catch { return null; }
 }
 
 async function wikiSearch(query) {
@@ -299,31 +339,59 @@ async function wikiSearch(query) {
       title: h.title,
       url: `https://en.wikipedia.org/wiki/${encodeURIComponent(h.title.replace(/ /g, '_'))}`,
       snippet: String(h.snippet || '').replace(/<[^>]+>/g, '').replace(/&[a-z]+;/g, ' ').trim(),
+      domain: 'en.wikipedia.org',
     }));
   } catch { return []; }
 }
 
 async function webSearch(query, max = 5) {
-  let results = await duckSearch(query, max);
+  const [organic, instant] = await Promise.all([
+    duckSearch(query, max),
+    ddgInstantAnswer(query),
+  ]);
+  let results = organic;
   if (!results.length) results = await wikiSearch(query);
   // De-dup
   const seen = new Set();
   const dedup = [];
   for (const r of results) {
-    const k = r.url;
-    if (seen.has(k)) continue;
-    seen.add(k);
-    try { r.domain = new URL(r.url).hostname.replace(/^www\./, ''); } catch { r.domain = ''; }
+    if (seen.has(r.url)) continue;
+    seen.add(r.url);
     dedup.push(r);
     if (dedup.length >= max) break;
   }
-  return dedup;
+  // Overview: prefer instant answer, then wikipedia summary of top result or query
+  let overview = null;
+  if (instant && (instant.abstract || instant.answer || instant.definition)) {
+    overview = {
+      source: instant.abstractSource || 'DuckDuckGo',
+      heading: instant.heading,
+      text: instant.abstract || instant.answer || instant.definition,
+      url: instant.abstractURL || '',
+      kind: 'instant',
+    };
+  } else {
+    const title = dedup[0]?.title || query;
+    const ws = await wikiSummary(title);
+    if (ws) {
+      overview = { source: 'Wikipedia', heading: ws.title, text: ws.extract, url: ws.url, kind: 'wiki' };
+    }
+  }
+  return { results: dedup, overview };
 }
 
-function formatSearchContext(query, results) {
-  if (!results.length) return `Web search for "${query}" returned no usable results.`;
-  return `Web search results for "${query}":\n\n` +
-    results.map((r, i) => `[${i + 1}] ${r.title}\n${r.url}\n${r.snippet || '(no snippet)'}`).join('\n\n');
+function formatSearchContext(query, searchData) {
+  const { results, overview } = searchData || { results: [], overview: null };
+  const parts = [];
+  if (overview && overview.text) {
+    parts.push(`[OVERVIEW — ${overview.source}${overview.url ? ' (' + overview.url + ')' : ''}]\n${overview.text}`);
+  }
+  if (results.length) {
+    parts.push('[' + results.length + ' ORGANIC RESULTS]');
+    parts.push(results.map((r, i) => `[${i + 1}] ${r.title}\n${r.url}\n${r.snippet || '(no snippet)'}`).join('\n\n'));
+  }
+  if (!parts.length) return `Web search for "${query}" returned no usable results.`;
+  return `Web search results for "${query}":\n\n` + parts.join('\n\n');
 }
 
 /* ---------- Providers ---------- */
@@ -331,7 +399,12 @@ const HF_URL = 'https://router.huggingface.co/v1/chat/completions';
 const PL_URL = 'https://gen.pollinations.ai/v1/chat/completions';
 const PL_IMG_BASE = 'https://gen.pollinations.ai/image';
 const HF_CHAT_MODELS = ['meta-llama/Llama-3.3-70B-Instruct:together', 'Qwen/Qwen2.5-72B-Instruct:together'];
+const HF_VISION_MODELS = [
+  'meta-llama/Llama-3.2-11B-Vision-Instruct:together',
+  'Qwen/Qwen2-VL-7B-Instruct:hyperbolic',
+];
 const PL_CHAT_MODELS = ['openai', 'openai-fast', 'mistral'];
+const PL_VISION_MODELS = ['openai', 'openai-fast'];
 const PL_IMG_MODELS = ['flux', 'turbo'];
 
 async function hfChat(modelId, messages, maxTokens, stream) {
@@ -348,7 +421,26 @@ async function plChat(modelId, messages, maxTokens, stream) {
   if (!res.ok) throw new Error(`pl_${res.status}`);
   return res;
 }
-async function miroxChatChain({ messages, cfg, stream }) {
+async function miroxChatChain({ messages, cfg, stream, vision }) {
+  if (vision) {
+    // Try vision models first, fall back to text-only if none work
+    if (PROVIDERS.hf) {
+      for (const mid of HF_VISION_MODELS) {
+        try { const res = await hfChat(mid, messages, cfg.tokens, stream); return { res, provider: 'hf', vision: true }; } catch {}
+      }
+    }
+    if (PROVIDERS.pl) {
+      for (const mid of PL_VISION_MODELS) {
+        try { const res = await plChat(mid, messages, cfg.tokens, stream); return { res, provider: 'pl', vision: true }; } catch {}
+      }
+    }
+    // Nothing vision-capable: strip images and continue with text
+    for (const msg of messages) {
+      if (Array.isArray(msg.content)) {
+        msg.content = msg.content.filter(p => p.type === 'text').map(p => p.text).join('\n');
+      }
+    }
+  }
   if (PROVIDERS.hf) {
     for (const mid of HF_CHAT_MODELS) {
       try { const res = await hfChat(mid, messages, cfg.tokens, stream); return { res, provider: 'hf' }; } catch {}
@@ -412,12 +504,12 @@ function sseDone(res) { try { res.write('data: [DONE]\n\n'); } catch {} }
 /* ---------- App ---------- */
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json({ limit: '30mb' }));
+app.use(express.json({ limit: '60mb' }));
 try { app.use(express.static(path.join(__dirname, '../public'))); } catch {}
 app.use(async (req, res, next) => { try { await loadDb(); } catch {} next(); });
 
 app.get(['/api/health','/health','/ping'], (req, res) => {
-  res.json({ ok: true, app: 'MiroxAI', version: 'v87', providers: PROVIDERS, search: true, loginment: !!LOGINMENT_CLIENT_ID, time: now() });
+  res.json({ ok: true, app: 'MiroxAI', version: 'v88', providers: PROVIDERS, search: true, vision: true, image_intent: true, loginment: !!LOGINMENT_CLIENT_ID, time: now() });
 });
 
 /* ============================================================
@@ -477,7 +569,7 @@ app.get('/api/auth/loginment/url', (req, res) => {
 });
 
 /* ============================================================
-   SIMPLE EMAIL LOGIN (fallback)
+   SIMPLE EMAIL LOGIN
    ============================================================ */
 app.post(['/api/auth/simple-login','/auth/simple-login'], async (req, res) => {
   try {
@@ -674,13 +766,13 @@ app.get('/api/bridge/download', async (req, res) => {
 
     const readme = `# MiroxAI Bridge\n\n1. pip install aiohttp\n2. (optional) pip install pillow for screenshots\n3. (optional) pip install pyperclip for clipboard\n4. python runner.py\n5. Open MiroxAI -> Bridge -> Connect\n`;
 
+    // The runner.py that gets shipped in the zip is the fixed v3 (same as above)
     const runner = `#!/usr/bin/env python3
-"""MiroxAI Bridge v2 - many endpoints."""
+"""MiroxAI Bridge Client v3 — fixed middleware signature."""
 import os, sys, json, time, platform, tempfile, subprocess, shutil, smtplib, ssl, urllib.request
 from pathlib import Path
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-
 try:
     from aiohttp import web
 except ImportError:
@@ -692,19 +784,19 @@ CONFIG.setdefault("bridge_name","My Laptop"); CONFIG.setdefault("port",8765)
 CONFIG.setdefault("allowed_dirs",["~"]); CONFIG.setdefault("max_output_bytes",200000)
 CONFIG.setdefault("smtp",{})
 PORT=int(CONFIG["port"]); NAME=CONFIG["bridge_name"]; MAX_OUTPUT=int(CONFIG["max_output_bytes"])
-SMTP = CONFIG.get("smtp") or {}
+SMTP=CONFIG.get("smtp") or {}
 
 def _resolve(p):
     try: return Path(p).expanduser().resolve()
     except: return None
 
-raw = [d for d in (CONFIG.get("allowed_dirs") or ["~"]) if d and d != "."]
-ALLOWED = [r for r in (_resolve(d) for d in raw) if r]
-for extra in (_resolve("~"), _resolve("."), _resolve(tempfile.gettempdir())):
-    if extra and extra not in ALLOWED: ALLOWED.append(extra)
+raw=[d for d in (CONFIG.get("allowed_dirs") or ["~"]) if d and d!="."]
+ALLOWED=[r for r in (_resolve(d) for d in raw) if r]
+for e in (_resolve("~"),_resolve("."),_resolve(tempfile.gettempdir())):
+    if e and e not in ALLOWED: ALLOWED.append(e)
 
 def allowed(p):
-    try: p = p.expanduser().resolve()
+    try: p=p.expanduser().resolve()
     except: return False
     for b in ALLOWED:
         try: p.relative_to(b); return True
@@ -713,30 +805,31 @@ def allowed(p):
 
 def safe_path(raw):
     if not raw: return None
-    p = Path(raw).expanduser()
-    if not p.is_absolute(): p = Path.home() / p
-    try: p = p.resolve()
+    p=Path(raw).expanduser()
+    if not p.is_absolute(): p=Path.home()/p
+    try: p=p.resolve()
     except: return None
     return p if allowed(p) else None
 
 @web.middleware
-async def cors_mw(req, h):
-    if req.method == "OPTIONS": r = web.Response()
+async def cors_mw(request, handler, **kwargs):
+    if handler is None: handler = kwargs.get("handler")
+    if request is None: request = kwargs.get("request")
+    if request.method == "OPTIONS": resp = web.Response()
     else:
-        try: r = await h()
-        except web.HTTPException as e: r = e
-        except Exception as e: r = web.json_response({"ok": False, "error": str(e)}, status=500)
-    r.headers["Access-Control-Allow-Origin"] = "*"
-    r.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-    r.headers["Access-Control-Allow-Headers"] = "Content-Type"
-    r.headers["Access-Control-Allow-Private-Network"] = "true"
-    return r
+        try: resp = await handler(request)
+        except web.HTTPException as e: resp = e
+        except Exception as e: resp = web.json_response({"ok": False, "error": str(e)}, status=500)
+    resp.headers["Access-Control-Allow-Origin"]="*"
+    resp.headers["Access-Control-Allow-Methods"]="GET, POST, OPTIONS"
+    resp.headers["Access-Control-Allow-Headers"]="Content-Type"
+    resp.headers["Access-Control-Allow-Private-Network"]="true"
+    resp.headers["Access-Control-Max-Age"]="86400"
+    return resp
 
 async def ping(req): return web.json_response({"ok": True, "name": NAME, "cwd": os.getcwd(), "time": time.time()})
-
 async def env_info(req):
     return web.json_response({"ok": True, "name": NAME, "home": str(Path.home()), "cwd": os.getcwd(), "platform": platform.system(), "allowed_dirs": [str(d) for d in ALLOWED], "smtp_configured": bool(SMTP.get("host")), "time": time.time()})
-
 async def exec_cmd(req):
     try: data = await req.json()
     except: return web.json_response({"ok": False, "error": "bad json"})
@@ -746,9 +839,7 @@ async def exec_cmd(req):
     try:
         p = subprocess.run(cmd, shell=True, cwd=str(cwd), capture_output=True, text=True, timeout=int(data.get("timeout", 120)))
         return web.json_response({"ok": True, "exit_code": p.returncode, "stdout": (p.stdout or "")[:MAX_OUTPUT], "stderr": (p.stderr or "")[:MAX_OUTPUT], "cwd": str(cwd)})
-    except subprocess.TimeoutExpired: return web.json_response({"ok": False, "error": "timeout"})
     except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-
 async def write_file(req):
     try: data = await req.json()
     except: return web.json_response({"ok": False, "error": "bad json"})
@@ -760,7 +851,6 @@ async def write_file(req):
         p.write_text(content, encoding="utf-8")
         return web.json_response({"ok": True, "path": str(p), "bytes": len(content)})
     except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-
 async def append_file(req):
     try: data = await req.json()
     except: return web.json_response({"ok": False, "error": "bad json"})
@@ -771,7 +861,6 @@ async def append_file(req):
         with p.open("a", encoding="utf-8") as f: f.write(data.get("content", ""))
         return web.json_response({"ok": True, "path": str(p)})
     except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-
 async def read_file(req):
     try: data = await req.json()
     except: return web.json_response({"ok": False, "error": "bad json"})
@@ -779,7 +868,6 @@ async def read_file(req):
     if not p or not p.exists(): return web.json_response({"ok": False, "error": "not found"})
     try: return web.json_response({"ok": True, "path": str(p), "content": p.read_text(encoding="utf-8", errors="replace")[:MAX_OUTPUT]})
     except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-
 async def list_dir(req):
     try: data = await req.json()
     except: data = {}
@@ -789,7 +877,6 @@ async def list_dir(req):
         items = [{"name": c.name, "is_dir": c.is_dir(), "size": c.stat().st_size if c.is_file() else 0} for c in sorted(p.iterdir())]
         return web.json_response({"ok": True, "path": str(p), "items": items[:500]})
     except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-
 async def delete_path(req):
     try: data = await req.json()
     except: return web.json_response({"ok": False, "error": "bad json"})
@@ -800,7 +887,6 @@ async def delete_path(req):
         else: p.unlink()
         return web.json_response({"ok": True, "path": str(p)})
     except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-
 async def move_path(req):
     try: data = await req.json()
     except: return web.json_response({"ok": False, "error": "bad json"})
@@ -811,7 +897,6 @@ async def move_path(req):
         shutil.move(str(a), str(b))
         return web.json_response({"ok": True, "from": str(a), "to": str(b)})
     except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-
 async def copy_path(req):
     try: data = await req.json()
     except: return web.json_response({"ok": False, "error": "bad json"})
@@ -823,54 +908,33 @@ async def copy_path(req):
         else: shutil.copy2(str(a), str(b))
         return web.json_response({"ok": True, "from": str(a), "to": str(b)})
     except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-
 async def sysinfo(req):
     try:
-        info = {
-            "platform": platform.system(), "release": platform.release(),
-            "version": platform.version(), "machine": platform.machine(),
-            "python": platform.python_version(), "node": "",
-            "cpu_count": os.cpu_count(), "home": str(Path.home()),
-        }
+        info = {"platform": platform.system(), "release": platform.release(), "version": platform.version(), "machine": platform.machine(), "python": platform.python_version(), "cpu_count": os.cpu_count(), "home": str(Path.home())}
         try:
-            import shutil as _sh
-            total, used, free = _sh.disk_usage(str(Path.home()))
+            total, used, free = shutil.disk_usage(str(Path.home()))
             info["disk"] = {"total_gb": round(total/1e9,2), "used_gb": round(used/1e9,2), "free_gb": round(free/1e9,2)}
         except: pass
         try:
             p = subprocess.run("node --version", shell=True, capture_output=True, text=True, timeout=5)
             info["node"] = p.stdout.strip()
         except: pass
-        try:
-            if platform.system() == "Linux":
-                with open("/proc/meminfo") as f:
-                    d = f.read()
-                info["memory_kb"] = {line.split(":")[0]: line.split(":")[1].strip() for line in d.splitlines()[:5]}
-        except: pass
         return web.json_response({"ok": True, **info})
     except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-
 async def syscheck(req):
     try:
         checks = {}
-        # disk
         try:
-            import shutil as _sh
-            total, used, free = _sh.disk_usage(str(Path.home()))
-            pct = (used / total) * 100 if total else 0
+            total, used, free = shutil.disk_usage(str(Path.home()))
+            pct = (used/total)*100 if total else 0
             checks["disk"] = {"ok": pct < 90, "used_pct": round(pct,1), "free_gb": round(free/1e9,2)}
         except Exception as e: checks["disk"] = {"ok": False, "error": str(e)}
-        # python
         checks["python"] = {"ok": True, "version": platform.python_version()}
-        # cpu count
-        checks["cpu"] = {"ok": os.cpu_count() and os.cpu_count() >= 2, "count": os.cpu_count()}
-        # home writable
+        checks["cpu"] = {"ok": (os.cpu_count() or 0) >= 2, "count": os.cpu_count()}
         try:
-            tf = Path.home() / ".mirox_write_test"
-            tf.write_text("ok"); tf.unlink()
+            tf = Path.home() / ".mirox_write_test"; tf.write_text("ok"); tf.unlink()
             checks["home_writable"] = {"ok": True}
         except Exception as e: checks["home_writable"] = {"ok": False, "error": str(e)}
-        # node
         try:
             p = subprocess.run("node --version", shell=True, capture_output=True, text=True, timeout=5)
             checks["node"] = {"ok": p.returncode == 0, "version": p.stdout.strip()}
@@ -878,101 +942,64 @@ async def syscheck(req):
         overall = all(c.get("ok") for c in checks.values() if isinstance(c, dict))
         return web.json_response({"ok": True, "check": checks, "healthy": overall})
     except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-
 async def processes(req):
     try:
         cmd = "ps aux --sort=-%cpu | head -n 16" if platform.system() != "Windows" else "tasklist"
         p = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=8)
         return web.json_response({"ok": True, "raw": p.stdout[:MAX_OUTPUT]})
     except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-
 async def send_email(req):
     try: data = await req.json()
     except: return web.json_response({"ok": False, "error": "bad json"})
-    if not SMTP.get("host"):
-        return web.json_response({"ok": False, "error": "SMTP not configured in config.json"})
-    to = str(data.get("to", "")).strip()
-    subject = str(data.get("subject", "")).strip() or "(no subject)"
-    body = str(data.get("body", ""))
+    if not SMTP.get("host"): return web.json_response({"ok": False, "error": "SMTP not configured"})
+    to = str(data.get("to", "")).strip(); subject = str(data.get("subject", "")).strip() or "(no subject)"; body = str(data.get("body", ""))
     if not to or "@" not in to: return web.json_response({"ok": False, "error": "invalid recipient"})
     try:
-        msg = MIMEMultipart()
-        msg["From"] = SMTP.get("from") or SMTP.get("user")
-        msg["To"] = to
-        msg["Subject"] = subject
+        msg = MIMEMultipart(); msg["From"] = SMTP.get("from") or SMTP.get("user"); msg["To"] = to; msg["Subject"] = subject
         msg.attach(MIMEText(body, "plain", "utf-8"))
-        ctx = ssl.create_default_context()
-        port = int(SMTP.get("port", 587))
+        ctx = ssl.create_default_context(); port = int(SMTP.get("port", 587))
         if SMTP.get("use_tls", True):
             with smtplib.SMTP(SMTP["host"], port, timeout=20) as s:
-                s.starttls(context=ctx)
-                s.login(SMTP.get("user"), SMTP.get("pass"))
-                s.send_message(msg)
+                s.starttls(context=ctx); s.login(SMTP.get("user"), SMTP.get("pass")); s.send_message(msg)
         else:
             with smtplib.SMTP_SSL(SMTP["host"], port, timeout=20, context=ctx) as s:
-                s.login(SMTP.get("user"), SMTP.get("pass"))
-                s.send_message(msg)
+                s.login(SMTP.get("user"), SMTP.get("pass")); s.send_message(msg)
         return web.json_response({"ok": True, "sent_to": to, "subject": subject})
     except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-
 async def http_call(req):
     try: data = await req.json()
     except: return web.json_response({"ok": False, "error": "bad json"})
-    url = str(data.get("url", "")).strip()
-    method = str(data.get("method", "GET")).upper()
-    body = data.get("body") or None
+    url = str(data.get("url", "")).strip(); method = str(data.get("method", "GET")).upper(); body = data.get("body") or None
     if not url: return web.json_response({"ok": False, "error": "no url"})
-    if not (url.startswith("http://") or url.startswith("https://")):
-        return web.json_response({"ok": False, "error": "only http(s)"})
+    if not (url.startswith("http://") or url.startswith("https://")): return web.json_response({"ok": False, "error": "only http(s)"})
     try:
         req2 = urllib.request.Request(url, method=method, data=(body.encode() if body else None))
-        req2.add_header("User-Agent", "MiroxBridge/2.0")
+        req2.add_header("User-Agent", "MiroxBridge/3.0")
         if body: req2.add_header("Content-Type", "application/json")
         with urllib.request.urlopen(req2, timeout=20) as r:
-            raw = r.read()[:MAX_OUTPUT]
-            try: text = raw.decode("utf-8", errors="replace")
-            except: text = ""
+            raw = r.read()[:MAX_OUTPUT]; text = raw.decode("utf-8", errors="replace")
             return web.json_response({"ok": True, "status": r.status, "body": text})
     except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-
 async def clipboard(req):
     try: data = await req.json()
     except: return web.json_response({"ok": False, "error": "bad json"})
-    action = data.get("action", "get")
+    action = data.get("action", "get"); content = str(data.get("content", ""))
     try:
         import pyperclip
-        if action == "set":
-            pyperclip.copy(str(data.get("content", "")))
-            return web.json_response({"ok": True})
-        else:
-            return web.json_response({"ok": True, "content": pyperclip.paste()})
-    except ImportError:
-        # Fallback to OS commands
-        try:
-            if platform.system() == "Darwin":
-                if action == "set":
-                    p = subprocess.run("pbcopy", shell=True, input=str(data.get("content","")), text=True)
-                    return web.json_response({"ok": True})
-                else:
-                    p = subprocess.run("pbpaste", shell=True, capture_output=True, text=True)
-                    return web.json_response({"ok": True, "content": p.stdout})
-            elif platform.system() == "Windows":
-                if action == "set":
-                    p = subprocess.run("clip", shell=True, input=str(data.get("content","")), text=True)
-                    return web.json_response({"ok": True})
-                else:
-                    p = subprocess.run("powershell Get-Clipboard", shell=True, capture_output=True, text=True)
-                    return web.json_response({"ok": True, "content": p.stdout})
-            else:
-                if action == "set":
-                    p = subprocess.run("xclip -selection clipboard", shell=True, input=str(data.get("content","")), text=True)
-                    return web.json_response({"ok": True})
-                else:
-                    p = subprocess.run("xclip -selection clipboard -o", shell=True, capture_output=True, text=True)
-                    return web.json_response({"ok": True, "content": p.stdout})
-        except Exception as e:
-            return web.json_response({"ok": False, "error": "clipboard unavailable: " + str(e)})
-
+        if action == "set": pyperclip.copy(content); return web.json_response({"ok": True})
+        return web.json_response({"ok": True, "content": pyperclip.paste()})
+    except ImportError: pass
+    try:
+        if platform.system() == "Darwin":
+            if action == "set": subprocess.run("pbcopy", shell=True, input=content, text=True); return web.json_response({"ok": True})
+            p = subprocess.run("pbpaste", shell=True, capture_output=True, text=True); return web.json_response({"ok": True, "content": p.stdout})
+        if platform.system() == "Windows":
+            if action == "set": subprocess.run("clip", shell=True, input=content, text=True); return web.json_response({"ok": True})
+            p = subprocess.run("powershell Get-Clipboard", shell=True, capture_output=True, text=True); return web.json_response({"ok": True, "content": p.stdout})
+        if action == "set": subprocess.run("xclip -selection clipboard", shell=True, input=content, text=True); return web.json_response({"ok": True})
+        p = subprocess.run("xclip -selection clipboard -o", shell=True, capture_output=True, text=True)
+        return web.json_response({"ok": True, "content": p.stdout})
+    except Exception as e: return web.json_response({"ok": False, "error": "clipboard unavailable: " + str(e)})
 async def screenshot(req):
     try: data = await req.json()
     except: data = {}
@@ -980,9 +1007,7 @@ async def screenshot(req):
     p = safe_path(raw) or (Path.home() / "mirox_screenshot.png")
     try:
         from PIL import ImageGrab
-        img = ImageGrab.grab()
-        p.parent.mkdir(parents=True, exist_ok=True)
-        img.save(str(p))
+        img = ImageGrab.grab(); p.parent.mkdir(parents=True, exist_ok=True); img.save(str(p))
         return web.json_response({"ok": True, "path": str(p)})
     except ImportError:
         try:
@@ -991,18 +1016,13 @@ async def screenshot(req):
                 r = subprocess.run(f"screencapture -x {str(p)}", shell=True, capture_output=True, text=True, timeout=15)
                 if r.returncode == 0: return web.json_response({"ok": True, "path": str(p)})
                 return web.json_response({"ok": False, "error": r.stderr})
-            else:
-                return web.json_response({"ok": False, "error": "pip install pillow for screenshots"})
+            return web.json_response({"ok": False, "error": "pip install pillow for screenshots"})
         except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-    except Exception as e:
-        return web.json_response({"ok": False, "error": str(e)})
-
+    except Exception as e: return web.json_response({"ok": False, "error": str(e)})
 async def git_op(req):
     try: data = await req.json()
     except: return web.json_response({"ok": False, "error": "bad json"})
-    action = data.get("action", "status")
-    cwd = safe_path(data.get("cwd") or str(Path.home())) or Path.home()
-    msg = data.get("message", "")
+    action = data.get("action", "status"); cwd = safe_path(data.get("cwd") or str(Path.home())) or Path.home(); msg = data.get("message", "")
     if action == "status": cmd = "git status"
     elif action == "log": cmd = "git log --oneline -n 20"
     elif action == "branch": cmd = "git branch -a"
@@ -1019,12 +1039,10 @@ async def git_op(req):
         p = subprocess.run(cmd, shell=True, cwd=str(cwd), capture_output=True, text=True, timeout=60)
         return web.json_response({"ok": p.returncode == 0, "stdout": p.stdout[:MAX_OUTPUT], "stderr": p.stderr[:MAX_OUTPUT]})
     except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-
 async def pkgs(req):
     try: data = await req.json()
     except: data = {}
-    t = data.get("type", "pip")
-    cwd = safe_path(data.get("cwd") or str(Path.home())) or Path.home()
+    t = data.get("type", "pip"); cwd = safe_path(data.get("cwd") or str(Path.home())) or Path.home()
     if t == "pip": cmd = "pip list"
     elif t == "npm": cmd = "npm list --depth=0"
     elif t == "pip-freeze": cmd = "pip freeze"
@@ -1039,25 +1057,13 @@ def build_app():
     def add(route, method, handler):
         a.router.add_route(method, route, handler)
         a.router.add_route("OPTIONS", route, lambda r: web.Response())
-    add("/ping", "GET", ping)
-    add("/env", "GET", env_info)
-    add("/exec", "POST", exec_cmd)
-    add("/write", "POST", write_file)
-    add("/append", "POST", append_file)
-    add("/read", "POST", read_file)
-    add("/list", "POST", list_dir)
-    add("/delete", "POST", delete_path)
-    add("/move", "POST", move_path)
-    add("/copy", "POST", copy_path)
-    add("/sysinfo", "POST", sysinfo)
-    add("/syscheck", "POST", syscheck)
-    add("/processes", "POST", processes)
-    add("/email", "POST", send_email)
-    add("/http", "POST", http_call)
-    add("/clipboard", "POST", clipboard)
-    add("/screenshot", "POST", screenshot)
-    add("/git", "POST", git_op)
-    add("/pkgs", "POST", pkgs)
+    add("/ping","GET",ping); add("/env","GET",env_info)
+    add("/exec","POST",exec_cmd); add("/write","POST",write_file); add("/append","POST",append_file)
+    add("/read","POST",read_file); add("/list","POST",list_dir)
+    add("/delete","POST",delete_path); add("/move","POST",move_path); add("/copy","POST",copy_path)
+    add("/sysinfo","POST",sysinfo); add("/syscheck","POST",syscheck); add("/processes","POST",processes)
+    add("/email","POST",send_email); add("/http","POST",http_call); add("/clipboard","POST",clipboard)
+    add("/screenshot","POST",screenshot); add("/git","POST",git_op); add("/pkgs","POST",pkgs)
     return a
 
 if __name__ == "__main__":
@@ -1081,7 +1087,15 @@ if __name__ == "__main__":
 app.get(['/api/config','/config'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tier: m.tier }));
-  res.json({ app: { name: 'MiroxAI', version: 'v87' }, models, default_model: models[0].id, plans: PLANS, tts_available: !!F_API, search_available: true, loginment_available: !!LOGINMENT_CLIENT_ID });
+  res.json({
+    app: { name: 'MiroxAI', version: 'v88' },
+    models, default_model: models[0].id, plans: PLANS,
+    tts_available: !!F_API,
+    search_available: true,
+    vision_available: true,
+    image_intent: true,
+    loginment_available: !!LOGINMENT_CLIENT_ID,
+  });
 });
 
 app.get(['/api/subscription/plans','/subscription/plans'], (req, res) => {
@@ -1091,9 +1105,9 @@ app.get(['/api/subscription/plans','/subscription/plans'], (req, res) => {
     vision_limit: p.vision_limit, image_limit: p.image_limit, eclipse_limit: p.eclipse_daily_limit,
     price_usd: p.price_usd, price_afg: p.price_afg,
     api_keys_limit: p.api_keys_per_month,
-    perks: id === 'free' ? ['Luna & Gen unlimited', '10 image uploads/day', '10 image gens/day', '5 Eclipse/day', '2 API keys', 'Web search']
-      : id === 'pro' ? ['Pro & Ultra models', '200 image uploads/gens/day', '10 API keys', 'Web search']
-      : ['Eclipse — best model', '2000 image uploads/gens/day', '10 API keys', 'Web search'],
+    perks: id === 'free' ? ['Luna & Gen unlimited', '10 image uploads/day', '10 image gens/day', '5 Eclipse/day', '2 API keys', 'Web search', 'Vision']
+      : id === 'pro' ? ['Pro & Ultra models', '200 image uploads/gens/day', '10 API keys', 'Web search', 'Vision']
+      : ['Eclipse — best model', '2000 image uploads/gens/day', '10 API keys', 'Web search', 'Vision'],
   }));
   res.json({ ok: true, plans: out });
 });
@@ -1106,15 +1120,13 @@ app.post('/api/persona', async (req, res) => {
   res.json({ ok: true });
 });
 
-/* ============================================================
-   SEARCH ENDPOINT (public)
-   ============================================================ */
+/* ---------- Public search endpoint ---------- */
 app.get(['/api/search','/search'], async (req, res) => {
   try {
     const q = safe(req.query.q, 400).trim();
     if (!q) return res.status(400).json({ ok: false, error: 'Query required' });
-    const results = await webSearch(q, 8);
-    res.json({ ok: true, query: q, results });
+    const data = await webSearch(q, 8);
+    res.json({ ok: true, query: q, results: data.results, overview: data.overview });
   } catch { res.status(500).json({ ok: false, error: 'Search failed' }); }
 });
 
@@ -1139,7 +1151,7 @@ app.post('/v1/images/generations', async (req, res) => {
 });
 
 /* ============================================================
-   CHAT COMPLETIONS (with web search)
+   CHAT COMPLETIONS  (with vision + search + image intent)
    ============================================================ */
 app.post('/v1/chat/completions', async (req, res) => {
   const t0 = Date.now();
@@ -1154,6 +1166,7 @@ app.post('/v1/chat/completions', async (req, res) => {
     const requestedModel = safe(body.model, 64) || 'mirox-luna-1.2';
     const bridge = body.bridge || null;
     const forceSearch = body.search === true;
+    const attachedFiles = safeArr(body.files);
 
     let u = null; try { u = await currentUser(req); } catch {}
     const cfg = MIROX_MODELS[requestedModel];
@@ -1168,21 +1181,66 @@ app.post('/v1/chat/completions', async (req, res) => {
     }
 
     const text = safe(rawMessage, 100000).trim();
-    if (!text) return res.status(400).json({ error: { message: 'Empty message' } });
+    if (!text && !attachedFiles.length) return res.status(400).json({ error: { message: 'Empty message' } });
 
-    // Detect search intent
+    /* ---------- IMAGE INTENT (auto-generate) ---------- */
+    const imageIntent = !attachedFiles.length ? detectImageIntent(text) : null;
+    if (imageIntent) {
+      try {
+        const imageUrl = await generateImage(imageIntent);
+        if (u) { u.image_used = (u.image_used || 0) + 1; try { await saveUser(u); } catch {} }
+        pushLog(db.images, { email: u?.email || 'guest', prompt: imageIntent, image: imageUrl, ts: now() }, 300);
+        pushLog(db.events, { email: u?.email || 'guest', event: 'image_generated_chat', ts: now() });
+        try { await persist(); } catch {}
+
+        if (!stream) {
+          return res.json({ reply: '', image: imageUrl, _ms: Date.now() - t0 });
+        }
+        sseInit(res);
+        sseWrite(res, { img: imageUrl });
+        sseWrite(res, { done: true });
+        sseDone(res);
+        try { res.end(); } catch {}
+        return;
+      } catch (e) {
+        // fall through to normal text reply with a note
+      }
+    }
+
+    /* ---------- SEARCH INTENT ---------- */
     const searchQuery = forceSearch ? text : detectSearchIntent(text);
 
+    /* ---------- Build messages ---------- */
     const sys = buildSystemPrompt(cfg, bridge, !!searchQuery) + (u?.persona ? `\n\nUser preference: ${safe(u.persona, 500)}` : '');
     const msgs = [{ role: 'system', content: sys }];
 
-    let userText = text;
+    let userText = text || '(no text)';
     if (bridge && bridge.connected) {
       const env = bridge.env || {};
       const allowed = Array.isArray(env.allowed_dirs) && env.allowed_dirs.length ? env.allowed_dirs.join(', ') : '(not provided)';
       userText = `[Bridge environment]\nhome=${env.home || '?'}\ncwd=${env.cwd || '?'}\nplatform=${env.platform || '?'}\nallowed_dirs=${allowed}\n\n` + userText;
     }
-    msgs.push({ role: 'user', content: userText });
+
+    // If files present → build multimodal content
+    let visionUsed = false;
+    if (attachedFiles.length) {
+      const parts = [];
+      // Text first
+      if (userText) parts.push({ type: 'text', text: userText });
+      for (const f of attachedFiles.slice(0, 4)) { // cap at 4 images
+        if (f && f.type === 'image' && typeof f.dataUrl === 'string' && f.dataUrl.startsWith('data:image')) {
+          parts.push({ type: 'image_url', image_url: { url: f.dataUrl } });
+          visionUsed = true;
+        } else if (f && f.type === 'text' && typeof f.content === 'string') {
+          parts.push({ type: 'text', text: `\n\n[Attached file: ${f.name || 'file'}]\n${String(f.content).slice(0, 60000)}` });
+        }
+      }
+      if (parts.length) msgs.push({ role: 'user', content: parts });
+      else msgs.push({ role: 'user', content: userText });
+    } else {
+      msgs.push({ role: 'user', content: userText });
+    }
+
     for (const h of safeArr(rawHistory).slice(-14)) {
       const role = safe(h.role, 20); const txt = safe(h.content, 4000).trim();
       if ((role === 'user' || role === 'assistant') && txt) msgs.push({ role, content: txt });
@@ -1191,58 +1249,66 @@ app.post('/v1/chat/completions', async (req, res) => {
     const updateUsage = async () => {
       if (u && u.email) {
         u.daily_used = (u.daily_used || 0) + 1;
+        if (visionUsed) u.vision_used = (u.vision_used || 0) + 1;
         if (requestedModel === 'mirox-eclipse-2.0') u.eclipse_used = (u.eclipse_used || 0) + 1;
         try { await saveUser(u); } catch {}
       }
-      pushLog(db.chats, { email: u?.email || 'guest', model: requestedModel, message: text.slice(0, 400), ts: now() });
+      pushLog(db.chats, { email: u?.email || 'guest', model: requestedModel, message: (text || '(vision)').slice(0, 400), ts: now() });
       try { await persist(); } catch {}
     };
 
-    /* ---------- Non-streaming path ---------- */
+    /* ---------- Non-streaming ---------- */
     if (!stream) {
-      let searchResults = [];
+      let searchData = { results: [], overview: null };
       if (searchQuery) {
-        searchResults = await webSearch(searchQuery, 5);
-        if (searchResults.length) {
-          msgs.push({ role: 'system', content: formatSearchContext(searchQuery, searchResults) });
+        searchData = await webSearch(searchQuery, 5);
+        if (searchData.results.length || searchData.overview) {
+          msgs.push({ role: 'system', content: formatSearchContext(searchQuery, searchData) });
         }
       }
       try {
-        const result = await miroxChatChain({ messages: msgs, cfg, stream: false });
+        const result = await miroxChatChain({ messages: msgs, cfg, stream: false, vision: visionUsed });
         const data = await result.res.json().catch(() => ({}));
         const reply = extractReplyText(data) || '(empty)';
         await updateUsage();
         return res.json({
           reply, _ms: Date.now() - t0,
-          search: searchQuery ? { query: searchQuery, results: searchResults } : null,
+          search: searchQuery ? { query: searchQuery, results: searchData.results, overview: searchData.overview } : null,
         });
-      } catch { return res.status(502).json({ error: { message: GENERIC_ERR } }); }
+      } catch (e) { return res.status(502).json({ error: { message: GENERIC_ERR } }); }
     }
 
-    /* ---------- Streaming path ---------- */
+    /* ---------- Streaming ---------- */
     sseInit(res);
     let streamEnded = false;
     const guard = setTimeout(() => { if (streamEnded || res.writableEnded) return; try { sseDone(res); } catch {} try { res.end(); } catch {} streamEnded = true; }, 300000);
 
     try {
-      // Search first (if requested) and stream search events
       if (searchQuery) {
         sseWrite(res, { search: { query: searchQuery } });
-        const results = await webSearch(searchQuery, 5);
-        for (const r of results) {
+        const searchData = await webSearch(searchQuery, 5);
+        if (searchData.overview && searchData.overview.text) {
+          sseWrite(res, { overview: {
+            source: searchData.overview.source,
+            heading: searchData.overview.heading || '',
+            text: searchData.overview.text,
+            url: searchData.overview.url || '',
+          }});
+        }
+        for (const r of searchData.results) {
           if (clientClosed || res.writableEnded) break;
           sseWrite(res, { source: { title: r.title, url: r.url, domain: r.domain || '' } });
-          await new Promise(r => setTimeout(r, 90)); // small pacing so the UI animates nicely
+          await new Promise(rr => setTimeout(rr, 80));
         }
-        sseWrite(res, { search_done: true, count: results.length });
-        if (results.length) {
-          msgs.push({ role: 'system', content: formatSearchContext(searchQuery, results) });
+        sseWrite(res, { search_done: true, count: searchData.results.length });
+        if (searchData.results.length || searchData.overview) {
+          msgs.push({ role: 'system', content: formatSearchContext(searchQuery, searchData) });
         } else {
           msgs.push({ role: 'system', content: `Web search for "${searchQuery}" returned no results. Answer from your own knowledge and say you couldn't verify.` });
         }
       }
 
-      const result = await miroxChatChain({ messages: msgs, cfg, stream: true });
+      const result = await miroxChatChain({ messages: msgs, cfg, stream: true, vision: visionUsed });
       sseWrite(res, { p: result.provider });
       const reader = result.res.body.getReader(); const dec = new TextDecoder();
       let buf = '';
@@ -1282,7 +1348,6 @@ app.post('/v1/chat/completions', async (req, res) => {
   }
 });
 
-/* ---------- Fallback ---------- */
 app.use((req, res) => {
   if (req.path.startsWith('/api') || req.path.startsWith('/v1')) return res.status(404).json({ ok: false, error: 'Not found: ' + req.path });
   const idx = path.join(__dirname, '../public/index.html');
