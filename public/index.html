@@ -51,11 +51,13 @@
   <div class="sidebar-tabs">
     <button class="sidebar-tab active" type="button" data-tab="chats"><i class="ri-chat-3-line"></i> Chats</button>
     <button class="sidebar-tab" type="button" data-tab="bridge"><i class="ri-link"></i> Bridge</button>
+    <button class="sidebar-tab" type="button" data-tab="images"><i class="ri-image-line"></i> Images</button>
   </div>
 
   <div class="sidebar-section" data-pane="chats">
     <ul id="historyList" class="history-list"><li class="history-empty">No conversations yet</li></ul>
   </div>
+
   <div class="sidebar-section" data-pane="bridge" style="display:none;">
     <div class="bridge-panel">
       <div class="bridge-status" id="bridgeStatus">
@@ -65,6 +67,14 @@
       <p class="bridge-hint">Give Mirox direct control of your laptop.</p>
       <button id="bridgeOpenBtn" class="modal-btn primary" type="button" style="width:100%;"><i class="ri-terminal-box-line"></i> Open Bridge Workspace</button>
       <button id="bridgeDownloadBtn" class="modal-btn" type="button" style="width:100%;margin-top:8px;"><i class="ri-download-2-line"></i> Download client</button>
+    </div>
+  </div>
+
+  <div class="sidebar-section" data-pane="images" style="display:none;">
+    <div class="sidebar-images-panel">
+      <div id="sidebarImageHistory" class="sidebar-image-grid">
+        <div class="sidebar-empty">No images yet.</div>
+      </div>
     </div>
   </div>
 
