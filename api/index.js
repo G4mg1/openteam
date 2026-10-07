@@ -1,9 +1,9 @@
 /* ============================================================
-   MiroxAI Backend v88
-   - Auto image generation when user asks ("generate me an image of X")
-   - Vision: when files attached → routes to a vision model
-   - Smart web search: DDG Instant Answer + Wikipedia summary + organic
-   - Loginment OAuth, API keys, admin, image history, bridge download
+   MiroxAI Backend v90
+   - Co-worker bridge prompt
+   - Search (DDG Instant Answer + Wikipedia summary + organic)
+   - Auto image intent + vision
+   - Loginment OAuth, API keys, admin, image history
    ============================================================ */
 
 import express from 'express';
@@ -36,7 +36,7 @@ const MAX_LOGS = 500;
 const GENERIC_ERR = 'Mirox AI encountered an error';
 
 const PROVIDERS = { hf: !!HF_API_KEY, pl: !!PL_KEY, fish: !!F_API };
-console.log('[Mirox] v88 — vision + image-intent + smart search');
+console.log('[Mirox] v90 — co-worker bridge');
 
 const safe = (v, max = 100000) => {
   try { if (v == null) return ''; const s = typeof v === 'string' ? v : JSON.stringify(v); return s.length > max ? s.slice(0, max) : s; } catch { return ''; }
@@ -178,13 +178,25 @@ const IDENTITY_GUARD = `Background rules (do not narrate them):
 - DO NOT introduce yourself. DO NOT start replies with "Hi, I'm Mirox" or any self-introduction unless the user explicitly asks who you are.
 - Never greet the user with your identity. Just answer the question.`;
 
-const BRIDGE_PROMPT = `BRIDGE MODE — You have DIRECT ACCESS to the user's computer.
+/* ---------- Co-worker Bridge prompt ---------- */
+const BRIDGE_PROMPT = `BRIDGE MODE — You are Mirox, working directly on the user's machine like a helpful co-worker.
 
 You will receive a [Bridge environment] block at the top of EVERY user message.
+It contains: home, cwd, platform, allowed_dirs. Trust it. NEVER ask the user for it.
+
+CO-WORKER STYLE — how you talk and act:
+- Sound like a human teammate. Short, natural, direct.
+- Before doing something big, say in ONE short line what you're about to do.
+- After finishing, give ONE short summary (1-3 lines). Never dump raw command output as your reply.
+- When you show command output, summarize key facts. Keep code inside <bridge-*> tags.
+- Do NOT reference previous tasks or their results. Each conversation is a fresh task.
+- Do NOT introduce yourself. Do NOT say "I'm Mirox". Just work.
+- If something fails, try another way automatically. Don't ask unless the choice matters.
+- Only ask the user a question if you truly cannot proceed without their decision.
 
 RULES
 1. ONLY write files under one of the allowed_dirs paths.
-2. Use RELATIVE paths (e.g. "flappy-bird/index.html") if unsure — resolved against home.
+2. Use RELATIVE paths if unsure (e.g. "flappy-bird/index.html") — resolved against home.
 3. If a write fails with "Path not allowed", switch to a relative path under home.
 4. Output tags on their own lines:
 
@@ -208,7 +220,7 @@ RULES
    <bridge-pkgs type="pip"/>
 
 5. Never repeat a command that succeeded OR failed.
-6. When done, reply EXACTLY: DONE`;
+6. When done, reply EXACTLY: DONE on its own line, then a single short summary of the result (1-3 lines max).`;
 
 function buildSystemPrompt(cfg, bridge, searchUsed) {
   let p = IDENTITY_GUARD + '\n\n---\n\n' + cfg.basePrompt;
@@ -247,10 +259,8 @@ function detectSearchIntent(text) {
 function detectImageIntent(text) {
   const t = String(text || '').trim();
   if (!t) return null;
-  // "generate me an image of X" / "draw X" / "make a picture of X"
   let m = t.match(/^(?:please\s+)?(?:can\s+you\s+|could\s+you\s+|i\s+want\s+(?:you\s+)?to\s+)?(?:generate|create|make|draw|render|paint|show\s+me|give\s+me|i\s+want|i\s+need)\s+(?:me\s+)?(?:an?\s+|the\s+)?(?:image|picture|photo|illustration|art(?:work)?|drawing|render|painting)\s+(?:of\s+|with\s+|showing\s+|depicting\s+|that\s+shows\s+)?(.+?)[\s.?!,;:]*$/i);
   if (m && m[1]) return m[1].trim();
-  // "image of X"
   m = t.match(/^(?:an?\s+)?(?:image|picture|photo|illustration)\s+of\s+(.+?)[\s.?!,;:]*$/i);
   if (m && m[1]) return m[1].trim();
   return null;
@@ -351,7 +361,6 @@ async function webSearch(query, max = 5) {
   ]);
   let results = organic;
   if (!results.length) results = await wikiSearch(query);
-  // De-dup
   const seen = new Set();
   const dedup = [];
   for (const r of results) {
@@ -360,7 +369,6 @@ async function webSearch(query, max = 5) {
     dedup.push(r);
     if (dedup.length >= max) break;
   }
-  // Overview: prefer instant answer, then wikipedia summary of top result or query
   let overview = null;
   if (instant && (instant.abstract || instant.answer || instant.definition)) {
     overview = {
@@ -423,7 +431,6 @@ async function plChat(modelId, messages, maxTokens, stream) {
 }
 async function miroxChatChain({ messages, cfg, stream, vision }) {
   if (vision) {
-    // Try vision models first, fall back to text-only if none work
     if (PROVIDERS.hf) {
       for (const mid of HF_VISION_MODELS) {
         try { const res = await hfChat(mid, messages, cfg.tokens, stream); return { res, provider: 'hf', vision: true }; } catch {}
@@ -434,7 +441,6 @@ async function miroxChatChain({ messages, cfg, stream, vision }) {
         try { const res = await plChat(mid, messages, cfg.tokens, stream); return { res, provider: 'pl', vision: true }; } catch {}
       }
     }
-    // Nothing vision-capable: strip images and continue with text
     for (const msg of messages) {
       if (Array.isArray(msg.content)) {
         msg.content = msg.content.filter(p => p.type === 'text').map(p => p.text).join('\n');
@@ -509,7 +515,7 @@ try { app.use(express.static(path.join(__dirname, '../public'))); } catch {}
 app.use(async (req, res, next) => { try { await loadDb(); } catch {} next(); });
 
 app.get(['/api/health','/health','/ping'], (req, res) => {
-  res.json({ ok: true, app: 'MiroxAI', version: 'v88', providers: PROVIDERS, search: true, vision: true, image_intent: true, loginment: !!LOGINMENT_CLIENT_ID, time: now() });
+  res.json({ ok: true, app: 'MiroxAI', version: 'v90', providers: PROVIDERS, search: true, vision: true, image_intent: true, loginment: !!LOGINMENT_CLIENT_ID, time: now() });
 });
 
 /* ============================================================
@@ -766,7 +772,6 @@ app.get('/api/bridge/download', async (req, res) => {
 
     const readme = `# MiroxAI Bridge\n\n1. pip install aiohttp\n2. (optional) pip install pillow for screenshots\n3. (optional) pip install pyperclip for clipboard\n4. python runner.py\n5. Open MiroxAI -> Bridge -> Connect\n`;
 
-    // The runner.py that gets shipped in the zip is the fixed v3 (same as above)
     const runner = `#!/usr/bin/env python3
 """MiroxAI Bridge Client v3 — fixed middleware signature."""
 import os, sys, json, time, platform, tempfile, subprocess, shutil, smtplib, ssl, urllib.request
@@ -1088,7 +1093,7 @@ app.get(['/api/config','/config'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tier: m.tier }));
   res.json({
-    app: { name: 'MiroxAI', version: 'v88' },
+    app: { name: 'MiroxAI', version: 'v90' },
     models, default_model: models[0].id, plans: PLANS,
     tts_available: !!F_API,
     search_available: true,
@@ -1151,7 +1156,7 @@ app.post('/v1/images/generations', async (req, res) => {
 });
 
 /* ============================================================
-   CHAT COMPLETIONS  (with vision + search + image intent)
+   CHAT COMPLETIONS
    ============================================================ */
 app.post('/v1/chat/completions', async (req, res) => {
   const t0 = Date.now();
@@ -1183,7 +1188,6 @@ app.post('/v1/chat/completions', async (req, res) => {
     const text = safe(rawMessage, 100000).trim();
     if (!text && !attachedFiles.length) return res.status(400).json({ error: { message: 'Empty message' } });
 
-    /* ---------- IMAGE INTENT (auto-generate) ---------- */
     const imageIntent = !attachedFiles.length ? detectImageIntent(text) : null;
     if (imageIntent) {
       try {
@@ -1202,15 +1206,11 @@ app.post('/v1/chat/completions', async (req, res) => {
         sseDone(res);
         try { res.end(); } catch {}
         return;
-      } catch (e) {
-        // fall through to normal text reply with a note
-      }
+      } catch (e) {}
     }
 
-    /* ---------- SEARCH INTENT ---------- */
     const searchQuery = forceSearch ? text : detectSearchIntent(text);
 
-    /* ---------- Build messages ---------- */
     const sys = buildSystemPrompt(cfg, bridge, !!searchQuery) + (u?.persona ? `\n\nUser preference: ${safe(u.persona, 500)}` : '');
     const msgs = [{ role: 'system', content: sys }];
 
@@ -1221,13 +1221,11 @@ app.post('/v1/chat/completions', async (req, res) => {
       userText = `[Bridge environment]\nhome=${env.home || '?'}\ncwd=${env.cwd || '?'}\nplatform=${env.platform || '?'}\nallowed_dirs=${allowed}\n\n` + userText;
     }
 
-    // If files present → build multimodal content
     let visionUsed = false;
     if (attachedFiles.length) {
       const parts = [];
-      // Text first
       if (userText) parts.push({ type: 'text', text: userText });
-      for (const f of attachedFiles.slice(0, 4)) { // cap at 4 images
+      for (const f of attachedFiles.slice(0, 4)) {
         if (f && f.type === 'image' && typeof f.dataUrl === 'string' && f.dataUrl.startsWith('data:image')) {
           parts.push({ type: 'image_url', image_url: { url: f.dataUrl } });
           visionUsed = true;
@@ -1257,7 +1255,6 @@ app.post('/v1/chat/completions', async (req, res) => {
       try { await persist(); } catch {}
     };
 
-    /* ---------- Non-streaming ---------- */
     if (!stream) {
       let searchData = { results: [], overview: null };
       if (searchQuery) {
@@ -1278,7 +1275,6 @@ app.post('/v1/chat/completions', async (req, res) => {
       } catch (e) { return res.status(502).json({ error: { message: GENERIC_ERR } }); }
     }
 
-    /* ---------- Streaming ---------- */
     sseInit(res);
     let streamEnded = false;
     const guard = setTimeout(() => { if (streamEnded || res.writableEnded) return; try { sseDone(res); } catch {} try { res.end(); } catch {} streamEnded = true; }, 300000);
