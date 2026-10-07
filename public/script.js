@@ -17,42 +17,31 @@
   const on = (sel, ev, fn) => { const el = $(sel); if (el) el.addEventListener(ev, fn); };
 
   const FALLBACK_MODELS = [
-    { id: 'mirox-luna-1.2', label: 'Luna', tagline: 'Fast · warm · unlimited', tier: 'free', default: true },
-    { id: 'mirox-gen-1', label: 'Gen', tagline: 'Ultra concise · unlimited', tier: 'free' },
-    { id: 'mirox-pro-5', label: 'Pro', tagline: 'Balanced · deeper', tier: 'pro' },
-    { id: 'mirox-ultra-10', label: 'Ultra', tagline: 'Deep reasoning', tier: 'pro' },
-    { id: 'mirox-eclipse-2.0', label: 'Eclipse', tagline: 'Best quality · 5/day free', tier: 'ultimate' },
+    { id: 'mirox-luna-1.2', label: 'Luna', tier: 'free', default: true },
+    { id: 'mirox-gen-1', label: 'Gen', tier: 'free' },
+    { id: 'mirox-pro-5', label: 'Pro', tier: 'pro' },
+    { id: 'mirox-ultra-10', label: 'Ultra', tier: 'pro' },
+    { id: 'mirox-eclipse-2.0', label: 'Eclipse', tier: 'ultimate' },
   ];
   const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
   const LS_KEY = 'miroxai_conversations_v23';
   const TOKEN_KEY = 'mirox_token';
   const APPEARANCE_KEY = 'miroxai_appearance_v23';
   const BRIDGE_KEY = 'miroxai_bridge_v23';
+
   const MAX_BRIDGE_QUESTIONS = 6;
   const MAX_BRIDGE_ITER = 40;
-  const MAX_AUTO_CONTINUES = 6;
+  const MAX_AUTO_CONTINUES = 20;              // much higher so it never stops
   const MAX_DUP_COMMANDS = 1;
-  const AUTO_CONTINUE_DELAY_MS = 2000;
+  const AUTO_CONTINUE_DELAY_MS = 2000;        // <-- 2 seconds auto-continue
 
-  let __config = null;
-  let __user = null;
-  let __tier = 'free';
-  let __model = 'mirox-luna-1.2';
-  let currentConversationId = null;
-  let isReplying = false;
-  let __conversations = [];
-  let pendingFiles = [];
-  let activeStreamController = null;
-  let __usage = null;
+  let __config = null, __user = null, __tier = 'free', __model = 'mirox-luna-1.2';
+  let currentConversationId = null, isReplying = false;
+  let __conversations = [], pendingFiles = [], activeStreamController = null, __usage = null;
   let __bridge = { name: 'My Laptop', model: 'mirox-luna-1.2', port: 8765, connected: false, baseUrl: null, env: null };
-  let bridgeConversation = [];
-  let bridgeRunning = false;
-  let bridgeQuestionCount = 0;
-  let bridgeProgress = 0;              // monotonic — never decreases
-  let bridgeTurn = null;
-  let bridgeAutoTimer = null;
-  let __bqResolver = null;
-  let __bqSelected = null;
+  let bridgeConversation = [], bridgeRunning = false, bridgeQuestionCount = 0, bridgeProgress = 0;
+  let bridgeTurn = null, bridgeAutoTimer = null;
+  let __bqResolver = null, __bqSelected = null;
 
   const uid = () => 'c_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
   const escapeHtml = (s) => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
@@ -138,8 +127,7 @@
       if (om) { out += `<div style="margin:2px 0;">${om[1]}. ${inlineFmt(om[2])}</div>`; continue; }
       buf.push(t);
     }
-    flush();
-    return out;
+    flush(); return out;
   }
   function inlineFmt(t) {
     t = escapeHtml(t);
@@ -152,11 +140,7 @@
       if (btn.__wired) return; btn.__wired = true;
       btn.onclick = async () => {
         const code = btn.closest('.code-block')?.querySelector('pre code')?.textContent || '';
-        try {
-          await navigator.clipboard.writeText(code);
-          btn.innerHTML = '<i class="ri-check-line"></i> Copied';
-          setTimeout(() => { btn.innerHTML = '<i class="ri-file-copy-line"></i> Copy'; }, 1200);
-        } catch {}
+        try { await navigator.clipboard.writeText(code); btn.innerHTML = '<i class="ri-check-line"></i> Copied'; setTimeout(() => { btn.innerHTML = '<i class="ri-file-copy-line"></i> Copy'; }, 1200); } catch {}
       };
     });
   }
@@ -183,8 +167,7 @@
     currentConversationId = null;
     const t = $('#chatTitle'); if (t) t.textContent = 'New chat';
     const c = $('#chatMessages'); if (c) c.innerHTML = welcomeHTML();
-    bindSuggestionClicks();
-    renderHistory();
+    bindSuggestionClicks(); renderHistory();
   }
   function bindSuggestionClicks() {
     $$('.suggestion-card').forEach(card => {
@@ -216,8 +199,7 @@
     const id = msgId || uid();
     const el = document.createElement('div');
     el.className = 'message ' + (role === 'user' ? 'user' : 'ai');
-    el.dataset.msgId = id;
-    el.dataset.role = role;
+    el.dataset.msgId = id; el.dataset.role = role;
     let inner = '';
     if (role === 'user' && files && files.length) {
       inner += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;">';
@@ -243,8 +225,7 @@
     if (role === 'user') { bt.textContent = content || ''; if (!content) bt.style.display = 'none'; }
     else { bubble.dataset.rawText = content || ''; if (content) { bt.innerHTML = renderMarkdown(content); wireCopyButtons(bt); } }
     if (role === 'ai' && image) { const img = el.querySelector('img'); if (img) img.onclick = () => openImageViewer(image); }
-    wireMessageActions(el);
-    scrollToBottom();
+    wireMessageActions(el); scrollToBottom();
     return el;
   }
   function addThinkingBubble() {
@@ -252,12 +233,9 @@
     const welcome = container.querySelector('.welcome-screen'); if (welcome) welcome.remove();
     const id = uid();
     const el = document.createElement('div');
-    el.className = 'message ai';
-    el.dataset.msgId = id;
-    el.dataset.role = 'ai';
+    el.className = 'message ai'; el.dataset.msgId = id; el.dataset.role = 'ai';
     el.innerHTML = `<div class="bubble thinking"><span class="thinking-text">Thinking</span><span class="thinking-dots"><span></span><span></span><span></span></span></div><div class="message-time"></div>`;
-    container.appendChild(el);
-    scrollToBottom();
+    container.appendChild(el); scrollToBottom();
     return el;
   }
   function wireMessageActions(el) {
@@ -284,8 +262,7 @@
     let userMsg = null;
     for (let i = idx - 1; i >= 0; i--) if (convo.messages[i].role === 'user') { userMsg = convo.messages[i]; break; }
     if (!userMsg) return;
-    convo.messages = convo.messages.slice(0, idx);
-    saveChats();
+    convo.messages = convo.messages.slice(0, idx); saveChats();
     let s = el.nextElementSibling;
     while (s) { const n = s.nextElementSibling; s.remove(); s = n; }
     el.remove();
@@ -331,23 +308,21 @@
     const timeEl = el.querySelector('.message-time');
     const aiMsgId = el.dataset.msgId;
     activeStreamController = new AbortController();
-    let full = '', generatedImage = null, finishReason = 'stop';
-    let bubbleText = null, firstChunk = true;
+    let full = '', generatedImage = null, finishReason = 'stop', bubbleText = null, firstChunk = true;
 
     try {
       const res = await fetch('/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, history, model, stream: true, files, bridge: __bridge.connected ? { connected: true, name: __bridge.name, model: __bridge.model, env: __bridge.env } : null }),
+        body: JSON.stringify({ message: text, history, model, stream: true, files,
+          bridge: __bridge.connected ? { connected: true, name: __bridge.name, model: __bridge.model, env: __bridge.env } : null }),
         signal: activeStreamController.signal,
       });
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error?.message || `HTTP ${res.status}`); }
-      const reader = res.body.getReader();
-      const dec = new TextDecoder();
+      const reader = res.body.getReader(); const dec = new TextDecoder();
       let buf = '';
       while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
+        const { value, done } = await reader.read(); if (done) break;
         buf += dec.decode(value, { stream: true });
         let idx;
         while ((idx = buf.indexOf('\n')) !== -1) {
@@ -405,8 +380,7 @@
   function handleFiles(fileList) {
     if (!fileList || !fileList.length) return;
     const arr = Array.from(fileList);
-    let done = 0;
-    const newFiles = [];
+    let done = 0; const newFiles = [];
     arr.forEach((f, idx) => {
       const isImg = (f.type || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(f.name);
       const r = new FileReader();
@@ -423,8 +397,7 @@
     function finish() { newFiles.sort((a, b) => (a.order || 0) - (b.order || 0)); pendingFiles = pendingFiles.concat(newFiles); updatePreview(); updateSendButtonState(); }
   }
   function updatePreview() {
-    const p = $('#attachmentPreview'), list = $('#attachmentList');
-    if (!p || !list) return;
+    const p = $('#attachmentPreview'), list = $('#attachmentList'); if (!p || !list) return;
     if (!pendingFiles.length) { p.style.display = 'none'; list.innerHTML = ''; return; }
     p.style.display = 'flex';
     list.innerHTML = pendingFiles.map(f => f.type === 'image' && f.dataUrl
@@ -439,55 +412,29 @@
     __ivDataUrl = url;
     const iv = $('#imageViewer'); if (!iv) return;
     iv.classList.add('open');
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      const c = $('#ivCanvas'); if (!c) return;
-      c.width = img.naturalWidth; c.height = img.naturalHeight;
-      c.getContext('2d').drawImage(img, 0, 0);
-    };
+    const img = new Image(); img.crossOrigin = 'anonymous';
+    img.onload = () => { const c = $('#ivCanvas'); if (!c) return; c.width = img.naturalWidth; c.height = img.naturalHeight; c.getContext('2d').drawImage(img, 0, 0); };
     img.src = url;
   }
   function closeImageViewer() { $('#imageViewer')?.classList.remove('open'); }
 
   function getModelsList() { return __config?.models?.length ? __config.models : FALLBACK_MODELS; }
-  function canUseModel(tier) {
-    if (tier === 'free') return true;
-    if (tier === 'ultimate') return true;
-    return TIER_RANK[__tier] >= TIER_RANK[tier];
-  }
+  function canUseModel(tier) { if (tier === 'free') return true; if (tier === 'ultimate') return true; return TIER_RANK[__tier] >= TIER_RANK[tier]; }
   function renderModelPicker() {
     const menu = $('#modelPickerMenu'); if (!menu) return;
-    const models = getModelsList();
-    const cur = __model || models[0].id;
+    const models = getModelsList(); const cur = __model || models[0].id;
     menu.innerHTML = models.map(m => {
-      const usable = canUseModel(m.tier);
-      const lock = usable ? '' : ' locked';
-      let lockLabel = '';
-      if (!usable) lockLabel = ' · <span style="color:var(--accent);font-size:10.5px;">UPGRADE</span>';
-      else if (m.tier === 'ultimate' && __tier === 'free') lockLabel = ' · <span style="color:var(--accent);font-size:10.5px;">5/day</span>';
+      const usable = canUseModel(m.tier); const lock = usable ? '' : ' locked';
       return `<div class="model-option${m.id === cur ? ' active' : ''}${lock}" data-model-id="${m.id}" data-usable="${usable}">
-        <span class="model-option-label"><span class="dot"></span>${escapeHtml(m.label)}${lockLabel}</span>
-        <span class="model-option-tag">${escapeHtml(m.tagline || '')}</span>
-      </div>`;
+        <span class="model-option-label"><span class="dot"></span>${escapeHtml(m.label)}</span></div>`;
     }).join('');
     menu.querySelectorAll('.model-option').forEach(opt => {
-      opt.onclick = (e) => {
-        e.stopPropagation();
-        if (opt.dataset.usable === 'false') { alert('This model requires the Pro plan.'); return; }
-        selectModel(opt.dataset.modelId);
-      };
+      opt.onclick = (e) => { e.stopPropagation(); if (opt.dataset.usable === 'false') return; selectModel(opt.dataset.modelId); };
     });
     const c = models.find(m => m.id === cur);
     if (c) { const lbl = $('#currentModelLabel'); if (lbl) lbl.textContent = c.label; }
   }
-  function selectModel(id) {
-    if (!id) return;
-    __model = id;
-    const m = getModelsList().find(x => x.id === id);
-    if (m) { const lbl = $('#currentModelLabel'); if (lbl) lbl.textContent = m.label; }
-    renderModelPicker(); closeModelPicker();
-  }
+  function selectModel(id) { if (!id) return; __model = id; const m = getModelsList().find(x => x.id === id); if (m) { const lbl = $('#currentModelLabel'); if (lbl) lbl.textContent = m.label; } renderModelPicker(); closeModelPicker(); }
   function openModelPicker() { $('#modelPicker')?.classList.add('open'); $('#modelPickerMenu')?.classList.add('open'); }
   function closeModelPicker() { $('#modelPicker')?.classList.remove('open'); $('#modelPickerMenu')?.classList.remove('open'); }
 
@@ -497,8 +444,7 @@
     bar.style.display = 'flex';
     const setPill = (sel, used, limit) => {
       const pill = bar.querySelector(sel); if (!pill) return;
-      const txt = pill.querySelector('span');
-      const rem = Math.max(0, limit - used);
+      const txt = pill.querySelector('span'); const rem = Math.max(0, limit - used);
       if (txt) txt.textContent = `${rem}/${limit}`;
       pill.classList.toggle('low', rem <= Math.max(1, Math.floor(limit * 0.25)) && rem > 0);
       pill.classList.toggle('empty', rem <= 0);
@@ -510,80 +456,46 @@
   async function refreshUsage() {
     const res = await authJson('/api/me', {}, null);
     if (!res?.user) {
-      __user = null; __usage = null; __tier = 'free';
-      renderCreditBar();
+      __user = null; __usage = null; __tier = 'free'; renderCreditBar();
       const chip = $('#userChip');
-      if (chip) {
-        chip.querySelector('.user-name').textContent = 'Guest mode';
-        chip.querySelector('.user-sub').textContent = 'Sign in to save chats';
-      }
+      if (chip) { chip.querySelector('.user-name').textContent = 'Guest mode'; chip.querySelector('.user-sub').textContent = 'Sign in to save chats'; }
       return;
     }
-    __user = res.user;
-    __tier = res.user.tier || 'free';
-    __usage = {
-      vision_limit: res.user.vision_limit ?? 10, vision_used: res.user.vision_used ?? 0,
+    __user = res.user; __tier = res.user.tier || 'free';
+    __usage = { vision_limit: res.user.vision_limit ?? 10, vision_used: res.user.vision_used ?? 0,
       image_limit: res.user.image_limit ?? 10, image_used: res.user.image_used ?? 0,
-      eclipse_limit: res.user.eclipse_limit ?? 5, eclipse_used: res.user.eclipse_used ?? 0,
-    };
+      eclipse_limit: res.user.eclipse_limit ?? 5, eclipse_used: res.user.eclipse_used ?? 0 };
     renderCreditBar();
     const chip = $('#userChip');
-    if (chip) {
-      chip.querySelector('.user-name').textContent = res.user.name || res.user.email;
-      chip.querySelector('.user-sub').textContent = (__tier.charAt(0).toUpperCase() + __tier.slice(1)) + ' plan';
-    }
+    if (chip) { chip.querySelector('.user-name').textContent = res.user.name || res.user.email; chip.querySelector('.user-sub').textContent = (__tier.charAt(0).toUpperCase() + __tier.slice(1)) + ' plan'; }
     renderModelPicker();
   }
   async function loadConfig() {
-    try {
-      const res = await fetch('/api/config', { cache: 'no-store' });
-      const data = await res.json();
-      if (data?.models?.length) __config = data;
-    } catch {}
+    try { const res = await fetch('/api/config', { cache: 'no-store' }); const data = await res.json(); if (data?.models?.length) __config = data; } catch {}
     if (!__config) __config = { models: FALLBACK_MODELS };
-    __model = getModelsList()[0].id;
-    renderModelPicker();
+    __model = getModelsList()[0].id; renderModelPicker();
   }
   async function doLogin(e) {
     if (e) e.preventDefault();
-    const name = $('#loginName')?.value.trim();
-    const email = $('#loginEmail')?.value.trim().toLowerCase();
+    const name = $('#loginName')?.value.trim(); const email = $('#loginEmail')?.value.trim().toLowerCase();
     if (!name || !email) return;
     const res = await authJson('/api/auth/simple-login', { method: 'POST', body: JSON.stringify({ name, email }) }, null);
     if (res?.ok) { setToken(res.token); closeModal('loginModal'); await refreshUsage(); }
     else alert(res?.error || 'Login failed');
   }
-  async function doLogout() {
-    await authJson('/api/logout', { method: 'POST' }, null);
-    setToken('');
-    await refreshUsage();
-    closeModal('settingsModal');
-  }
+  async function doLogout() { await authJson('/api/logout', { method: 'POST' }, null); setToken(''); await refreshUsage(); closeModal('settingsModal'); }
   async function loadPlans() {
     const grid = $('#plansGrid'); if (!grid) return;
     const res = await authJson('/api/subscription/plans', {}, null);
     if (!res?.plans) { grid.innerHTML = '<div class="history-empty">Could not load.</div>'; return; }
     grid.innerHTML = res.plans.map(p => {
       const isCurrent = p.id === __tier;
-      const price = p.id === 'free'
-        ? '<div style="font-size:26px;font-weight:700;">Free</div>'
-        : `<div style="font-size:32px;font-weight:700;">$${p.price_usd.toFixed(2)}</div><div style="font-size:12px;color:var(--text-muted);">≈ ${p.price_afg} AFG / mo</div>`;
-      return `<div class="plan-card${isCurrent ? ' current' : ''}">
-        <div class="plan-name">${escapeHtml(p.label)}</div>
-        <div class="plan-tagline">${escapeHtml(p.tagline || '')}</div>
-        ${price}
-        <ul style="font-size:13px;color:var(--text-muted);line-height:1.8;margin-top:8px;">
-          ${(p.perks || []).map(x => `<li>✓ ${escapeHtml(x)}</li>`).join('')}
-        </ul>
-      </div>`;
+      const price = p.id === 'free' ? '<div style="font-size:26px;font-weight:700;">Free</div>'
+        : `<div style="font-size:32px;font-weight:700;">$${p.price_usd.toFixed(2)}</div>`;
+      return `<div class="plan-card${isCurrent ? ' current' : ''}"><div class="plan-name">${escapeHtml(p.label)}</div><div class="plan-tagline">${escapeHtml(p.tagline || '')}</div>${price}<ul style="font-size:13px;color:var(--text-muted);line-height:1.8;margin-top:8px;">${(p.perks || []).map(x => `<li>✓ ${escapeHtml(x)}</li>`).join('')}</ul></div>`;
     }).join('');
   }
-  async function loadPersona() {
-    if (!__user) return;
-    const res = await authJson('/api/persona', {}, null);
-    const inp = $('#personaInput');
-    if (inp && res?.persona) inp.value = res.persona;
-  }
+  async function loadPersona() { if (!__user) return; const res = await authJson('/api/persona', {}, null); const inp = $('#personaInput'); if (inp && res?.persona) inp.value = res.persona; }
   async function savePersona() {
     const status = $('#personaStatus');
     if (!__user) { if (status) { status.textContent = 'Sign in first.'; status.className = 'persona-status err'; } return; }
@@ -611,22 +523,15 @@
   /* ============================================================
      BRIDGE
      ============================================================ */
-  function loadBridgeLS() {
-    const b = safeGet(BRIDGE_KEY, {});
-    __bridge = { ...__bridge, ...b, connected: false, baseUrl: null, env: null };
-  }
-  function saveBridgeLS() {
-    safeSet(BRIDGE_KEY, { name: __bridge.name, model: __bridge.model, port: __bridge.port });
-  }
+  function loadBridgeLS() { const b = safeGet(BRIDGE_KEY, {}); __bridge = { ...__bridge, ...b, connected: false, baseUrl: null, env: null }; }
+  function saveBridgeLS() { safeSet(BRIDGE_KEY, { name: __bridge.name, model: __bridge.model, port: __bridge.port }); }
   function renderBridgeStatus() {
-    [['#bridgeStatus', '.bridge-status-dot'], ['#bwStatusPill', '.bridge-status-dot'], ['#bwStatusBox', '.bridge-status-dot']]
-      .forEach(([sel, dotSel]) => {
-        const wrap = document.querySelector(sel); if (!wrap) return;
-        const dot = wrap.querySelector(dotSel);
-        const txt = wrap.querySelector('span');
-        if (dot) { dot.classList.toggle('online', __bridge.connected); dot.classList.toggle('offline', !__bridge.connected); }
-        if (txt) txt.textContent = __bridge.connected ? 'Connected' : 'Disconnected';
-      });
+    [['#bridgeStatus', '.bridge-status-dot'], ['#bwStatusPill', '.bridge-status-dot'], ['#bwStatusBox', '.bridge-status-dot']].forEach(([sel, dotSel]) => {
+      const wrap = document.querySelector(sel); if (!wrap) return;
+      const dot = wrap.querySelector(dotSel); const txt = wrap.querySelector('span');
+      if (dot) { dot.classList.toggle('online', __bridge.connected); dot.classList.toggle('offline', !__bridge.connected); }
+      if (txt) txt.textContent = __bridge.connected ? 'Connected' : 'Disconnected';
+    });
     const c = $('#bwConnectBtn'), d = $('#bwDisconnectBtn');
     if (c) c.style.display = __bridge.connected ? 'none' : 'flex';
     if (d) d.style.display = __bridge.connected ? 'flex' : 'none';
@@ -635,8 +540,7 @@
   async function testBridge(port) {
     for (const host of ['localhost', '127.0.0.1']) {
       try {
-        const ctrl = new AbortController();
-        const t = setTimeout(() => ctrl.abort(), 4000);
+        const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 4000);
         const r = await fetch(`http://${host}:${port}/ping`, { signal: ctrl.signal, mode: 'cors' });
         clearTimeout(t);
         if (r.ok) { const d = await r.json(); if (d && d.ok) return { ok: true, data: d, base: `http://${host}:${port}` }; }
@@ -645,12 +549,7 @@
     return { ok: false };
   }
   async function fetchEnv(base) {
-    try {
-      const r = await fetch(`${base}/env`, { mode: 'cors' });
-      if (!r.ok) return null;
-      const d = await r.json();
-      if (d && d.ok) return d;
-    } catch {}
+    try { const r = await fetch(`${base}/env`, { mode: 'cors' }); if (!r.ok) return null; const d = await r.json(); if (d && d.ok) return d; } catch {}
     return null;
   }
   async function startBridge() {
@@ -658,29 +557,25 @@
     const model = $('#bwModelSelect')?.value || __bridge.model;
     const port = parseInt($('#bwPortInput')?.value || __bridge.port, 10);
     __bridge.name = name; __bridge.model = model; __bridge.port = port;
-    saveBridgeLS(); renderBridgeStatus();
-    setBwHint('Connecting…', '');
+    saveBridgeLS(); renderBridgeStatus(); setBwHint('Connecting…', '');
     const res = await testBridge(port);
     if (res.ok) {
-      __bridge.connected = true;
-      __bridge.baseUrl = res.base;
+      __bridge.connected = true; __bridge.baseUrl = res.base;
       __bridge.env = await fetchEnv(res.base);
       renderBridgeStatus();
       const empty = $('#bridgeEmpty'); if (empty) empty.remove();
       const home = __bridge.env?.home || '(unknown)';
       const os = __bridge.env?.platform || '(unknown)';
-      setBwHint(`Connected · Home: ${home} · OS: ${os}`, 'ok');
-      addBridgeSystemMsg(`Connected to ${res.data.name} · Home: ${home} · OS: ${os}`);
+      const allowed = (__bridge.env?.allowed_dirs || []).join(', ') || '(none)';
+      setBwHint(`Connected · Home: ${home} · OS: ${os}\nAllowed: ${allowed}`, 'ok');
+      addBridgeSystemMsg(`Connected · Home: ${home}\nAllowed: ${allowed}`);
     } else {
       __bridge.connected = false; __bridge.baseUrl = null; __bridge.env = null;
       renderBridgeStatus();
-      setBwHint(`Could not reach the bridge on port ${port}.\n\n1. Make sure you ran "python runner.py".\n2. Test in browser: http://localhost:${port}/ping`, 'err');
+      setBwHint(`Could not reach the bridge on port ${port}.`, 'err');
     }
   }
-  function stopBridge() {
-    __bridge.connected = false; __bridge.baseUrl = null; __bridge.env = null;
-    renderBridgeStatus(); setBwHint('', '');
-  }
+  function stopBridge() { __bridge.connected = false; __bridge.baseUrl = null; __bridge.env = null; renderBridgeStatus(); setBwHint('', ''); }
   async function bridgeCall(endpoint, payload) {
     if (!__bridge.connected || !__bridge.baseUrl) throw new Error('Bridge not connected');
     const r = await fetch(__bridge.baseUrl + endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}) });
@@ -689,39 +584,22 @@
   }
   function downloadBridgeClient() {
     const params = new URLSearchParams({ name: __bridge.name, port: String(__bridge.port), model: __bridge.model });
-    const a = document.createElement('a');
-    a.href = '/api/bridge/download?' + params.toString();
-    a.download = 'mirox_client_bridge.zip';
+    const a = document.createElement('a'); a.href = '/api/bridge/download?' + params.toString(); a.download = 'mirox_client_bridge.zip';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
   }
-  function setBwHint(text, cls = '') {
-    const el = $('#bwConnectHint'); if (!el) return;
-    el.textContent = text;
-    el.className = 'bw-hint' + (cls ? ' ' + cls : '');
-  }
+  function setBwHint(text, cls = '') { const el = $('#bwConnectHint'); if (!el) return; el.textContent = text; el.className = 'bw-hint' + (cls ? ' ' + cls : ''); }
   function updateBridgeSendBtn() {
-    const btn = $('#bridgeSendBtn'), inp = $('#bridgeInput');
-    if (!btn || !inp) return;
+    const btn = $('#bridgeSendBtn'), inp = $('#bridgeInput'); if (!btn || !inp) return;
     const has = inp.value.trim().length > 0;
     const enabled = __bridge.connected && !bridgeRunning && has;
     btn.classList.toggle('is-disabled', !enabled);
     btn.setAttribute('aria-disabled', String(!enabled));
   }
-  function openBridgeWorkspace() {
-    $('#bridgeWorkspace')?.classList.add('open');
-    document.body.style.overflow = 'hidden';
-    setTimeout(() => { if (__bridge.connected) startBridge(); }, 50);
-  }
-  function closeBridgeWorkspace() {
-    $('#bridgeWorkspace')?.classList.remove('open');
-    document.body.style.overflow = '';
-  }
+  function openBridgeWorkspace() { $('#bridgeWorkspace')?.classList.add('open'); document.body.style.overflow = 'hidden'; setTimeout(() => { if (__bridge.connected) startBridge(); }, 50); }
+  function closeBridgeWorkspace() { $('#bridgeWorkspace')?.classList.remove('open'); document.body.style.overflow = ''; }
   function clearBridgeChat() {
     const m = $('#bridgeMessages'); if (m) m.innerHTML = '';
-    bridgeConversation = [];
-    bridgeQuestionCount = 0;
-    bridgeProgress = 0;
-    bridgeTurn = null;
+    bridgeConversation = []; bridgeQuestionCount = 0; bridgeProgress = 0; bridgeTurn = null;
     if (bridgeAutoTimer) { clearTimeout(bridgeAutoTimer); bridgeAutoTimer = null; }
     updateBridgeProgress(0, 'Ready');
     const w = $('#bwProgress'); if (w) w.style.display = 'none';
@@ -731,57 +609,65 @@
   function addBridgeUserMsg(text) {
     const container = $('#bridgeMessages'); if (!container) return;
     const empty = $('#bridgeEmpty'); if (empty) empty.remove();
-    const el = document.createElement('div');
-    el.className = 'bridge-msg user';
+    const el = document.createElement('div'); el.className = 'bridge-msg user';
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     el.innerHTML = `<div class="bridge-bubble">${escapeHtml(text).replace(/\n/g, '<br>')}</div><div class="bridge-meta">You · ${time}</div>`;
-    container.appendChild(el);
-    scrollBridgeBottom();
+    container.appendChild(el); scrollBridgeBottom();
   }
   function addBridgeAiMsg(text) {
     let clean = String(text || '');
-    clean = clean.replace(/```[\s\S]*?```/g, '');
-    clean = clean.replace(/~~~[\s\S]*?~~~/g, '');
-    clean = clean.replace(/`[^`]+`/g, '');
-    clean = clean.replace(/<[^>]+>/g, '');
-    clean = clean.replace(/\n{2,}/g, '\n').trim();
+    clean = clean.replace(/```[\s\S]*?```/g, '').replace(/~~~[\s\S]*?~~~/g, '').replace(/`[^`]+`/g, '').replace(/<[^>]+>/g, '').replace(/\n{2,}/g, '\n').trim();
     if (!clean) return null;
     const container = $('#bridgeMessages'); if (!container) return null;
     const empty = $('#bridgeEmpty'); if (empty) empty.remove();
-    const el = document.createElement('div');
-    el.className = 'bridge-msg ai';
+    const el = document.createElement('div'); el.className = 'bridge-msg ai';
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     el.innerHTML = `<div class="bridge-bubble">${escapeHtml(clean).replace(/\n/g, '<br>')}</div><div class="bridge-meta">Mirox · ${time}</div>`;
-    container.appendChild(el);
-    scrollBridgeBottom();
+    container.appendChild(el); scrollBridgeBottom();
     return el;
   }
   function addBridgeSystemMsg(text) {
     const container = $('#bridgeMessages'); if (!container) return;
     const empty = $('#bridgeEmpty'); if (empty) empty.remove();
-    const el = document.createElement('div');
-    el.className = 'bridge-msg system';
+    const el = document.createElement('div'); el.className = 'bridge-msg system';
     el.innerHTML = `<div class="bridge-bubble">${escapeHtml(text)}</div>`;
-    container.appendChild(el);
-    scrollBridgeBottom();
+    container.appendChild(el); scrollBridgeBottom();
   }
   function addBridgeSuccessMsg(text) {
     const container = $('#bridgeMessages'); if (!container) return;
-    const el = document.createElement('div');
-    el.className = 'bridge-msg ai';
+    const el = document.createElement('div'); el.className = 'bridge-msg ai';
     el.innerHTML = `<div class="bridge-success"><i class="ri-checkbox-circle-fill"></i><span>${escapeHtml(text)}</span></div>`;
-    container.appendChild(el);
-    scrollBridgeBottom();
+    container.appendChild(el); scrollBridgeBottom();
   }
   function addBridgeThinkingBubble() {
     const container = $('#bridgeMessages'); if (!container) return null;
     const empty = $('#bridgeEmpty'); if (empty) empty.remove();
-    const el = document.createElement('div');
-    el.className = 'bridge-msg ai';
+    const el = document.createElement('div'); el.className = 'bridge-msg ai';
     el.innerHTML = `<div class="bridge-thinking"><span>Thinking</span><span class="thinking-dots"><span></span><span></span><span></span></span></div>`;
-    container.appendChild(el);
-    scrollBridgeBottom();
+    container.appendChild(el); scrollBridgeBottom();
     return el;
+  }
+  function addBridgeActionBubble(cmd) {
+    const container = $('#bridgeMessages'); if (!container) return null;
+    const el = document.createElement('div'); el.className = 'bridge-msg ai';
+    const data = getActionData(cmd);
+    el.innerHTML = `<div class="bridge-action">
+      <div class="bridge-action-head">
+        <div class="bridge-action-icon ${data.iconClass}"><i class="${data.icon}"></i></div>
+        <div class="bridge-action-label">${data.label}</div>
+        <span class="bridge-action-status working"><i class="ri-loader-4-line"></i> Working</span>
+      </div>
+    </div>`;
+    container.appendChild(el); scrollBridgeBottom();
+    return el;
+  }
+  function updateBridgeActionBubble(el, cmd, result) {
+    if (!el) return;
+    const status = el.querySelector('.bridge-action-status'); if (!status) return;
+    const ok = result && result.ok;
+    if (ok) { status.className = 'bridge-action-status ok'; status.innerHTML = '<i class="ri-check-line"></i> Done'; }
+    else { status.className = 'bridge-action-status err'; status.innerHTML = '<i class="ri-close-line"></i> Failed'; }
+    scrollBridgeBottom();
   }
   function getActionData(cmd) {
     if (cmd.type === 'write') return { icon: 'ri-file-add-line', iconClass: 'write', label: `Adding <code>${escapeHtml(getBaseName(cmd.path))}</code>` };
@@ -793,17 +679,11 @@
       else if (/^mkdir/i.test(c)) friendly = 'Creating folder';
       else if (/^(ls|dir)\b/i.test(c)) friendly = 'Listing files';
       else if (/^(cat|type)\b/i.test(c)) friendly = 'Reading file';
-      else if (/^(python|python3)\s/i.test(c)) friendly = 'Running Python script';
-      else if (/^node\s/i.test(c)) friendly = 'Running Node script';
+      else if (/^(python|python3)\s/i.test(c)) friendly = 'Running Python';
+      else if (/^node\s/i.test(c)) friendly = 'Running Node';
       else if (/^git\s/i.test(c)) friendly = 'Git operation';
       else if (/^(cd|pwd)\b/i.test(c)) friendly = 'Checking directory';
-      else if (/^npm\s+run/i.test(c)) friendly = 'Running project script';
-      else if (/^yarn\s/i.test(c)) friendly = 'Yarn operation';
-      else if (/^pnpm\s/i.test(c)) friendly = 'pnpm operation';
-      else if (/^curl\s/i.test(c)) friendly = 'Fetching URL';
-      else if (/^wget\s/i.test(c)) friendly = 'Downloading file';
-      else if (/^(cp|mv)\b/i.test(c)) friendly = 'Moving files';
-      else if (/^rm\b/i.test(c)) friendly = 'Removing files';
+      else if (/^npm\s+run/i.test(c)) friendly = 'Running project';
       return { icon: 'ri-play-line', iconClass: 'exec', label: friendly };
     }
     if (cmd.type === 'read') return { icon: 'ri-file-text-line', iconClass: 'read', label: `Reading <code>${escapeHtml(getBaseName(cmd.path))}</code>` };
@@ -812,59 +692,17 @@
   }
   function getBaseName(p) { if (!p) return ''; const parts = String(p).split('/'); return parts[parts.length - 1] || p; }
 
-  function addBridgeActionBubble(cmd) {
-    const container = $('#bridgeMessages'); if (!container) return null;
-    const el = document.createElement('div');
-    el.className = 'bridge-msg ai';
-    const data = getActionData(cmd);
-    el.innerHTML = `<div class="bridge-action">
-      <div class="bridge-action-head">
-        <div class="bridge-action-icon ${data.iconClass}"><i class="${data.icon}"></i></div>
-        <div class="bridge-action-label">${data.label}</div>
-        <span class="bridge-action-status working"><i class="ri-loader-4-line"></i> Working</span>
-      </div>
-    </div>`;
-    container.appendChild(el);
-    scrollBridgeBottom();
-    return el;
-  }
-  function updateBridgeActionBubble(el, cmd, result) {
-    if (!el) return;
-    const status = el.querySelector('.bridge-action-status');
-    if (!status) return;
-    const ok = result && result.ok;
-    if (ok) { status.className = 'bridge-action-status ok'; status.innerHTML = '<i class="ri-check-line"></i> Done'; }
-    else { status.className = 'bridge-action-status err'; status.innerHTML = '<i class="ri-close-line"></i> Failed'; }
-    scrollBridgeBottom();
-  }
-
-  /* ============================================================
-     Progress bar — MONOTONIC. Never decreases.
-     ============================================================ */
-  function setProgressText(text) {
-    const txtEl = $('#bwProgressText');
-    if (txtEl && text) txtEl.textContent = text;
-  }
+  function setProgressText(text) { const el = $('#bwProgressText'); if (el && text) el.textContent = text; }
   function updateBridgeProgress(pct, text) {
-    // Only increase — never go backwards
     const newPct = Math.max(0, Math.min(100, Math.round(pct)));
-    if (newPct > bridgeProgress) {
-      bridgeProgress = newPct;
-    }
+    if (newPct > bridgeProgress) bridgeProgress = newPct;
     const bar = $('#bwProgress'), fill = $('#bwProgressFill'), pctEl = $('#bwProgressPct');
     if (bar) bar.style.display = 'block';
-    if (fill) {
-      fill.style.width = bridgeProgress + '%';
-      fill.classList.toggle('done', bridgeProgress >= 100);
-    }
-    if (pctEl) {
-      pctEl.textContent = bridgeProgress + '%';
-      pctEl.classList.toggle('done', bridgeProgress >= 100);
-    }
+    if (fill) { fill.style.width = bridgeProgress + '%'; fill.classList.toggle('done', bridgeProgress >= 100); }
+    if (pctEl) { pctEl.textContent = bridgeProgress + '%'; pctEl.classList.toggle('done', bridgeProgress >= 100); }
     if (text) setProgressText(text);
   }
 
-  /* ---- Extractors ---- */
   function extractBridgeCommands(text) {
     const cmds = []; let m;
     const execRe = /<bridge-exec>([\s\S]*?)<\/bridge-exec>/g;
@@ -881,22 +719,17 @@
   function extractBridgePlan(text) {
     const m = /<bridge-plan>([\s\S]*?)<\/bridge-plan>/.exec(text);
     if (!m) return null;
-    const body = m[1];
     const files = [];
-    for (const line of body.split('\n')) {
+    for (const line of m[1].split('\n')) {
       const l = line.trim().replace(/^[-*+]\s*/, '').replace(/^["']|["']$/g, '');
-      if (!l) continue;
-      if (l.includes('/') || /\.\w{1,8}$/.test(l)) files.push(l);
+      if (l && (l.includes('/') || /\.\w{1,8}$/.test(l))) files.push(l);
     }
     return files.length ? files : null;
   }
   function extractBridgeQuestions(text) {
-    const qs = [];
-    const re = /<bridge-ask>([\s\S]*?)<\/bridge-ask>/g;
-    let m;
+    const qs = []; const re = /<bridge-ask>([\s\S]*?)<\/bridge-ask>/g; let m;
     while ((m = re.exec(text)) !== null) {
-      const body = m[1].trim();
-      const lines = body.split('\n').map(l => l.trim()).filter(Boolean);
+      const lines = m[1].trim().split('\n').map(l => l.trim()).filter(Boolean);
       if (!lines.length) continue;
       const question = lines[0];
       const options = [];
@@ -927,6 +760,19 @@
     t = t.replace(/\s+/g, ' ').trim();
     return t;
   }
+  function isEnvQuestion(question) {
+    const q = String(question || '').toLowerCase();
+    if (!q) return false;
+    const envWords = ['bridge environment', 'environment block', 'allowed dir', 'allowed path', 'allowed dirs', 'allowed paths', 'which directory', 'what directory', 'which path', 'what path'];
+    for (const w of envWords) if (q.includes(w)) return true;
+    if (q.includes('paste') && (q.includes('environment') || q.includes('bridge'))) return true;
+    return false;
+  }
+  function buildEnvBlockString() {
+    const env = __bridge.env || {};
+    const allowed = Array.isArray(env.allowed_dirs) && env.allowed_dirs.length ? env.allowed_dirs.join(', ') : '(none)';
+    return [`[Bridge environment]`, `home=${env.home || '(unknown)'}`, `cwd=${env.cwd || '(unknown)'}`, `platform=${env.platform || '(unknown)'}`, `allowed_dirs=${allowed}`].join('\n');
+  }
 
   async function executeBridgeCommand(cmd) {
     if (cmd.type === 'exec') return bridgeCall('/exec', { command: cmd.command });
@@ -937,7 +783,10 @@
   }
   function formatResultForAI(cmd, result) {
     const ok = result && result.ok;
-    if (!ok) return `[${cmd.type}] ERROR: ${(result && result.error) || 'unknown'}`;
+    if (!ok) {
+      const extra = result?.allowed_dirs ? `\nALLOWED: ${result.allowed_dirs.join(', ')}` : '';
+      return `[${cmd.type}] ERROR: ${(result && result.error) || 'unknown'}${extra}`;
+    }
     if (cmd.type === 'exec') return `[exec] exit=${result.exit_code}\nSTDOUT:\n${(result.stdout || '').slice(0, 3000)}\nSTDERR:\n${(result.stderr || '').slice(0, 1500)}`;
     if (cmd.type === 'write') return `[write] ok path=${result.path} bytes=${result.bytes}`;
     if (cmd.type === 'read') return `[read] path=${result.path}\n${(result.content || '').slice(0, 3000)}`;
@@ -959,19 +808,13 @@
     return false;
   }
 
-  /* ---- Question modal ---- */
   function showBridgeQuestionModal(q, index, total) {
     return new Promise((resolve) => {
-      __bqResolver = resolve;
-      __bqSelected = null;
-      const modal = $('#bridgeQuestionModal');
-      if (!modal) { resolve(''); return; }
-
+      __bqResolver = resolve; __bqSelected = null;
+      const modal = $('#bridgeQuestionModal'); if (!modal) { resolve(''); return; }
       const txt = $('#bqText'); if (txt) txt.textContent = q.question || '';
       const ctr = $('#bqCounter'); if (ctr) ctr.textContent = `Question ${index} of ${total}`;
-      const progFill = $('#bqProgressFill');
-      if (progFill) progFill.style.width = Math.round(((index - 1) / total) * 100) + '%';
-
+      const progFill = $('#bqProgressFill'); if (progFill) progFill.style.width = Math.round(((index - 1) / total) * 100) + '%';
       const optsWrap = $('#bqOptions');
       if (optsWrap) {
         optsWrap.innerHTML = '';
@@ -979,41 +822,16 @@
         if (q.options && q.options.length) {
           if (cw) cw.style.display = 'none';
           q.options.forEach(opt => {
-            const b = document.createElement('button');
-            b.type = 'button';
-            b.className = 'question-option';
-            b.textContent = opt;
-            b.onclick = () => {
-              __bqSelected = opt;
-              optsWrap.querySelectorAll('.question-option').forEach(x => x.classList.remove('selected'));
-              b.classList.add('selected');
-              const ci = $('#bqCustomInput'); if (ci) ci.value = '';
-            };
+            const b = document.createElement('button'); b.type = 'button'; b.className = 'question-option'; b.textContent = opt;
+            b.onclick = () => { __bqSelected = opt; optsWrap.querySelectorAll('.question-option').forEach(x => x.classList.remove('selected')); b.classList.add('selected'); const ci = $('#bqCustomInput'); if (ci) ci.value = ''; };
             optsWrap.appendChild(b);
           });
-        } else {
-          if (cw) cw.style.display = 'block';
-        }
+        } else { if (cw) cw.style.display = 'block'; }
       }
-
       const ci = $('#bqCustomInput');
-      if (ci) {
-        ci.value = '';
-        ci.oninput = () => {
-          if (ci.value.trim()) {
-            __bqSelected = null;
-            const ow = $('#bqOptions');
-            if (ow) ow.querySelectorAll('.question-option').forEach(x => x.classList.remove('selected'));
-          }
-        };
-      }
-
+      if (ci) { ci.value = ''; ci.oninput = () => { if (ci.value.trim()) { __bqSelected = null; const ow = $('#bqOptions'); if (ow) ow.querySelectorAll('.question-option').forEach(x => x.classList.remove('selected')); } }; }
       modal.classList.add('open');
-      setTimeout(() => {
-        const firstOpt = document.querySelector('.question-option');
-        if (firstOpt) firstOpt.focus();
-        else $('#bqCustomInput')?.focus();
-      }, 100);
+      setTimeout(() => { const f = document.querySelector('.question-option'); if (f) f.focus(); else $('#bqCustomInput')?.focus(); }, 100);
     });
   }
   function closeBridgeQuestionModal() { $('#bridgeQuestionModal')?.classList.remove('open'); }
@@ -1024,18 +842,19 @@
     closeBridgeQuestionModal();
     if (__bqResolver) { __bqResolver(answer); __bqResolver = null; }
   }
-  function skipBridgeQuestion() {
-    closeBridgeQuestionModal();
-    if (__bqResolver) { __bqResolver('[Skipped by user]'); __bqResolver = null; }
-  }
+  function skipBridgeQuestion() { closeBridgeQuestionModal(); if (__bqResolver) { __bqResolver('[Skipped by user]'); __bqResolver = null; } }
 
   async function fetchBridgeReply(history) {
     const env = __bridge.env || {};
+    const envBlock = buildEnvBlockString();
+    const lastMsg = history[history.length - 1];
+    const messageWithEnv = `${envBlock}\n\n${lastMsg.content}`;
+
     const res = await fetch('/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        message: history[history.length - 1].content,
+        message: messageWithEnv,
         history: history.slice(0, -1).map(h => ({ role: h.role, content: h.content })),
         model: __bridge.model,
         stream: false,
@@ -1054,6 +873,26 @@
   }
 
   /* ============================================================
+     AUTO-CONTINUE HELPER — waits 2s, then sends "Continue"
+     ============================================================ */
+  async function autoContinueAfterDelay(label = 'Auto-continuing') {
+    addBridgeSystemMsg(`${label} in ${AUTO_CONTINUE_DELAY_MS / 1000}s…`);
+    setProgressText(`${label} in ${AUTO_CONTINUE_DELAY_MS / 1000}s…`);
+    // Update the label every second
+    let remaining = AUTO_CONTINUE_DELAY_MS / 1000;
+    const ticker = setInterval(() => {
+      remaining--;
+      if (remaining > 0) {
+        setProgressText(`${label} in ${remaining}s…`);
+      } else {
+        clearInterval(ticker);
+      }
+    }, 1000);
+    await new Promise(r => setTimeout(r, AUTO_CONTINUE_DELAY_MS));
+    clearInterval(ticker);
+  }
+
+  /* ============================================================
      MAIN LOOP
      ============================================================ */
   async function runBridgeTurn(userText, isResume = false) {
@@ -1065,73 +904,52 @@
 
     if (!isResume) {
       bridgeQuestionCount = 0;
-      bridgeTurn = {
-        runs: 0,
-        plannedFiles: new Set(),
-        writtenFiles: new Set(),
-        commandLog: new Map(),
-        failedSignatures: new Set(),
-        commandsRun: 0,
-      };
-      bridgeProgress = 0;                 // reset only on a fresh turn
+      bridgeTurn = { runs: 0, plannedFiles: new Set(), writtenFiles: new Set(), commandLog: new Map(), failedSignatures: new Set(), commandsRun: 0 };
+      bridgeProgress = 0;
       updateBridgeProgress(2, 'Starting…');
       addBridgeUserMsg(userText);
       bridgeConversation.push({ role: 'user', content: userText });
     } else {
-      // On resume, keep current progress and just update the label
       setProgressText('Continuing…');
     }
 
-    let iter = 0;
-    let autoContinues = 0;
-
+    let iter = 0, autoContinues = 0;
     try {
       while (iter++ < MAX_BRIDGE_ITER) {
         bridgeTurn.runs++;
         const thinkingEl = addBridgeThinkingBubble();
         let reply = '';
-        try {
-          reply = await fetchBridgeReply(bridgeConversation);
-        } catch (e) {
-          if (thinkingEl) thinkingEl.remove();
-          addBridgeSystemMsg('AI error: ' + e.message);
-          break;
-        }
+        try { reply = await fetchBridgeReply(bridgeConversation); }
+        catch (e) { if (thinkingEl) thinkingEl.remove(); addBridgeSystemMsg('AI error: ' + e.message); break; }
         if (thinkingEl) thinkingEl.remove();
+
+        // ---- Empty response → auto-continue ----
         if (!reply || !reply.trim()) {
           if (autoContinues < MAX_AUTO_CONTINUES) {
             autoContinues++;
-            addBridgeSystemMsg(`Waiting ${AUTO_CONTINUE_DELAY_MS / 1000}s, then continuing…`);
-            setProgressText('Waiting…');
-            await new Promise(r => setTimeout(r, AUTO_CONTINUE_DELAY_MS));
+            await autoContinueAfterDelay('Empty response — continuing');
             bridgeConversation.push({ role: 'user', content: '[System] Continue building.' });
             continue;
           }
           break;
         }
 
-        // ---- Progress: use plan completion if available, otherwise step-based ----
         const prog = extractProgressTag(reply);
         const totalPlanned = bridgeTurn.plannedFiles.size;
         const doneCount = bridgeTurn.writtenFiles.size;
         if (totalPlanned > 0) {
-          // 2% start → up to 95% based on files written
           const filePct = 2 + Math.round((doneCount / totalPlanned) * 93);
           updateBridgeProgress(filePct, `Files: ${doneCount} / ${totalPlanned}`);
         } else if (prog && prog.total > 0) {
           const pct = Math.min(95, 2 + Math.round((prog.step / prog.total) * 93));
           updateBridgeProgress(pct, prog.label || `Step ${prog.step} of ${prog.total}`);
         } else {
-          // Fallback: slowly creep up based on iteration count, but never beyond 90
           const pct = Math.min(90, 5 + iter * 4);
           updateBridgeProgress(pct, `Working… (step ${iter})`);
         }
 
         const plan = extractBridgePlan(reply);
-        if (plan && plan.length) {
-          for (const f of plan) bridgeTurn.plannedFiles.add(f);
-          addBridgeSystemMsg(`Planned ${plan.length} file(s)`);
-        }
+        if (plan && plan.length) { for (const f of plan) bridgeTurn.plannedFiles.add(f); addBridgeSystemMsg(`Planned ${plan.length} file(s)`); }
 
         const narration = getNarrationText(reply);
         if (narration) addBridgeAiMsg(narration);
@@ -1139,24 +957,31 @@
         bridgeConversation.push({ role: 'assistant', content: reply });
         if (bridgeConversation.length > 40) bridgeConversation = bridgeConversation.slice(-40);
 
+        // ---- Questions ----
         const questions = extractBridgeQuestions(reply);
         if (questions.length > 0) {
           const remaining = MAX_BRIDGE_QUESTIONS - bridgeQuestionCount;
           const toAsk = questions.slice(0, Math.max(0, remaining));
-
           if (toAsk.length > 0) {
             addBridgeSystemMsg(`Paused — ${toAsk.length} question${toAsk.length === 1 ? '' : 's'} pending.`);
-            setProgressText('Waiting for your answer…');
             for (let qi = 0; qi < toAsk.length; qi++) {
               const q = toAsk[qi];
               bridgeQuestionCount++;
+              if (isEnvQuestion(q.question)) {
+                const envBlock = buildEnvBlockString();
+                addBridgeSystemMsg('Auto-answering environment request.');
+                addBridgeUserMsg(envBlock);
+                bridgeConversation.push({ role: 'user', content: `[Answer to "${q.question}"]\n${envBlock}\n\nNow continue building. Do not ask for the environment again.` });
+                continue;
+              }
+              setProgressText('Waiting for your answer…');
               const answer = await showBridgeQuestionModal(q, qi + 1, toAsk.length);
               addBridgeUserMsg(answer);
               bridgeConversation.push({ role: 'user', content: `[Answer to "${q.question}"] ${answer}` });
             }
             addBridgeSystemMsg('Answers received — resuming.');
             setProgressText('Resuming…');
-            bridgeConversation.push({ role: 'user', content: `[System] User answered. Continue building now.` });
+            bridgeConversation.push({ role: 'user', content: `[System] User answered. Continue building now. The [Bridge environment] block is at the top of every message — use it.` });
             continue;
           } else {
             bridgeConversation.push({ role: 'user', content: `[System] Question limit reached. Continue with defaults.` });
@@ -1164,16 +989,14 @@
           }
         }
 
+        // ---- Commands ----
         const cmds = extractBridgeCommands(reply);
         if (cmds.length > 0) {
           const resultLines = [];
           for (let i = 0; i < cmds.length; i++) {
             const cmd = cmds[i];
             const sig = cmdSignature(cmd);
-            if (shouldBlockSignature(sig)) {
-              resultLines.push(`[${cmd.type}] BLOCKED: ${sig}`);
-              continue;
-            }
+            if (shouldBlockSignature(sig)) { resultLines.push(`[${cmd.type}] BLOCKED: ${sig}`); continue; }
             bridgeTurn.commandLog.set(sig, (bridgeTurn.commandLog.get(sig) || 0) + 1);
             bridgeTurn.commandsRun++;
             const bubble = addBridgeActionBubble(cmd);
@@ -1181,14 +1004,10 @@
             try { result = await executeBridgeCommand(cmd); }
             catch (e) { result = { ok: false, error: e.message }; }
             updateBridgeActionBubble(bubble, cmd, result);
-            if (result && result.ok) {
-              if (cmd.type === 'write') bridgeTurn.writtenFiles.add(cmd.path);
-            } else {
-              bridgeTurn.failedSignatures.add(sig);
-            }
+            if (result && result.ok) { if (cmd.type === 'write') bridgeTurn.writtenFiles.add(cmd.path); }
+            else { bridgeTurn.failedSignatures.add(sig); }
             resultLines.push(formatResultForAI(cmd, result));
           }
-          // Bump progress after commands run if we have a plan
           const tp = bridgeTurn.plannedFiles.size;
           const dc = bridgeTurn.writtenFiles.size;
           if (tp > 0) {
@@ -1196,15 +1015,28 @@
             updateBridgeProgress(filePct, `Files: ${dc} / ${tp}`);
           }
           const env = __bridge.env || {};
+          const allowed = (env.allowed_dirs || []).join(', ') || '(none)';
           bridgeConversation.push({
             role: 'user',
             content: [
-              `[Bridge env] home=${env.home || '?'} platform=${env.platform || '?'}`,
+              `[Bridge environment]`,
+              `home=${env.home || '?'}`,
+              `cwd=${env.cwd || '?'}`,
+              `platform=${env.platform || '?'}`,
+              `allowed_dirs=${allowed}`,
+              ``,
               `[Progress] ${dc}/${tp || '?'} files written`,
               `[Results]`, resultLines.join('\n\n'),
+              `Write to paths inside allowed_dirs only.`,
               `If all files written, reply DONE. Otherwise output next batch.`,
             ].join('\n'),
           });
+
+          // ---- AUTO-CONTINUE after commands, even if AI didn't say DONE ----
+          // If the AI produced commands but did not explicitly say DONE and
+          // the plan isn't complete, this iteration will just loop again.
+          // But we also want a visible 2s pause + auto-continue in case the
+          // next reply is empty. That's handled by the empty-response branch above.
           continue;
         }
 
@@ -1212,44 +1044,40 @@
         const hasPlan = bridgeTurn.plannedFiles.size > 0;
         const allFilesWritten = hasPlan && bridgeTurn.writtenFiles.size >= bridgeTurn.plannedFiles.size;
 
-        if (saidDone && (allFilesWritten || !hasPlan)) {
-          updateBridgeProgress(100, 'Complete');
-          addBridgeSuccessMsg('Project complete');
-          break;
-        }
+        // ---- Success: said DONE + all files written ----
+        if (saidDone && (allFilesWritten || !hasPlan)) { updateBridgeProgress(100, 'Complete'); addBridgeSuccessMsg('Project complete'); break; }
 
+        // ---- Said DONE but files missing → keep going ----
         if (saidDone && hasPlan && !allFilesWritten) {
           const missing = [...bridgeTurn.plannedFiles].filter(f => !bridgeTurn.writtenFiles.has(f));
-          addBridgeSystemMsg(`Still ${missing.length} file(s) missing — asking to finish.`);
-          bridgeConversation.push({ role: 'user', content: `[System] Missing: ${missing.join(', ')}. Write them, then verify.` });
+          addBridgeSystemMsg(`Still ${missing.length} file(s) missing — continuing.`);
+          bridgeConversation.push({ role: 'user', content: `[System] Missing: ${missing.join(', ')}. Write them under home, then verify.` });
           continue;
         }
 
+        // ---- Didn't say DONE → AUTO-CONTINUE after 2s ----
         if (!saidDone) {
           if (autoContinues < MAX_AUTO_CONTINUES) {
             autoContinues++;
-            addBridgeSystemMsg(`Waiting ${AUTO_CONTINUE_DELAY_MS / 1000}s, then continuing…`);
-            setProgressText('Waiting…');
-            await new Promise(r => setTimeout(r, AUTO_CONTINUE_DELAY_MS));
-            bridgeConversation.push({ role: 'user', content: `[System] Continue building.` });
+            await autoContinueAfterDelay('Auto-continuing');
+            bridgeConversation.push({ role: 'user', content: `[System] Continue building. Write the next files now.` });
             continue;
           }
+          // Even after max auto-continues, keep the loop alive
+          addBridgeSystemMsg('Paused by iteration limit. You can type "continue" to keep going.');
           break;
         }
       }
 
-      // ---- Auto-continue after 2s if the iteration limit was reached ----
+      // ---- After the loop: if incomplete, auto-resume after 2s ----
       const hasPlan = bridgeTurn.plannedFiles.size > 0;
       const allFilesWritten = hasPlan && bridgeTurn.writtenFiles.size >= bridgeTurn.plannedFiles.size;
       const missing = hasPlan ? [...bridgeTurn.plannedFiles].filter(f => !bridgeTurn.writtenFiles.has(f)) : [];
-
       if (!(allFilesWritten || !hasPlan)) {
-        setProgressText(`Auto-continuing in ${AUTO_CONTINUE_DELAY_MS / 1000}s…`);
+        setProgressText(`Resuming in ${AUTO_CONTINUE_DELAY_MS / 1000}s…`);
         bridgeAutoTimer = setTimeout(() => {
           if (!__bridge.connected) return;
-          const msg = missing.length
-            ? `Continue. Still missing: ${missing.map(m => '- ' + m).join('\n')}`
-            : 'Continue. Output the next batch.';
+          const msg = missing.length ? `Continue. Still missing: ${missing.map(m => '- ' + m).join('\n')}` : 'Continue. Output the next batch.';
           bridgeConversation.push({ role: 'user', content: `[System] ${msg}` });
           runBridgeTurn('', true);
         }, AUTO_CONTINUE_DELAY_MS);
@@ -1269,9 +1097,6 @@
     runBridgeTurn(text, false);
   }
 
-  /* ============================================================
-     Wiring
-     ============================================================ */
   function wireAll() {
     on('#hamburgerBtn', 'click', openSidebar);
     on('#sidebarCloseBtn', 'click', closeSidebar);
@@ -1291,8 +1116,7 @@
         const id = item.dataset.id;
         __conversations = __conversations.filter(c => c.id !== id);
         if (currentConversationId === id) startNewChat();
-        saveChats(); renderHistory();
-        return;
+        saveChats(); renderHistory(); return;
       }
       const id = item.dataset.id;
       const convo = __conversations.find(c => c.id === id);
@@ -1301,31 +1125,20 @@
       const t = $('#chatTitle'); if (t) t.textContent = convo.title || 'Chat';
       const c = $('#chatMessages'); if (c) c.innerHTML = '';
       for (const m of convo.messages || []) addMessageToDOM(m.role, m.content, m.ts, m.id, m.files || [], m.image);
-      renderHistory();
-      scrollToBottom();
+      renderHistory(); scrollToBottom();
       if (window.innerWidth <= 860) closeSidebar();
     });
     const inp = $('#messageInput');
     if (inp) {
-      inp.addEventListener('input', () => {
-        inp.style.height = 'auto';
-        inp.style.height = Math.min(inp.scrollHeight, 180) + 'px';
-        updateSendButtonState();
-      });
-      inp.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); handleSend(); }
-      });
+      inp.addEventListener('input', () => { inp.style.height = 'auto'; inp.style.height = Math.min(inp.scrollHeight, 180) + 'px'; updateSendButtonState(); });
+      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); handleSend(); } });
     }
     on('#sendBtn', 'click', handleSend);
     on('#attachBtn', 'click', () => $('#fileInput')?.click());
     on('#fileInput', 'change', (e) => { handleFiles(e.target.files); e.target.value = ''; });
     on('#removeAttachmentBtn', 'click', () => { pendingFiles = []; updatePreview(); updateSendButtonState(); });
     on('#stopBtn', 'click', stopStreaming);
-    on('#modelPickerBtn', 'click', (e) => {
-      e.stopPropagation();
-      const menu = $('#modelPickerMenu');
-      if (menu?.classList.contains('open')) closeModelPicker(); else openModelPicker();
-    });
+    on('#modelPickerBtn', 'click', (e) => { e.stopPropagation(); const menu = $('#modelPickerMenu'); if (menu?.classList.contains('open')) closeModelPicker(); else openModelPicker(); });
     document.addEventListener('click', (e) => { if (!e.target.closest('#modelPicker')) closeModelPicker(); });
     on('#imageModeBtn', 'click', () => openModal('imageModal'));
     on('#plansModeBtn', 'click', () => { openModal('plansModal'); loadPlans(); });
@@ -1334,44 +1147,26 @@
     on('#bridgeModeBtn', 'click', openBridgeWorkspace);
     on('#bridgeOpenBtn', 'click', openBridgeWorkspace);
     on('#generateImageBtn', 'click', genImage);
-    on('#submitReportBtn', 'click', () => {
-      const s = $('#supportSubject')?.value.trim();
-      const m = $('#supportMessage')?.value.trim();
-      if (!s || !m) return alert('Fill subject and message.');
-      alert('Ticket submitted!');
-      closeModal('supportModal');
-    });
+    on('#submitReportBtn', 'click', () => { alert('Ticket submitted!'); closeModal('supportModal'); });
     on('#settingsBtn', 'click', () => { openModal('settingsModal'); loadPersona(); });
     on('#logoutBtn', 'click', doLogout);
     on('#savePersonaBtn', 'click', savePersona);
     $$('.settings-tab').forEach(tab => {
-      tab.onclick = () => {
-        const t = tab.dataset.tab;
+      tab.onclick = () => { const t = tab.dataset.tab;
         $$('.settings-tab').forEach(x => x.classList.toggle('active', x.dataset.tab === t));
-        $$('.settings-pane').forEach(p => p.classList.toggle('active', p.dataset.pane === t));
-      };
+        $$('.settings-pane').forEach(p => p.classList.toggle('active', p.dataset.pane === t)); };
     });
     $$('[data-mode]').forEach(b => b.onclick = () => applyAppearance({ mode: b.dataset.mode, theme: document.documentElement.getAttribute('data-theme') || 'default' }));
     $$('.swatch').forEach(b => b.onclick = () => applyAppearance({ mode: document.documentElement.getAttribute('data-mode') || 'light', theme: b.dataset.theme }));
     document.addEventListener('click', (e) => {
-      const cb = e.target.closest('[data-close]');
-      if (cb) { closeModal(cb.dataset.close); return; }
+      const cb = e.target.closest('[data-close]'); if (cb) { closeModal(cb.dataset.close); return; }
       if (e.target.classList.contains('modal-overlay') && e.target.id !== 'bridgeQuestionModal') e.target.classList.remove('open');
     });
     on('#userChip', 'click', () => { if (!__user) openModal('loginModal'); });
-    on('#upgradeBtn', 'click', (e) => {
-      e.stopPropagation();
-      if (!__user) openModal('loginModal');
-      else { openModal('plansModal'); loadPlans(); }
-    });
+    on('#upgradeBtn', 'click', (e) => { e.stopPropagation(); if (!__user) openModal('loginModal'); else { openModal('plansModal'); loadPlans(); } });
     on('#simpleLoginForm', 'submit', doLogin);
     document.addEventListener('click', (e) => { if (e.target.closest('[data-iv-close]')) closeImageViewer(); });
-    on('#ivDownload', 'click', () => {
-      if (!__ivDataUrl) return;
-      const a = document.createElement('a');
-      a.href = __ivDataUrl; a.download = `mirox-${Date.now()}.png`;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    });
+    on('#ivDownload', 'click', () => { if (!__ivDataUrl) return; const a = document.createElement('a'); a.href = __ivDataUrl; a.download = `mirox-${Date.now()}.png`; document.body.appendChild(a); a.click(); document.body.removeChild(a); });
     on('#bwCloseBtn', 'click', closeBridgeWorkspace);
     on('#bwNewBtn', 'click', clearBridgeChat);
     on('#bwDownloadBtn', 'click', downloadBridgeClient);
@@ -1380,36 +1175,15 @@
     on('#bwDisconnectBtn', 'click', stopBridge);
     const bwInp = $('#bridgeInput');
     if (bwInp) {
-      bwInp.addEventListener('input', () => {
-        bwInp.style.height = 'auto';
-        bwInp.style.height = Math.min(bwInp.scrollHeight, 140) + 'px';
-        updateBridgeSendBtn();
-      });
-      bwInp.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); handleBridgeSend(); }
-      });
+      bwInp.addEventListener('input', () => { bwInp.style.height = 'auto'; bwInp.style.height = Math.min(bwInp.scrollHeight, 140) + 'px'; updateBridgeSendBtn(); });
+      bwInp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); handleBridgeSend(); } });
     }
     on('#bridgeSendBtn', 'click', handleBridgeSend);
-    $$('.bw-quick').forEach(btn => {
-      btn.onclick = () => {
-        const q = btn.dataset.q;
-        const inp = $('#bridgeInput');
-        if (inp) { inp.value = q; updateBridgeSendBtn(); }
-        handleBridgeSend();
-      };
-    });
-    on('#bqCustomToggle', 'click', () => {
-      const cw = $('#bqCustomWrap');
-      if (cw) {
-        cw.style.display = cw.style.display === 'none' ? 'block' : 'none';
-        if (cw.style.display === 'block') $('#bqCustomInput')?.focus();
-      }
-    });
+    $$('.bw-quick').forEach(btn => { btn.onclick = () => { const q = btn.dataset.q; const inp = $('#bridgeInput'); if (inp) { inp.value = q; updateBridgeSendBtn(); } handleBridgeSend(); }; });
+    on('#bqCustomToggle', 'click', () => { const cw = $('#bqCustomWrap'); if (cw) { cw.style.display = cw.style.display === 'none' ? 'block' : 'none'; if (cw.style.display === 'block') $('#bqCustomInput')?.focus(); } });
     on('#bqSubmit', 'click', submitBridgeQuestion);
     on('#bqSkipOne', 'click', skipBridgeQuestion);
-    on('#bqCustomInput', 'keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); submitBridgeQuestion(); }
-    });
+    on('#bqCustomInput', 'keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitBridgeQuestion(); } });
     bindSuggestionClicks();
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
@@ -1424,16 +1198,9 @@
 
   async function init() {
     try {
-      loadAppearance();
-      loadBridgeLS();
-      wireAll();
-      renderModelPicker();
-      renderBridgeStatus();
-      updateBridgeSendBtn();
-      await loadConfig();
-      loadChats();
-      renderHistory();
-      await refreshUsage();
+      loadAppearance(); loadBridgeLS(); wireAll(); renderModelPicker();
+      renderBridgeStatus(); updateBridgeSendBtn();
+      await loadConfig(); loadChats(); renderHistory(); await refreshUsage();
     } catch (e) { console.error('[Mirox init]', e); }
     finally { killLoader(); }
   }
