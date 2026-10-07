@@ -4,9 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5.0">
 <meta name="theme-color" content="#faf9f5">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>MiroxAI — by OpenSurr</title>
 <link rel="icon" href="/logo.png" type="image/png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -46,7 +43,7 @@
       <div class="logo-fallback logo-fallback-sm" style="display:none;">M</div>
       <span class="brand-text">MiroxAI</span>
     </a>
-    <button id="sidebarCloseBtn" class="icon-btn sidebar-close" type="button" aria-label="Close"><i class="ri-close-line"></i></button>
+    <button id="sidebarCloseBtn" class="icon-btn sidebar-close" type="button"><i class="ri-close-line"></i></button>
   </div>
 
   <button id="newChatBtn" class="new-chat-btn" type="button"><i class="ri-add-line"></i><span>New chat</span></button>
@@ -78,7 +75,7 @@
         <span class="user-name">Guest mode</span>
         <span class="user-sub">Sign in to save chats</span>
       </div>
-      <button id="upgradeBtn" class="upgrade-btn" type="button" aria-label="Upgrade"><i class="ri-vip-crown-line"></i></button>
+      <button id="upgradeBtn" class="upgrade-btn" type="button"><i class="ri-vip-crown-line"></i></button>
     </div>
     <div class="sidebar-links">
       <a href="#" id="settingsBtn" class="sidebar-link"><i class="ri-settings-3-line"></i> Settings</a>
@@ -90,7 +87,7 @@
 
 <main class="main">
   <header class="chat-header">
-    <button id="hamburgerBtn" class="icon-btn hamburger" type="button" aria-label="Menu"><i class="ri-menu-line"></i></button>
+    <button id="hamburgerBtn" class="icon-btn hamburger" type="button"><i class="ri-menu-line"></i></button>
     <h2 id="chatTitle" class="chat-title">New chat</h2>
 
     <div id="creditBar" class="credit-bar" style="display:none;">
@@ -135,7 +132,7 @@
   <div class="composer-wrap">
     <div id="attachmentPreview" class="attachment-preview" style="display:none;">
       <div id="attachmentList" class="attachment-list"></div>
-      <button id="removeAttachmentBtn" class="icon-btn" type="button" aria-label="Remove"><i class="ri-close-line"></i></button>
+      <button id="removeAttachmentBtn" class="icon-btn" type="button"><i class="ri-close-line"></i></button>
     </div>
 
     <div class="tools-row">
@@ -146,11 +143,11 @@
     </div>
 
     <div class="composer">
-      <button type="button" id="attachBtn" class="icon-btn" aria-label="Attach"><i class="ri-attachment-2"></i></button>
+      <button type="button" id="attachBtn" class="icon-btn"><i class="ri-attachment-2"></i></button>
       <input type="file" id="fileInput" multiple hidden>
       <textarea id="messageInput" class="message-input" placeholder="How can I help you today?" rows="1"></textarea>
-      <button type="button" id="stopBtn" class="icon-btn stop-btn" style="display:none;" aria-label="Stop"><i class="ri-stop-circle-line"></i></button>
-      <button type="button" id="sendBtn" class="send-btn is-disabled" aria-disabled="true" aria-label="Send"><i class="ri-arrow-up-line"></i></button>
+      <button type="button" id="stopBtn" class="icon-btn stop-btn" style="display:none;"><i class="ri-stop-circle-line"></i></button>
+      <button type="button" id="sendBtn" class="send-btn is-disabled" aria-disabled="true"><i class="ri-arrow-up-line"></i></button>
     </div>
   </div>
 </main>
@@ -199,7 +196,7 @@
           </div>
         </div>
         <div class="bridge-input-row">
-          <textarea id="bridgeInput" placeholder="e.g. Build a snake game in /Users/me/snake/" rows="1"></textarea>
+          <textarea id="bridgeInput" placeholder="e.g. Build a snake game in /home/you/snake/" rows="1"></textarea>
           <button id="bridgeSendBtn" class="send-btn is-disabled" type="button" aria-disabled="true"><i class="ri-arrow-up-line"></i></button>
         </div>
       </div>
@@ -242,19 +239,28 @@
   <div class="modal bridge-question-modal">
     <div class="bridge-q-header">
       <div class="bridge-q-badge"><i class="ri-question-line"></i></div>
-      <div>
+      <div style="flex:1;min-width:0;">
         <div class="bridge-q-title">Mirox needs your input</div>
-        <div class="bridge-q-counter" id="bqCounter">Question 1 of 6</div>
+        <div class="bridge-q-counter" id="bqCounter">Question 1 of 1</div>
       </div>
+      <button class="icon-btn" id="bqSkipOne" type="button" title="Skip this question"><i class="ri-skip-forward-line"></i></button>
     </div>
+
+    <div class="bridge-q-progress">
+      <div class="bridge-q-progress-fill" id="bqProgressFill" style="width:0%;"></div>
+    </div>
+
     <p class="bridge-q-text" id="bqText"></p>
+
     <div class="bridge-q-options" id="bqOptions"></div>
+
     <div class="bridge-q-custom" id="bqCustomWrap" style="display:none;">
       <input type="text" id="bqCustomInput" class="modal-input" placeholder="Or type your own answer…">
     </div>
+
     <div class="bridge-q-footer">
       <button id="bqCustomToggle" class="modal-btn" type="button"><i class="ri-edit-line"></i> Custom</button>
-      <button id="bqSubmit" class="modal-btn primary" type="button">Submit <i class="ri-arrow-right-line"></i></button>
+      <button id="bqSubmit" class="modal-btn primary" type="button">Submit &amp; continue <i class="ri-arrow-right-line"></i></button>
     </div>
   </div>
 </div>
@@ -262,7 +268,7 @@
 <!-- Login -->
 <div id="loginModal" class="modal-overlay">
   <div class="modal">
-    <button class="icon-btn modal-close" type="button" data-close="loginModal" aria-label="Close"><i class="ri-close-line"></i></button>
+    <button class="icon-btn modal-close" type="button" data-close="loginModal"><i class="ri-close-line"></i></button>
     <h2 class="modal-title">Sign in</h2>
     <p class="modal-sub">Save your chats and unlock higher limits.</p>
     <form id="simpleLoginForm" class="modal-form">
@@ -276,7 +282,7 @@
 <!-- Settings -->
 <div id="settingsModal" class="modal-overlay">
   <div class="modal modal-wide">
-    <button class="icon-btn modal-close" type="button" data-close="settingsModal" aria-label="Close"><i class="ri-close-line"></i></button>
+    <button class="icon-btn modal-close" type="button" data-close="settingsModal"><i class="ri-close-line"></i></button>
     <h2 class="modal-title">Settings</h2>
     <div class="settings-tabs">
       <button class="settings-tab active" type="button" data-tab="general">General</button>
@@ -322,7 +328,7 @@
 <!-- Plans -->
 <div id="plansModal" class="modal-overlay">
   <div class="modal modal-wide">
-    <button class="icon-btn modal-close" type="button" data-close="plansModal" aria-label="Close"><i class="ri-close-line"></i></button>
+    <button class="icon-btn modal-close" type="button" data-close="plansModal"><i class="ri-close-line"></i></button>
     <h2 class="modal-title">Plans</h2>
     <p class="modal-sub">Luna and Gen are free and unlimited. Only image generation, uploads, and Eclipse have daily caps.</p>
     <div id="plansGrid" class="plans-grid"></div>
@@ -332,7 +338,7 @@
 <!-- Image Studio -->
 <div id="imageModal" class="modal-overlay">
   <div class="modal">
-    <button class="icon-btn modal-close" type="button" data-close="imageModal" aria-label="Close"><i class="ri-close-line"></i></button>
+    <button class="icon-btn modal-close" type="button" data-close="imageModal"><i class="ri-close-line"></i></button>
     <h2 class="modal-title">Lumenal 1.0</h2>
     <p class="modal-sub">Strong image generation, powered by Mirox.</p>
     <div class="image-studio">
@@ -346,7 +352,7 @@
 <!-- Support -->
 <div id="supportModal" class="modal-overlay">
   <div class="modal">
-    <button class="icon-btn modal-close" type="button" data-close="supportModal" aria-label="Close"><i class="ri-close-line"></i></button>
+    <button class="icon-btn modal-close" type="button" data-close="supportModal"><i class="ri-close-line"></i></button>
     <h2 class="modal-title">Contact Support</h2>
     <div class="support-form">
       <input type="text" id="supportSubject" class="modal-input" placeholder="Subject">
@@ -362,7 +368,7 @@
   <div class="image-viewer-panel" oncontextmenu="return false;">
     <div class="image-viewer-top">
       <div class="image-viewer-title">Generated image</div>
-      <button class="icon-btn" type="button" data-iv-close aria-label="Close"><i class="ri-close-line"></i></button>
+      <button class="icon-btn" type="button" data-iv-close><i class="ri-close-line"></i></button>
     </div>
     <div class="image-viewer-canvas-wrap">
       <canvas id="ivCanvas"></canvas>
