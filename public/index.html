@@ -120,12 +120,12 @@
       <img src="/logo.png" alt="MiroxAI" class="welcome-logo theme-aware-logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';">
       <div class="logo-fallback logo-fallback-lg" style="display:none;">M</div>
       <h1 class="welcome-title">Hi, I'm Mirox</h1>
-      <p class="welcome-sub">Luna and Gen are unlimited and free. Try asking me to search the web.</p>
+      <p class="welcome-sub">Luna and Gen are unlimited and free. Try asking me to search the web or generate an image.</p>
       <div class="suggestion-grid">
         <button class="suggestion-card" type="button" data-prompt="Search the web for the latest AI news"><i class="ri-global-line"></i><span>Search the web for AI news</span></button>
-        <button class="suggestion-card" type="button" data-prompt="Search the web for the best restaurants in Tokyo"><i class="ri-search-line"></i><span>Search for restaurants in Tokyo</span></button>
         <button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span>Generate me an image of a cat</span></button>
         <button class="suggestion-card" type="button" data-prompt="Help me write code"><i class="ri-code-line"></i><span>Help me write code</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span>Explain a concept simply</span></button>
       </div>
     </div>
   </div>
@@ -145,9 +145,9 @@
     </div>
 
     <div class="composer">
-      <button type="button" id="attachBtn" class="icon-btn"><i class="ri-attachment-2"></i></button>
-      <input type="file" id="fileInput" multiple hidden>
-      <textarea id="messageInput" class="message-input" placeholder="How can I help you today?" rows="1"></textarea>
+      <button type="button" id="attachBtn" class="icon-btn" title="Attach files (images or text)"><i class="ri-attachment-2"></i></button>
+      <input type="file" id="fileInput" multiple hidden accept="image/*,.txt,.md,.json,.csv,.log,.py,.js,.ts,.html,.css,.yml,.yaml,.xml,.sh,.sql,.java,.c,.cpp,.go,.rs,.rb,.php">
+      <textarea id="messageInput" class="message-input" placeholder="How can I help you today? (Tip: attach an image and ask about it)" rows="1"></textarea>
       <button type="button" id="stopBtn" class="icon-btn stop-btn" style="display:none;"><i class="ri-stop-circle-line"></i></button>
       <button type="button" id="sendBtn" class="send-btn is-disabled" aria-disabled="true"><i class="ri-arrow-up-line"></i></button>
     </div>
