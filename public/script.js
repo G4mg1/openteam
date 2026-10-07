@@ -34,6 +34,7 @@
   const MAX_AUTO_CONTINUES = 30;
   const MAX_DUP_COMMANDS = 1;
   const AUTO_CONTINUE_DELAY_MS = 2000;
+  const MAX_IMAGE_DIM = 1280; // resize large images before sending
 
   let __config = null, __user = null, __tier = 'free', __model = 'mirox-luna-1.2';
   let currentConversationId = null, isReplying = false;
@@ -51,12 +52,12 @@
   function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
   function setToken(t) { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch {} }
 
-  /* ---------- Working label picker ---------- */
   function pickStatusLabel(text) {
     const t = String(text || '').toLowerCase();
     if (!t) return 'Thinking';
     if (/\b(fix|debug|bug|error|broken|crash|issue|problem|wrong|fail|not work|isn'?t work|doesn'?t work|stack ?trace|exception)\b/.test(t)) return 'Looking into problems';
     if (/\b(search|find|look up|research|look for|where is|locate|google)\b/.test(t)) return 'Searching the web';
+    if (/\b(generate|draw|render|make.*image|create.*image|image of|picture of)\b/.test(t)) return 'Painting image';
     if (/\b(build|create|make|generate|write|scaffold|implement|add|set ?up|new|develop|code)\b/.test(t)) return 'Building';
     if (/\b(analyze|analyse|inspect|review|audit|check|examine|verify)\b/.test(t)) return 'Analyzing';
     if (/\b(explain|how|why|what|help me understand|describe|tell me)\b/.test(t)) return 'Thinking';
@@ -172,12 +173,12 @@
       <img src="/logo.png" alt="MiroxAI" class="welcome-logo theme-aware-logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';">
       <div class="logo-fallback logo-fallback-lg" style="display:none;">M</div>
       <h1 class="welcome-title">Hi, I'm Mirox</h1>
-      <p class="welcome-sub">Luna and Gen are unlimited and free. Try asking me to search the web.</p>
+      <p class="welcome-sub">Luna and Gen are unlimited and free. Try asking me to search the web or generate an image.</p>
       <div class="suggestion-grid">
         <button class="suggestion-card" type="button" data-prompt="Search the web for the latest AI news"><i class="ri-global-line"></i><span>Search the web for AI news</span></button>
-        <button class="suggestion-card" type="button" data-prompt="Search the web for the best restaurants in Tokyo"><i class="ri-search-line"></i><span>Search for restaurants in Tokyo</span></button>
         <button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span>Generate me an image of a cat</span></button>
         <button class="suggestion-card" type="button" data-prompt="Help me write code"><i class="ri-code-line"></i><span>Help me write code</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span>Explain a concept simply</span></button>
       </div>
     </div>`;
   }
@@ -192,7 +193,6 @@
       if (card.__wired) return; card.__wired = true;
       card.onclick = () => {
         const p = card.dataset.prompt;
-        if (p === 'Open the Bridge workspace') { openBridgeWorkspace(); return; }
         const inp = $('#messageInput');
         if (p && inp) { inp.value = p; updateSendButtonState(); handleSend(); }
       };
@@ -305,9 +305,10 @@
     if (!text && !pendingFiles.length) return;
     const files = pendingFiles.slice();
     const searchFlag = forceSearchNext; forceSearchNext = false;
+    const searchBtn = $('#searchModeBtn'); if (searchBtn) searchBtn.classList.remove('active');
     if (!currentConversationId) {
       currentConversationId = uid();
-      __conversations.unshift({ id: currentConversationId, title: text.slice(0, 60) || 'New chat', messages: [], created: Date.now() });
+      __conversations.unshift({ id: currentConversationId, title: text.slice(0, 60) || (files.length ? `Image: ${files[0].name || 'file'}` : 'New chat'), messages: [], created: Date.now() });
     }
     const msgId = uid();
     const convo = currentConvo();
@@ -319,13 +320,13 @@
     sendToAPI(text, files, searchFlag);
   }
 
-  /* ---------- Search block HTML builder ---------- */
   function buildSearchBlockHTML(query) {
     return `<div class="search-block" data-done="false">
       <div class="search-block-header">
         <span class="search-pulse"><i class="ri-search-line"></i></span>
         <span class="search-block-status">Searching for <b class="search-block-query">${escapeHtml(query)}</b></span>
       </div>
+      <div class="search-block-overview" style="display:none;"></div>
       <div class="search-block-sources"></div>
     </div>`;
   }
@@ -356,6 +357,18 @@
     list.appendChild(a);
     requestAnimationFrame(() => a.classList.add('in'));
   }
+  function setSearchOverview(block, ov) {
+    if (!block || !ov) return;
+    const wrap = block.querySelector('.search-block-overview');
+    if (!wrap) return;
+    const src = escapeHtml(ov.source || 'Web');
+    const head = escapeHtml(ov.heading || '');
+    const txt = escapeHtml(ov.text || '');
+    const link = ov.url ? ` <a class="ov-link" href="${escapeHtml(ov.url)}" target="_blank" rel="noopener">source ↗</a>` : '';
+    wrap.innerHTML = `<div class="ov-head"><i class="ri-book-2-line"></i> ${src}${head ? ' · ' + head : ''}${link}</div><div class="ov-body">${txt}</div>`;
+    wrap.style.display = 'block';
+    requestAnimationFrame(() => wrap.classList.add('in'));
+  }
 
   async function sendToAPI(text, files, forceSearch) {
     isReplying = true; updateSendButtonState();
@@ -371,14 +384,16 @@
     const aiMsgId = el.dataset.msgId;
     activeStreamController = new AbortController();
     let full = '', generatedImage = null, finishReason = 'stop', bubbleText = null, firstChunk = true;
-    let searchBlock = null, savedSearchData = null;
+    let searchBlock = null;
 
     try {
       const res = await fetch('/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, history, model, stream: true, files, search: !!forceSearch,
-          bridge: __bridge.connected ? { connected: true, name: __bridge.name, model: __bridge.model, env: __bridge.env } : null }),
+        body: JSON.stringify({
+          message: text, history, model, stream: true, files, search: !!forceSearch,
+          bridge: __bridge.connected ? { connected: true, name: __bridge.name, model: __bridge.model, env: __bridge.env } : null,
+        }),
         signal: activeStreamController.signal,
       });
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error?.message || `HTTP ${res.status}`); }
@@ -396,7 +411,6 @@
           try {
             const o = JSON.parse(pl);
 
-            // Search started
             if (o.search) {
               bubble.classList.remove('thinking');
               bubble.innerHTML = buildSearchBlockHTML(o.search.query || '');
@@ -404,21 +418,31 @@
               scrollToBottom();
               continue;
             }
-            // Source found
+            if (o.overview) {
+              if (!searchBlock) {
+                bubble.classList.remove('thinking');
+                bubble.innerHTML = buildSearchBlockHTML(o.overview.heading || '');
+                searchBlock = bubble.querySelector('.search-block');
+              }
+              setSearchOverview(searchBlock, o.overview);
+              scrollToBottom();
+              continue;
+            }
             if (o.source) {
-              if (!savedSearchData) savedSearchData = { query: '', sources: [] };
-              savedSearchData.sources.push(o.source);
+              if (!searchBlock) {
+                bubble.classList.remove('thinking');
+                bubble.innerHTML = buildSearchBlockHTML('');
+                searchBlock = bubble.querySelector('.search-block');
+              }
               appendSearchSource(searchBlock, o.source);
               scrollToBottom();
               continue;
             }
-            // Search done
             if (o.search_done) {
               finalizeSearchBlock(searchBlock, o.count || 0);
               scrollToBottom();
               continue;
             }
-            // Image
             if (o.img) {
               generatedImage = o.img;
               bubble.classList.remove('thinking');
@@ -428,13 +452,11 @@
               const img = bubble.querySelector('img'); if (img) img.onclick = () => openImageViewer(o.img);
               firstChunk = false; scrollToBottom(); refreshUsage(); continue;
             }
-            // Text delta
             if (o.d) {
               full += o.d;
               if (firstChunk) {
                 bubble.classList.remove('thinking');
                 if (!generatedImage) {
-                  // Keep the search block if present, add bubble-text below
                   if (searchBlock) {
                     if (!bubble.querySelector('.bubble-text')) {
                       const bt = document.createElement('div');
@@ -479,24 +501,62 @@
     const s = $('#stopBtn'); if (s) s.style.display = 'none';
     updateSendButtonState();
   }
+
+  /* ---------- File handling (with image resize) ---------- */
+  function readImageAsResizedDataUrl(file) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result;
+        const img = new Image();
+        img.onload = () => {
+          let { width, height } = img;
+          if (width > MAX_IMAGE_DIM || height > MAX_IMAGE_DIM) {
+            const ratio = Math.min(MAX_IMAGE_DIM / width, MAX_IMAGE_DIM / height);
+            width = Math.round(width * ratio);
+            height = Math.round(height * ratio);
+          }
+          const c = document.createElement('canvas');
+          c.width = width; c.height = height;
+          c.getContext('2d').drawImage(img, 0, 0, width, height);
+          try {
+            const out = c.toDataURL('image/jpeg', 0.85);
+            resolve(out);
+          } catch {
+            resolve(dataUrl);
+          }
+        };
+        img.onerror = () => resolve(dataUrl);
+        img.src = dataUrl;
+      };
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(file);
+    });
+  }
+
   function handleFiles(fileList) {
     if (!fileList || !fileList.length) return;
     const arr = Array.from(fileList);
     let done = 0; const newFiles = [];
     arr.forEach((f, idx) => {
       const isImg = (f.type || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(f.name);
-      const r = new FileReader();
       if (isImg) {
-        r.onload = () => { newFiles.push({ name: f.name, size: f.size, type: 'image', dataUrl: r.result, order: idx }); done++; if (done === arr.length) finish(); };
-        r.onerror = () => { done++; if (done === arr.length) finish(); };
-        r.readAsDataURL(f);
+        readImageAsResizedDataUrl(f).then((dataUrl) => {
+          if (dataUrl) newFiles.push({ name: f.name, size: f.size, type: 'image', dataUrl, order: idx });
+          done++; if (done === arr.length) finish();
+        }).catch(() => { done++; if (done === arr.length) finish(); });
       } else {
+        const r = new FileReader();
         r.onload = () => { newFiles.push({ name: f.name, size: f.size, type: 'text', content: String(r.result).slice(0, 60000), order: idx }); done++; if (done === arr.length) finish(); };
         r.onerror = () => { done++; if (done === arr.length) finish(); };
         r.readAsText(f);
       }
     });
-    function finish() { newFiles.sort((a, b) => (a.order || 0) - (b.order || 0)); pendingFiles = pendingFiles.concat(newFiles); updatePreview(); updateSendButtonState(); }
+    function finish() {
+      newFiles.sort((a, b) => (a.order || 0) - (b.order || 0));
+      pendingFiles = pendingFiles.concat(newFiles);
+      updatePreview(); updateSendButtonState();
+    }
   }
   function updatePreview() {
     const p = $('#attachmentPreview'), list = $('#attachmentList'); if (!p || !list) return;
@@ -614,9 +674,7 @@
     if (res?.ok) { setToken(res.token); closeModal('loginModal'); await refreshUsage(); }
     else alert(res?.error || 'Login failed');
   }
-  function doLoginment() {
-    window.location.href = '/api/auth/loginment/start';
-  }
+  function doLoginment() { window.location.href = '/api/auth/loginment/start'; }
   async function doLogout() { await authJson('/api/logout', { method: 'POST' }, null); setToken(''); await refreshUsage(); closeModal('settingsModal'); }
   async function loadPlans() {
     const grid = $('#plansGrid'); if (!grid) return;
@@ -1116,7 +1174,7 @@
           if (autoContinues < MAX_AUTO_CONTINUES) {
             autoContinues++;
             await autoContinueAfterDelay('Empty response — continuing');
-            bridgeConversation.push({ role: 'user', content: '[System] Continue building.' });
+            bridgeConversation.push({ role: 'user', content: '[System] Continue.' });
             continue;
           }
           break;
@@ -1278,7 +1336,6 @@
     on('#modelPickerBtn', 'click', (e) => { e.stopPropagation(); const menu = $('#modelPickerMenu'); if (menu?.classList.contains('open')) closeModelPicker(); else openModelPicker(); });
     document.addEventListener('click', (e) => { if (!e.target.closest('#modelPicker')) closeModelPicker(); });
 
-    // Search tool button
     on('#searchModeBtn', 'click', (e) => {
       e.preventDefault();
       forceSearchNext = !forceSearchNext;
@@ -1286,8 +1343,7 @@
       if (btn) btn.classList.toggle('active', forceSearchNext);
       const msg = forceSearchNext ? 'Web search enabled — your next message will be searched.' : 'Web search disabled.';
       const ta = $('#messageInput');
-      if (ta) { ta.placeholder = forceSearchNext ? 'What should I search the web for?' : 'How can I help you today?'; ta.focus(); }
-      // Quick toast
+      if (ta) { ta.placeholder = forceSearchNext ? 'What should I search the web for?' : 'How can I help you today? (Tip: attach an image and ask about it)'; ta.focus(); }
       const t = document.createElement('div');
       t.textContent = msg;
       t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--panel);color:var(--text);border:1px solid var(--border);padding:10px 16px;border-radius:12px;font-size:13px;box-shadow:var(--shadow-lg);z-index:9999;';
