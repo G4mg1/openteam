@@ -342,6 +342,10 @@
       <textarea id="imagePrompt" class="modal-textarea" rows="3" placeholder="Describe the image you want…"></textarea>
       <button id="generateImageBtn" class="modal-btn primary" type="button"><i class="ri-image-add-line"></i> Generate</button>
       <div id="imageResult" class="image-result"></div>
+      <div style="margin-top:18px;">
+        <h4 style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-faint);margin-bottom:8px;">Recent images</h4>
+        <div id="imageHistory" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;max-height:260px;overflow-y:auto;"></div>
+      </div>
     </div>
   </div>
 </div>
