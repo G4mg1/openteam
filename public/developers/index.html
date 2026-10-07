@@ -11,40 +11,17 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css">
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    :root{
-      --bg:#fafafb;--bg-soft:#f4f4f7;--panel:#fff;--panel-2:#f7f7fa;--panel-3:#eeeef3;
-      --border:#e8e8ef;--border-strong:#d5d5dd;--text:#0a0a0c;--text-muted:#64646f;--text-faint:#9494a0;
-      --accent:#c4694b;--accent-hover:#a8503a;--accent-soft:rgba(196,105,75,.10);
-      --code-bg:#f6f8fa;--code-border:#e4e7ec;--code-header:#eef0f4;--code-text:#24292f;
-      --radius:10px;--radius-lg:14px;--radius-xl:20px;
-      --font:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-      --mono:'JetBrains Mono','SF Mono','Fira Code',Consolas,monospace;
-      --shadow-sm:0 1px 2px rgba(20,20,40,.04),0 2px 6px rgba(20,20,40,.03);
-      --shadow-lg:0 8px 28px rgba(20,20,40,.09);
-      --sidebar-w:260px;
-    }
-    :root[data-mode="dark"]{
-      --bg:#0a0a0d;--bg-soft:#0f0f14;--panel:#15151b;--panel-2:#1d1d24;--panel-3:#26262f;
-      --border:#26262f;--border-strong:#3a3a47;--text:#f4f4f8;--text-muted:#a0a0ab;--text-faint:#6a6a75;
-      --code-bg:#1a1a22;--code-border:#26262f;--code-header:#13131a;--code-text:#e4e4ec;
-    }
+    :root{--bg:#fafafb;--bg-soft:#f4f4f7;--panel:#fff;--panel-2:#f7f7fa;--panel-3:#eeeef3;--border:#e8e8ef;--border-strong:#d5d5dd;--text:#0a0a0c;--text-muted:#64646f;--text-faint:#9494a0;--accent:#c4694b;--accent-hover:#a8503a;--accent-soft:rgba(196,105,75,.10);--code-bg:#f6f8fa;--code-border:#e4e7ec;--code-header:#eef0f4;--code-text:#24292f;--radius:10px;--radius-lg:14px;--radius-xl:20px;--font:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;--mono:'JetBrains Mono','SF Mono','Fira Code',Consolas,monospace;--shadow-sm:0 1px 2px rgba(20,20,40,.04),0 2px 6px rgba(20,20,40,.03);--shadow-lg:0 8px 28px rgba(20,20,40,.09);--sidebar-w:260px}
+    :root[data-mode="dark"]{--bg:#0a0a0d;--bg-soft:#0f0f14;--panel:#15151b;--panel-2:#1d1d24;--panel-3:#26262f;--border:#26262f;--border-strong:#3a3a47;--text:#f4f4f8;--text-muted:#a0a0ab;--text-faint:#6a6a75;--code-bg:#1a1a22;--code-border:#26262f;--code-header:#13131a;--code-text:#e4e4ec}
     html{scroll-behavior:smooth;scroll-padding-top:24px}
     body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased;min-height:100vh}
-    a{color:var(--accent);text-decoration:none}
-    a:hover{text-decoration:underline}
+    a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
     button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
     input,textarea,select{font:inherit;color:inherit}
     img{max-width:100%;display:block}
-
     :root[data-mode="dark"] .theme-aware-logo{filter:invert(1) brightness(1.15)}
-
     .dev-layout{display:flex;min-height:100vh}
-
-    /* SIDEBAR */
-    .dev-sidebar{
-      width:var(--sidebar-w);flex-shrink:0;background:var(--panel);border-right:1px solid var(--border);
-      padding:24px 16px;position:sticky;top:0;height:100vh;overflow-y:auto;display:flex;flex-direction:column;
-    }
+    .dev-sidebar{width:var(--sidebar-w);flex-shrink:0;background:var(--panel);border-right:1px solid var(--border);padding:24px 16px;position:sticky;top:0;height:100vh;overflow-y:auto;display:flex;flex-direction:column}
     .dev-logo{display:flex;align-items:center;gap:10px;margin-bottom:6px;padding:0 8px}
     .dev-logo img{width:32px;height:32px;border-radius:8px}
     .dev-logo-text{display:flex;flex-direction:column;line-height:1.2}
@@ -59,15 +36,12 @@
     .dev-sidebar-footer{margin-top:auto;padding-top:20px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px}
     .dev-sidebar-footer a{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:var(--radius);font-size:13px;color:var(--text-muted);text-decoration:none}
     .dev-sidebar-footer a:hover{background:var(--panel-2);color:var(--text);text-decoration:none}
-
-    /* MAIN */
     .dev-main{flex:1;min-width:0;padding:48px 56px 80px;max-width:1000px}
     .dev-topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:32px;padding-bottom:20px;border-bottom:1px solid var(--border)}
     .dev-topbar-title{font-size:13px;color:var(--text-faint);font-weight:500}
     .dev-topbar-actions{display:flex;gap:8px}
     .icon-btn{width:36px;height:36px;display:grid;place-items:center;border-radius:var(--radius);color:var(--text-muted);font-size:17px;border:1px solid var(--border);background:var(--panel);transition:background .15s,color .15s;text-decoration:none}
     .icon-btn:hover{background:var(--panel-2);color:var(--text);text-decoration:none}
-
     section{margin-bottom:56px}
     h1{font-size:34px;font-weight:700;letter-spacing:-.025em;margin-bottom:12px;line-height:1.15}
     h2{font-size:22px;font-weight:700;letter-spacing:-.02em;margin-bottom:14px;padding-top:8px}
@@ -76,7 +50,6 @@
     ul,ol{margin:10px 0 16px 22px;color:var(--text-muted)}
     li{line-height:1.7;margin-bottom:4px}
     .lead{font-size:16px;color:var(--text-muted);margin-bottom:20px;line-height:1.7}
-
     code{background:var(--code-bg);color:var(--text);padding:2px 6px;border-radius:4px;font-family:var(--mono);font-size:.88em;border:1px solid var(--code-border)}
     pre{background:var(--code-bg);border:1px solid var(--code-border);border-radius:var(--radius-lg);padding:16px 18px;overflow-x:auto;margin:12px 0 20px;font-family:var(--mono);font-size:13px;line-height:1.65;color:var(--code-text);position:relative}
     pre code{background:none;border:none;padding:0;font-size:13px;color:inherit}
@@ -84,23 +57,19 @@
     pre:hover .code-copy-btn{opacity:1}
     .code-copy-btn:hover{background:var(--panel-2);color:var(--text)}
     .code-copy-btn.copied{color:var(--accent)}
-
     .badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:99px;font-size:11.5px;font-weight:600;background:var(--accent-soft);color:var(--accent)}
     .badge.neutral{background:var(--panel-3);color:var(--text-muted)}
     .badge.green{background:rgba(78,168,46,.12);color:#4ea82e}
     .badge-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px}
-
     .endpoint{display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:var(--radius);background:var(--panel-2);border:1px solid var(--border);font-family:var(--mono);font-size:13.5px;margin:12px 0 16px;flex-wrap:wrap}
     .method{font-weight:700;font-size:11px;padding:3px 8px;border-radius:5px;letter-spacing:.03em}
     .method.post{background:rgba(196,105,75,.14);color:var(--accent)}
     .method.get{background:rgba(37,99,235,.12);color:#2563eb}
-
     .card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:16px 0 24px}
     .card{padding:16px 18px;border-radius:var(--radius-lg);border:1px solid var(--border);background:var(--panel)}
     .card-icon{width:36px;height:36px;border-radius:9px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-size:18px;margin-bottom:12px}
     .card h4{font-size:14.5px;font-weight:600;margin-bottom:4px}
     .card p{font-size:13px;margin:0;line-height:1.55}
-
     .playground{border:1px solid var(--border);border-radius:var(--radius-xl);background:var(--panel);overflow:hidden;margin:20px 0}
     .playground-header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);background:var(--panel-2);gap:10px;flex-wrap:wrap}
     .playground-header h3{margin:0;font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
@@ -113,14 +82,15 @@
     .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
     .field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
     .field-hint{font-size:11.5px;color:var(--text-faint);margin-top:4px}
-
     .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 18px;border-radius:var(--radius);font-size:13.5px;font-weight:500;transition:background .15s,opacity .15s;border:1px solid transparent;font-family:var(--font)}
     .btn-primary{background:var(--accent);color:#fff}
     .btn-primary:hover{background:var(--accent-hover)}
     .btn-primary:disabled{opacity:.5;cursor:not-allowed}
     .btn-secondary{background:var(--panel-2);color:var(--text);border-color:var(--border)}
     .btn-secondary:hover{background:var(--panel-3)}
-
+    .btn-danger{background:transparent;color:#dc2626;border-color:rgba(220,38,38,.3)}
+    .btn-danger:hover{background:rgba(220,38,38,.08)}
+    .btn.small{padding:5px 12px;font-size:12.5px}
     .playground-result{margin-top:18px;border-radius:var(--radius-lg);border:1px solid var(--code-border);background:var(--code-bg);overflow:hidden}
     .playground-result-header{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-bottom:1px solid var(--code-border);background:var(--code-header);font-size:11.5px;font-weight:600;color:var(--text-muted);letter-spacing:.02em;text-transform:uppercase}
     .status-pill{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600;text-transform:none}
@@ -128,21 +98,33 @@
     .status-pill.err{background:rgba(220,38,38,.12);color:#dc2626}
     .status-pill.pending{background:var(--panel-3);color:var(--text-muted)}
     .playground-output{padding:14px 16px;font-family:var(--mono);font-size:12.5px;line-height:1.65;color:var(--code-text);white-space:pre-wrap;word-break:break-word;max-height:380px;overflow-y:auto;margin:0;background:transparent;border:none;border-radius:0}
-
     .dots{display:inline-flex;gap:3px;align-items:center}
     .dots span{width:5px;height:5px;border-radius:50%;background:currentColor;animation:bounce 1.4s ease-in-out infinite}
     .dots span:nth-child(2){animation-delay:.15s}
     .dots span:nth-child(3){animation-delay:.3s}
     @keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-4px);opacity:1}}
-
     table{width:100%;border-collapse:collapse;font-size:13.5px;margin:12px 0 20px;border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden}
     th{text-align:left;padding:10px 14px;font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint);background:var(--panel-2);border-bottom:1px solid var(--border)}
     td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--text-muted)}
     tr:last-child td{border-bottom:none}
-
     .mobile-nav-toggle{display:none}
 
-    /* RESPONSIVE */
+    .key-msg{font-size:13px;color:var(--text-muted);margin-bottom:10px}
+    .key-msg.err{color:#dc2626}
+    .key-msg.ok{color:#4ea82e}
+    .key-list{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
+    .key-item{display:flex;align-items:center;gap:10px;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--panel);flex-wrap:wrap}
+    .key-item.revoked{opacity:.55}
+    .key-item-name{font-weight:600;font-size:13.5px;flex-shrink:0;min-width:120px}
+    .key-item-value{font-family:var(--mono);font-size:12px;color:var(--text-muted);background:var(--panel-2);padding:5px 10px;border-radius:6px;border:1px solid var(--border);flex:1;min-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .key-item-actions{display:flex;gap:6px;flex-shrink:0}
+    .key-item-meta{font-size:11px;color:var(--text-faint);width:100%;display:flex;gap:12px;flex-wrap:wrap}
+    .key-empty{padding:20px;text-align:center;color:var(--text-faint);font-size:13px;border:1px dashed var(--border);border-radius:var(--radius-lg)}
+    .key-create{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+    .key-create input{flex:1;min-width:180px;padding:10px 12px;border-radius:var(--radius);border:1px solid var(--border);background:var(--panel-2);font-size:14px;outline:none}
+    .key-create input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+    .key-limit-info{font-size:12.5px;color:var(--text-muted);margin-bottom:12px;padding:10px 14px;border-radius:var(--radius);background:var(--panel-2);border:1px solid var(--border)}
+
     @media (max-width:900px){
       .dev-sidebar{position:fixed;z-index:100;transform:translateX(-100%);transition:transform .25s cubic-bezier(.4,0,.2,1);box-shadow:var(--shadow-lg)}
       .dev-sidebar.open{transform:translateX(0)}
@@ -153,13 +135,8 @@
       .field-row{grid-template-columns:1fr}
     }
     @media (min-width:1920px){:root{--sidebar-w:300px}.dev-main{max-width:1200px;padding:56px 72px 96px}}
-    @media (min-width:2560px){:root{--sidebar-w:340px;font-size:17px}.dev-main{max-width:1400px}}
-    @media (min-width:3840px){:root{--sidebar-w:420px;font-size:20px}.dev-main{max-width:1800px}h1{font-size:52px}h2{font-size:32px}}
-
     .scrim{display:none;position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.35)}
     .scrim.open{display:block}
-
-    /* Syntax highlighting */
     pre code.hljs{display:block;overflow-x:auto;padding:0;background:transparent}
     pre .hljs{background:transparent}
     .code-language{position:absolute;top:10px;left:12px;padding:3px 7px;border:1px solid var(--border);border-radius:5px;background:var(--panel);color:var(--text-faint);font:500 10px var(--font);text-transform:uppercase;letter-spacing:.04em;pointer-events:none}
@@ -193,6 +170,7 @@
 
       <div class="dev-nav-label">Tools</div>
       <nav class="dev-nav">
+        <a href="#keys"><i class="ri-key-line"></i> API Keys</a>
         <a href="#playground"><i class="ri-terminal-box-line"></i> Playground</a>
         <a href="#limits"><i class="ri-speed-up-line"></i> Rate Limits</a>
       </nav>
@@ -224,7 +202,7 @@
           <div class="card"><div class="card-icon"><i class="ri-chat-3-line"></i></div><h4>Chat Completions</h4><p>Streaming text generation with Luna and Gen.</p></div>
           <div class="card"><div class="card-icon"><i class="ri-image-line"></i></div><h4>Image Generation</h4><p>FLUX.1-schnell via Hugging Face.</p></div>
           <div class="card"><div class="card-icon"><i class="ri-eye-line"></i></div><h4>Vision</h4><p>Send images alongside text prompts.</p></div>
-          <div class="card"><div class="card-icon"><i class="ri-shield-check-line"></i></div><h4>Secure</h4><p>API key auth with SHA-256 hashing.</p></div>
+          <div class="card"><div class="card-icon"><i class="ri-shield-check-line"></i></div><h4>Secure</h4><p>SHA-256 hashed API keys.</p></div>
         </div>
       </section>
 
@@ -242,20 +220,19 @@
 
       <section id="auth">
         <h2>Authentication</h2>
-        <p>Every request must include your API key in the <code>Authorization</code> header. Generate keys from <strong>Plans &rarr; API keys</strong> inside the app.</p>
+        <p>Every request must include your API key in the <code>Authorization</code> header. Generate keys from the <a href="#keys">API Keys</a> section below.</p>
         <pre><code>Authorization: Bearer mxk_live_xxxxxxxxxxxxxxxxxxxxxxxx<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
         <h3>Key rules</h3>
         <ul>
-          <li>Keys are prefixed with <code>mxk_</code> and hashed with SHA-256 in the database.</li>
-          <li>Never expose keys in client-side code — call the API from your server.</li>
-          <li>Free plan: max 2 keys. Pro: 5. Ultimate: 20.</li>
+          <li>Keys are prefixed with <code>mxk_live_</code>.</li>
+          <li>Free plan: up to 2 active keys. Pro &amp; Ultimate: up to 10.</li>
+          <li>Revoked keys stop working immediately.</li>
         </ul>
       </section>
 
       <section id="chat">
         <h2>Chat Completions</h2>
         <div class="endpoint"><span class="method post">POST</span><span>/v1/chat/completions</span></div>
-
         <h3>Request body</h3>
         <table>
           <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
@@ -266,7 +243,6 @@
             <tr><td><code>temperature</code></td><td>number</td><td>0–2, default <code>0.7</code></td></tr>
           </tbody>
         </table>
-
         <h3>Example request</h3>
         <pre><code class="language-json">{
   "model": "mirox-luna-1.2",
@@ -276,7 +252,6 @@
   ],
   "stream": false
 }<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
-
         <h3>Streaming</h3>
         <p>Set <code>stream: true</code> to receive Server-Sent Events:</p>
         <pre><code class="language-plaintext">data: {"d":"Hello"}
@@ -321,10 +296,22 @@ data: {"done":true,"model":"Luna"}<button class="code-copy-btn" data-copy><i cla
         </table>
       </section>
 
+      <section id="keys">
+        <h2>API Keys</h2>
+        <p>Create and manage your API keys. Sign in to the main app first so we know who you are.</p>
+        <div class="key-limit-info" id="keyLimitInfo">Loading…</div>
+        <div class="key-create">
+          <input type="text" id="newKeyName" placeholder="Key name (e.g. Production)" maxlength="60">
+          <button class="btn btn-primary" id="createKeyBtn"><i class="ri-add-line"></i> Generate key</button>
+          <button class="btn btn-secondary" id="refreshKeysBtn"><i class="ri-refresh-line"></i> Refresh</button>
+        </div>
+        <div class="key-msg" id="keyMsg"></div>
+        <div class="key-list" id="keyList"></div>
+      </section>
+
       <section id="playground">
         <h2>API Playground</h2>
-        <p>Test the chat completions endpoint directly. Paste your API key (starts with <code>mxk_</code>) or leave it blank to use your session.</p>
-
+        <p>Test the chat completions endpoint directly. Paste your API key (starts with <code>mxk_live_</code>) or leave it blank to use your session.</p>
         <div class="playground">
           <div class="playground-header">
             <h3><i class="ri-terminal-box-line"></i> POST /v1/chat/completions</h3>
@@ -336,7 +323,6 @@ data: {"done":true,"model":"Luna"}<button class="code-copy-btn" data-copy><i cla
               <input type="password" id="pgApiKey" placeholder="mxk_live_...">
               <div class="field-hint">Your key is only used for this request. It's never stored.</div>
             </div>
-
             <div class="field-row">
               <div class="field">
                 <label for="pgModel">Model</label>
@@ -350,23 +336,18 @@ data: {"done":true,"model":"Luna"}<button class="code-copy-btn" data-copy><i cla
                 <input type="number" id="pgTemp" value="0.7" min="0" max="2" step="0.1">
               </div>
             </div>
-
             <div class="field">
               <label for="pgSystem">System prompt <span style="color:var(--text-faint);font-weight:400;">(optional)</span></label>
               <input type="text" id="pgSystem" placeholder="You are a helpful assistant.">
             </div>
-
             <div class="field">
               <label for="pgMessage">User message</label>
               <textarea id="pgMessage" placeholder="Ask anything…">Hello! What can you do?</textarea>
             </div>
-
             <div class="field">
               <label><input type="checkbox" id="pgStream" style="width:auto;margin-right:6px;vertical-align:middle;"> Stream response (SSE)</label>
             </div>
-
             <button class="btn btn-primary" id="pgSendBtn"><i class="ri-send-plane-fill"></i> Send Request</button>
-
             <div class="playground-result" id="pgResult" style="display:none;">
               <div class="playground-result-header">
                 <span>Response</span>
@@ -384,8 +365,8 @@ data: {"done":true,"model":"Luna"}<button class="code-copy-btn" data-copy><i cla
           <thead><tr><th>Plan</th><th>Daily messages</th><th>API keys</th></tr></thead>
           <tbody>
             <tr><td>Free</td><td>50</td><td>2</td></tr>
-            <tr><td>Pro</td><td>500</td><td>5</td></tr>
-            <tr><td>Ultimate</td><td>5000</td><td>20</td></tr>
+            <tr><td>Pro</td><td>500</td><td>10</td></tr>
+            <tr><td>Ultimate</td><td>5000</td><td>10</td></tr>
           </tbody>
         </table>
       </section>
@@ -398,7 +379,6 @@ data: {"done":true,"model":"Luna"}<button class="code-copy-btn" data-copy><i cla
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
   <script>
-    // Highlight.js supports a broad set of programming languages.
     function highlightAllCode() {
       if (!window.hljs) return;
       document.querySelectorAll('pre code').forEach(code => {
@@ -422,7 +402,6 @@ data: {"done":true,"model":"Luna"}<button class="code-copy-btn" data-copy><i cla
     const $ = s => document.querySelector(s);
     const $$ = s => document.querySelectorAll(s);
 
-    // Nav
     const navLinks = $$('.dev-nav a');
     const sections = Array.from(navLinks).map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
 
@@ -446,14 +425,12 @@ data: {"done":true,"model":"Luna"}<button class="code-copy-btn" data-copy><i cla
     }, { rootMargin: '-30% 0px -60% 0px' });
     sections.forEach(s => observer.observe(s));
 
-    // Mobile
     const sidebar = $('#devSidebar');
     const scrim = $('#scrim');
     function closeMobileNav() { sidebar.classList.remove('open'); scrim.classList.remove('open'); }
     $('#mobileNavToggle')?.addEventListener('click', () => { sidebar.classList.toggle('open'); scrim.classList.toggle('open'); });
     scrim?.addEventListener('click', closeMobileNav);
 
-    // Theme
     const root = document.documentElement;
     function applyTheme(mode) {
       root.setAttribute('data-mode', mode);
@@ -474,7 +451,6 @@ data: {"done":true,"model":"Luna"}<button class="code-copy-btn" data-copy><i cla
       applyTheme(root.getAttribute('data-mode') === 'dark' ? 'light' : 'dark');
     });
 
-    // Copy
     document.querySelectorAll('[data-copy]').forEach(btn => {
       btn.addEventListener('click', async e => {
         e.preventDefault(); e.stopPropagation();
@@ -492,7 +468,107 @@ data: {"done":true,"model":"Luna"}<button class="code-copy-btn" data-copy><i cla
       });
     });
 
-    // Playground
+    /* API KEY MANAGER */
+    const keyList = $('#keyList');
+    const keyMsg = $('#keyMsg');
+    const keyLimitInfo = $('#keyLimitInfo');
+
+    function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+    function setKeyMsg(text, cls) { keyMsg.textContent = text || ''; keyMsg.className = 'key-msg' + (cls ? ' ' + cls : ''); }
+
+    async function loadKeys() {
+      setKeyMsg('');
+      keyList.innerHTML = '<div class="key-empty">Loading…</div>';
+      try {
+        const r = await fetch('/api/keys', { credentials: 'same-origin', cache: 'no-store' });
+        if (r.status === 401) {
+          keyLimitInfo.textContent = 'Sign in to the main app first to manage API keys.';
+          keyList.innerHTML = '<div class="key-empty">Not signed in.</div>';
+          return;
+        }
+        const d = await r.json();
+        if (!d.ok) throw new Error(d.error || 'Failed');
+        keyLimitInfo.innerHTML = `<strong>${d.active}/${d.limit}</strong> active keys · ${escapeHtml(d.tier)} plan`;
+        if (!d.keys.length) {
+          keyList.innerHTML = '<div class="key-empty">No keys yet. Generate one above.</div>';
+          return;
+        }
+        keyList.innerHTML = d.keys.map(k => `
+          <div class="key-item ${k.revoked ? 'revoked' : ''}" data-id="${escapeHtml(k.id)}">
+            <div class="key-item-name">${escapeHtml(k.name)}${k.revoked ? ' <span class="badge neutral">revoked</span>' : ''}</div>
+            <div class="key-item-value" title="${escapeHtml(k.key)}">${escapeHtml(k.key)}</div>
+            <div class="key-item-actions">
+              <button class="btn btn-secondary small" data-act="copy"><i class="ri-file-copy-line"></i></button>
+              <button class="btn btn-secondary small" data-act="rename"><i class="ri-edit-line"></i></button>
+              ${k.revoked ? '' : '<button class="btn btn-danger small" data-act="revoke">Revoke</button>'}
+              <button class="btn btn-danger small" data-act="delete"><i class="ri-delete-bin-line"></i></button>
+            </div>
+            <div class="key-item-meta">
+              <span>Created: ${new Date(k.created * 1000).toLocaleString()}</span>
+              ${k.last_used ? `<span>Last used: ${new Date(k.last_used * 1000).toLocaleString()}</span>` : '<span>Never used</span>'}
+            </div>
+          </div>
+        `).join('');
+
+        keyList.querySelectorAll('.key-item').forEach(item => {
+          const id = item.dataset.id;
+          const key = d.keys.find(x => x.id === id);
+          item.querySelectorAll('[data-act]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+              const act = btn.dataset.act;
+              if (act === 'copy') {
+                try { await navigator.clipboard.writeText(key.key); setKeyMsg('Key copied to clipboard.', 'ok'); }
+                catch { setKeyMsg('Could not copy.', 'err'); }
+                setTimeout(() => setKeyMsg(''), 2000);
+              } else if (act === 'rename') {
+                const n = prompt('Rename key:', key.name);
+                if (!n) return;
+                const rr = await fetch('/api/keys/rename', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, name: n }) });
+                const dd = await rr.json().catch(() => ({}));
+                if (dd.ok) { setKeyMsg('Renamed.', 'ok'); loadKeys(); }
+                else setKeyMsg(dd.error || 'Failed', 'err');
+              } else if (act === 'revoke') {
+                if (!confirm('Revoke "' + key.name + '"? This cannot be undone.')) return;
+                const rr = await fetch('/api/keys/revoke', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+                const dd = await rr.json().catch(() => ({}));
+                if (dd.ok) { setKeyMsg('Revoked.', 'ok'); loadKeys(); }
+                else setKeyMsg(dd.error || 'Failed', 'err');
+              } else if (act === 'delete') {
+                if (!confirm('Delete "' + key.name + '" permanently?')) return;
+                const rr = await fetch('/api/keys/delete', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+                const dd = await rr.json().catch(() => ({}));
+                if (dd.ok) { setKeyMsg('Deleted.', 'ok'); loadKeys(); }
+                else setKeyMsg(dd.error || 'Failed', 'err');
+              }
+            });
+          });
+        });
+      } catch (e) {
+        keyList.innerHTML = '<div class="key-empty">Failed to load keys.</div>';
+      }
+    }
+
+    $('#createKeyBtn')?.addEventListener('click', async () => {
+      const name = $('#newKeyName').value.trim();
+      setKeyMsg('Generating…');
+      const r = await fetch('/api/keys', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+      const d = await r.json().catch(() => ({}));
+      if (d.ok) {
+        $('#newKeyName').value = '';
+        setKeyMsg('Key created. Copy it now — you can always re-copy it from the list.', 'ok');
+        loadKeys();
+      } else {
+        setKeyMsg(d.error || 'Failed to create key', 'err');
+      }
+    });
+    $('#refreshKeysBtn')?.addEventListener('click', loadKeys);
+    loadKeys();
+
+    /* PLAYGROUND */
     const pgApiKey = $('#pgApiKey'), pgModel = $('#pgModel'), pgTemp = $('#pgTemp');
     const pgSystem = $('#pgSystem'), pgMessage = $('#pgMessage'), pgStream = $('#pgStream');
     const pgSendBtn = $('#pgSendBtn'), pgResetBtn = $('#pgResetBtn');
@@ -505,14 +581,9 @@ data: {"done":true,"model":"Luna"}<button class="code-copy-btn" data-copy><i cla
     }
 
     $('#pgResetBtn')?.addEventListener('click', () => {
-      pgApiKey.value = '';
-      pgModel.value = 'mirox-luna-1.2';
-      pgTemp.value = '0.7';
-      pgSystem.value = '';
-      pgMessage.value = 'Hello! What can you do?';
-      pgStream.checked = false;
-      pgResult.style.display = 'none';
-      pgOutput.textContent = '';
+      pgApiKey.value = ''; pgModel.value = 'mirox-luna-1.2'; pgTemp.value = '0.7';
+      pgSystem.value = ''; pgMessage.value = 'Hello! What can you do?'; pgStream.checked = false;
+      pgResult.style.display = 'none'; pgOutput.textContent = '';
     });
 
     $('#pgSendBtn')?.addEventListener('click', async () => {
@@ -523,19 +594,15 @@ data: {"done":true,"model":"Luna"}<button class="code-copy-btn" data-copy><i cla
       const system = pgSystem.value.trim();
       const stream = pgStream.checked;
       const apiKey = pgApiKey.value.trim();
-
       const messages = [];
       if (system) messages.push({ role: 'system', content: system });
       messages.push({ role: 'user', content: message });
-
       const headers = { 'Content-Type': 'application/json' };
       if (apiKey) headers.Authorization = 'Bearer ' + apiKey;
-
       pgResult.style.display = 'block';
       pgOutput.textContent = '';
       pgSendBtn.disabled = true;
       setStatus('pending', stream ? 'Streaming' : 'Waiting');
-
       const t0 = performance.now();
       try {
         if (stream) {
@@ -557,7 +624,7 @@ data: {"done":true,"model":"Luna"}<button class="code-copy-btn" data-copy><i cla
                 const o = JSON.parse(pl);
                 if (o.d) { full += o.d; pgOutput.textContent = full; pgOutput.scrollTop = pgOutput.scrollHeight; }
                 if (o.error) throw new Error(o.error);
-                if (o.done) { pgOutput.textContent += '\n\n— done in ' + Math.round(performance.now()-t0) + 'ms · model: ' + (o.model || 'Luna'); setStatus('ok', 'OK'); }
+                if (o.done) { pgOutput.textContent += '\n\n— done in ' + Math.round(performance.now()-t0) + 'ms'; setStatus('ok', 'OK'); }
               } catch {}
             }
           }
@@ -566,7 +633,7 @@ data: {"done":true,"model":"Luna"}<button class="code-copy-btn" data-copy><i cla
           const data = await res.json();
           const ms = Math.round(performance.now() - t0);
           if (res.ok && data.ok !== false) {
-            pgOutput.textContent = (data.reply || '(empty)') + '\n\n— metadata —\n' + JSON.stringify({ model: data.model, ms, daily_remaining: data.daily_remaining }, null, 2);
+            pgOutput.textContent = (data.reply || '(empty)') + '\n\n— metadata —\n' + JSON.stringify({ ms }, null, 2);
             setStatus('ok', 'OK');
           } else { pgOutput.textContent = JSON.stringify(data, null, 2); setStatus('err', data.error || ('HTTP ' + res.status)); }
         }
