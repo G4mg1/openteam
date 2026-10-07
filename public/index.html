@@ -236,6 +236,16 @@
         </div>
 
         <div class="bridge-side-section">
+          <h4>Sudo</h4>
+          <div class="bw-status-box" id="bwSudoBox">
+            <i class="ri-shield-keyhole-line"></i>
+            <span id="bwSudoStatus">No password saved</span>
+          </div>
+          <p class="bw-hint" style="margin-top:4px;">When a task needs root, Mirox will ask you here. Passwords are kept in memory only — never written to disk.</p>
+          <button id="bwSudoForgetBtn" class="modal-btn" type="button" style="width:100%;margin-top:6px;"><i class="ri-forbid-2-line"></i> Forget password</button>
+        </div>
+
+        <div class="bridge-side-section">
           <h4>Quick actions</h4>
           <button class="bw-quick" data-q="List my home directory and tell me what's in it.">List home dir</button>
           <button class="bw-quick" data-q="Build a snake game in my home folder as a folder called snake-game with index.html and game.js">Snake game</button>
@@ -246,6 +256,39 @@
         </div>
       </aside>
     </div>
+  </div>
+</div>
+
+<!-- SUDO PASSWORD MODAL -->
+<div id="sudoModal" class="question-overlay">
+  <div class="question-panel sudo-panel">
+    <div class="question-top">
+      <div class="question-badge sudo-badge"><i class="ri-shield-keyhole-line"></i></div>
+      <div class="question-heading">
+        <div class="question-title">Password required</div>
+        <div class="question-sub" id="sudoReason">Mirox needs root access to continue.</div>
+      </div>
+      <button class="icon-btn" id="sudoCloseBtn" type="button" title="Skip"><i class="ri-close-line"></i></button>
+    </div>
+
+    <p class="question-text" id="sudoCommandText" style="font-family:'SF Mono',monospace;font-size:13px;background:var(--panel-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;word-break:break-all;"></p>
+
+    <div class="sudo-input-wrap">
+      <input type="password" id="sudoPasswordInput" class="modal-input" placeholder="Your sudo password" autocomplete="current-password" spellcheck="false">
+      <button class="icon-btn sudo-reveal" type="button" id="sudoRevealBtn" title="Show / hide"><i class="ri-eye-line"></i></button>
+    </div>
+
+    <label class="sudo-remember">
+      <input type="checkbox" id="sudoRememberChk">
+      <span>Remember for this session (kept in memory only)</span>
+    </label>
+
+    <div class="question-footer" style="margin-top:14px;">
+      <button id="sudoSkipBtn" class="modal-btn" type="button"><i class="ri-skip-forward-line"></i> Skip</button>
+      <button id="sudoSubmitBtn" class="modal-btn primary" type="button">Run with sudo <i class="ri-arrow-right-line"></i></button>
+    </div>
+
+    <div id="sudoHint" class="sudo-hint"></div>
   </div>
 </div>
 
