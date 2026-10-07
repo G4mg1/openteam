@@ -1,4 +1,4 @@
-/* MiroxAI — Styles v90 */
+/* MiroxAI — Styles v91 */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
@@ -87,34 +87,11 @@ ul { list-style: none; } img { max-width: 100%; display: block; } a { color: inh
 .bridge-hint { font-size: 12px; color: var(--text-muted); line-height: 1.55; }
 
 .sidebar-images-panel { padding: 2px; }
-.sidebar-image-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 6px;
-}
-.sidebar-image-item {
-  border-radius: 10px;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  background: var(--panel-2);
-  cursor: zoom-in;
-  transition: transform .15s, border-color .15s;
-  position: relative;
-  aspect-ratio: 1 / 1;
-}
+.sidebar-image-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.sidebar-image-item { border-radius: 10px; overflow: hidden; border: 1px solid var(--border); background: var(--panel-2); cursor: zoom-in; transition: transform .15s, border-color .15s; position: relative; aspect-ratio: 1 / 1; }
 .sidebar-image-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .sidebar-image-item:hover { transform: translateY(-2px); border-color: var(--accent); }
-.sidebar-empty {
-  font-size: 12.5px;
-  color: var(--text-faint);
-  padding: 24px 8px;
-  text-align: center;
-  line-height: 1.6;
-  grid-column: 1 / -1;
-  border: 1px dashed var(--border);
-  border-radius: var(--radius);
-  background: var(--panel-2);
-}
+.sidebar-empty { font-size: 12.5px; color: var(--text-faint); padding: 24px 8px; text-align: center; line-height: 1.6; grid-column: 1 / -1; border: 1px dashed var(--border); border-radius: var(--radius); background: var(--panel-2); }
 
 .sidebar-footer { padding: 12px; border-top: 1px solid var(--border); flex-shrink: 0; }
 .user-chip { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--radius); cursor: pointer; }
@@ -351,11 +328,23 @@ ul { list-style: none; } img { max-width: 100%; display: block; } a { color: inh
 .bridge-side-section h4 { font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-faint); letter-spacing: .06em; }
 .bw-label { font-size: 11px; font-weight: 600; color: var(--text-faint); text-transform: uppercase; margin-top: 4px; letter-spacing: .04em; }
 .bw-status-box { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: var(--radius); background: var(--panel-2); border: 1px solid var(--border); font-size: 13px; }
+.bw-status-box i { font-size: 16px; color: var(--accent); }
 .bw-hint { font-size: 11.5px; color: var(--text-muted); line-height: 1.5; margin-top: 8px; word-break: break-word; white-space: pre-line; }
 .bw-hint.err { color: var(--danger); }
 .bw-hint.ok { color: var(--success); }
 .bw-quick { display: block; width: 100%; text-align: left; padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--panel-2); font-size: 12.5px; color: var(--text-muted); margin-bottom: 6px; transition: all .15s; }
 .bw-quick:hover { background: var(--panel-3); color: var(--text); border-color: var(--accent); }
+
+/* ==================== SUDO MODAL ==================== */
+.sudo-panel { border-top: 3px solid #b8802f; }
+.sudo-badge { background: rgba(184,128,47,.12); color: #b8802f; }
+.sudo-input-wrap { position: relative; display: flex; align-items: center; }
+.sudo-input-wrap .modal-input { padding-right: 46px; font-family: 'SF Mono', monospace; }
+.sudo-reveal { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); }
+.sudo-remember { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-muted); margin-top: 12px; cursor: pointer; user-select: none; }
+.sudo-remember input { width: auto; }
+.sudo-hint { font-size: 12px; min-height: 16px; margin-top: 10px; }
+.sudo-hint.err { color: var(--danger); font-weight: 600; }
 
 .question-overlay { position: fixed; inset: 0; z-index: 5000; background: rgba(20,15,10,.55); display: none; align-items: center; justify-content: center; padding: 20px; padding-top: calc(20px + var(--safe-top)); padding-bottom: calc(20px + var(--safe-bottom)); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
 .question-overlay.open { display: flex; }
