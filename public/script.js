@@ -30,9 +30,10 @@
   const BRIDGE_KEY = 'miroxai_bridge_v23';
 
   const MAX_BRIDGE_QUESTIONS = 6;
-  const MAX_BRIDGE_ITER = 80;
+  const MAX_BRIDGE_ITER = 100;
   const MAX_AUTO_CONTINUES = 40;
-  const MAX_DUP_COMMANDS = 4;      // allow rewrites of the same path
+  const MAX_DUP_COMMANDS = 6;
+  const MAX_NO_ACTION_STREAK = 2;    // pause after this many text-only replies
   const AUTO_CONTINUE_DELAY_MS = 2000;
   const MAX_IMAGE_DIM = 1280;
 
@@ -42,11 +43,10 @@
   let __bridge = { name: 'My Laptop', model: 'mirox-luna-1.2', port: 8765, connected: false, baseUrl: null, env: null };
   let bridgeConversation = [], bridgeRunning = false, bridgeQuestionCount = 0, bridgeProgress = 0;
   let bridgeTurn = null, bridgeAutoTimer = null, bridgeTaskComplete = true;
-  let bridgeWaitingForUser = false;   // true when AI paused to ask something
+  let bridgeWaitingForUser = false;
   let __bqResolver = null, __bqSelected = null;
   let forceSearchNext = false;
 
-  // Sudo handling — memory only
   let __sudoPassword = '';
   let __sudoRemember = false;
   let __sudoResolver = null;
@@ -111,15 +111,11 @@
     applyAppearance(prefs);
   }
 
-  /* ---------- Regular-chat <bridge-*> cleaner ---------- */
   function sanitizeRegularChat(text) {
     if (!text) return '';
     let t = String(text);
-    // Strip bridge tag pairs
     t = t.replace(/<bridge-(write|append|exec|read|list|delete|move|copy|sudo|ask|plan|progress|email|http|clipboard|screenshot|git|pkgs|sysinfo|syscheck|processes|designs|design)[^>]*>[\s\S]*?<\/bridge-\1>/g, '');
-    // Strip self-closing bridge tags
     t = t.replace(/<bridge-[a-z]+\s+[^>]*\/>/g, '');
-    // Strip bare <write>...</write> that come from stray bridge syntax
     t = t.replace(/<\/?write[^>]*>/gi, '');
     t = t.replace(/<\/?bridge-write[^>]*>/gi, '');
     return t.trim();
@@ -396,7 +392,6 @@
     requestAnimationFrame(() => wrap.classList.add('in'));
   }
 
-  /* ---------- Regular chat send ---------- */
   async function sendToAPI(text, files, forceSearch) {
     isReplying = true; updateSendButtonState();
     const stopBtn = $('#stopBtn'); if (stopBtn) stopBtn.style.display = 'grid';
@@ -404,7 +399,6 @@
     const history = convo ? convo.messages.slice(-14).map(m => ({ role: m.role, content: m.content })) : [];
     const model = __model || 'mirox-luna-1.2';
 
-    // Tip: if user is asking to build a project in regular chat, hint at Bridge.
     const buildIntent = /\b(build|create|make|write|scaffold|generate|develop|code)\b.*\b(app|site|website|game|project|page|landing|dashboard|api|script|bot|tool|todo|chat|portfolio)\b/i.test(text);
     if (buildIntent) {
       setTimeout(() => {
@@ -446,39 +440,10 @@
           if (!pl || pl === '[DONE]') continue;
           try {
             const o = JSON.parse(pl);
-
-            if (o.search) {
-              bubble.classList.remove('thinking');
-              bubble.innerHTML = buildSearchBlockHTML(o.search.query || '');
-              searchBlock = bubble.querySelector('.search-block');
-              scrollToBottom();
-              continue;
-            }
-            if (o.overview) {
-              if (!searchBlock) {
-                bubble.classList.remove('thinking');
-                bubble.innerHTML = buildSearchBlockHTML(o.overview.heading || '');
-                searchBlock = bubble.querySelector('.search-block');
-              }
-              setSearchOverview(searchBlock, o.overview);
-              scrollToBottom();
-              continue;
-            }
-            if (o.source) {
-              if (!searchBlock) {
-                bubble.classList.remove('thinking');
-                bubble.innerHTML = buildSearchBlockHTML('');
-                searchBlock = bubble.querySelector('.search-block');
-              }
-              appendSearchSource(searchBlock, o.source);
-              scrollToBottom();
-              continue;
-            }
-            if (o.search_done) {
-              finalizeSearchBlock(searchBlock, o.count || 0);
-              scrollToBottom();
-              continue;
-            }
+            if (o.search) { bubble.classList.remove('thinking'); bubble.innerHTML = buildSearchBlockHTML(o.search.query || ''); searchBlock = bubble.querySelector('.search-block'); scrollToBottom(); continue; }
+            if (o.overview) { if (!searchBlock) { bubble.classList.remove('thinking'); bubble.innerHTML = buildSearchBlockHTML(o.overview.heading || ''); searchBlock = bubble.querySelector('.search-block'); } setSearchOverview(searchBlock, o.overview); scrollToBottom(); continue; }
+            if (o.source) { if (!searchBlock) { bubble.classList.remove('thinking'); bubble.innerHTML = buildSearchBlockHTML(''); searchBlock = bubble.querySelector('.search-block'); } appendSearchSource(searchBlock, o.source); scrollToBottom(); continue; }
+            if (o.search_done) { finalizeSearchBlock(searchBlock, o.count || 0); scrollToBottom(); continue; }
             if (o.img) {
               generatedImage = o.img;
               bubble.classList.remove('thinking');
@@ -494,11 +459,7 @@
                 bubble.classList.remove('thinking');
                 if (!generatedImage) {
                   if (searchBlock) {
-                    if (!bubble.querySelector('.bubble-text')) {
-                      const bt = document.createElement('div');
-                      bt.className = 'bubble-text';
-                      bubble.appendChild(bt);
-                    }
+                    if (!bubble.querySelector('.bubble-text')) { const bt = document.createElement('div'); bt.className = 'bubble-text'; bubble.appendChild(bt); }
                     bubbleText = bubble.querySelector('.bubble-text');
                   } else {
                     bubble.innerHTML = '<div class="bubble-text"></div>';
@@ -766,9 +727,7 @@
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok && data.image) {
         if (result) result.innerHTML = `<img src="${data.image}" alt="${escapeHtml(prompt)}">`;
-        refreshUsage();
-        renderImageHistory();
-        renderSidebarImageHistory();
+        refreshUsage(); renderImageHistory(); renderSidebarImageHistory();
       }
       else if (result) result.innerHTML = `<div style="color:#dc2626;font-size:13px;">Failed: ${escapeHtml(data.error?.message || 'Unknown')}</div>`;
     } catch (e) { if (result) result.innerHTML = `<div style="color:#dc2626;font-size:13px;">Error: ${escapeHtml(e.message)}</div>`; }
@@ -797,13 +756,8 @@
   function renderSudoStatus() {
     const s = $('#bwSudoStatus');
     if (!s) return;
-    if (__sudoPassword) {
-      s.textContent = __sudoRemember ? 'Password saved (session)' : 'Password set (temporary)';
-      s.style.color = 'var(--success)';
-    } else {
-      s.textContent = 'No password saved';
-      s.style.color = '';
-    }
+    if (__sudoPassword) { s.textContent = __sudoRemember ? 'Password saved (session)' : 'Password set (temporary)'; s.style.color = 'var(--success)'; }
+    else { s.textContent = 'No password saved'; s.style.color = ''; }
   }
 
   function showSudoModal(command) {
@@ -811,10 +765,8 @@
       __sudoResolver = resolve;
       __sudoPendingCmd = command;
       const modal = $('#sudoModal'); if (!modal) { resolve(null); return; }
-      const cmdEl = $('#sudoCommandText');
-      if (cmdEl) cmdEl.textContent = command || '';
-      const pwd = $('#sudoPasswordInput');
-      if (pwd) { pwd.value = ''; pwd.type = 'password'; }
+      const cmdEl = $('#sudoCommandText'); if (cmdEl) cmdEl.textContent = command || '';
+      const pwd = $('#sudoPasswordInput'); if (pwd) { pwd.value = ''; pwd.type = 'password'; }
       const rev = $('#sudoRevealBtn'); if (rev) rev.innerHTML = '<i class="ri-eye-line"></i>';
       const hint = $('#sudoHint'); if (hint) { hint.textContent = ''; hint.className = 'sudo-hint'; }
       modal.classList.add('open');
@@ -827,22 +779,12 @@
     const remember = !!$('#sudoRememberChk')?.checked;
     const hint = $('#sudoHint');
     if (!pwd) { if (hint) { hint.textContent = 'Enter your password to continue.'; hint.className = 'sudo-hint err'; } return; }
-    if (remember) { __sudoPassword = pwd; __sudoRemember = true; }
-    else { __sudoPassword = pwd; __sudoRemember = false; }
-    closeSudoModal();
-    renderSudoStatus();
+    __sudoPassword = pwd; __sudoRemember = !!remember;
+    closeSudoModal(); renderSudoStatus();
     if (__sudoResolver) { __sudoResolver({ password: pwd, remember }); __sudoResolver = null; }
   }
-  function skipSudo() {
-    closeSudoModal();
-    if (__sudoResolver) { __sudoResolver(null); __sudoResolver = null; }
-  }
-  function forgetSudo() {
-    __sudoPassword = '';
-    __sudoRemember = false;
-    renderSudoStatus();
-    toast('Sudo password forgotten.');
-  }
+  function skipSudo() { closeSudoModal(); if (__sudoResolver) { __sudoResolver(null); __sudoResolver = null; } }
+  function forgetSudo() { __sudoPassword = ''; __sudoRemember = false; renderSudoStatus(); toast('Sudo password forgotten.'); }
   async function askSudo(command) {
     if (__sudoPassword) return { password: __sudoPassword, remember: __sudoRemember, reused: true };
     return await showSudoModal(command);
@@ -1044,7 +986,6 @@
     if (text) setProgressText(text);
   }
 
-  /* ---------- Tag extraction ---------- */
   function extractBridgeCommands(text) {
     const cmds = []; let m;
     const add = (type, m, extra) => cmds.push(Object.assign({ type, index: m.index }, extra));
@@ -1096,11 +1037,7 @@
     const re = /<design\s+id="(\d+)"(?:\s+name="([^"]*)")?\s*>([\s\S]*?)<\/design>/g;
     let mm;
     while ((mm = re.exec(block)) !== null) {
-      designs.push({
-        id: parseInt(mm[1], 10),
-        name: (mm[2] || ('Design ' + mm[1])).trim(),
-        html: mm[3].trim(),
-      });
+      designs.push({ id: parseInt(mm[1], 10), name: (mm[2] || ('Design ' + mm[1])).trim(), html: mm[3].trim() });
     }
     return designs.length ? designs : null;
   }
@@ -1149,9 +1086,24 @@
     const t = String(text || '').trim();
     if (!t) return false;
     if (/(?:^|\n)\s*asking\(\s*\)/i.test(t)) return true;
-    // last non-empty line ends with '?'
-    const lastLine = t.split('\n').map(l => l.trim()).filter(Boolean).slice(-1)[0] || '';
-    return lastLine.endsWith('?');
+    // Strip the trailing "DONE" so it doesn't skew the check
+    const stripped = t.replace(/\bDONE\b/i, '').trim();
+    if (!stripped) return false;
+
+    // Any question mark is enough
+    if (stripped.includes('?')) return true;
+
+    // Asking-for-input patterns
+    const askingPatterns = [
+      /^\s*(?:what|which|who|where|when|why|how)\b/i,
+      /^\s*(?:tell me|send me|give me|provide|specify|clarify|confirm)\b/i,
+      /^\s*(?:i need|i want to know|please)\b.*\b(?:provide|specify|tell|send|confirm|clarify|choose|pick)\b/i,
+      /\b(?:if you mean|do you mean|did you mean|are you referring)\b/i,
+      /\b(?:please (?:tell|provide|specify|clarify|confirm|send|share|pick|choose))\b/i,
+      /\b(?:could you|can you|would you)\b.*\b(?:tell|provide|specify|clarify|confirm|share|pick|choose)\b/i,
+    ];
+    for (const p of askingPatterns) if (p.test(stripped)) return true;
+    return false;
   }
   function isEnvQuestion(question) {
     const q = String(question || '').toLowerCase();
@@ -1164,7 +1116,22 @@
   function buildEnvBlockString() {
     const env = __bridge.env || {};
     const allowed = Array.isArray(env.allowed_dirs) && env.allowed_dirs.length ? env.allowed_dirs.join(', ') : '(none)';
-    return [`[Bridge environment]`, `home=${env.home || '(unknown)'}`, `cwd=${env.cwd || '(unknown)'}`, `platform=${env.platform || '(unknown)'}`, `allowed_dirs=${allowed}`].join('\n');
+    const home = env.home || '(unknown)';
+    const cwd = env.cwd || home;
+    const user = env.user || (home ? home.split('/').filter(Boolean).pop() : '(unknown)');
+    return [
+      `[Bridge environment]`,
+      `user=${user}`,
+      `home=${home}`,
+      `cwd=${cwd}`,
+      `platform=${env.platform || '(unknown)'}`,
+      `allowed_dirs=${allowed}`,
+      ``,
+      `IMPORTANT RULES:`,
+      `- When asked for the current directory, respond with the exact "home" value above. NEVER say ".", "~", "here", or leave it blank.`,
+      `- Create all projects inside <home>/<project-name>/ — never at repo root or in the current working directory.`,
+      `- After finishing, list every file you created with its absolute path.`,
+    ].join('\n');
   }
 
   async function executeBridgeCommand(cmd) {
@@ -1236,7 +1203,7 @@
   function cmdSignature(cmd) {
     const t = cmd.type;
     if (t === 'exec' || t === 'sudo') return t + ':' + cmd.command.trim();
-    if (t === 'write') return 'write:' + cmd.path;                       // size not in sig → rewrites allowed
+    if (t === 'write') return 'write:' + cmd.path;
     if (t === 'append') return 'append:' + cmd.path + ':' + (cmd.content || '').length;
     if (t === 'delete') return 'delete:' + cmd.path;
     if (t === 'move') return 'move:' + cmd.from + '→' + cmd.to;
@@ -1347,6 +1314,61 @@
     if (__plannerResolver) { __plannerResolver({ id: 0, name: 'Let Mirox decide' }); __plannerResolver = null; }
   }
 
+  /* ---------- Verification table ---------- */
+  async function buildVerificationTable(paths) {
+    const rows = [];
+    for (const p of paths) {
+      let exists = false, realPath = p, size = 0;
+      try {
+        const res = await bridgeCall('/read', { path: p });
+        if (res && res.ok) { exists = true; realPath = res.path || p; size = (res.content || '').length; }
+      } catch {}
+      rows.push({ path: p, exists, realPath, size });
+    }
+    return rows;
+  }
+  function renderVerificationTable(rows) {
+    const container = $('#bridgeMessages'); if (!container) return;
+    const el = document.createElement('div'); el.className = 'bridge-msg ai';
+    const okCount = rows.filter(r => r.exists).length;
+    const allOk = okCount === rows.length;
+    const header = allOk
+      ? `<i class="ri-checkbox-circle-fill"></i> Project verified · ${okCount}/${rows.length} files exist`
+      : `<i class="ri-error-warning-fill"></i> Verification · ${okCount}/${rows.length} files found`;
+    const trs = rows.map((r, i) => `
+      <tr class="${r.exists ? 'ok' : 'err'}">
+        <td>${i + 1}</td>
+        <td><code>${escapeHtml(r.realPath)}</code></td>
+        <td>${r.exists ? '<span class="vt-ok">✓ exists</span>' : '<span class="vt-err">✗ missing</span>'}</td>
+        <td>${r.exists ? r.size + ' B' : '—'}</td>
+      </tr>
+    `).join('');
+    el.innerHTML = `
+      <div class="verify-card ${allOk ? 'ok' : 'err'}">
+        <div class="verify-header">${header}</div>
+        <table class="verify-table">
+          <thead><tr><th>#</th><th>File path</th><th>Status</th><th>Size</th></tr></thead>
+          <tbody>${trs}</tbody>
+        </table>
+      </div>`;
+    container.appendChild(el); scrollBridgeBottom();
+  }
+  function computeProjectRoot(paths, home) {
+    if (!paths.length) return home || '';
+    // Take the longest common prefix
+    const norm = paths.map(p => String(p).replace(/\\/g, '/'));
+    let prefix = norm[0].split('/');
+    for (const p of norm.slice(1)) {
+      const parts = p.split('/');
+      let i = 0;
+      while (i < prefix.length && i < parts.length && prefix[i] === parts[i]) i++;
+      prefix = prefix.slice(0, i);
+    }
+    const s = prefix.join('/');
+    // Trim to a folder (no dot)
+    return s.endsWith('/') ? s.slice(0, -1) : s;
+  }
+
   /* ---------- Bridge loop ---------- */
   async function fetchBridgeReply(history) {
     const env = __bridge.env || {};
@@ -1395,12 +1417,16 @@
       bridgeQuestionCount = 0;
       bridgeTaskComplete = false;
       bridgeWaitingForUser = false;
-      bridgeTurn = { runs: 0, plannedFiles: new Set(), writtenFiles: new Set(), commandLog: new Map(), failedSignatures: new Set(), commandsRun: 0 };
+      bridgeTurn = { runs: 0, plannedFiles: new Set(), writtenFiles: new Set(), commandLog: new Map(), failedSignatures: new Set(), commandsRun: 0, noActionStreak: 0 };
       bridgeProgress = 0;
       updateBridgeProgress(2, 'Starting…');
       addBridgeUserMsg(userText);
-      bridgeConversation.push({ role: 'user', content: userText });
-    } else setProgressText('Continuing…');
+      // Inject strong reminder to use the real home path and structure projects
+      const starterText = `[System] When asked for a file or directory path, respond ONLY with the exact absolute path from home=. NEVER use ".", "~", "here", or placeholders. Create all projects inside <home>/<project-name>/.\n\n${userText}`;
+      bridgeConversation.push({ role: 'user', content: starterText });
+    } else {
+      setProgressText('Continuing…');
+    }
 
     let iter = 0, autoContinues = 0;
     try {
@@ -1424,7 +1450,7 @@
           break;
         }
 
-        // ---------- Mirox Planner (designs) ----------
+        // ---------- Mirox Planner ----------
         const designs = extractBridgeDesigns(reply);
         if (designs && designs.length) {
           const narration0 = getNarrationText(reply.replace(/<bridge-designs>[\s\S]*?<\/bridge-designs>/g, ''));
@@ -1432,8 +1458,6 @@
           addBridgeSystemMsg('Mirox Planner: showing 3 designs to choose from…');
           bridgeConversation.push({ role: 'assistant', content: reply });
           if (bridgeConversation.length > 50) bridgeConversation = bridgeConversation.slice(-50);
-
-          // Pause the loop and let the user pick.
           bridgeWaitingForUser = true;
           setProgressText('Waiting for you to pick a design…');
           const choice = await showPlannerModalPromise(designs);
@@ -1446,11 +1470,14 @@
           continue;
         }
 
-        // ---------- Free-form question pause ----------
+        // ---------- Parse everything ----------
         const cmdsInReply = extractBridgeCommands(reply);
         const questionsInReply = extractBridgeQuestions(reply);
+        const plan = extractBridgePlan(reply);
+        const prog = extractProgressTag(reply);
         const saidDone = /\bDONE\b/i.test(reply);
 
+        // ---------- Free-form question pause (BEFORE any auto-continue) ----------
         if (!cmdsInReply.length && !questionsInReply.length && !saidDone && looksLikeFreeQuestion(reply)) {
           const narrationQ = getNarrationText(reply);
           if (narrationQ) addBridgeAiMsg(narrationQ);
@@ -1461,18 +1488,35 @@
           bridgeTaskComplete = true;
           setProgressText('Waiting for your reply…');
           updateBridgeSendBtn();
-          return;  // do not auto-continue
+          return; // do not auto-continue
+        }
+
+        // ---------- No-action streak detection ----------
+        const hasActions = cmdsInReply.length > 0 || !!plan || !!prog;
+        if (!hasActions && !saidDone) {
+          bridgeTurn.noActionStreak = (bridgeTurn.noActionStreak || 0) + 1;
+          if (bridgeTurn.noActionStreak >= MAX_NO_ACTION_STREAK) {
+            const narrationS = getNarrationText(reply);
+            if (narrationS) addBridgeAiMsg(narrationS);
+            addBridgeSystemMsg('Mirox seems stuck without an action — type below to guide it.');
+            bridgeConversation.push({ role: 'assistant', content: reply });
+            bridgeWaitingForUser = true;
+            bridgeTaskComplete = true;
+            setProgressText('Waiting for your reply…');
+            updateBridgeSendBtn();
+            return;
+          }
+        } else {
+          bridgeTurn.noActionStreak = 0;
         }
 
         // ---------- Progress ----------
-        const prog = extractProgressTag(reply);
         const totalPlanned = bridgeTurn.plannedFiles.size;
         const doneCount = bridgeTurn.writtenFiles.size;
         if (totalPlanned > 0) { updateBridgeProgress(2 + Math.round((doneCount / totalPlanned) * 93), `Files: ${doneCount} / ${totalPlanned}`); }
         else if (prog && prog.total > 0) { updateBridgeProgress(Math.min(95, 2 + Math.round((prog.step / prog.total) * 93)), prog.label || `Step ${prog.step} of ${prog.total}`); }
         else { updateBridgeProgress(Math.min(90, 5 + iter * 3), `Working… (step ${iter})`); }
 
-        const plan = extractBridgePlan(reply);
         if (plan && plan.length) { for (const f of plan) bridgeTurn.plannedFiles.add(f); addBridgeSystemMsg(`Planned ${plan.length} file(s)`); }
 
         const narration = getNarrationText(reply);
@@ -1537,12 +1581,27 @@
           continue;
         }
 
-        // ---------- DONE ----------
+        // ---------- DONE with verification ----------
         const hasPlan = bridgeTurn.plannedFiles.size > 0;
         const allFilesWritten = hasPlan && bridgeTurn.writtenFiles.size >= bridgeTurn.plannedFiles.size;
+
         if (saidDone && (allFilesWritten || !hasPlan)) {
-          updateBridgeProgress(100, 'Complete');
-          addBridgeSuccessMsg('Task complete');
+          updateBridgeProgress(99, 'Verifying files…');
+          const toVerify = [...bridgeTurn.writtenFiles];
+          if (toVerify.length) {
+            addBridgeSystemMsg('Verifying files on disk…');
+            const rows = await buildVerificationTable(toVerify);
+            renderVerificationTable(rows);
+            const allOk = rows.every(r => r.exists);
+            const home = __bridge.env?.home || '';
+            const projRoot = computeProjectRoot(rows.map(r => r.realPath), home);
+            updateBridgeProgress(100, allOk ? 'Complete' : 'Complete with warnings');
+            if (allOk) addBridgeSuccessMsg(`Project complete · ${rows.length} file${rows.length === 1 ? '' : 's'} · ${projRoot || home}`);
+            else addBridgeSuccessMsg(`Project finished · ${rows.filter(r => r.exists).length}/${rows.length} files verified`);
+          } else {
+            updateBridgeProgress(100, 'Complete');
+            addBridgeSuccessMsg('Task complete');
+          }
           bridgeTaskComplete = true;
           break;
         }
@@ -1553,16 +1612,26 @@
           continue;
         }
 
-        // ---------- Otherwise auto-continue ----------
+        // ---------- Otherwise auto-continue ONLY when there was an action ----------
         if (!saidDone) {
-          if (autoContinues < MAX_AUTO_CONTINUES) {
-            autoContinues++;
-            await autoContinueAfterDelay('Auto-continuing');
-            bridgeConversation.push({ role: 'user', content: `[System] Continue. Output the next actions now.` });
-            continue;
+          if (hasActions) {
+            // AI made progress but isn't done → continue normally
+            if (autoContinues < MAX_AUTO_CONTINUES) {
+              autoContinues++;
+              await autoContinueAfterDelay('Auto-continuing');
+              bridgeConversation.push({ role: 'user', content: `[System] Continue. Output the next actions now.` });
+              continue;
+            }
+            addBridgeSystemMsg('Paused by iteration limit. Type "continue" to keep going.');
+            break;
+          } else {
+            // No actions and not DONE → pause (already handled by noActionStreak above)
+            bridgeWaitingForUser = true;
+            bridgeTaskComplete = true;
+            setProgressText('Waiting for your reply…');
+            updateBridgeSendBtn();
+            return;
           }
-          addBridgeSystemMsg('Paused by iteration limit. Type "continue" to keep going.');
-          break;
         }
       }
 
@@ -1589,14 +1658,13 @@
     const text = inp.value.trim();
     if (!text || bridgeRunning || !__bridge.connected) return;
 
-    // If the AI paused to ask a free-form question, keep context.
     if (bridgeWaitingForUser) {
       bridgeWaitingForUser = false;
       if (!bridgeTurn) {
-        bridgeTurn = { runs: 0, plannedFiles: new Set(), writtenFiles: new Set(), commandLog: new Map(), failedSignatures: new Set(), commandsRun: 0 };
+        bridgeTurn = { runs: 0, plannedFiles: new Set(), writtenFiles: new Set(), commandLog: new Map(), failedSignatures: new Set(), commandsRun: 0, noActionStreak: 0 };
       }
+      bridgeTurn.noActionStreak = 0;
     } else {
-      // Fresh task → clear context
       bridgeConversation = [];
       bridgeTaskComplete = true;
       if (bridgeAutoTimer) { clearTimeout(bridgeAutoTimer); bridgeAutoTimer = null; }
@@ -1702,7 +1770,6 @@
     on('#bwDisconnectBtn', 'click', stopBridge);
     on('#bwSudoForgetBtn', 'click', forgetSudo);
 
-    // Sudo modal
     on('#sudoSubmitBtn', 'click', submitSudo);
     on('#sudoSkipBtn', 'click', skipSudo);
     on('#sudoCloseBtn', 'click', skipSudo);
@@ -1714,7 +1781,6 @@
     });
     on('#sudoPasswordInput', 'keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitSudo(); } });
 
-    // Planner modal
     on('#plannerCloseBtn', 'click', plannerSkip);
     on('#plannerSkipBtn', 'click', plannerSkip);
 
