@@ -130,7 +130,7 @@
       <img src="/logo.png" alt="MiroxAI" class="welcome-logo theme-aware-logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';">
       <div class="logo-fallback logo-fallback-lg" style="display:none;">M</div>
       <h1 class="welcome-title">Hi, I'm Mirox</h1>
-      <p class="welcome-sub">Luna and Gen are unlimited and free. Try asking me to search the web, generate an image, or control your phone with Bridge.</p>
+      <p class="welcome-sub">Luna and Gen are unlimited and free. Try asking me to search the web, generate an image, or build a project with Bridge.</p>
       <div class="suggestion-grid">
         <button class="suggestion-card" type="button" data-prompt="Search the web for the latest AI news"><i class="ri-global-line"></i><span>Search the web for AI news</span></button>
         <button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span>Generate me an image of a cat</span></button>
@@ -164,18 +164,34 @@
   </div>
 </main>
 
-<!-- BRIDGE WORKSPACE -->
+<!-- ==================== BRIDGE WORKSPACE ==================== -->
 <div id="bridgeWorkspace" class="bridge-workspace-overlay">
   <div class="bridge-workspace-panel">
     <header class="bridge-workspace-top">
       <div class="bridge-workspace-title">
         <i class="ri-terminal-box-line"></i>
-        <span>Bridge Workspace</span>
+        <span>Bridge</span>
       </div>
       <div class="bridge-workspace-status" id="bwStatusPill">
         <div class="bridge-status-dot offline"></div>
         <span>Disconnected</span>
       </div>
+
+      <div class="bridge-workspace-toggles" id="bwToggles">
+        <button id="bwToggleAutoRun" class="bridge-toggle active" type="button" title="Auto-continue until the task is done">
+          <i class="ri-play-circle-line"></i><span>Auto-Run</span>
+        </button>
+        <button id="bwToggleShowCode" class="bridge-toggle" type="button" title="Show file content in chat (usually off)">
+          <i class="ri-code-line"></i><span>Show Code</span>
+        </button>
+        <button id="bwPreviewBtn" class="bridge-toggle" type="button" title="Live preview of the last built project">
+          <i class="ri-eye-line"></i><span>Preview</span>
+        </button>
+        <button id="bwStopBtn" class="bridge-toggle danger" type="button" title="Stop the running turn" style="display:none;">
+          <i class="ri-stop-circle-line"></i><span>Stop</span>
+        </button>
+      </div>
+
       <div class="bridge-workspace-actions">
         <button id="bwDownloadBtn" class="icon-btn" type="button" title="Download client"><i class="ri-download-2-line"></i></button>
         <button id="bwNewBtn" class="icon-btn" type="button" title="Clear chat"><i class="ri-delete-bin-6-line"></i></button>
@@ -199,17 +215,16 @@
           <div class="bridge-empty" id="bridgeEmpty">
             <i class="ri-terminal-box-line"></i>
             <h3>Bridge Workspace</h3>
-            <p>Give Mirox direct control over your laptop. It writes files, runs commands, sends emails, checks system health, and controls your phone with KDE Connect.</p>
+            <p>Tell Mirox what to build. It picks a design, writes all files silently into <code>~/&lt;project&gt;/</code>, verifies them, and shows you a live preview.</p>
             <ol class="bridge-empty-steps">
-              <li>Click <strong>Download client</strong> (top right) → extract the ZIP.</li>
-              <li>Run <code>pip install aiohttp</code> then <code>python runner.py</code>.</li>
+              <li>Download the client → extract → <code>pip install aiohttp</code> → <code>python runner.py</code>.</li>
               <li>Optional: <code>sudo apt install kdeconnect</code> for phone control.</li>
-              <li>Click <strong>Connect</strong> in the right panel.</li>
+              <li>Click <strong>Connect</strong>. Try: <em>"build a landing page for a coffee shop"</em>.</li>
             </ol>
           </div>
         </div>
         <div class="bridge-input-row">
-          <textarea id="bridgeInput" placeholder="e.g. Build a snake game in my home folder, or scan my phone" rows="1"></textarea>
+          <textarea id="bridgeInput" placeholder="e.g. Build a landing page for a coffee shop in my home folder" rows="1"></textarea>
           <button id="bridgeSendBtn" class="send-btn is-disabled" type="button" aria-disabled="true"><i class="ri-arrow-up-line"></i></button>
         </div>
       </div>
@@ -247,31 +262,64 @@
         </div>
 
         <div class="bridge-side-section">
+          <h4>Build</h4>
+          <div class="bw-status-box" id="bwBuildBox">
+            <i class="ri-folder-3-line"></i>
+            <span id="bwBuildStatus">No project yet</span>
+          </div>
+          <button id="bwBuildOpenBtn" class="modal-btn" type="button" style="width:100%;margin-top:6px;"><i class="ri-eye-line"></i> Open live preview</button>
+          <button id="bwBuildFolderBtn" class="modal-btn" type="button" style="width:100%;margin-top:6px;"><i class="ri-folder-open-line"></i> Copy folder path</button>
+        </div>
+
+        <div class="bridge-side-section">
           <h4>Sudo</h4>
           <div class="bw-status-box" id="bwSudoBox">
             <i class="ri-shield-keyhole-line"></i>
             <span id="bwSudoStatus">No password saved</span>
           </div>
-          <p class="bw-hint" style="margin-top:4px;">When a task needs root, Mirox will ask you here. Passwords are kept in memory only.</p>
           <button id="bwSudoForgetBtn" class="modal-btn" type="button" style="width:100%;margin-top:6px;"><i class="ri-forbid-2-line"></i> Forget password</button>
         </div>
 
         <div class="bridge-side-section">
           <h4>Quick actions</h4>
-          <button class="bw-quick" data-q="Scan my devices and show me what's available.">Scan devices</button>
-          <button class="bw-quick" data-q="Check if my phone is online.">Check phone online</button>
-          <button class="bw-quick" data-q="Ring my phone.">Ring my phone</button>
-          <button class="bw-quick" data-q="List my home directory and tell me what's in it.">List home dir</button>
           <button class="bw-quick" data-q="Build a modern landing page for a coffee shop in my home folder">Landing page</button>
-          <button class="bw-quick" data-q="Build a snake game in my home folder as a folder called snake-game">Snake game</button>
-          <button class="bw-quick" data-q="Build a small todo app for my phone, then send it to my phone with KDE Connect.">Build + send to phone</button>
+          <button class="bw-quick" data-q="Build a snake game in my home folder">Snake game</button>
+          <button class="bw-quick" data-q="Build a todo app in my home folder">Todo app</button>
+          <button class="bw-quick" data-q="Build a personal portfolio in my home folder">Portfolio site</button>
+          <button class="bw-quick" data-q="Build a calculator in my home folder">Calculator</button>
+          <button class="bw-quick" data-q="Scan my devices and show me what's available.">Scan devices</button>
+          <button class="bw-quick" data-q="Build a small todo app for my phone, then send it to my phone.">Build + send to phone</button>
         </div>
       </aside>
     </div>
   </div>
 </div>
 
-<!-- KDE DEVICE PICKER -->
+<!-- ==================== LIVE PREVIEW MODAL ==================== -->
+<div id="bwPreviewModal" class="planner-overlay">
+  <div class="planner-panel" style="max-width:1400px;">
+    <header class="planner-top">
+      <div class="planner-title">
+        <i class="ri-eye-line"></i>
+        <div>
+          <div class="planner-title-main">Live Preview</div>
+          <div class="planner-title-sub" id="bwPreviewSubtitle">No project yet</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <input id="bwPreviewPath" class="modal-input" style="width:280px;" placeholder="~/project/index.html" spellcheck="false">
+        <button class="icon-btn" id="bwPreviewLoadBtn" title="Load path"><i class="ri-folder-open-line"></i></button>
+        <button class="icon-btn" id="bwPreviewReloadBtn" title="Reload"><i class="ri-refresh-line"></i></button>
+        <button class="icon-btn" id="bwPreviewCloseBtn" title="Close"><i class="ri-close-line"></i></button>
+      </div>
+    </header>
+    <div class="planner-body" style="padding:0;">
+      <iframe id="bwPreviewFrame" sandbox="allow-scripts allow-same-origin allow-forms allow-modals" style="width:100%;height:100%;border:0;background:#fff;"></iframe>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== KDE DEVICE PICKER ==================== -->
 <div id="kdeModal" class="planner-overlay">
   <div class="planner-panel" style="max-width: 760px;">
     <header class="planner-top">
@@ -295,7 +343,7 @@
   </div>
 </div>
 
-<!-- MIROX PLANNER -->
+<!-- ==================== MIROX PLANNER ==================== -->
 <div id="plannerModal" class="planner-overlay">
   <div class="planner-panel">
     <header class="planner-top">
@@ -314,13 +362,13 @@
     </div>
 
     <footer class="planner-footer">
-      <span class="planner-hint"><i class="ri-information-line"></i> These are live demos — scroll, hover, click inside each preview. Pick your favorite.</span>
+      <span class="planner-hint"><i class="ri-information-line"></i> Live demos — scroll, hover, click inside each preview. Pick your favorite.</span>
       <button id="plannerSkipBtn" class="modal-btn" type="button"><i class="ri-skip-forward-line"></i> Let Mirox decide</button>
     </footer>
   </div>
 </div>
 
-<!-- SUDO MODAL -->
+<!-- ==================== SUDO MODAL ==================== -->
 <div id="sudoModal" class="question-overlay">
   <div class="question-panel sudo-panel">
     <div class="question-top">
@@ -353,7 +401,7 @@
   </div>
 </div>
 
-<!-- QUESTION MODAL -->
+<!-- ==================== QUESTION MODAL ==================== -->
 <div id="bridgeQuestionModal" class="question-overlay">
   <div class="question-panel">
     <div class="question-top">
@@ -370,7 +418,6 @@
     </div>
 
     <p class="question-text" id="bqText"></p>
-
     <div class="question-options" id="bqOptions"></div>
 
     <div class="question-custom" id="bqCustomWrap" style="display:none;">
@@ -384,7 +431,7 @@
   </div>
 </div>
 
-<!-- Login -->
+<!-- ==================== LOGIN ==================== -->
 <div id="loginModal" class="modal-overlay">
   <div class="modal">
     <button class="icon-btn modal-close" type="button" data-close="loginModal"><i class="ri-close-line"></i></button>
@@ -402,7 +449,7 @@
   </div>
 </div>
 
-<!-- Settings -->
+<!-- ==================== SETTINGS ==================== -->
 <div id="settingsModal" class="modal-overlay">
   <div class="modal modal-wide">
     <button class="icon-btn modal-close" type="button" data-close="settingsModal"><i class="ri-close-line"></i></button>
@@ -446,17 +493,17 @@
   </div>
 </div>
 
-<!-- Plans -->
+<!-- ==================== PLANS ==================== -->
 <div id="plansModal" class="modal-overlay">
   <div class="modal modal-wide">
     <button class="icon-btn modal-close" type="button" data-close="plansModal"><i class="ri-close-line"></i></button>
     <h2 class="modal-title">Plans</h2>
-    <p class="modal-sub">Luna and Gen are free and unlimited. Bridge with KDE Connect is free.</p>
+    <p class="modal-sub">Luna and Gen are free and unlimited. Bridge is free.</p>
     <div id="plansGrid" class="plans-grid"></div>
   </div>
 </div>
 
-<!-- Image Studio -->
+<!-- ==================== IMAGE STUDIO ==================== -->
 <div id="imageModal" class="modal-overlay">
   <div class="modal">
     <button class="icon-btn modal-close" type="button" data-close="imageModal"><i class="ri-close-line"></i></button>
@@ -474,7 +521,7 @@
   </div>
 </div>
 
-<!-- Support -->
+<!-- ==================== SUPPORT ==================== -->
 <div id="supportModal" class="modal-overlay">
   <div class="modal">
     <button class="icon-btn modal-close" type="button" data-close="supportModal"><i class="ri-close-line"></i></button>
@@ -488,7 +535,7 @@
   </div>
 </div>
 
-<!-- Image viewer -->
+<!-- ==================== IMAGE VIEWER ==================== -->
 <div id="imageViewer" class="image-viewer">
   <div class="image-viewer-backdrop" data-iv-close></div>
   <div class="image-viewer-panel" oncontextmenu="return false;">
