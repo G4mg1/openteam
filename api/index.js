@@ -1,5 +1,9 @@
 /* ============================================================
-   MiroxAI Backend v90
+   MiroxAI Backend v92
+   - AIroute as final fallback (https://route-ai-playground.lovable.app)
+     · POST /api/public/v1/chat   → { text, model, ms, tokens }
+     · POST /api/public/v1/images → { image (base64 data URL), model, ms }
+     · Auth: Bearer AR_KEY (air_rt_…)
    - Co-worker bridge prompt
    - Search (DDG Instant Answer + Wikipedia summary + organic)
    - Auto image intent + vision
@@ -16,13 +20,19 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const HF_API_KEY = (process.env.HF_API_KEY || '').trim();
-const PL_KEY     = (process.env.PL_KEY || '').trim();
-const F_API      = (process.env.F_API || '').trim();
-const SECRET     = process.env.SECRET_KEY || 'mirox-fallback-secret';
-const ADMIN_PASS = (process.env.ADMIN_PASSWORD || '2010').trim();
-const PORT       = process.env.PORT || 3000;
-const DB_FILE    = process.env.DB_FILE || '/tmp/mirox-db.json';
+const HF_API_KEY   = (process.env.HF_API_KEY || '').trim();
+const PL_KEY       = (process.env.PL_KEY || '').trim();
+const F_API        = (process.env.F_API || '').trim();
+const SECRET       = process.env.SECRET_KEY || 'mirox-fallback-secret';
+const ADMIN_PASS   = (process.env.ADMIN_PASSWORD || '2010').trim();
+const PORT         = process.env.PORT || 3000;
+const DB_FILE      = process.env.DB_FILE || '/tmp/mirox-db.json';
+
+/* ---------- AIroute (final fallback) ---------- */
+const AIROUTE_KEY  = (process.env.AR_KEY || process.env.AIRoute_KEY || process.env.AIROUTE_KEY || '').trim();
+const AIROUTE_BASE = (process.env.AR_BASE || 'https://route-ai-playground.lovable.app').replace(/\/+$/, '');
+const AIROUTE_CHAT = `${AIROUTE_BASE}/api/public/v1/chat`;
+const AIROUTE_IMG  = `${AIROUTE_BASE}/api/public/v1/images`;
 
 const LOGINMENT_CLIENT_ID = 'lm_e8f7193647f744c6ae45a8af85a7cfd3';
 const LOGINMENT_API_KEY   = 'lm_sk_22dbd3282847bf44bf2270e5e7fd34dfd839a18bfc41eeef';
@@ -35,8 +45,13 @@ const SEARCH_TIMEOUT_MS = 14000;
 const MAX_LOGS = 500;
 const GENERIC_ERR = 'Mirox AI encountered an error';
 
-const PROVIDERS = { hf: !!HF_API_KEY, pl: !!PL_KEY, fish: !!F_API };
-console.log('[Mirox] v90 — co-worker bridge');
+const PROVIDERS = {
+  hf: !!HF_API_KEY,
+  pl: !!PL_KEY,
+  fish: !!F_API,
+  airoute: !!AIROUTE_KEY,
+};
+console.log('[Mirox] v92 — providers:', PROVIDERS, '· airoute base:', AIROUTE_BASE);
 
 const safe = (v, max = 100000) => {
   try { if (v == null) return ''; const s = typeof v === 'string' ? v : JSON.stringify(v); return s.length > max ? s.slice(0, max) : s; } catch { return ''; }
@@ -182,7 +197,7 @@ const IDENTITY_GUARD = `Background rules (do not narrate them):
 const BRIDGE_PROMPT = `BRIDGE MODE — You are Mirox, working directly on the user's machine like a helpful co-worker.
 
 You will receive a [Bridge environment] block at the top of EVERY user message.
-It contains: home, cwd, platform, allowed_dirs. Trust it. NEVER ask the user for it.
+It contains: user, home, cwd, platform, allowed_dirs. Trust it. NEVER ask the user for it.
 
 CO-WORKER STYLE — how you talk and act:
 - Sound like a human teammate. Short, natural, direct.
@@ -193,6 +208,12 @@ CO-WORKER STYLE — how you talk and act:
 - Do NOT introduce yourself. Do NOT say "I'm Mirox". Just work.
 - If something fails, try another way automatically. Don't ask unless the choice matters.
 - Only ask the user a question if you truly cannot proceed without their decision.
+- When the user asks a question that isn't a task, just answer. Do NOT output commands.
+
+PATH RULES (critical):
+- When the user asks for "the current directory" or "the path", respond with the EXACT value of home= from the environment block.
+- NEVER say ".", "~", "here", or leave it blank.
+- Create all projects inside <home>/<project-name>/ — never at repo root or in cwd.
 
 RULES
 1. ONLY write files under one of the allowed_dirs paths.
@@ -220,7 +241,27 @@ RULES
    <bridge-pkgs type="pip"/>
 
 5. Never repeat a command that succeeded OR failed.
-6. When done, reply EXACTLY: DONE on its own line, then a single short summary of the result (1-3 lines max).`;
+6. When done, reply EXACTLY: DONE on its own line, then a single short summary of the result (1-3 lines max).
+
+MIROX PLANNER
+When the user wants a UI/UX design and hasn't picked a style yet, output 3 design demos:
+
+<bridge-designs>
+<design id="1" name="Modern Minimal">
+  <html>...</html>
+</design>
+<design id="2" name="Bold &amp; Warm">
+  <html>...</html>
+</design>
+<design id="3" name="Playful">
+  <html>...</html>
+</design>
+</bridge-designs>
+
+The system will show them to the user and come back with user_chosed(1|2|3). Then build the chosen one.
+
+ASKING QUESTIONS
+If you need to ask the user something and there is no task to run, end your reply with a question mark or write asking() on its own line. The system will pause and wait for their reply.`;
 
 function buildSystemPrompt(cfg, bridge, searchUsed) {
   let p = IDENTITY_GUARD + '\n\n---\n\n' + cfg.basePrompt;
@@ -232,13 +273,14 @@ function buildSystemPrompt(cfg, bridge, searchUsed) {
     const env = bridge.env || {};
     const allowed = Array.isArray(env.allowed_dirs) && env.allowed_dirs.length ? env.allowed_dirs.join(', ') : '(not provided)';
     p += `\n\n=== [Bridge environment] ===\n`;
+    p += `user=${env.user || '(unknown)'}\n`;
     p += `home=${env.home || '(unknown)'}\n`;
     p += `cwd=${env.cwd || '(unknown)'}\n`;
     p += `platform=${env.platform || '(unknown)'}\n`;
     p += `allowed_dirs=${allowed}\n`;
     if (bridge.filesWritten?.length) p += `filesWritten=${bridge.filesWritten.join(', ')}\n`;
     if (bridge.plannedFiles?.length) p += `plannedFiles=${bridge.plannedFiles.join(', ')}\n`;
-    p += `Use ONLY these paths.`;
+    p += `Use ONLY these paths. NEVER say "." or "~" when asked for a path.`;
   }
   return p;
 }
@@ -381,9 +423,7 @@ async function webSearch(query, max = 5) {
   } else {
     const title = dedup[0]?.title || query;
     const ws = await wikiSummary(title);
-    if (ws) {
-      overview = { source: 'Wikipedia', heading: ws.title, text: ws.extract, url: ws.url, kind: 'wiki' };
-    }
+    if (ws) overview = { source: 'Wikipedia', heading: ws.title, text: ws.extract, url: ws.url, kind: 'wiki' };
   }
   return { results: dedup, overview };
 }
@@ -402,7 +442,9 @@ function formatSearchContext(query, searchData) {
   return `Web search results for "${query}":\n\n` + parts.join('\n\n');
 }
 
-/* ---------- Providers ---------- */
+/* ============================================================
+   Provider URLs
+   ============================================================ */
 const HF_URL = 'https://router.huggingface.co/v1/chat/completions';
 const PL_URL = 'https://gen.pollinations.ai/v1/chat/completions';
 const PL_IMG_BASE = 'https://gen.pollinations.ai/image';
@@ -429,7 +471,131 @@ async function plChat(modelId, messages, maxTokens, stream) {
   if (!res.ok) throw new Error(`pl_${res.status}`);
   return res;
 }
+
+/* ============================================================
+   AIroute adapter
+   Endpoint: POST {base}/api/public/v1/chat
+   Body: { prompt, history, model?, fast?, memory?, reset_memory? }
+   Reply: { text, model, ms, tokens }
+   ============================================================ */
+function convertToAirouteShape(messages) {
+  // Normalize messages: string content only.
+  const norm = [];
+  for (const m of safeArr(messages)) {
+    if (!m || typeof m !== 'object') continue;
+    const role = String(m.role || '').toLowerCase();
+    if (role !== 'system' && role !== 'user' && role !== 'assistant') continue;
+    let content = m.content;
+    if (Array.isArray(content)) {
+      content = content.map(p => {
+        if (!p) return '';
+        if (p.type === 'text') return p.text || '';
+        if (p.type === 'image_url') return '[image]';
+        return '';
+      }).join('\n');
+    }
+    norm.push({ role, content: String(content || '') });
+  }
+
+  // Last user turn = the prompt; everything before is history (with system merged into a prefix).
+  let promptIdx = -1;
+  for (let i = norm.length - 1; i >= 0; i--) {
+    if (norm[i].role === 'user') { promptIdx = i; break; }
+  }
+  let prompt = promptIdx >= 0 ? norm[promptIdx].content : '';
+  const before = promptIdx >= 0 ? norm.slice(0, promptIdx) : norm;
+
+  const systems = before.filter(m => m.role === 'system').map(m => m.content).filter(Boolean);
+  const history = before
+    .filter(m => m.role === 'user' || m.role === 'assistant')
+    .map(m => ({ role: m.role, content: m.content }));
+
+  if (systems.length) {
+    prompt = systems.join('\n\n') + '\n\n' + prompt;
+  }
+  return { prompt, history };
+}
+
+async function airouteChat({ messages, model, fast = true, memory = true, timeoutMs = 120000 }) {
+  if (!AIROUTE_KEY) throw new Error('no_airoute');
+  const { prompt, history } = convertToAirouteShape(messages);
+  const body = {
+    prompt,
+    history: history.slice(-40), // docs: up to 40 turns
+  };
+  if (fast) body.fast = true;
+  if (model) body.model = model;
+  if (memory === false) body.memory = false;
+
+  const res = await fetchT(AIROUTE_CHAT, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${AIROUTE_KEY}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
+    body: JSON.stringify(body),
+  }, timeoutMs);
+  if (!res.ok) throw new Error(`airoute_${res.status}`);
+  return res;
+}
+
+/* AIroute returns JSON, but our SSE caller expects a stream body.
+   This wraps a finished text reply into a synthetic OpenAI-style SSE stream. */
+function textToSyntheticSSE(text) {
+  const enc = new TextEncoder();
+  const s = String(text || '');
+  // Chunk at ~20-char boundaries, respecting whitespace.
+  const tokens = s.split(/(\s+)/);
+  const chunks = [];
+  let cur = '';
+  for (const t of tokens) {
+    cur += t;
+    if (cur.length >= 20) { chunks.push(cur); cur = ''; }
+  }
+  if (cur) chunks.push(cur);
+  if (!chunks.length) chunks.push('');
+
+  return new ReadableStream({
+    start(controller) {
+      try {
+        for (const c of chunks) {
+          const line = `data: ${JSON.stringify({ choices: [{ delta: { content: c } }] })}\n\n`;
+          controller.enqueue(enc.encode(line));
+        }
+        controller.enqueue(enc.encode('data: [DONE]\n\n'));
+      } catch {}
+      try { controller.close(); } catch {}
+    }
+  });
+}
+
+async function airouteImage(prompt, timeoutMs = 60000) {
+  if (!AIROUTE_KEY) throw new Error('no_airoute');
+  const res = await fetchT(AIROUTE_IMG, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${AIROUTE_KEY}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'black-forest-labs/FLUX.1-schnell',
+      prompt: String(prompt || '').slice(0, 2000),
+    }),
+  }, timeoutMs);
+  if (!res.ok) throw new Error(`airoute_img_${res.status}`);
+  const data = await res.json().catch(() => ({}));
+  if (typeof data.image === 'string' && data.image.startsWith('data:image')) return data.image;
+  if (typeof data.image === 'string' && data.image.startsWith('http')) return data.image;
+  return null;
+}
+
+/* ============================================================
+   Chat chain — HF → PL → AIroute (final fallback)
+   ============================================================ */
 async function miroxChatChain({ messages, cfg, stream, vision }) {
+  // 1) Vision attempt (only when images are attached)
   if (vision) {
     if (PROVIDERS.hf) {
       for (const mid of HF_VISION_MODELS) {
@@ -441,26 +607,62 @@ async function miroxChatChain({ messages, cfg, stream, vision }) {
         try { const res = await plChat(mid, messages, cfg.tokens, stream); return { res, provider: 'pl', vision: true }; } catch {}
       }
     }
+    // AIroute doesn't accept binary images via this endpoint, so strip them
+    // and continue with the text fallback path below.
     for (const msg of messages) {
       if (Array.isArray(msg.content)) {
         msg.content = msg.content.filter(p => p.type === 'text').map(p => p.text).join('\n');
       }
     }
   }
+
+  // 2) Text providers — HF first
   if (PROVIDERS.hf) {
     for (const mid of HF_CHAT_MODELS) {
       try { const res = await hfChat(mid, messages, cfg.tokens, stream); return { res, provider: 'hf' }; } catch {}
     }
   }
+
+  // 3) Pollinations
   if (PROVIDERS.pl) {
     for (const mid of PL_CHAT_MODELS) {
       try { const res = await plChat(mid, messages, cfg.tokens, stream); return { res, provider: 'pl' }; } catch {}
     }
   }
+
+  // 4) AIroute — final fallback
+  if (PROVIDERS.airoute) {
+    // Try once with fast routing
+    try {
+      const res = await airouteChat({ messages, fast: true, memory: true });
+      if (stream) {
+        const data = await res.json().catch(() => ({}));
+        const text = data.text || '';
+        return { res: { body: textToSyntheticSSE(text), ok: true }, provider: 'airoute' };
+      }
+      return { res, provider: 'airoute' };
+    } catch (e1) {
+      // Try once more with an explicit high-quality model
+      try {
+        const res = await airouteChat({ messages, fast: false, model: 'meta-llama/Llama-3.3-70B-Instruct', memory: true });
+        if (stream) {
+          const data = await res.json().catch(() => ({}));
+          const text = data.text || '';
+          return { res: { body: textToSyntheticSSE(text), ok: true }, provider: 'airoute' };
+        }
+        return { res, provider: 'airoute' };
+      } catch (e2) {
+        // Give up
+      }
+    }
+  }
+
   throw new Error(GENERIC_ERR);
 }
 
-/* ---------- Image gen ---------- */
+/* ============================================================
+   Image gen — PL → AIroute (final fallback)
+   ============================================================ */
 async function toDataUrl(response) {
   const ct = response.headers.get('content-type') || '';
   if (ct.includes('image/')) {
@@ -476,8 +678,11 @@ async function toDataUrl(response) {
   } catch {}
   return null;
 }
+
 async function generateImage(prompt) {
   const deadline = Date.now() + IMG_TOTAL_MS;
+
+  // 1) Pollinations
   for (const mid of PL_IMG_MODELS) {
     if (Date.now() > deadline - 3000) break;
     try {
@@ -491,10 +696,19 @@ async function generateImage(prompt) {
       if (dataUrl) return dataUrl;
     } catch {}
   }
+
+  // 2) AIroute fallback
+  if (PROVIDERS.airoute) {
+    try {
+      const dataUrl = await airouteImage(prompt, Math.max(15000, deadline - Date.now() - 3000));
+      if (dataUrl) return dataUrl;
+    } catch {}
+  }
+
   throw new Error(GENERIC_ERR);
 }
 
-/* ---------- SSE ---------- */
+/* ---------- SSE helpers ---------- */
 function sseInit(res) {
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-store, no-transform');
@@ -515,7 +729,23 @@ try { app.use(express.static(path.join(__dirname, '../public'))); } catch {}
 app.use(async (req, res, next) => { try { await loadDb(); } catch {} next(); });
 
 app.get(['/api/health','/health','/ping'], (req, res) => {
-  res.json({ ok: true, app: 'MiroxAI', version: 'v90', providers: PROVIDERS, search: true, vision: true, image_intent: true, loginment: !!LOGINMENT_CLIENT_ID, time: now() });
+  res.json({
+    ok: true,
+    app: 'MiroxAI',
+    version: 'v92',
+    providers: PROVIDERS,
+    airoute: {
+      enabled: PROVIDERS.airoute,
+      base: AIROUTE_BASE,
+      chat: AIROUTE_CHAT,
+      images: AIROUTE_IMG,
+    },
+    search: true,
+    vision: true,
+    image_intent: true,
+    loginment: !!LOGINMENT_CLIENT_ID,
+    time: now(),
+  });
 });
 
 /* ============================================================
@@ -1093,13 +1323,14 @@ app.get(['/api/config','/config'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tier: m.tier }));
   res.json({
-    app: { name: 'MiroxAI', version: 'v90' },
+    app: { name: 'MiroxAI', version: 'v92' },
     models, default_model: models[0].id, plans: PLANS,
     tts_available: !!F_API,
     search_available: true,
     vision_available: true,
     image_intent: true,
     loginment_available: !!LOGINMENT_CLIENT_ID,
+    airoute_available: PROVIDERS.airoute,
   });
 });
 
@@ -1197,9 +1428,7 @@ app.post('/v1/chat/completions', async (req, res) => {
         pushLog(db.events, { email: u?.email || 'guest', event: 'image_generated_chat', ts: now() });
         try { await persist(); } catch {}
 
-        if (!stream) {
-          return res.json({ reply: '', image: imageUrl, _ms: Date.now() - t0 });
-        }
+        if (!stream) return res.json({ reply: '', image: imageUrl, _ms: Date.now() - t0 });
         sseInit(res);
         sseWrite(res, { img: imageUrl });
         sseWrite(res, { done: true });
@@ -1218,7 +1447,7 @@ app.post('/v1/chat/completions', async (req, res) => {
     if (bridge && bridge.connected) {
       const env = bridge.env || {};
       const allowed = Array.isArray(env.allowed_dirs) && env.allowed_dirs.length ? env.allowed_dirs.join(', ') : '(not provided)';
-      userText = `[Bridge environment]\nhome=${env.home || '?'}\ncwd=${env.cwd || '?'}\nplatform=${env.platform || '?'}\nallowed_dirs=${allowed}\n\n` + userText;
+      userText = `[Bridge environment]\nuser=${env.user || '?'}\nhome=${env.home || '?'}\ncwd=${env.cwd || '?'}\nplatform=${env.platform || '?'}\nallowed_dirs=${allowed}\n\n` + userText;
     }
 
     let visionUsed = false;
@@ -1269,10 +1498,12 @@ app.post('/v1/chat/completions', async (req, res) => {
         const reply = extractReplyText(data) || '(empty)';
         await updateUsage();
         return res.json({
-          reply, _ms: Date.now() - t0,
+          reply, _ms: Date.now() - t0, provider: result.provider,
           search: searchQuery ? { query: searchQuery, results: searchData.results, overview: searchData.overview } : null,
         });
-      } catch (e) { return res.status(502).json({ error: { message: GENERIC_ERR } }); }
+      } catch (e) {
+        return res.status(502).json({ error: { message: GENERIC_ERR } });
+      }
     }
 
     sseInit(res);
