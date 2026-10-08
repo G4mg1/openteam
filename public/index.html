@@ -130,11 +130,11 @@
       <img src="/logo.png" alt="MiroxAI" class="welcome-logo theme-aware-logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';">
       <div class="logo-fallback logo-fallback-lg" style="display:none;">M</div>
       <h1 class="welcome-title">Hi, I'm Mirox</h1>
-      <p class="welcome-sub">Luna and Gen are unlimited and free. Try asking me to search the web or generate an image.</p>
+      <p class="welcome-sub">Luna and Gen are unlimited and free. Try asking me to search the web, generate an image, or control your phone with Bridge.</p>
       <div class="suggestion-grid">
         <button class="suggestion-card" type="button" data-prompt="Search the web for the latest AI news"><i class="ri-global-line"></i><span>Search the web for AI news</span></button>
         <button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span>Generate me an image of a cat</span></button>
-        <button class="suggestion-card" type="button" data-prompt="Open the Bridge workspace and build me a landing page"><i class="ri-link"></i><span>Build a project with Bridge</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Open the Bridge workspace and scan my devices"><i class="ri-smartphone-line"></i><span>Scan my phone with Bridge</span></button>
         <button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span>Explain a concept simply</span></button>
       </div>
     </div>
@@ -199,16 +199,17 @@
           <div class="bridge-empty" id="bridgeEmpty">
             <i class="ri-terminal-box-line"></i>
             <h3>Bridge Workspace</h3>
-            <p>Give Mirox direct control over your laptop. It writes files, runs commands, sends emails, checks system health, and builds full projects — with the Mirox Planner so you pick the design you like.</p>
+            <p>Give Mirox direct control over your laptop. It writes files, runs commands, sends emails, checks system health, and controls your phone with KDE Connect.</p>
             <ol class="bridge-empty-steps">
               <li>Click <strong>Download client</strong> (top right) → extract the ZIP.</li>
               <li>Run <code>pip install aiohttp</code> then <code>python runner.py</code>.</li>
+              <li>Optional: <code>sudo apt install kdeconnect</code> for phone control.</li>
               <li>Click <strong>Connect</strong> in the right panel.</li>
             </ol>
           </div>
         </div>
         <div class="bridge-input-row">
-          <textarea id="bridgeInput" placeholder="e.g. Build a snake game in my home folder" rows="1"></textarea>
+          <textarea id="bridgeInput" placeholder="e.g. Build a snake game in my home folder, or scan my phone" rows="1"></textarea>
           <button id="bridgeSendBtn" class="send-btn is-disabled" type="button" aria-disabled="true"><i class="ri-arrow-up-line"></i></button>
         </div>
       </div>
@@ -236,30 +237,65 @@
         </div>
 
         <div class="bridge-side-section">
+          <h4>Phone &amp; Devices</h4>
+          <div class="bw-status-box" id="bwKdeBox">
+            <i class="ri-smartphone-line"></i>
+            <span id="bwKdeStatus">KDE Connect: checking…</span>
+          </div>
+          <button id="bwScanDevicesBtn" class="modal-btn" type="button" style="width:100%;margin-top:6px;"><i class="ri-radar-line"></i> Scan for devices</button>
+          <div id="bwDeviceList" class="bw-device-list"></div>
+        </div>
+
+        <div class="bridge-side-section">
           <h4>Sudo</h4>
           <div class="bw-status-box" id="bwSudoBox">
             <i class="ri-shield-keyhole-line"></i>
             <span id="bwSudoStatus">No password saved</span>
           </div>
-          <p class="bw-hint" style="margin-top:4px;">When a task needs root, Mirox will ask you here. Passwords are kept in memory only — never written to disk.</p>
+          <p class="bw-hint" style="margin-top:4px;">When a task needs root, Mirox will ask you here. Passwords are kept in memory only.</p>
           <button id="bwSudoForgetBtn" class="modal-btn" type="button" style="width:100%;margin-top:6px;"><i class="ri-forbid-2-line"></i> Forget password</button>
         </div>
 
         <div class="bridge-side-section">
           <h4>Quick actions</h4>
+          <button class="bw-quick" data-q="Scan my devices and show me what's available.">Scan devices</button>
+          <button class="bw-quick" data-q="Check if my phone is online.">Check phone online</button>
+          <button class="bw-quick" data-q="Ring my phone.">Ring my phone</button>
           <button class="bw-quick" data-q="List my home directory and tell me what's in it.">List home dir</button>
           <button class="bw-quick" data-q="Build a modern landing page for a coffee shop in my home folder">Landing page</button>
           <button class="bw-quick" data-q="Build a snake game in my home folder as a folder called snake-game">Snake game</button>
-          <button class="bw-quick" data-q="Run a full system health check and tell me if anything is wrong">System health check</button>
-          <button class="bw-quick" data-q="Show me the top CPU processes running right now">Top processes</button>
-          <button class="bw-quick" data-q="Take a screenshot and save it to my Desktop">Screenshot to Desktop</button>
+          <button class="bw-quick" data-q="Build a small todo app for my phone, then send it to my phone with KDE Connect.">Build + send to phone</button>
         </div>
       </aside>
     </div>
   </div>
 </div>
 
-<!-- MIROX PLANNER — design picker modal -->
+<!-- KDE DEVICE PICKER -->
+<div id="kdeModal" class="planner-overlay">
+  <div class="planner-panel" style="max-width: 760px;">
+    <header class="planner-top">
+      <div class="planner-title">
+        <i class="ri-smartphone-line"></i>
+        <div>
+          <div class="planner-title-main">KDE Connect · Devices</div>
+          <div class="planner-title-sub" id="kdeSubtitle">Pick a device for Mirox to work with</div>
+        </div>
+      </div>
+      <button class="icon-btn" id="kdeCloseBtn" type="button"><i class="ri-close-line"></i></button>
+    </header>
+    <div class="planner-body" style="padding: 16px;">
+      <div id="kdeGrid" class="kde-device-grid"></div>
+    </div>
+    <footer class="planner-footer">
+      <span class="planner-hint"><i class="ri-information-line"></i> Devices marked <b>reachable</b> are on the same Wi-Fi and paired.</span>
+      <button id="kdeRefreshBtn" class="modal-btn" type="button"><i class="ri-refresh-line"></i> Rescan</button>
+      <button id="kdeSkipBtn" class="modal-btn" type="button"><i class="ri-skip-forward-line"></i> Skip</button>
+    </footer>
+  </div>
+</div>
+
+<!-- MIROX PLANNER -->
 <div id="plannerModal" class="planner-overlay">
   <div class="planner-panel">
     <header class="planner-top">
@@ -415,7 +451,7 @@
   <div class="modal modal-wide">
     <button class="icon-btn modal-close" type="button" data-close="plansModal"><i class="ri-close-line"></i></button>
     <h2 class="modal-title">Plans</h2>
-    <p class="modal-sub">Luna and Gen are free and unlimited. Bridge is free.</p>
+    <p class="modal-sub">Luna and Gen are free and unlimited. Bridge with KDE Connect is free.</p>
     <div id="plansGrid" class="plans-grid"></div>
   </div>
 </div>
