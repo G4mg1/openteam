@@ -30,9 +30,9 @@
   const BRIDGE_KEY = 'miroxai_bridge_v23';
 
   const MAX_BRIDGE_QUESTIONS = 6;
-  const MAX_BRIDGE_ITER = 60;
-  const MAX_AUTO_CONTINUES = 30;
-  const MAX_DUP_COMMANDS = 1;
+  const MAX_BRIDGE_ITER = 80;
+  const MAX_AUTO_CONTINUES = 40;
+  const MAX_DUP_COMMANDS = 4;      // allow rewrites of the same path
   const AUTO_CONTINUE_DELAY_MS = 2000;
   const MAX_IMAGE_DIM = 1280;
 
@@ -42,14 +42,15 @@
   let __bridge = { name: 'My Laptop', model: 'mirox-luna-1.2', port: 8765, connected: false, baseUrl: null, env: null };
   let bridgeConversation = [], bridgeRunning = false, bridgeQuestionCount = 0, bridgeProgress = 0;
   let bridgeTurn = null, bridgeAutoTimer = null, bridgeTaskComplete = true;
+  let bridgeWaitingForUser = false;   // true when AI paused to ask something
   let __bqResolver = null, __bqSelected = null;
   let forceSearchNext = false;
 
-  // Sudo handling — kept in memory only, never persisted
-  let __sudoPassword = '';              // current session password
-  let __sudoRemember = false;           // if user chose to remember
-  let __sudoResolver = null;            // pending sudo prompt resolver
-  let __sudoPendingCmd = null;          // the command waiting for password
+  // Sudo handling — memory only
+  let __sudoPassword = '';
+  let __sudoRemember = false;
+  let __sudoResolver = null;
+  let __sudoPendingCmd = null;
 
   const uid = () => 'c_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
   const escapeHtml = (s) => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
@@ -64,6 +65,8 @@
     if (/\b(fix|debug|bug|error|broken|crash|issue|problem|wrong|fail|not work|isn'?t work|doesn'?t work|stack ?trace|exception)\b/.test(t)) return 'Looking into problems';
     if (/\b(search|find|look up|research|look for|where is|locate|google)\b/.test(t)) return 'Searching the web';
     if (/\b(generate|draw|render|make.*image|create.*image|image of|picture of)\b/.test(t)) return 'Painting image';
+    if (/\b(design|ui|ux|layout|wireframe|mockup|prototype|preview)\b/.test(t)) return 'Designing screens';
+    if (/\b(plan|roadmap|outline|architect)\b/.test(t)) return 'Planning';
     if (/\b(build|create|make|generate|write|scaffold|implement|add|set ?up|new|develop|code)\b/.test(t)) return 'Building';
     if (/\b(analyze|analyse|inspect|review|audit|check|examine|verify)\b/.test(t)) return 'Analyzing';
     if (/\b(explain|how|why|what|help me understand|describe|tell me)\b/.test(t)) return 'Thinking';
@@ -108,9 +111,24 @@
     applyAppearance(prefs);
   }
 
-  function renderMarkdown(text) {
+  /* ---------- Regular-chat <bridge-*> cleaner ---------- */
+  function sanitizeRegularChat(text) {
     if (!text) return '';
-    let src = String(text);
+    let t = String(text);
+    // Strip bridge tag pairs
+    t = t.replace(/<bridge-(write|append|exec|read|list|delete|move|copy|sudo|ask|plan|progress|email|http|clipboard|screenshot|git|pkgs|sysinfo|syscheck|processes|designs|design)[^>]*>[\s\S]*?<\/bridge-\1>/g, '');
+    // Strip self-closing bridge tags
+    t = t.replace(/<bridge-[a-z]+\s+[^>]*\/>/g, '');
+    // Strip bare <write>...</write> that come from stray bridge syntax
+    t = t.replace(/<\/?write[^>]*>/gi, '');
+    t = t.replace(/<\/?bridge-write[^>]*>/gi, '');
+    return t.trim();
+  }
+
+  function renderMarkdown(rawText) {
+    if (!rawText) return '';
+    let src = sanitizeRegularChat(String(rawText));
+    if (!src) return '';
     const parts = [];
     const re = /```([a-zA-Z0-9+#._-]*)\n?([\s\S]*?)```/g;
     let last = 0, m;
@@ -184,7 +202,7 @@
       <div class="suggestion-grid">
         <button class="suggestion-card" type="button" data-prompt="Search the web for the latest AI news"><i class="ri-global-line"></i><span>Search the web for AI news</span></button>
         <button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span>Generate me an image of a cat</span></button>
-        <button class="suggestion-card" type="button" data-prompt="Help me write code"><i class="ri-code-line"></i><span>Help me write code</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Open the Bridge workspace and build me a landing page"><i class="ri-link"></i><span>Build a project with Bridge</span></button>
         <button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span>Explain a concept simply</span></button>
       </div>
     </div>`;
@@ -200,6 +218,7 @@
       if (card.__wired) return; card.__wired = true;
       card.onclick = () => {
         const p = card.dataset.prompt;
+        if (p && p.startsWith('Open the Bridge workspace')) { openBridgeWorkspace(); return; }
         const inp = $('#messageInput');
         if (p && inp) { inp.value = p; updateSendButtonState(); handleSend(); }
       };
@@ -377,12 +396,22 @@
     requestAnimationFrame(() => wrap.classList.add('in'));
   }
 
+  /* ---------- Regular chat send ---------- */
   async function sendToAPI(text, files, forceSearch) {
     isReplying = true; updateSendButtonState();
     const stopBtn = $('#stopBtn'); if (stopBtn) stopBtn.style.display = 'grid';
     const convo = currentConvo();
     const history = convo ? convo.messages.slice(-14).map(m => ({ role: m.role, content: m.content })) : [];
     const model = __model || 'mirox-luna-1.2';
+
+    // Tip: if user is asking to build a project in regular chat, hint at Bridge.
+    const buildIntent = /\b(build|create|make|write|scaffold|generate|develop|code)\b.*\b(app|site|website|game|project|page|landing|dashboard|api|script|bot|tool|todo|chat|portfolio)\b/i.test(text);
+    if (buildIntent) {
+      setTimeout(() => {
+        toast('Tip: Bridge is free — it can actually create files and run your project on your laptop.', 4200);
+      }, 400);
+    }
+
     const label = pickStatusLabel(text);
     const el = addThinkingBubble(label);
     if (!el) { isReplying = false; return; }
@@ -777,7 +806,6 @@
     }
   }
 
-  /* ---------- Sudo password modal ---------- */
   function showSudoModal(command) {
     return new Promise((resolve) => {
       __sudoResolver = resolve;
@@ -816,19 +844,16 @@
     toast('Sudo password forgotten.');
   }
   async function askSudo(command) {
-    // If we already have a password in memory, offer to reuse it silently
-    if (__sudoPassword) {
-      return { password: __sudoPassword, remember: __sudoRemember, reused: true };
-    }
+    if (__sudoPassword) return { password: __sudoPassword, remember: __sudoRemember, reused: true };
     return await showSudoModal(command);
   }
 
-  function toast(msg) {
+  function toast(msg, ms) {
     const t = document.createElement('div');
     t.textContent = msg;
-    t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--panel);color:var(--text);border:1px solid var(--border);padding:10px 16px;border-radius:12px;font-size:13px;box-shadow:var(--shadow-lg);z-index:9999;';
+    t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);max-width:min(560px,calc(100vw - 32px));text-align:center;background:var(--panel);color:var(--text);border:1px solid var(--border);padding:10px 16px;border-radius:12px;font-size:13px;box-shadow:var(--shadow-lg);z-index:9999;';
     document.body.appendChild(t);
-    setTimeout(() => { t.style.transition = 'opacity .3s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 350); }, 1800);
+    setTimeout(() => { t.style.transition = 'opacity .3s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 350); }, ms || 1800);
   }
 
   async function testBridge(port) {
@@ -871,7 +896,7 @@
   }
   function stopBridge() {
     __bridge.connected = false; __bridge.baseUrl = null; __bridge.env = null;
-    __sudoPassword = ''; __sudoRemember = false; // drop sudo password on disconnect
+    __sudoPassword = ''; __sudoRemember = false;
     renderBridgeStatus(); setBwHint('', '');
   }
   async function bridgeCall(endpoint, payload) {
@@ -898,7 +923,7 @@
   function clearBridgeChat() {
     const m = $('#bridgeMessages'); if (m) m.innerHTML = '';
     bridgeConversation = []; bridgeQuestionCount = 0; bridgeProgress = 0; bridgeTurn = null;
-    bridgeTaskComplete = true;
+    bridgeTaskComplete = true; bridgeWaitingForUser = false;
     if (bridgeAutoTimer) { clearTimeout(bridgeAutoTimer); bridgeAutoTimer = null; }
     updateBridgeProgress(0, 'Ready');
     const w = $('#bwProgress'); if (w) w.style.display = 'none';
@@ -1019,6 +1044,7 @@
     if (text) setProgressText(text);
   }
 
+  /* ---------- Tag extraction ---------- */
   function extractBridgeCommands(text) {
     const cmds = []; let m;
     const add = (type, m, extra) => cmds.push(Object.assign({ type, index: m.index }, extra));
@@ -1062,6 +1088,22 @@
     cmds.sort((a, b) => a.index - b.index);
     return cmds;
   }
+  function extractBridgeDesigns(text) {
+    const m = /<bridge-designs>([\s\S]*?)<\/bridge-designs>/.exec(text);
+    if (!m) return null;
+    const block = m[1];
+    const designs = [];
+    const re = /<design\s+id="(\d+)"(?:\s+name="([^"]*)")?\s*>([\s\S]*?)<\/design>/g;
+    let mm;
+    while ((mm = re.exec(block)) !== null) {
+      designs.push({
+        id: parseInt(mm[1], 10),
+        name: (mm[2] || ('Design ' + mm[1])).trim(),
+        html: mm[3].trim(),
+      });
+    }
+    return designs.length ? designs : null;
+  }
   function extractBridgePlan(text) {
     const m = /<bridge-plan>([\s\S]*?)<\/bridge-plan>/.exec(text);
     if (!m) return null;
@@ -1094,12 +1136,22 @@
   }
   function getNarrationText(text) {
     let t = String(text || '');
+    t = t.replace(/<bridge-designs>[\s\S]*?<\/bridge-designs>/g, '');
     t = t.replace(/<bridge-[a-z]+[^>]*>[\s\S]*?<\/bridge-[a-z]+>/g, '');
     t = t.replace(/<bridge-[a-z]+\s+[^>]*\/>/g, '');
     t = t.replace(/```[\s\S]*?```/g, '');
     t = t.replace(/\bDONE\b/g, '');
+    t = t.replace(/\basking\(\s*\)/gi, '');
     t = t.replace(/\s+/g, ' ').trim();
     return t;
+  }
+  function looksLikeFreeQuestion(text) {
+    const t = String(text || '').trim();
+    if (!t) return false;
+    if (/(?:^|\n)\s*asking\(\s*\)/i.test(t)) return true;
+    // last non-empty line ends with '?'
+    const lastLine = t.split('\n').map(l => l.trim()).filter(Boolean).slice(-1)[0] || '';
+    return lastLine.endsWith('?');
   }
   function isEnvQuestion(question) {
     const q = String(question || '').toLowerCase();
@@ -1118,20 +1170,13 @@
   async function executeBridgeCommand(cmd) {
     const t = cmd.type;
     if (t === 'sudo') {
-      // Ask the user for their sudo password
       addBridgeSystemMsg(`Mirox needs root access for: ${cmd.command}`);
       const sudo = await askSudo(cmd.command);
-      if (!sudo || !sudo.password) {
-        return { ok: false, error: 'user_cancelled_sudo', cancelled: true };
-      }
-      try {
-        return await bridgeCall('/sudo-exec', { command: cmd.command, password: sudo.password, timeout: 120 });
-      } catch (e) {
-        return { ok: false, error: 'sudo call failed: ' + e.message };
-      }
+      if (!sudo || !sudo.password) return { ok: false, error: 'user_cancelled_sudo', cancelled: true };
+      try { return await bridgeCall('/sudo-exec', { command: cmd.command, password: sudo.password, timeout: 120 }); }
+      catch (e) { return { ok: false, error: 'sudo call failed: ' + e.message }; }
     }
     if (t === 'exec') {
-      // Even regular exec can hit a sudo path — detect before running
       const rawCmd = String(cmd.command || '').trim();
       if (/(?:^|[\s&|;])sudo\b/.test(rawCmd) && !__sudoPassword) {
         addBridgeSystemMsg('This command needs sudo. Asking for your password…');
@@ -1191,7 +1236,7 @@
   function cmdSignature(cmd) {
     const t = cmd.type;
     if (t === 'exec' || t === 'sudo') return t + ':' + cmd.command.trim();
-    if (t === 'write') return 'write:' + cmd.path + ':' + (cmd.content || '').length;
+    if (t === 'write') return 'write:' + cmd.path;                       // size not in sig → rewrites allowed
     if (t === 'append') return 'append:' + cmd.path + ':' + (cmd.content || '').length;
     if (t === 'delete') return 'delete:' + cmd.path;
     if (t === 'move') return 'move:' + cmd.from + '→' + cmd.to;
@@ -1249,6 +1294,60 @@
   }
   function skipBridgeQuestion() { closeBridgeQuestionModal(); if (__bqResolver) { __bqResolver('[Skipped by user]'); __bqResolver = null; } }
 
+  /* ---------- Mirox Planner modal ---------- */
+  function showPlannerModal(designs) {
+    return new Promise((resolve) => {
+      const modal = $('#plannerModal');
+      const grid = $('#plannerGrid');
+      if (!modal || !grid) { resolve(null); return; }
+      grid.innerHTML = '';
+      const sub = $('#plannerSubtitle'); if (sub) sub.textContent = 'Pick a design — Mirox will build it for you';
+
+      designs.slice(0, 3).forEach((d) => {
+        const card = document.createElement('div');
+        card.className = 'planner-card';
+        const iframe = document.createElement('iframe');
+        iframe.className = 'planner-preview';
+        iframe.setAttribute('sandbox', 'allow-scripts');
+        iframe.setAttribute('loading', 'lazy');
+        iframe.srcdoc = '<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;height:100%;overflow:auto;font-family:system-ui,sans-serif;background:#fff;color:#111}</style></head><body>' + d.html + '</body></html>';
+
+        const footer = document.createElement('div');
+        footer.className = 'planner-card-footer';
+        footer.innerHTML = `
+          <div class="planner-card-label"><span class="planner-card-dot"></span><span class="planner-card-name">${escapeHtml(d.name)}</span><span class="planner-card-id">Design ${d.id}</span></div>
+          <button class="planner-choose-btn" type="button"><i class="ri-check-line"></i> Choose</button>
+        `;
+
+        card.appendChild(iframe);
+        card.appendChild(footer);
+        grid.appendChild(card);
+
+        footer.querySelector('.planner-choose-btn').addEventListener('click', () => {
+          closePlannerModal();
+          resolve({ id: d.id, name: d.name });
+        });
+      });
+
+      modal.classList.add('open');
+    });
+  }
+  function closePlannerModal() { $('#plannerModal')?.classList.remove('open'); }
+  let __plannerResolver = null;
+  function showPlannerModalPromise(designs) {
+    return new Promise((resolve) => {
+      __plannerResolver = resolve;
+      showPlannerModal(designs).then((choice) => {
+        if (__plannerResolver) { __plannerResolver(choice); __plannerResolver = null; }
+      });
+    });
+  }
+  function plannerSkip() {
+    closePlannerModal();
+    if (__plannerResolver) { __plannerResolver({ id: 0, name: 'Let Mirox decide' }); __plannerResolver = null; }
+  }
+
+  /* ---------- Bridge loop ---------- */
   async function fetchBridgeReply(history) {
     const env = __bridge.env || {};
     const envBlock = buildEnvBlockString();
@@ -1264,6 +1363,7 @@
         bridge: {
           connected: true, name: __bridge.name, model: __bridge.model, mode: 'developer', env,
           sudoAvailable: true,
+          plannerAvailable: true,
           filesWritten: bridgeTurn ? [...bridgeTurn.writtenFiles] : [],
           plannedFiles: bridgeTurn ? [...bridgeTurn.plannedFiles] : [],
           failedSignatures: bridgeTurn ? [...bridgeTurn.failedSignatures] : [],
@@ -1283,21 +1383,25 @@
     await new Promise(r => setTimeout(r, AUTO_CONTINUE_DELAY_MS));
     clearInterval(ticker);
   }
+
   async function runBridgeTurn(userText, isResume = false) {
     if (!__bridge.connected) { setBwHint('Bridge is not connected.', 'err'); return; }
     if (bridgeRunning) return;
     bridgeRunning = true;
     if (bridgeAutoTimer) { clearTimeout(bridgeAutoTimer); bridgeAutoTimer = null; }
     updateBridgeSendBtn();
+
     if (!isResume) {
       bridgeQuestionCount = 0;
       bridgeTaskComplete = false;
+      bridgeWaitingForUser = false;
       bridgeTurn = { runs: 0, plannedFiles: new Set(), writtenFiles: new Set(), commandLog: new Map(), failedSignatures: new Set(), commandsRun: 0 };
       bridgeProgress = 0;
       updateBridgeProgress(2, 'Starting…');
       addBridgeUserMsg(userText);
       bridgeConversation.push({ role: 'user', content: userText });
     } else setProgressText('Continuing…');
+
     let iter = 0, autoContinues = 0;
     try {
       while (iter++ < MAX_BRIDGE_ITER) {
@@ -1309,6 +1413,7 @@
         try { reply = await fetchBridgeReply(bridgeConversation); }
         catch (e) { if (thinkingEl) thinkingEl.remove(); addBridgeSystemMsg('AI error: ' + e.message); break; }
         if (thinkingEl) thinkingEl.remove();
+
         if (!reply || !reply.trim()) {
           if (autoContinues < MAX_AUTO_CONTINUES) {
             autoContinues++;
@@ -1318,22 +1423,68 @@
           }
           break;
         }
+
+        // ---------- Mirox Planner (designs) ----------
+        const designs = extractBridgeDesigns(reply);
+        if (designs && designs.length) {
+          const narration0 = getNarrationText(reply.replace(/<bridge-designs>[\s\S]*?<\/bridge-designs>/g, ''));
+          if (narration0) addBridgeAiMsg(narration0);
+          addBridgeSystemMsg('Mirox Planner: showing 3 designs to choose from…');
+          bridgeConversation.push({ role: 'assistant', content: reply });
+          if (bridgeConversation.length > 50) bridgeConversation = bridgeConversation.slice(-50);
+
+          // Pause the loop and let the user pick.
+          bridgeWaitingForUser = true;
+          setProgressText('Waiting for you to pick a design…');
+          const choice = await showPlannerModalPromise(designs);
+          if (!choice) { break; }
+          const choiceText = choice.id === 0 ? 'user_chosed(0)  // let Mirox decide' : `user_chosed(${choice.id})  // ${choice.name}`;
+          addBridgeUserMsg(choiceText);
+          bridgeConversation.push({ role: 'user', content: choiceText });
+          bridgeWaitingForUser = false;
+          setProgressText('Building the chosen design…');
+          continue;
+        }
+
+        // ---------- Free-form question pause ----------
+        const cmdsInReply = extractBridgeCommands(reply);
+        const questionsInReply = extractBridgeQuestions(reply);
+        const saidDone = /\bDONE\b/i.test(reply);
+
+        if (!cmdsInReply.length && !questionsInReply.length && !saidDone && looksLikeFreeQuestion(reply)) {
+          const narrationQ = getNarrationText(reply);
+          if (narrationQ) addBridgeAiMsg(narrationQ);
+          addBridgeSystemMsg('Mirox is waiting for your answer — type below to reply.');
+          bridgeConversation.push({ role: 'assistant', content: reply });
+          if (bridgeConversation.length > 50) bridgeConversation = bridgeConversation.slice(-50);
+          bridgeWaitingForUser = true;
+          bridgeTaskComplete = true;
+          setProgressText('Waiting for your reply…');
+          updateBridgeSendBtn();
+          return;  // do not auto-continue
+        }
+
+        // ---------- Progress ----------
         const prog = extractProgressTag(reply);
         const totalPlanned = bridgeTurn.plannedFiles.size;
         const doneCount = bridgeTurn.writtenFiles.size;
         if (totalPlanned > 0) { updateBridgeProgress(2 + Math.round((doneCount / totalPlanned) * 93), `Files: ${doneCount} / ${totalPlanned}`); }
         else if (prog && prog.total > 0) { updateBridgeProgress(Math.min(95, 2 + Math.round((prog.step / prog.total) * 93)), prog.label || `Step ${prog.step} of ${prog.total}`); }
         else { updateBridgeProgress(Math.min(90, 5 + iter * 3), `Working… (step ${iter})`); }
+
         const plan = extractBridgePlan(reply);
         if (plan && plan.length) { for (const f of plan) bridgeTurn.plannedFiles.add(f); addBridgeSystemMsg(`Planned ${plan.length} file(s)`); }
+
         const narration = getNarrationText(reply);
         if (narration) addBridgeAiMsg(narration);
+
         bridgeConversation.push({ role: 'assistant', content: reply });
         if (bridgeConversation.length > 50) bridgeConversation = bridgeConversation.slice(-50);
-        const questions = extractBridgeQuestions(reply);
-        if (questions.length > 0) {
+
+        // ---------- Structured question modal ----------
+        if (questionsInReply.length > 0) {
           const remaining = MAX_BRIDGE_QUESTIONS - bridgeQuestionCount;
-          const toAsk = questions.slice(0, Math.max(0, remaining));
+          const toAsk = questionsInReply.slice(0, Math.max(0, remaining));
           if (toAsk.length > 0) {
             addBridgeSystemMsg(`Paused — ${toAsk.length} question${toAsk.length === 1 ? '' : 's'} pending.`);
             for (let qi = 0; qi < toAsk.length; qi++) {
@@ -1356,11 +1507,12 @@
             continue;
           }
         }
-        const cmds = extractBridgeCommands(reply);
-        if (cmds.length > 0) {
+
+        // ---------- Execute commands ----------
+        if (cmdsInReply.length > 0) {
           const resultLines = [];
-          for (let i = 0; i < cmds.length; i++) {
-            const cmd = cmds[i];
+          for (let i = 0; i < cmdsInReply.length; i++) {
+            const cmd = cmdsInReply[i];
             const sig = cmdSignature(cmd);
             if (shouldBlockSignature(sig)) { resultLines.push(`[${cmd.type}] BLOCKED (already tried): ${sig}`); continue; }
             bridgeTurn.commandLog.set(sig, (bridgeTurn.commandLog.get(sig) || 0) + 1);
@@ -1384,7 +1536,8 @@
           });
           continue;
         }
-        const saidDone = /\bDONE\b/i.test(reply);
+
+        // ---------- DONE ----------
         const hasPlan = bridgeTurn.plannedFiles.size > 0;
         const allFilesWritten = hasPlan && bridgeTurn.writtenFiles.size >= bridgeTurn.plannedFiles.size;
         if (saidDone && (allFilesWritten || !hasPlan)) {
@@ -1399,6 +1552,8 @@
           bridgeConversation.push({ role: 'user', content: `[System] Missing: ${missing.join(', ')}.` });
           continue;
         }
+
+        // ---------- Otherwise auto-continue ----------
         if (!saidDone) {
           if (autoContinues < MAX_AUTO_CONTINUES) {
             autoContinues++;
@@ -1410,10 +1565,11 @@
           break;
         }
       }
+
       const hasPlan = bridgeTurn.plannedFiles.size > 0;
       const allFilesWritten = hasPlan && bridgeTurn.writtenFiles.size >= bridgeTurn.plannedFiles.size;
       const missing = hasPlan ? [...bridgeTurn.plannedFiles].filter(f => !bridgeTurn.writtenFiles.has(f)) : [];
-      if (!(allFilesWritten || !hasPlan) && !bridgeTaskComplete) {
+      if (!(allFilesWritten || !hasPlan) && !bridgeTaskComplete && !bridgeWaitingForUser) {
         setProgressText(`Resuming in ${AUTO_CONTINUE_DELAY_MS / 1000}s…`);
         bridgeAutoTimer = setTimeout(() => {
           if (!__bridge.connected) return;
@@ -1433,10 +1589,19 @@
     const text = inp.value.trim();
     if (!text || bridgeRunning || !__bridge.connected) return;
 
-    bridgeConversation = [];
-    bridgeTaskComplete = true;
-    if (bridgeAutoTimer) { clearTimeout(bridgeAutoTimer); bridgeAutoTimer = null; }
-    bridgeTurn = null;
+    // If the AI paused to ask a free-form question, keep context.
+    if (bridgeWaitingForUser) {
+      bridgeWaitingForUser = false;
+      if (!bridgeTurn) {
+        bridgeTurn = { runs: 0, plannedFiles: new Set(), writtenFiles: new Set(), commandLog: new Map(), failedSignatures: new Set(), commandsRun: 0 };
+      }
+    } else {
+      // Fresh task → clear context
+      bridgeConversation = [];
+      bridgeTaskComplete = true;
+      if (bridgeAutoTimer) { clearTimeout(bridgeAutoTimer); bridgeAutoTimer = null; }
+      bridgeTurn = null;
+    }
 
     inp.value = ''; inp.style.height = 'auto';
     updateBridgeSendBtn();
@@ -1497,7 +1662,7 @@
       if (btn) btn.classList.toggle('active', forceSearchNext);
       toast(forceSearchNext ? 'Web search enabled — your next message will be searched.' : 'Web search disabled.');
       const ta = $('#messageInput');
-      if (ta) { ta.placeholder = forceSearchNext ? 'What should I search the web for?' : 'How can I help you today? (Tip: attach an image and ask about it)'; ta.focus(); }
+      if (ta) { ta.placeholder = forceSearchNext ? 'What should I search the web for?' : 'How can I help you today?'; ta.focus(); }
     });
 
     on('#imageModeBtn', 'click', () => { openModal('imageModal'); renderImageHistory(); });
@@ -1512,6 +1677,7 @@
     on('#logoutBtn', 'click', doLogout);
     on('#savePersonaBtn', 'click', savePersona);
     on('#loginmentBtn', 'click', doLoginment);
+
     $$('.settings-tab').forEach(tab => {
       tab.onclick = () => { const t = tab.dataset.tab;
         $$('.settings-tab').forEach(x => x.classList.toggle('active', x.dataset.tab === t));
@@ -1536,7 +1702,7 @@
     on('#bwDisconnectBtn', 'click', stopBridge);
     on('#bwSudoForgetBtn', 'click', forgetSudo);
 
-    // Sudo modal handlers
+    // Sudo modal
     on('#sudoSubmitBtn', 'click', submitSudo);
     on('#sudoSkipBtn', 'click', skipSudo);
     on('#sudoCloseBtn', 'click', skipSudo);
@@ -1547,6 +1713,10 @@
       else { pwd.type = 'password'; if (rev) rev.innerHTML = '<i class="ri-eye-line"></i>'; }
     });
     on('#sudoPasswordInput', 'keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitSudo(); } });
+
+    // Planner modal
+    on('#plannerCloseBtn', 'click', plannerSkip);
+    on('#plannerSkipBtn', 'click', plannerSkip);
 
     const bwInp = $('#bridgeInput');
     if (bwInp) {
@@ -1563,6 +1733,7 @@
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         closeImageViewer(); closeModelPicker();
+        if ($('#plannerModal')?.classList.contains('open')) { plannerSkip(); return; }
         if ($('#sudoModal')?.classList.contains('open')) { skipSudo(); return; }
         if ($('#bridgeQuestionModal')?.classList.contains('open')) return;
         if ($('#bridgeWorkspace')?.classList.contains('open')) closeBridgeWorkspace();
