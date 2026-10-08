@@ -100,19 +100,11 @@
   <header class="chat-header">
     <button id="hamburgerBtn" class="icon-btn hamburger" type="button"><i class="ri-menu-line"></i></button>
     <h2 id="chatTitle" class="chat-title">New chat</h2>
-
     <div id="creditBar" class="credit-bar" style="display:none;">
-      <div class="credit-pill" data-credit="vision" title="Image uploads today">
-        <i class="ri-eye-line"></i><span>10/10</span>
-      </div>
-      <div class="credit-pill" data-credit="image" title="Image generations today">
-        <i class="ri-image-line"></i><span>10/10</span>
-      </div>
-      <div class="credit-pill" data-credit="eclipse" title="Eclipse messages today">
-        <i class="ri-sparkling-2-line"></i><span>5/5</span>
-      </div>
+      <div class="credit-pill" data-credit="vision" title="Image uploads today"><i class="ri-eye-line"></i><span>10/10</span></div>
+      <div class="credit-pill" data-credit="image" title="Image generations today"><i class="ri-image-line"></i><span>10/10</span></div>
+      <div class="credit-pill" data-credit="eclipse" title="Eclipse messages today"><i class="ri-sparkling-2-line"></i><span>5/5</span></div>
     </div>
-
     <div class="chat-header-actions">
       <div id="modelPicker" class="model-picker-wrap">
         <button id="modelPickerBtn" class="model-picker-btn" type="button">
@@ -215,16 +207,16 @@
           <div class="bridge-empty" id="bridgeEmpty">
             <i class="ri-terminal-box-line"></i>
             <h3>Bridge Workspace</h3>
-            <p>Tell Mirox what to build. It picks a design, writes all files silently into <code>~/&lt;project&gt;/</code>, verifies them, and shows a live preview.</p>
+            <p>Tell Mirox what to build. It writes the files silently into <code>~/&lt;project&gt;/</code>, verifies them, and shows you a live preview.</p>
             <ol class="bridge-empty-steps">
               <li>Download the client → extract → <code>pip install aiohttp</code> → <code>python runner.py</code>.</li>
               <li>Optional: <code>sudo apt install kdeconnect</code> for phone control.</li>
-              <li>Click <strong>Connect</strong>. Try: <em>"build a landing page for a coffee shop"</em>.</li>
+              <li>Click <strong>Connect</strong>. Try: <em>"build a calculator in my home folder"</em>.</li>
             </ol>
           </div>
         </div>
         <div class="bridge-input-row">
-          <textarea id="bridgeInput" placeholder="e.g. Build a landing page for a coffee shop in my home folder" rows="1"></textarea>
+          <textarea id="bridgeInput" placeholder="e.g. Build a calculator in my home folder" rows="1"></textarea>
           <button id="bridgeSendBtn" class="send-btn is-disabled" type="button" aria-disabled="true"><i class="ri-arrow-up-line"></i></button>
         </div>
       </div>
@@ -282,11 +274,11 @@
 
         <div class="bridge-side-section">
           <h4>Quick actions</h4>
+          <button class="bw-quick" data-q="Build a calculator in my home folder">Calculator</button>
           <button class="bw-quick" data-q="Build a modern landing page for a coffee shop in my home folder">Landing page</button>
           <button class="bw-quick" data-q="Build a snake game in my home folder">Snake game</button>
           <button class="bw-quick" data-q="Build a todo app in my home folder">Todo app</button>
           <button class="bw-quick" data-q="Build a personal portfolio in my home folder">Portfolio site</button>
-          <button class="bw-quick" data-q="Build a calculator in my home folder">Calculator</button>
           <button class="bw-quick" data-q="Scan my devices and show me what's available.">Scan devices</button>
           <button class="bw-quick" data-q="Build a small todo app for my phone, then send it to my phone.">Build + send to phone</button>
         </div>
