@@ -134,7 +134,7 @@
       <div class="suggestion-grid">
         <button class="suggestion-card" type="button" data-prompt="Search the web for the latest AI news"><i class="ri-global-line"></i><span>Search the web for AI news</span></button>
         <button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span>Generate me an image of a cat</span></button>
-        <button class="suggestion-card" type="button" data-prompt="Help me write code"><i class="ri-code-line"></i><span>Help me write code</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Open the Bridge workspace and build me a landing page"><i class="ri-link"></i><span>Build a project with Bridge</span></button>
         <button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span>Explain a concept simply</span></button>
       </div>
     </div>
@@ -157,7 +157,7 @@
     <div class="composer">
       <button type="button" id="attachBtn" class="icon-btn" title="Attach files (images or text)"><i class="ri-attachment-2"></i></button>
       <input type="file" id="fileInput" multiple hidden accept="image/*,.txt,.md,.json,.csv,.log,.py,.js,.ts,.html,.css,.yml,.yaml,.xml,.sh,.sql,.java,.c,.cpp,.go,.rs,.rb,.php">
-      <textarea id="messageInput" class="message-input" placeholder="How can I help you today? (Tip: attach an image and ask about it)" rows="1"></textarea>
+      <textarea id="messageInput" class="message-input" placeholder="How can I help you today?" rows="1"></textarea>
       <button type="button" id="stopBtn" class="icon-btn stop-btn" style="display:none;"><i class="ri-stop-circle-line"></i></button>
       <button type="button" id="sendBtn" class="send-btn is-disabled" aria-disabled="true"><i class="ri-arrow-up-line"></i></button>
     </div>
@@ -199,7 +199,7 @@
           <div class="bridge-empty" id="bridgeEmpty">
             <i class="ri-terminal-box-line"></i>
             <h3>Bridge Workspace</h3>
-            <p>Give Mirox direct control over your laptop. It writes files, runs commands, sends emails, checks system health, uses git, and builds full projects automatically.</p>
+            <p>Give Mirox direct control over your laptop. It writes files, runs commands, sends emails, checks system health, and builds full projects — with the Mirox Planner so you pick the design you like.</p>
             <ol class="bridge-empty-steps">
               <li>Click <strong>Download client</strong> (top right) → extract the ZIP.</li>
               <li>Run <code>pip install aiohttp</code> then <code>python runner.py</code>.</li>
@@ -248,10 +248,10 @@
         <div class="bridge-side-section">
           <h4>Quick actions</h4>
           <button class="bw-quick" data-q="List my home directory and tell me what's in it.">List home dir</button>
-          <button class="bw-quick" data-q="Build a snake game in my home folder as a folder called snake-game with index.html and game.js">Snake game</button>
+          <button class="bw-quick" data-q="Build a modern landing page for a coffee shop in my home folder">Landing page</button>
+          <button class="bw-quick" data-q="Build a snake game in my home folder as a folder called snake-game">Snake game</button>
           <button class="bw-quick" data-q="Run a full system health check and tell me if anything is wrong">System health check</button>
           <button class="bw-quick" data-q="Show me the top CPU processes running right now">Top processes</button>
-          <button class="bw-quick" data-q="Write a Python script in my home folder called hello.py that prints 'Hello from Mirox' and run it">Hello Python</button>
           <button class="bw-quick" data-q="Take a screenshot and save it to my Desktop">Screenshot to Desktop</button>
         </div>
       </aside>
@@ -259,7 +259,34 @@
   </div>
 </div>
 
-<!-- SUDO PASSWORD MODAL -->
+<!-- MIROX PLANNER — design picker modal -->
+<div id="plannerModal" class="planner-overlay">
+  <div class="planner-panel">
+    <header class="planner-top">
+      <div class="planner-title">
+        <i class="ri-layout-masonry-line"></i>
+        <div>
+          <div class="planner-title-main">Mirox Planner</div>
+          <div class="planner-title-sub" id="plannerSubtitle">Pick a design — Mirox will build it for you</div>
+        </div>
+      </div>
+      <button class="icon-btn" id="plannerCloseBtn" type="button"><i class="ri-close-line"></i></button>
+    </header>
+
+    <div class="planner-body">
+      <div id="plannerGrid" class="planner-grid">
+        <!-- 3 previews injected here -->
+      </div>
+    </div>
+
+    <footer class="planner-footer">
+      <span class="planner-hint"><i class="ri-information-line"></i> These are live demos — scroll, hover, click inside each preview. Pick your favorite.</span>
+      <button id="plannerSkipBtn" class="modal-btn" type="button"><i class="ri-skip-forward-line"></i> Let Mirox decide</button>
+    </footer>
+  </div>
+</div>
+
+<!-- SUDO MODAL -->
 <div id="sudoModal" class="question-overlay">
   <div class="question-panel sudo-panel">
     <div class="question-top">
@@ -390,7 +417,7 @@
   <div class="modal modal-wide">
     <button class="icon-btn modal-close" type="button" data-close="plansModal"><i class="ri-close-line"></i></button>
     <h2 class="modal-title">Plans</h2>
-    <p class="modal-sub">Luna and Gen are free and unlimited. Only image generation, uploads, and Eclipse have daily caps.</p>
+    <p class="modal-sub">Luna and Gen are free and unlimited. Bridge is free.</p>
     <div id="plansGrid" class="plans-grid"></div>
   </div>
 </div>
