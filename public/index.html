@@ -155,7 +155,7 @@
     </div>
 
     <div class="composer">
-      <button type="button" id="attachBtn" class="icon-btn" title="Attach files (images or text)"><i class="ri-attachment-2"></i></button>
+      <button type="button" id="attachBtn" class="icon-btn" title="Attach files"><i class="ri-attachment-2"></i></button>
       <input type="file" id="fileInput" multiple hidden accept="image/*,.txt,.md,.json,.csv,.log,.py,.js,.ts,.html,.css,.yml,.yaml,.xml,.sh,.sql,.java,.c,.cpp,.go,.rs,.rb,.php">
       <textarea id="messageInput" class="message-input" placeholder="How can I help you today?" rows="1"></textarea>
       <button type="button" id="stopBtn" class="icon-btn stop-btn" style="display:none;"><i class="ri-stop-circle-line"></i></button>
@@ -164,7 +164,7 @@
   </div>
 </main>
 
-<!-- ==================== BRIDGE WORKSPACE ==================== -->
+<!-- BRIDGE WORKSPACE -->
 <div id="bridgeWorkspace" class="bridge-workspace-overlay">
   <div class="bridge-workspace-panel">
     <header class="bridge-workspace-top">
@@ -215,7 +215,7 @@
           <div class="bridge-empty" id="bridgeEmpty">
             <i class="ri-terminal-box-line"></i>
             <h3>Bridge Workspace</h3>
-            <p>Tell Mirox what to build. It picks a design, writes all files silently into <code>~/&lt;project&gt;/</code>, verifies them, and shows you a live preview.</p>
+            <p>Tell Mirox what to build. It picks a design, writes all files silently into <code>~/&lt;project&gt;/</code>, verifies them, and shows a live preview.</p>
             <ol class="bridge-empty-steps">
               <li>Download the client → extract → <code>pip install aiohttp</code> → <code>python runner.py</code>.</li>
               <li>Optional: <code>sudo apt install kdeconnect</code> for phone control.</li>
@@ -295,7 +295,7 @@
   </div>
 </div>
 
-<!-- ==================== LIVE PREVIEW MODAL ==================== -->
+<!-- LIVE PREVIEW -->
 <div id="bwPreviewModal" class="planner-overlay">
   <div class="planner-panel" style="max-width:1400px;">
     <header class="planner-top">
@@ -319,7 +319,7 @@
   </div>
 </div>
 
-<!-- ==================== KDE DEVICE PICKER ==================== -->
+<!-- KDE DEVICE PICKER -->
 <div id="kdeModal" class="planner-overlay">
   <div class="planner-panel" style="max-width: 760px;">
     <header class="planner-top">
@@ -343,7 +343,7 @@
   </div>
 </div>
 
-<!-- ==================== MIROX PLANNER ==================== -->
+<!-- MIROX PLANNER -->
 <div id="plannerModal" class="planner-overlay">
   <div class="planner-panel">
     <header class="planner-top">
@@ -356,11 +356,9 @@
       </div>
       <button class="icon-btn" id="plannerCloseBtn" type="button"><i class="ri-close-line"></i></button>
     </header>
-
     <div class="planner-body">
       <div id="plannerGrid" class="planner-grid"></div>
     </div>
-
     <footer class="planner-footer">
       <span class="planner-hint"><i class="ri-information-line"></i> Live demos — scroll, hover, click inside each preview. Pick your favorite.</span>
       <button id="plannerSkipBtn" class="modal-btn" type="button"><i class="ri-skip-forward-line"></i> Let Mirox decide</button>
@@ -368,7 +366,7 @@
   </div>
 </div>
 
-<!-- ==================== SUDO MODAL ==================== -->
+<!-- SUDO -->
 <div id="sudoModal" class="question-overlay">
   <div class="question-panel sudo-panel">
     <div class="question-top">
@@ -379,29 +377,24 @@
       </div>
       <button class="icon-btn" id="sudoCloseBtn" type="button" title="Skip"><i class="ri-close-line"></i></button>
     </div>
-
     <p class="question-text" id="sudoCommandText" style="font-family:'SF Mono',monospace;font-size:13px;background:var(--panel-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;word-break:break-all;"></p>
-
     <div class="sudo-input-wrap">
       <input type="password" id="sudoPasswordInput" class="modal-input" placeholder="Your sudo password" autocomplete="current-password" spellcheck="false">
       <button class="icon-btn sudo-reveal" type="button" id="sudoRevealBtn" title="Show / hide"><i class="ri-eye-line"></i></button>
     </div>
-
     <label class="sudo-remember">
       <input type="checkbox" id="sudoRememberChk">
       <span>Remember for this session (kept in memory only)</span>
     </label>
-
     <div class="question-footer" style="margin-top:14px;">
       <button id="sudoSkipBtn" class="modal-btn" type="button"><i class="ri-skip-forward-line"></i> Skip</button>
       <button id="sudoSubmitBtn" class="modal-btn primary" type="button">Run with sudo <i class="ri-arrow-right-line"></i></button>
     </div>
-
     <div id="sudoHint" class="sudo-hint"></div>
   </div>
 </div>
 
-<!-- ==================== QUESTION MODAL ==================== -->
+<!-- QUESTION MODAL -->
 <div id="bridgeQuestionModal" class="question-overlay">
   <div class="question-panel">
     <div class="question-top">
@@ -412,18 +405,14 @@
       </div>
       <button class="icon-btn" id="bqSkipOne" type="button" title="Skip"><i class="ri-skip-forward-line"></i></button>
     </div>
-
     <div class="question-progress">
       <div class="question-progress-fill" id="bqProgressFill" style="width:0%;"></div>
     </div>
-
     <p class="question-text" id="bqText"></p>
     <div class="question-options" id="bqOptions"></div>
-
     <div class="question-custom" id="bqCustomWrap" style="display:none;">
       <input type="text" id="bqCustomInput" class="modal-input" placeholder="Or type your own answer…">
     </div>
-
     <div class="question-footer">
       <button id="bqCustomToggle" class="modal-btn" type="button"><i class="ri-edit-line"></i> Custom</button>
       <button id="bqSubmit" class="modal-btn primary" type="button">Submit &amp; continue <i class="ri-arrow-right-line"></i></button>
@@ -431,7 +420,7 @@
   </div>
 </div>
 
-<!-- ==================== LOGIN ==================== -->
+<!-- LOGIN -->
 <div id="loginModal" class="modal-overlay">
   <div class="modal">
     <button class="icon-btn modal-close" type="button" data-close="loginModal"><i class="ri-close-line"></i></button>
@@ -449,7 +438,7 @@
   </div>
 </div>
 
-<!-- ==================== SETTINGS ==================== -->
+<!-- SETTINGS -->
 <div id="settingsModal" class="modal-overlay">
   <div class="modal modal-wide">
     <button class="icon-btn modal-close" type="button" data-close="settingsModal"><i class="ri-close-line"></i></button>
@@ -493,7 +482,7 @@
   </div>
 </div>
 
-<!-- ==================== PLANS ==================== -->
+<!-- PLANS -->
 <div id="plansModal" class="modal-overlay">
   <div class="modal modal-wide">
     <button class="icon-btn modal-close" type="button" data-close="plansModal"><i class="ri-close-line"></i></button>
@@ -503,7 +492,7 @@
   </div>
 </div>
 
-<!-- ==================== IMAGE STUDIO ==================== -->
+<!-- IMAGE STUDIO -->
 <div id="imageModal" class="modal-overlay">
   <div class="modal">
     <button class="icon-btn modal-close" type="button" data-close="imageModal"><i class="ri-close-line"></i></button>
@@ -521,7 +510,7 @@
   </div>
 </div>
 
-<!-- ==================== SUPPORT ==================== -->
+<!-- SUPPORT -->
 <div id="supportModal" class="modal-overlay">
   <div class="modal">
     <button class="icon-btn modal-close" type="button" data-close="supportModal"><i class="ri-close-line"></i></button>
@@ -535,7 +524,7 @@
   </div>
 </div>
 
-<!-- ==================== IMAGE VIEWER ==================== -->
+<!-- IMAGE VIEWER -->
 <div id="imageViewer" class="image-viewer">
   <div class="image-viewer-backdrop" data-iv-close></div>
   <div class="image-viewer-panel" oncontextmenu="return false;">
