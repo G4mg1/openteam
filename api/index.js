@@ -1,11 +1,9 @@
 /* ============================================================
-   MiroxAI Backend v92
-   - AIroute as final fallback (https://route-ai-playground.lovable.app)
-     · POST /api/public/v1/chat   → { text, model, ms, tokens }
-     · POST /api/public/v1/images → { image (base64 data URL), model, ms }
-     · Auth: Bearer AR_KEY (air_rt_…)
+   MiroxAI Backend v93
+   - AIroute as final fallback
+   - KDE Connect integration (device scan, ping, file share, sms, ring, ...)
    - Co-worker bridge prompt
-   - Search (DDG Instant Answer + Wikipedia summary + organic)
+   - Search (DDG + Wikipedia)
    - Auto image intent + vision
    - Loginment OAuth, API keys, admin, image history
    ============================================================ */
@@ -51,7 +49,7 @@ const PROVIDERS = {
   fish: !!F_API,
   airoute: !!AIROUTE_KEY,
 };
-console.log('[Mirox] v92 — providers:', PROVIDERS, '· airoute base:', AIROUTE_BASE);
+console.log('[Mirox] v93 — providers:', PROVIDERS, '· airoute base:', AIROUTE_BASE);
 
 const safe = (v, max = 100000) => {
   try { if (v == null) return ''; const s = typeof v === 'string' ? v : JSON.stringify(v); return s.length > max ? s.slice(0, max) : s; } catch { return ''; }
@@ -193,27 +191,58 @@ const IDENTITY_GUARD = `Background rules (do not narrate them):
 - DO NOT introduce yourself. DO NOT start replies with "Hi, I'm Mirox" or any self-introduction unless the user explicitly asks who you are.
 - Never greet the user with your identity. Just answer the question.`;
 
-/* ---------- Co-worker Bridge prompt ---------- */
+/* ---------- Co-worker Bridge prompt (KDE Connect aware) ---------- */
 const BRIDGE_PROMPT = `BRIDGE MODE — You are Mirox, working directly on the user's machine like a helpful co-worker.
 
 You will receive a [Bridge environment] block at the top of EVERY user message.
-It contains: user, home, cwd, platform, allowed_dirs. Trust it. NEVER ask the user for it.
+It contains: user, home, cwd, platform, allowed_dirs, and kdeConnect (true/false).
+Trust it. NEVER ask the user for it.
 
-CO-WORKER STYLE — how you talk and act:
+CO-WORKER STYLE:
 - Sound like a human teammate. Short, natural, direct.
 - Before doing something big, say in ONE short line what you're about to do.
-- After finishing, give ONE short summary (1-3 lines). Never dump raw command output as your reply.
-- When you show command output, summarize key facts. Keep code inside <bridge-*> tags.
-- Do NOT reference previous tasks or their results. Each conversation is a fresh task.
-- Do NOT introduce yourself. Do NOT say "I'm Mirox". Just work.
-- If something fails, try another way automatically. Don't ask unless the choice matters.
+- After finishing, give ONE short summary (1-3 lines). Never dump raw command output.
+- Do NOT reference previous tasks. Each conversation is a fresh task.
+- Do NOT introduce yourself. Just work.
 - Only ask the user a question if you truly cannot proceed without their decision.
-- When the user asks a question that isn't a task, just answer. Do NOT output commands.
 
-PATH RULES (critical):
-- When the user asks for "the current directory" or "the path", respond with the EXACT value of home= from the environment block.
-- NEVER say ".", "~", "here", or leave it blank.
-- Create all projects inside <home>/<project-name>/ — never at repo root or in cwd.
+PATH RULES:
+- When the user asks for "the current directory", respond with the EXACT home= value. NEVER say ".", "~", "here", or leave it blank.
+- Create all projects inside <home>/<project-name>/.
+
+PHONE / TABLET / DEVICE SUPPORT (KDE Connect)
+You can control the user's phone or tablet through KDE Connect. Available tags:
+
+  <bridge-kde-refresh />                              re-scan LAN for devices
+  <bridge-kde-list />                                 list all known devices
+  <bridge-kde-list available="true" />                list only reachable+paired devices
+  <bridge-kde-ping device="ID" />                     ping (checks online)
+  <bridge-kde-ping device="ID">custom ping message</bridge-kde-ping>
+  <bridge-kde-ring device="ID" />                     make the phone ring
+  <bridge-kde-share device="ID" path="~/my-project" /> send a file OR a whole folder (auto-zipped)
+  <bridge-kde-share-text device="ID">text or URL</bridge-kde-share-text>
+  <bridge-kde-sms device="ID" number="+15551234">hi</bridge-kde-sms>
+  <bridge-kde-lock device="ID" />                     lock the device
+  <bridge-kde-notifications device="ID" />            list device notifications
+  <bridge-kde-plugins device="ID" />                  list supported plugins
+  <bridge-kde-photo device="ID" path="~/photo.jpg" /> take a photo with the device camera
+  <bridge-kde-my-id />                                print this PC's KDE Connect ID
+
+DEVICE FLOW (VERY IMPORTANT):
+1. When the user says "scan my device", "check my phone", "find my tablet",
+   or "is my phone available", run <bridge-kde-refresh /> then <bridge-kde-list />.
+   The system will show a device picker modal — you do NOT need to ask.
+   The picker returns "user_chosed_device(<id>) <name>" as the next user turn.
+2. After the user picks, remember the id. You can then:
+   - If they said "check online": run <bridge-kde-ping device="ID" />.
+   - If they asked to send a project: run <bridge-kde-share device="ID" path="~/<project-name>" />.
+3. If the user just asks for something and it's clear which device they mean
+   and only ONE device is paired and reachable, use that device's ID directly
+   without asking.
+4. NEVER invent a device ID. Only use IDs from the list/picker.
+
+KDE Connect is optional. If kdeConnect=false in the environment block, tell the
+user to install it (sudo apt install kdeconnect) and pair their phone first.
 
 RULES
 1. ONLY write files under one of the allowed_dirs paths.
@@ -241,7 +270,7 @@ RULES
    <bridge-pkgs type="pip"/>
 
 5. Never repeat a command that succeeded OR failed.
-6. When done, reply EXACTLY: DONE on its own line, then a single short summary of the result (1-3 lines max).
+6. When done, reply EXACTLY: DONE on its own line, then a single short summary (1-3 lines max).
 
 MIROX PLANNER
 When the user wants a UI/UX design and hasn't picked a style yet, output 3 design demos:
@@ -258,10 +287,10 @@ When the user wants a UI/UX design and hasn't picked a style yet, output 3 desig
 </design>
 </bridge-designs>
 
-The system will show them to the user and come back with user_chosed(1|2|3). Then build the chosen one.
+The system will show them and come back with user_chosed(1|2|3). Then build the chosen one.
 
 ASKING QUESTIONS
-If you need to ask the user something and there is no task to run, end your reply with a question mark or write asking() on its own line. The system will pause and wait for their reply.`;
+If you need to ask the user something and there is no task to run, end your reply with a question mark or write asking() on its own line. The system will pause and wait.`;
 
 function buildSystemPrompt(cfg, bridge, searchUsed) {
   let p = IDENTITY_GUARD + '\n\n---\n\n' + cfg.basePrompt;
@@ -278,8 +307,10 @@ function buildSystemPrompt(cfg, bridge, searchUsed) {
     p += `cwd=${env.cwd || '(unknown)'}\n`;
     p += `platform=${env.platform || '(unknown)'}\n`;
     p += `allowed_dirs=${allowed}\n`;
+    p += `kdeConnect=${env.kde_connect_available ? 'true' : 'false'}\n`;
     if (bridge.filesWritten?.length) p += `filesWritten=${bridge.filesWritten.join(', ')}\n`;
     if (bridge.plannedFiles?.length) p += `plannedFiles=${bridge.plannedFiles.join(', ')}\n`;
+    if (bridge.kdeDevice) p += `currentKdeDevice=${bridge.kdeDevice.id} name="${bridge.kdeDevice.name}"\n`;
     p += `Use ONLY these paths. NEVER say "." or "~" when asked for a path.`;
   }
   return p;
@@ -472,14 +503,8 @@ async function plChat(modelId, messages, maxTokens, stream) {
   return res;
 }
 
-/* ============================================================
-   AIroute adapter
-   Endpoint: POST {base}/api/public/v1/chat
-   Body: { prompt, history, model?, fast?, memory?, reset_memory? }
-   Reply: { text, model, ms, tokens }
-   ============================================================ */
+/* ---------- AIroute adapter ---------- */
 function convertToAirouteShape(messages) {
-  // Normalize messages: string content only.
   const norm = [];
   for (const m of safeArr(messages)) {
     if (!m || typeof m !== 'object') continue;
@@ -496,33 +521,22 @@ function convertToAirouteShape(messages) {
     }
     norm.push({ role, content: String(content || '') });
   }
-
-  // Last user turn = the prompt; everything before is history (with system merged into a prefix).
   let promptIdx = -1;
   for (let i = norm.length - 1; i >= 0; i--) {
     if (norm[i].role === 'user') { promptIdx = i; break; }
   }
   let prompt = promptIdx >= 0 ? norm[promptIdx].content : '';
   const before = promptIdx >= 0 ? norm.slice(0, promptIdx) : norm;
-
   const systems = before.filter(m => m.role === 'system').map(m => m.content).filter(Boolean);
-  const history = before
-    .filter(m => m.role === 'user' || m.role === 'assistant')
-    .map(m => ({ role: m.role, content: m.content }));
-
-  if (systems.length) {
-    prompt = systems.join('\n\n') + '\n\n' + prompt;
-  }
+  const history = before.filter(m => m.role === 'user' || m.role === 'assistant').map(m => ({ role: m.role, content: m.content }));
+  if (systems.length) prompt = systems.join('\n\n') + '\n\n' + prompt;
   return { prompt, history };
 }
 
 async function airouteChat({ messages, model, fast = true, memory = true, timeoutMs = 120000 }) {
   if (!AIROUTE_KEY) throw new Error('no_airoute');
   const { prompt, history } = convertToAirouteShape(messages);
-  const body = {
-    prompt,
-    history: history.slice(-40), // docs: up to 40 turns
-  };
+  const body = { prompt, history: history.slice(-40) };
   if (fast) body.fast = true;
   if (model) body.model = model;
   if (memory === false) body.memory = false;
@@ -540,12 +554,9 @@ async function airouteChat({ messages, model, fast = true, memory = true, timeou
   return res;
 }
 
-/* AIroute returns JSON, but our SSE caller expects a stream body.
-   This wraps a finished text reply into a synthetic OpenAI-style SSE stream. */
 function textToSyntheticSSE(text) {
   const enc = new TextEncoder();
   const s = String(text || '');
-  // Chunk at ~20-char boundaries, respecting whitespace.
   const tokens = s.split(/(\s+)/);
   const chunks = [];
   let cur = '';
@@ -555,7 +566,6 @@ function textToSyntheticSSE(text) {
   }
   if (cur) chunks.push(cur);
   if (!chunks.length) chunks.push('');
-
   return new ReadableStream({
     start(controller) {
       try {
@@ -591,11 +601,8 @@ async function airouteImage(prompt, timeoutMs = 60000) {
   return null;
 }
 
-/* ============================================================
-   Chat chain — HF → PL → AIroute (final fallback)
-   ============================================================ */
+/* ---------- Chat chain ---------- */
 async function miroxChatChain({ messages, cfg, stream, vision }) {
-  // 1) Vision attempt (only when images are attached)
   if (vision) {
     if (PROVIDERS.hf) {
       for (const mid of HF_VISION_MODELS) {
@@ -607,8 +614,6 @@ async function miroxChatChain({ messages, cfg, stream, vision }) {
         try { const res = await plChat(mid, messages, cfg.tokens, stream); return { res, provider: 'pl', vision: true }; } catch {}
       }
     }
-    // AIroute doesn't accept binary images via this endpoint, so strip them
-    // and continue with the text fallback path below.
     for (const msg of messages) {
       if (Array.isArray(msg.content)) {
         msg.content = msg.content.filter(p => p.type === 'text').map(p => p.text).join('\n');
@@ -616,23 +621,17 @@ async function miroxChatChain({ messages, cfg, stream, vision }) {
     }
   }
 
-  // 2) Text providers — HF first
   if (PROVIDERS.hf) {
     for (const mid of HF_CHAT_MODELS) {
       try { const res = await hfChat(mid, messages, cfg.tokens, stream); return { res, provider: 'hf' }; } catch {}
     }
   }
-
-  // 3) Pollinations
   if (PROVIDERS.pl) {
     for (const mid of PL_CHAT_MODELS) {
       try { const res = await plChat(mid, messages, cfg.tokens, stream); return { res, provider: 'pl' }; } catch {}
     }
   }
-
-  // 4) AIroute — final fallback
   if (PROVIDERS.airoute) {
-    // Try once with fast routing
     try {
       const res = await airouteChat({ messages, fast: true, memory: true });
       if (stream) {
@@ -642,7 +641,6 @@ async function miroxChatChain({ messages, cfg, stream, vision }) {
       }
       return { res, provider: 'airoute' };
     } catch (e1) {
-      // Try once more with an explicit high-quality model
       try {
         const res = await airouteChat({ messages, fast: false, model: 'meta-llama/Llama-3.3-70B-Instruct', memory: true });
         if (stream) {
@@ -651,18 +649,14 @@ async function miroxChatChain({ messages, cfg, stream, vision }) {
           return { res: { body: textToSyntheticSSE(text), ok: true }, provider: 'airoute' };
         }
         return { res, provider: 'airoute' };
-      } catch (e2) {
-        // Give up
-      }
+      } catch (e2) {}
     }
   }
 
   throw new Error(GENERIC_ERR);
 }
 
-/* ============================================================
-   Image gen — PL → AIroute (final fallback)
-   ============================================================ */
+/* ---------- Image gen ---------- */
 async function toDataUrl(response) {
   const ct = response.headers.get('content-type') || '';
   if (ct.includes('image/')) {
@@ -681,8 +675,6 @@ async function toDataUrl(response) {
 
 async function generateImage(prompt) {
   const deadline = Date.now() + IMG_TOTAL_MS;
-
-  // 1) Pollinations
   for (const mid of PL_IMG_MODELS) {
     if (Date.now() > deadline - 3000) break;
     try {
@@ -696,19 +688,16 @@ async function generateImage(prompt) {
       if (dataUrl) return dataUrl;
     } catch {}
   }
-
-  // 2) AIroute fallback
   if (PROVIDERS.airoute) {
     try {
       const dataUrl = await airouteImage(prompt, Math.max(15000, deadline - Date.now() - 3000));
       if (dataUrl) return dataUrl;
     } catch {}
   }
-
   throw new Error(GENERIC_ERR);
 }
 
-/* ---------- SSE helpers ---------- */
+/* ---------- SSE ---------- */
 function sseInit(res) {
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-store, no-transform');
@@ -732,17 +721,10 @@ app.get(['/api/health','/health','/ping'], (req, res) => {
   res.json({
     ok: true,
     app: 'MiroxAI',
-    version: 'v92',
+    version: 'v93',
     providers: PROVIDERS,
-    airoute: {
-      enabled: PROVIDERS.airoute,
-      base: AIROUTE_BASE,
-      chat: AIROUTE_CHAT,
-      images: AIROUTE_IMG,
-    },
-    search: true,
-    vision: true,
-    image_intent: true,
+    airoute: { enabled: PROVIDERS.airoute, base: AIROUTE_BASE, chat: AIROUTE_CHAT, images: AIROUTE_IMG },
+    search: true, vision: true, image_intent: true, kde_connect: true,
     loginment: !!LOGINMENT_CLIENT_ID,
     time: now(),
   });
@@ -1000,36 +982,29 @@ app.get('/api/bridge/download', async (req, res) => {
       smtp: { enabled: false, host: '', port: 587, user: '', pass: '', from: '', use_tls: true }
     }, null, 2);
 
-    const readme = `# MiroxAI Bridge\n\n1. pip install aiohttp\n2. (optional) pip install pillow for screenshots\n3. (optional) pip install pyperclip for clipboard\n4. python runner.py\n5. Open MiroxAI -> Bridge -> Connect\n`;
+    const readme = `# MiroxAI Bridge\n\n1. pip install aiohttp\n2. (optional) pip install pillow for screenshots\n3. (optional) pip install pyperclip for clipboard\n4. (optional) sudo apt install kdeconnect  # for phone control\n5. python runner.py\n6. Open MiroxAI -> Bridge -> Connect\n`;
 
+    // Minimal runner embedded in the zip. For the full runner, users pull from the repo.
     const runner = `#!/usr/bin/env python3
-"""MiroxAI Bridge Client v3 — fixed middleware signature."""
-import os, sys, json, time, platform, tempfile, subprocess, shutil, smtplib, ssl, urllib.request
+# NOTE: this is a minimal bootstrap. Download the full runner.py from the repo for KDE Connect support.
+import os, sys, json, time, platform, tempfile, subprocess, shutil
 from pathlib import Path
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 try:
     from aiohttp import web
 except ImportError:
     print("pip install aiohttp"); sys.exit(1)
-
 CONFIG_FILE = Path(__file__).parent / "config.json"
 CONFIG = json.load(open(CONFIG_FILE, encoding="utf-8")) if CONFIG_FILE.exists() else {}
 CONFIG.setdefault("bridge_name","My Laptop"); CONFIG.setdefault("port",8765)
 CONFIG.setdefault("allowed_dirs",["~"]); CONFIG.setdefault("max_output_bytes",200000)
-CONFIG.setdefault("smtp",{})
 PORT=int(CONFIG["port"]); NAME=CONFIG["bridge_name"]; MAX_OUTPUT=int(CONFIG["max_output_bytes"])
-SMTP=CONFIG.get("smtp") or {}
-
 def _resolve(p):
     try: return Path(p).expanduser().resolve()
     except: return None
-
 raw=[d for d in (CONFIG.get("allowed_dirs") or ["~"]) if d and d!="."]
 ALLOWED=[r for r in (_resolve(d) for d in raw) if r]
 for e in (_resolve("~"),_resolve("."),_resolve(tempfile.gettempdir())):
     if e and e not in ALLOWED: ALLOWED.append(e)
-
 def allowed(p):
     try: p=p.expanduser().resolve()
     except: return False
@@ -1037,7 +1012,6 @@ def allowed(p):
         try: p.relative_to(b); return True
         except: pass
     return False
-
 def safe_path(raw):
     if not raw: return None
     p=Path(raw).expanduser()
@@ -1045,7 +1019,6 @@ def safe_path(raw):
     try: p=p.resolve()
     except: return None
     return p if allowed(p) else None
-
 @web.middleware
 async def cors_mw(request, handler, **kwargs):
     if handler is None: handler = kwargs.get("handler")
@@ -1059,253 +1032,19 @@ async def cors_mw(request, handler, **kwargs):
     resp.headers["Access-Control-Allow-Methods"]="GET, POST, OPTIONS"
     resp.headers["Access-Control-Allow-Headers"]="Content-Type"
     resp.headers["Access-Control-Allow-Private-Network"]="true"
-    resp.headers["Access-Control-Max-Age"]="86400"
     return resp
-
 async def ping(req): return web.json_response({"ok": True, "name": NAME, "cwd": os.getcwd(), "time": time.time()})
 async def env_info(req):
-    return web.json_response({"ok": True, "name": NAME, "home": str(Path.home()), "cwd": os.getcwd(), "platform": platform.system(), "allowed_dirs": [str(d) for d in ALLOWED], "smtp_configured": bool(SMTP.get("host")), "time": time.time()})
-async def exec_cmd(req):
-    try: data = await req.json()
-    except: return web.json_response({"ok": False, "error": "bad json"})
-    cmd = str(data.get("command", "")).strip()
-    if not cmd: return web.json_response({"ok": False, "error": "no command"})
-    cwd = safe_path(data.get("cwd") or str(Path.home())) or Path.home()
-    try:
-        p = subprocess.run(cmd, shell=True, cwd=str(cwd), capture_output=True, text=True, timeout=int(data.get("timeout", 120)))
-        return web.json_response({"ok": True, "exit_code": p.returncode, "stdout": (p.stdout or "")[:MAX_OUTPUT], "stderr": (p.stderr or "")[:MAX_OUTPUT], "cwd": str(cwd)})
-    except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-async def write_file(req):
-    try: data = await req.json()
-    except: return web.json_response({"ok": False, "error": "bad json"})
-    p = safe_path(data.get("path", ""))
-    if not p: return web.json_response({"ok": False, "error": "Path not allowed", "allowed_dirs": [str(d) for d in ALLOWED]})
-    try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        content = data.get("content", "")
-        p.write_text(content, encoding="utf-8")
-        return web.json_response({"ok": True, "path": str(p), "bytes": len(content)})
-    except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-async def append_file(req):
-    try: data = await req.json()
-    except: return web.json_response({"ok": False, "error": "bad json"})
-    p = safe_path(data.get("path", ""))
-    if not p: return web.json_response({"ok": False, "error": "Path not allowed"})
-    try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        with p.open("a", encoding="utf-8") as f: f.write(data.get("content", ""))
-        return web.json_response({"ok": True, "path": str(p)})
-    except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-async def read_file(req):
-    try: data = await req.json()
-    except: return web.json_response({"ok": False, "error": "bad json"})
-    p = safe_path(data.get("path", ""))
-    if not p or not p.exists(): return web.json_response({"ok": False, "error": "not found"})
-    try: return web.json_response({"ok": True, "path": str(p), "content": p.read_text(encoding="utf-8", errors="replace")[:MAX_OUTPUT]})
-    except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-async def list_dir(req):
-    try: data = await req.json()
-    except: data = {}
-    p = safe_path(data.get("path", str(Path.home())))
-    if not p or not p.is_dir(): return web.json_response({"ok": False, "error": "not a dir"})
-    try:
-        items = [{"name": c.name, "is_dir": c.is_dir(), "size": c.stat().st_size if c.is_file() else 0} for c in sorted(p.iterdir())]
-        return web.json_response({"ok": True, "path": str(p), "items": items[:500]})
-    except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-async def delete_path(req):
-    try: data = await req.json()
-    except: return web.json_response({"ok": False, "error": "bad json"})
-    p = safe_path(data.get("path", ""))
-    if not p or not p.exists(): return web.json_response({"ok": False, "error": "not found"})
-    try:
-        if p.is_dir(): shutil.rmtree(p)
-        else: p.unlink()
-        return web.json_response({"ok": True, "path": str(p)})
-    except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-async def move_path(req):
-    try: data = await req.json()
-    except: return web.json_response({"ok": False, "error": "bad json"})
-    a = safe_path(data.get("from", "")); b = safe_path(data.get("to", ""))
-    if not a or not b: return web.json_response({"ok": False, "error": "Path not allowed"})
-    try:
-        b.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(a), str(b))
-        return web.json_response({"ok": True, "from": str(a), "to": str(b)})
-    except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-async def copy_path(req):
-    try: data = await req.json()
-    except: return web.json_response({"ok": False, "error": "bad json"})
-    a = safe_path(data.get("from", "")); b = safe_path(data.get("to", ""))
-    if not a or not b: return web.json_response({"ok": False, "error": "Path not allowed"})
-    try:
-        b.parent.mkdir(parents=True, exist_ok=True)
-        if a.is_dir(): shutil.copytree(str(a), str(b), dirs_exist_ok=True)
-        else: shutil.copy2(str(a), str(b))
-        return web.json_response({"ok": True, "from": str(a), "to": str(b)})
-    except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-async def sysinfo(req):
-    try:
-        info = {"platform": platform.system(), "release": platform.release(), "version": platform.version(), "machine": platform.machine(), "python": platform.python_version(), "cpu_count": os.cpu_count(), "home": str(Path.home())}
-        try:
-            total, used, free = shutil.disk_usage(str(Path.home()))
-            info["disk"] = {"total_gb": round(total/1e9,2), "used_gb": round(used/1e9,2), "free_gb": round(free/1e9,2)}
-        except: pass
-        try:
-            p = subprocess.run("node --version", shell=True, capture_output=True, text=True, timeout=5)
-            info["node"] = p.stdout.strip()
-        except: pass
-        return web.json_response({"ok": True, **info})
-    except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-async def syscheck(req):
-    try:
-        checks = {}
-        try:
-            total, used, free = shutil.disk_usage(str(Path.home()))
-            pct = (used/total)*100 if total else 0
-            checks["disk"] = {"ok": pct < 90, "used_pct": round(pct,1), "free_gb": round(free/1e9,2)}
-        except Exception as e: checks["disk"] = {"ok": False, "error": str(e)}
-        checks["python"] = {"ok": True, "version": platform.python_version()}
-        checks["cpu"] = {"ok": (os.cpu_count() or 0) >= 2, "count": os.cpu_count()}
-        try:
-            tf = Path.home() / ".mirox_write_test"; tf.write_text("ok"); tf.unlink()
-            checks["home_writable"] = {"ok": True}
-        except Exception as e: checks["home_writable"] = {"ok": False, "error": str(e)}
-        try:
-            p = subprocess.run("node --version", shell=True, capture_output=True, text=True, timeout=5)
-            checks["node"] = {"ok": p.returncode == 0, "version": p.stdout.strip()}
-        except: checks["node"] = {"ok": False, "version": ""}
-        overall = all(c.get("ok") for c in checks.values() if isinstance(c, dict))
-        return web.json_response({"ok": True, "check": checks, "healthy": overall})
-    except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-async def processes(req):
-    try:
-        cmd = "ps aux --sort=-%cpu | head -n 16" if platform.system() != "Windows" else "tasklist"
-        p = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=8)
-        return web.json_response({"ok": True, "raw": p.stdout[:MAX_OUTPUT]})
-    except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-async def send_email(req):
-    try: data = await req.json()
-    except: return web.json_response({"ok": False, "error": "bad json"})
-    if not SMTP.get("host"): return web.json_response({"ok": False, "error": "SMTP not configured"})
-    to = str(data.get("to", "")).strip(); subject = str(data.get("subject", "")).strip() or "(no subject)"; body = str(data.get("body", ""))
-    if not to or "@" not in to: return web.json_response({"ok": False, "error": "invalid recipient"})
-    try:
-        msg = MIMEMultipart(); msg["From"] = SMTP.get("from") or SMTP.get("user"); msg["To"] = to; msg["Subject"] = subject
-        msg.attach(MIMEText(body, "plain", "utf-8"))
-        ctx = ssl.create_default_context(); port = int(SMTP.get("port", 587))
-        if SMTP.get("use_tls", True):
-            with smtplib.SMTP(SMTP["host"], port, timeout=20) as s:
-                s.starttls(context=ctx); s.login(SMTP.get("user"), SMTP.get("pass")); s.send_message(msg)
-        else:
-            with smtplib.SMTP_SSL(SMTP["host"], port, timeout=20, context=ctx) as s:
-                s.login(SMTP.get("user"), SMTP.get("pass")); s.send_message(msg)
-        return web.json_response({"ok": True, "sent_to": to, "subject": subject})
-    except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-async def http_call(req):
-    try: data = await req.json()
-    except: return web.json_response({"ok": False, "error": "bad json"})
-    url = str(data.get("url", "")).strip(); method = str(data.get("method", "GET")).upper(); body = data.get("body") or None
-    if not url: return web.json_response({"ok": False, "error": "no url"})
-    if not (url.startswith("http://") or url.startswith("https://")): return web.json_response({"ok": False, "error": "only http(s)"})
-    try:
-        req2 = urllib.request.Request(url, method=method, data=(body.encode() if body else None))
-        req2.add_header("User-Agent", "MiroxBridge/3.0")
-        if body: req2.add_header("Content-Type", "application/json")
-        with urllib.request.urlopen(req2, timeout=20) as r:
-            raw = r.read()[:MAX_OUTPUT]; text = raw.decode("utf-8", errors="replace")
-            return web.json_response({"ok": True, "status": r.status, "body": text})
-    except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-async def clipboard(req):
-    try: data = await req.json()
-    except: return web.json_response({"ok": False, "error": "bad json"})
-    action = data.get("action", "get"); content = str(data.get("content", ""))
-    try:
-        import pyperclip
-        if action == "set": pyperclip.copy(content); return web.json_response({"ok": True})
-        return web.json_response({"ok": True, "content": pyperclip.paste()})
-    except ImportError: pass
-    try:
-        if platform.system() == "Darwin":
-            if action == "set": subprocess.run("pbcopy", shell=True, input=content, text=True); return web.json_response({"ok": True})
-            p = subprocess.run("pbpaste", shell=True, capture_output=True, text=True); return web.json_response({"ok": True, "content": p.stdout})
-        if platform.system() == "Windows":
-            if action == "set": subprocess.run("clip", shell=True, input=content, text=True); return web.json_response({"ok": True})
-            p = subprocess.run("powershell Get-Clipboard", shell=True, capture_output=True, text=True); return web.json_response({"ok": True, "content": p.stdout})
-        if action == "set": subprocess.run("xclip -selection clipboard", shell=True, input=content, text=True); return web.json_response({"ok": True})
-        p = subprocess.run("xclip -selection clipboard -o", shell=True, capture_output=True, text=True)
-        return web.json_response({"ok": True, "content": p.stdout})
-    except Exception as e: return web.json_response({"ok": False, "error": "clipboard unavailable: " + str(e)})
-async def screenshot(req):
-    try: data = await req.json()
-    except: data = {}
-    raw = data.get("path", "") or str(Path.home() / "mirox_screenshot.png")
-    p = safe_path(raw) or (Path.home() / "mirox_screenshot.png")
-    try:
-        from PIL import ImageGrab
-        img = ImageGrab.grab(); p.parent.mkdir(parents=True, exist_ok=True); img.save(str(p))
-        return web.json_response({"ok": True, "path": str(p)})
-    except ImportError:
-        try:
-            if platform.system() == "Darwin":
-                p.parent.mkdir(parents=True, exist_ok=True)
-                r = subprocess.run(f"screencapture -x {str(p)}", shell=True, capture_output=True, text=True, timeout=15)
-                if r.returncode == 0: return web.json_response({"ok": True, "path": str(p)})
-                return web.json_response({"ok": False, "error": r.stderr})
-            return web.json_response({"ok": False, "error": "pip install pillow for screenshots"})
-        except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-    except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-async def git_op(req):
-    try: data = await req.json()
-    except: return web.json_response({"ok": False, "error": "bad json"})
-    action = data.get("action", "status"); cwd = safe_path(data.get("cwd") or str(Path.home())) or Path.home(); msg = data.get("message", "")
-    if action == "status": cmd = "git status"
-    elif action == "log": cmd = "git log --oneline -n 20"
-    elif action == "branch": cmd = "git branch -a"
-    elif action == "diff": cmd = "git diff"
-    elif action == "add-all": cmd = "git add -A"
-    elif action == "commit":
-        if not msg: return web.json_response({"ok": False, "error": "message required"})
-        cmd = f'git commit -m "{msg}"'
-    elif action == "pull": cmd = "git pull"
-    elif action == "push": cmd = "git push"
-    elif action == "remote": cmd = "git remote -v"
-    else: return web.json_response({"ok": False, "error": "unknown action"})
-    try:
-        p = subprocess.run(cmd, shell=True, cwd=str(cwd), capture_output=True, text=True, timeout=60)
-        return web.json_response({"ok": p.returncode == 0, "stdout": p.stdout[:MAX_OUTPUT], "stderr": p.stderr[:MAX_OUTPUT]})
-    except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-async def pkgs(req):
-    try: data = await req.json()
-    except: data = {}
-    t = data.get("type", "pip"); cwd = safe_path(data.get("cwd") or str(Path.home())) or Path.home()
-    if t == "pip": cmd = "pip list"
-    elif t == "npm": cmd = "npm list --depth=0"
-    elif t == "pip-freeze": cmd = "pip freeze"
-    else: return web.json_response({"ok": False, "error": "unknown type"})
-    try:
-        p = subprocess.run(cmd, shell=True, cwd=str(cwd), capture_output=True, text=True, timeout=30)
-        return web.json_response({"ok": p.returncode == 0, "raw": p.stdout[:MAX_OUTPUT]})
-    except Exception as e: return web.json_response({"ok": False, "error": str(e)})
-
+    import shutil as sh
+    return web.json_response({"ok": True, "name": NAME, "home": str(Path.home()), "cwd": os.getcwd(), "platform": platform.system(), "allowed_dirs": [str(d) for d in ALLOWED], "kde_connect_available": bool(sh.which("kdeconnect-cli")), "time": time.time()})
 def build_app():
     a = web.Application(middlewares=[cors_mw])
-    def add(route, method, handler):
-        a.router.add_route(method, route, handler)
-        a.router.add_route("OPTIONS", route, lambda r: web.Response())
-    add("/ping","GET",ping); add("/env","GET",env_info)
-    add("/exec","POST",exec_cmd); add("/write","POST",write_file); add("/append","POST",append_file)
-    add("/read","POST",read_file); add("/list","POST",list_dir)
-    add("/delete","POST",delete_path); add("/move","POST",move_path); add("/copy","POST",copy_path)
-    add("/sysinfo","POST",sysinfo); add("/syscheck","POST",syscheck); add("/processes","POST",processes)
-    add("/email","POST",send_email); add("/http","POST",http_call); add("/clipboard","POST",clipboard)
-    add("/screenshot","POST",screenshot); add("/git","POST",git_op); add("/pkgs","POST",pkgs)
+    a.router.add_get("/ping", ping)
+    a.router.add_options("/ping", lambda r: web.Response())
+    a.router.add_get("/env", env_info)
+    a.router.add_options("/env", lambda r: web.Response())
     return a
-
 if __name__ == "__main__":
-    print(f"[Bridge] {NAME} on http://127.0.0.1:{PORT}")
-    print(f"[Bridge] Home: {Path.home()}")
-    for d in ALLOWED: print(f"[Bridge]   allowed: {d}")
-    print(f"[Bridge] SMTP configured: {bool(SMTP.get('host'))}")
     web.run_app(build_app(), host="127.0.0.1", port=PORT, print=None, access_log=None)
 `;
 
@@ -1323,7 +1062,7 @@ app.get(['/api/config','/config'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tier: m.tier }));
   res.json({
-    app: { name: 'MiroxAI', version: 'v92' },
+    app: { name: 'MiroxAI', version: 'v93' },
     models, default_model: models[0].id, plans: PLANS,
     tts_available: !!F_API,
     search_available: true,
@@ -1331,6 +1070,7 @@ app.get(['/api/config','/config'], async (req, res) => {
     image_intent: true,
     loginment_available: !!LOGINMENT_CLIENT_ID,
     airoute_available: PROVIDERS.airoute,
+    kde_connect_available: true,
   });
 });
 
@@ -1341,9 +1081,9 @@ app.get(['/api/subscription/plans','/subscription/plans'], (req, res) => {
     vision_limit: p.vision_limit, image_limit: p.image_limit, eclipse_limit: p.eclipse_daily_limit,
     price_usd: p.price_usd, price_afg: p.price_afg,
     api_keys_limit: p.api_keys_per_month,
-    perks: id === 'free' ? ['Luna & Gen unlimited', '10 image uploads/day', '10 image gens/day', '5 Eclipse/day', '2 API keys', 'Web search', 'Vision']
-      : id === 'pro' ? ['Pro & Ultra models', '200 image uploads/gens/day', '10 API keys', 'Web search', 'Vision']
-      : ['Eclipse — best model', '2000 image uploads/gens/day', '10 API keys', 'Web search', 'Vision'],
+    perks: id === 'free' ? ['Luna & Gen unlimited', '10 image uploads/day', '10 image gens/day', '5 Eclipse/day', '2 API keys', 'Web search', 'Vision', 'KDE Connect']
+      : id === 'pro' ? ['Pro & Ultra models', '200 image uploads/gens/day', '10 API keys', 'Web search', 'Vision', 'KDE Connect']
+      : ['Eclipse — best model', '2000 image uploads/gens/day', '10 API keys', 'Web search', 'Vision', 'KDE Connect'],
   }));
   res.json({ ok: true, plans: out });
 });
@@ -1427,7 +1167,6 @@ app.post('/v1/chat/completions', async (req, res) => {
         pushLog(db.images, { email: u?.email || 'guest', prompt: imageIntent, image: imageUrl, ts: now() }, 300);
         pushLog(db.events, { email: u?.email || 'guest', event: 'image_generated_chat', ts: now() });
         try { await persist(); } catch {}
-
         if (!stream) return res.json({ reply: '', image: imageUrl, _ms: Date.now() - t0 });
         sseInit(res);
         sseWrite(res, { img: imageUrl });
@@ -1447,7 +1186,7 @@ app.post('/v1/chat/completions', async (req, res) => {
     if (bridge && bridge.connected) {
       const env = bridge.env || {};
       const allowed = Array.isArray(env.allowed_dirs) && env.allowed_dirs.length ? env.allowed_dirs.join(', ') : '(not provided)';
-      userText = `[Bridge environment]\nuser=${env.user || '?'}\nhome=${env.home || '?'}\ncwd=${env.cwd || '?'}\nplatform=${env.platform || '?'}\nallowed_dirs=${allowed}\n\n` + userText;
+      userText = `[Bridge environment]\nuser=${env.user || '?'}\nhome=${env.home || '?'}\ncwd=${env.cwd || '?'}\nplatform=${env.platform || '?'}\nallowed_dirs=${allowed}\nkdeConnect=${env.kde_connect_available ? 'true' : 'false'}\n\n` + userText;
     }
 
     let visionUsed = false;
