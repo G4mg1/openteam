@@ -28,12 +28,13 @@
   const TOKEN_KEY = 'mirox_token';
   const APPEARANCE_KEY = 'miroxai_appearance_v23';
   const BRIDGE_KEY = 'miroxai_bridge_v23';
+  const KDE_DEVICE_KEY = 'miroxai_kde_device_v1';
 
   const MAX_BRIDGE_QUESTIONS = 6;
   const MAX_BRIDGE_ITER = 100;
   const MAX_AUTO_CONTINUES = 40;
   const MAX_DUP_COMMANDS = 6;
-  const MAX_NO_ACTION_STREAK = 2;    // pause after this many text-only replies
+  const MAX_NO_ACTION_STREAK = 2;
   const AUTO_CONTINUE_DELAY_MS = 2000;
   const MAX_IMAGE_DIM = 1280;
 
@@ -52,6 +53,13 @@
   let __sudoResolver = null;
   let __sudoPendingCmd = null;
 
+  let __kdeDevices = [];
+  let __kdeCurrentDevice = null;
+  let __kdeResolver = null;
+  let __kdeAvailable = false;
+  let __lastBuildFolder = null;
+  let __lastBuildWasMobile = false;
+
   const uid = () => 'c_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
   const escapeHtml = (s) => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
   function safeGet(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } }
@@ -59,9 +67,22 @@
   function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
   function setToken(t) { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch {} }
 
+  function loadKdeDevice() {
+    const v = safeGet(KDE_DEVICE_KEY, null);
+    if (v && v.id && v.name) __kdeCurrentDevice = v;
+  }
+  function saveKdeDevice() {
+    if (__kdeCurrentDevice) safeSet(KDE_DEVICE_KEY, __kdeCurrentDevice);
+    else try { localStorage.removeItem(KDE_DEVICE_KEY); } catch {}
+  }
+
   function pickStatusLabel(text) {
     const t = String(text || '').toLowerCase();
     if (!t) return 'Thinking';
+    if (/\b(scan|check).*(device|phone|tablet|kde)\b/.test(t)) return 'Scanning devices';
+    if (/\b(ping|online|reachable)\b/.test(t)) return 'Pinging device';
+    if (/\b(send|share|move|push).*(phone|mobile|device|tablet)\b/.test(t)) return 'Sending to device';
+    if (/\b(ring|find).*(phone|device)\b/.test(t)) return 'Ringing device';
     if (/\b(fix|debug|bug|error|broken|crash|issue|problem|wrong|fail|not work|isn'?t work|doesn'?t work|stack ?trace|exception)\b/.test(t)) return 'Looking into problems';
     if (/\b(search|find|look up|research|look for|where is|locate|google)\b/.test(t)) return 'Searching the web';
     if (/\b(generate|draw|render|make.*image|create.*image|image of|picture of)\b/.test(t)) return 'Painting image';
@@ -114,8 +135,8 @@
   function sanitizeRegularChat(text) {
     if (!text) return '';
     let t = String(text);
-    t = t.replace(/<bridge-(write|append|exec|read|list|delete|move|copy|sudo|ask|plan|progress|email|http|clipboard|screenshot|git|pkgs|sysinfo|syscheck|processes|designs|design)[^>]*>[\s\S]*?<\/bridge-\1>/g, '');
-    t = t.replace(/<bridge-[a-z]+\s+[^>]*\/>/g, '');
+    t = t.replace(/<bridge-(write|append|exec|read|list|delete|move|copy|sudo|ask|plan|progress|email|http|clipboard|screenshot|git|pkgs|sysinfo|syscheck|processes|designs|design|kde-[a-z-]+)[^>]*>[\s\S]*?<\/bridge-\1>/g, '');
+    t = t.replace(/<bridge-[a-z][a-z0-9-]*\s+[^>]*\/>/g, '');
     t = t.replace(/<\/?write[^>]*>/gi, '');
     t = t.replace(/<\/?bridge-write[^>]*>/gi, '');
     return t.trim();
@@ -194,11 +215,11 @@
       <img src="/logo.png" alt="MiroxAI" class="welcome-logo theme-aware-logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';">
       <div class="logo-fallback logo-fallback-lg" style="display:none;">M</div>
       <h1 class="welcome-title">Hi, I'm Mirox</h1>
-      <p class="welcome-sub">Luna and Gen are unlimited and free. Try asking me to search the web or generate an image.</p>
+      <p class="welcome-sub">Luna and Gen are unlimited and free. Try asking me to search the web, generate an image, or control your phone with Bridge.</p>
       <div class="suggestion-grid">
         <button class="suggestion-card" type="button" data-prompt="Search the web for the latest AI news"><i class="ri-global-line"></i><span>Search the web for AI news</span></button>
         <button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span>Generate me an image of a cat</span></button>
-        <button class="suggestion-card" type="button" data-prompt="Open the Bridge workspace and build me a landing page"><i class="ri-link"></i><span>Build a project with Bridge</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Open the Bridge workspace and scan my devices"><i class="ri-smartphone-line"></i><span>Scan my phone with Bridge</span></button>
         <button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span>Explain a concept simply</span></button>
       </div>
     </div>`;
@@ -725,10 +746,7 @@
     try {
       const res = await fetch('/v1/images/generations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, aspect_ratio: '1:1' }) });
       const data = await res.json().catch(() => ({}));
-      if (res.ok && data.ok && data.image) {
-        if (result) result.innerHTML = `<img src="${data.image}" alt="${escapeHtml(prompt)}">`;
-        refreshUsage(); renderImageHistory(); renderSidebarImageHistory();
-      }
+      if (res.ok && data.ok && data.image) { if (result) result.innerHTML = `<img src="${data.image}" alt="${escapeHtml(prompt)}">`; refreshUsage(); renderImageHistory(); renderSidebarImageHistory(); }
       else if (result) result.innerHTML = `<div style="color:#dc2626;font-size:13px;">Failed: ${escapeHtml(data.error?.message || 'Unknown')}</div>`;
     } catch (e) { if (result) result.innerHTML = `<div style="color:#dc2626;font-size:13px;">Error: ${escapeHtml(e.message)}</div>`; }
     finally { if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-image-add-line"></i> Generate'; } }
@@ -758,6 +776,65 @@
     if (!s) return;
     if (__sudoPassword) { s.textContent = __sudoRemember ? 'Password saved (session)' : 'Password set (temporary)'; s.style.color = 'var(--success)'; }
     else { s.textContent = 'No password saved'; s.style.color = ''; }
+  }
+
+  function renderKdeStatus() {
+    const box = $('#bwKdeBox'); const txt = $('#bwKdeStatus');
+    if (!box || !txt) return;
+    if (__kdeAvailable) {
+      txt.textContent = __bridge.env?.kde_connect_available ? 'KDE Connect ready' : 'Installed on bridge';
+      box.style.color = 'var(--success)';
+    } else {
+      txt.textContent = 'KDE Connect: not installed on bridge';
+      box.style.color = 'var(--text-muted)';
+    }
+    renderKdeDeviceList();
+  }
+
+  function renderKdeDeviceList() {
+    const wrap = $('#bwDeviceList'); if (!wrap) return;
+    if (!__kdeAvailable) {
+      wrap.innerHTML = '<div class="bw-hint" style="margin-top:6px;">Install on the bridge with <code>sudo apt install kdeconnect</code> to control your phone.</div>';
+      return;
+    }
+    if (!__kdeDevices.length) {
+      wrap.innerHTML = '<div class="bw-hint" style="margin-top:6px;">No devices found yet. Tap <b>Scan for devices</b>.</div>';
+      return;
+    }
+    wrap.innerHTML = __kdeDevices.map((d, i) => `
+      <div class="bw-device-row" data-id="${escapeHtml(d.id)}">
+        <div class="bw-device-icon"><i class="ri-smartphone-line"></i></div>
+        <div class="bw-device-info">
+          <div class="bw-device-name">${escapeHtml(d.name)}</div>
+          <div class="bw-device-id">${escapeHtml(d.id)}${d.reachable ? ' · reachable' : ''}</div>
+        </div>
+        <div class="bw-device-actions">
+          <button class="icon-btn" data-kde-ping title="Ping"><i class="ri-wifi-line"></i></button>
+          <button class="icon-btn" data-kde-ring title="Ring"><i class="ri-notification-3-line"></i></button>
+          <button class="icon-btn" data-kde-pick title="Use this device"><i class="ri-check-line"></i></button>
+        </div>
+      </div>
+    `).join('');
+    wrap.querySelectorAll('.bw-device-row').forEach(row => {
+      const id = row.dataset.id;
+      const dev = __kdeDevices.find(x => x.id === id);
+      row.querySelector('[data-kde-pick]')?.addEventListener('click', () => {
+        __kdeCurrentDevice = { id: dev.id, name: dev.name };
+        saveKdeDevice();
+        renderKdeDeviceList();
+        toast(`Selected device: ${dev.name}`);
+      });
+      row.querySelector('[data-kde-ping]')?.addEventListener('click', async () => {
+        toast(`Pinging ${dev.name}…`);
+        const r = await bridgeCall('/kde/ping', { device: dev.id });
+        if (r.ok) toast(`📱 ${dev.name} is online ✓`);
+        else toast(`✗ ${dev.name} did not respond`);
+      });
+      row.querySelector('[data-kde-ring]')?.addEventListener('click', async () => {
+        toast(`Ringing ${dev.name}…`);
+        await bridgeCall('/kde/ring', { device: dev.id });
+      });
+    });
   }
 
   function showSudoModal(command) {
@@ -823,23 +900,30 @@
     if (res.ok) {
       __bridge.connected = true; __bridge.baseUrl = res.base;
       __bridge.env = await fetchEnv(res.base);
-      renderBridgeStatus();
+      __kdeAvailable = !!__bridge.env?.kde_connect_available;
+      renderBridgeStatus(); renderKdeStatus();
       const empty = $('#bridgeEmpty'); if (empty) empty.remove();
       const home = __bridge.env?.home || '(unknown)';
       const os = __bridge.env?.platform || '(unknown)';
       const allowed = (__bridge.env?.allowed_dirs || []).join(', ') || '(none)';
       setBwHint(`Connected · Home: ${home} · OS: ${os}\nAllowed: ${allowed}`, 'ok');
       addBridgeSystemMsg(`Connected · Home: ${home}\nAllowed: ${allowed}`);
+      if (__kdeAvailable) {
+        addBridgeSystemMsg('KDE Connect detected — phone control is available.');
+      } else {
+        addBridgeSystemMsg('KDE Connect not installed on the bridge. Run `sudo apt install kdeconnect` to control your phone.');
+      }
     } else {
-      __bridge.connected = false; __bridge.baseUrl = null; __bridge.env = null;
-      renderBridgeStatus();
+      __bridge.connected = false; __bridge.baseUrl = null; __bridge.env = null; __kdeAvailable = false;
+      renderBridgeStatus(); renderKdeStatus();
       setBwHint(`Could not reach the bridge on port ${port}.`, 'err');
     }
   }
   function stopBridge() {
     __bridge.connected = false; __bridge.baseUrl = null; __bridge.env = null;
     __sudoPassword = ''; __sudoRemember = false;
-    renderBridgeStatus(); setBwHint('', '');
+    __kdeAvailable = false; __kdeDevices = [];
+    renderBridgeStatus(); renderKdeStatus(); setBwHint('', '');
   }
   async function bridgeCall(endpoint, payload) {
     if (!__bridge.connected || !__bridge.baseUrl) throw new Error('Bridge not connected');
@@ -866,6 +950,7 @@
     const m = $('#bridgeMessages'); if (m) m.innerHTML = '';
     bridgeConversation = []; bridgeQuestionCount = 0; bridgeProgress = 0; bridgeTurn = null;
     bridgeTaskComplete = true; bridgeWaitingForUser = false;
+    __lastBuildFolder = null; __lastBuildWasMobile = false;
     if (bridgeAutoTimer) { clearTimeout(bridgeAutoTimer); bridgeAutoTimer = null; }
     updateBridgeProgress(0, 'Ready');
     const w = $('#bwProgress'); if (w) w.style.display = 'none';
@@ -940,6 +1025,18 @@
   function getActionData(cmd) {
     const t = cmd.type;
     const base = getBaseName(cmd.path) || getBaseName(cmd.from) || '';
+    if (t === 'kde-list') return { icon: 'ri-radar-line', iconClass: 'list', label: 'Scanning for devices' };
+    if (t === 'kde-refresh') return { icon: 'ri-refresh-line', iconClass: 'list', label: 'Refreshing device list' };
+    if (t === 'kde-ping') return { icon: 'ri-wifi-line', iconClass: 'exec', label: `Pinging device <code>${escapeHtml((cmd.device || '').slice(0, 10))}</code>` };
+    if (t === 'kde-ring') return { icon: 'ri-notification-3-line', iconClass: 'exec', label: 'Ringing device' };
+    if (t === 'kde-share') return { icon: 'ri-send-plane-fill', iconClass: 'write', label: `Sending <code>${escapeHtml(getBaseName(cmd.path) || cmd.path)}</code> to device` };
+    if (t === 'kde-share-text') return { icon: 'ri-file-text-line', iconClass: 'write', label: 'Sharing text to device' };
+    if (t === 'kde-sms') return { icon: 'ri-message-3-line', iconClass: 'write', label: `Sending SMS to <code>${escapeHtml(cmd.number || '')}</code>` };
+    if (t === 'kde-lock') return { icon: 'ri-lock-line', iconClass: 'exec', label: 'Locking device' };
+    if (t === 'kde-notifications') return { icon: 'ri-notification-badge-line', iconClass: 'read', label: 'Reading notifications' };
+    if (t === 'kde-plugins') return { icon: 'ri-puzzle-line', iconClass: 'list', label: 'Listing plugins' };
+    if (t === 'kde-photo') return { icon: 'ri-camera-lens-line', iconClass: 'write', label: 'Taking photo from device' };
+    if (t === 'kde-myid') return { icon: 'ri-fingerprint-line', iconClass: 'read', label: 'Reading own device ID' };
     if (t === 'sudo') return { icon: 'ri-shield-keyhole-line', iconClass: 'exec', label: `Running with sudo: <code>${escapeHtml((cmd.command || '').slice(0, 60))}</code>` };
     if (t === 'write') return { icon: 'ri-file-add-line', iconClass: 'write', label: `Adding <code>${escapeHtml(base)}</code>` };
     if (t === 'append') return { icon: 'ri-file-edit-line', iconClass: 'write', label: `Appending to <code>${escapeHtml(base)}</code>` };
@@ -990,6 +1087,30 @@
     const cmds = []; let m;
     const add = (type, m, extra) => cmds.push(Object.assign({ type, index: m.index }, extra));
     let re;
+    re = /<bridge-kde-refresh\s*\/>/g;
+    while ((m = re.exec(text)) !== null) add('kde-refresh', m, {});
+    re = /<bridge-kde-list(?:\s+available="([^"]*)")?\s*\/>/g;
+    while ((m = re.exec(text)) !== null) add('kde-list', m, { available: m[1] === 'true' });
+    re = /<bridge-kde-ping\s+device="([^"]+)"(?:\s*\/>|>([\s\S]*?)<\/bridge-kde-ping>)/g;
+    while ((m = re.exec(text)) !== null) add('kde-ping', m, { device: m[1], message: (m[2] || '').trim() });
+    re = /<bridge-kde-ring\s+device="([^"]+)"\s*\/>/g;
+    while ((m = re.exec(text)) !== null) add('kde-ring', m, { device: m[1] });
+    re = /<bridge-kde-share\s+device="([^"]+)"\s+path="([^"]+)"\s*\/>/g;
+    while ((m = re.exec(text)) !== null) add('kde-share', m, { device: m[1], path: m[2] });
+    re = /<bridge-kde-share-text\s+device="([^"]+)">([\s\S]*?)<\/bridge-kde-share-text>/g;
+    while ((m = re.exec(text)) !== null) add('kde-share-text', m, { device: m[1], text: m[2] });
+    re = /<bridge-kde-sms\s+device="([^"]+)"\s+number="([^"]+)">([\s\S]*?)<\/bridge-kde-sms>/g;
+    while ((m = re.exec(text)) !== null) add('kde-sms', m, { device: m[1], number: m[2], message: m[3] });
+    re = /<bridge-kde-lock\s+device="([^"]+)"\s*\/>/g;
+    while ((m = re.exec(text)) !== null) add('kde-lock', m, { device: m[1] });
+    re = /<bridge-kde-notifications\s+device="([^"]+)"\s*\/>/g;
+    while ((m = re.exec(text)) !== null) add('kde-notifications', m, { device: m[1] });
+    re = /<bridge-kde-plugins\s+device="([^"]+)"\s*\/>/g;
+    while ((m = re.exec(text)) !== null) add('kde-plugins', m, { device: m[1] });
+    re = /<bridge-kde-photo\s+device="([^"]+)"(?:\s+path="([^"]*)")?\s*\/>/g;
+    while ((m = re.exec(text)) !== null) add('kde-photo', m, { device: m[1], path: m[2] || '' });
+    re = /<bridge-kde-my-id\s*\/>/g;
+    while ((m = re.exec(text)) !== null) add('kde-myid', m, {});
     re = /<bridge-sudo>([\s\S]*?)<\/bridge-sudo>/g;
     while ((m = re.exec(text)) !== null) add('sudo', m, { command: m[1].trim() });
     re = /<bridge-exec>([\s\S]*?)<\/bridge-exec>/g;
@@ -1074,8 +1195,8 @@
   function getNarrationText(text) {
     let t = String(text || '');
     t = t.replace(/<bridge-designs>[\s\S]*?<\/bridge-designs>/g, '');
-    t = t.replace(/<bridge-[a-z]+[^>]*>[\s\S]*?<\/bridge-[a-z]+>/g, '');
-    t = t.replace(/<bridge-[a-z]+\s+[^>]*\/>/g, '');
+    t = t.replace(/<bridge-[a-z][a-z0-9-]*[^>]*>[\s\S]*?<\/bridge-[a-z][a-z0-9-]*>/g, '');
+    t = t.replace(/<bridge-[a-z][a-z0-9-]*\s+[^>]*\/>/g, '');
     t = t.replace(/```[\s\S]*?```/g, '');
     t = t.replace(/\bDONE\b/g, '');
     t = t.replace(/\basking\(\s*\)/gi, '');
@@ -1086,14 +1207,9 @@
     const t = String(text || '').trim();
     if (!t) return false;
     if (/(?:^|\n)\s*asking\(\s*\)/i.test(t)) return true;
-    // Strip the trailing "DONE" so it doesn't skew the check
     const stripped = t.replace(/\bDONE\b/i, '').trim();
     if (!stripped) return false;
-
-    // Any question mark is enough
     if (stripped.includes('?')) return true;
-
-    // Asking-for-input patterns
     const askingPatterns = [
       /^\s*(?:what|which|who|where|when|why|how)\b/i,
       /^\s*(?:tell me|send me|give me|provide|specify|clarify|confirm)\b/i,
@@ -1126,16 +1242,146 @@
       `cwd=${cwd}`,
       `platform=${env.platform || '(unknown)'}`,
       `allowed_dirs=${allowed}`,
+      `kdeConnect=${env.kde_connect_available ? 'true' : 'false'}`,
+      __kdeCurrentDevice ? `currentKdeDevice=${__kdeCurrentDevice.id} name="${__kdeCurrentDevice.name}"` : '',
       ``,
       `IMPORTANT RULES:`,
       `- When asked for the current directory, respond with the exact "home" value above. NEVER say ".", "~", "here", or leave it blank.`,
       `- Create all projects inside <home>/<project-name>/ — never at repo root or in the current working directory.`,
       `- After finishing, list every file you created with its absolute path.`,
-    ].join('\n');
+      `- For KDE Connect: NEVER invent device IDs. Use the picker or a listed ID.`,
+    ].filter(Boolean).join('\n');
+  }
+
+  async function kdeListDevices(availableOnly = false) {
+    if (!__bridge.connected) throw new Error('Bridge not connected');
+    const r = await bridgeCall('/kde/list', { available: !!availableOnly });
+    if (r && r.devices) {
+      __kdeDevices = r.devices;
+      __kdeAvailable = !!r.installed;
+      renderKdeStatus();
+    }
+    return r;
+  }
+
+  async function askDeviceChoice(devices) {
+    return new Promise((resolve) => {
+      const modal = $('#kdeModal');
+      const grid = $('#kdeGrid');
+      if (!modal || !grid) { resolve(null); return; }
+      __kdeResolver = resolve;
+      grid.innerHTML = '';
+
+      if (!devices || !devices.length) {
+        grid.innerHTML = '<div class="kde-empty">No devices found. Make sure your phone has KDE Connect installed, is on the same Wi-Fi, and paired with this PC.</div>';
+      } else {
+        devices.forEach((d, i) => {
+          const card = document.createElement('div');
+          card.className = 'kde-device-card' + (d.reachable ? ' reachable' : '');
+          card.dataset.id = d.id;
+          card.innerHTML = `
+            <div class="kde-device-card-head">
+              <div class="kde-device-card-icon"><i class="ri-smartphone-line"></i></div>
+              <div class="kde-device-card-meta">
+                <div class="kde-device-card-name">${escapeHtml(d.name)}</div>
+                <div class="kde-device-card-id">${escapeHtml(d.id)}</div>
+              </div>
+              <div class="kde-device-card-num">${i + 1}</div>
+            </div>
+            <div class="kde-device-card-status ${d.reachable ? 'ok' : 'warn'}">
+              ${d.reachable ? '● reachable' : '○ not reachable'}
+            </div>
+            <button class="planner-choose-btn" type="button"><i class="ri-check-line"></i> Choose</button>
+          `;
+          grid.appendChild(card);
+          card.querySelector('.planner-choose-btn').addEventListener('click', () => {
+            __kdeCurrentDevice = { id: d.id, name: d.name };
+            saveKdeDevice();
+            renderKdeDeviceList();
+            closeKdeModal();
+            resolve({ id: d.id, name: d.name });
+          });
+        });
+      }
+
+      modal.classList.add('open');
+    });
+  }
+  function closeKdeModal() { $('#kdeModal')?.classList.remove('open'); }
+  function kdeSkip() {
+    closeKdeModal();
+    if (__kdeResolver) { __kdeResolver(null); __kdeResolver = null; }
+  }
+
+  async function refreshKdeDevices(showModal) {
+    if (!__bridge.connected) return null;
+    try { await bridgeCall('/kde/refresh', {}); } catch {}
+    let r;
+    try { r = await kdeListDevices(false); } catch { return null; }
+    if (!r || !r.ok) return null;
+    const devices = r.devices || [];
+    if (!showModal) {
+      renderKdeDeviceList();
+      return devices;
+    }
+    if (!devices.length) {
+      await askDeviceChoice([]);
+      return [];
+    }
+    const reachable = devices.filter(d => d.reachable);
+    if (reachable.length === 1) {
+      __kdeCurrentDevice = { id: reachable[0].id, name: reachable[0].name };
+      saveKdeDevice();
+      renderKdeDeviceList();
+      toast(`Using ${reachable[0].name}`);
+      return devices;
+    }
+    const pick = await askDeviceChoice(devices);
+    return pick ? devices : null;
   }
 
   async function executeBridgeCommand(cmd) {
     const t = cmd.type;
+    if (t.startsWith('kde-')) {
+      if (!__kdeAvailable) {
+        return { ok: false, error: 'kdeconnect-cli not installed on the bridge', install_hint: 'sudo apt install kdeconnect' };
+      }
+      let deviceId = cmd.device || '';
+      if (!deviceId && __kdeCurrentDevice) deviceId = __kdeCurrentDevice.id;
+      if (!deviceId && (t === 'kde-ping' || t === 'kde-ring' || t === 'kde-share' || t === 'kde-share-text' || t === 'kde-sms' || t === 'kde-lock' || t === 'kde-notifications' || t === 'kde-plugins' || t === 'kde-photo')) {
+        const devices = await kdeListDevices(false);
+        if (devices && devices.devices && devices.devices.length) {
+          const pick = await askDeviceChoice(devices.devices);
+          if (pick) deviceId = pick.id;
+        }
+        if (!deviceId) return { ok: false, error: 'no device chosen', cancelled: true };
+      }
+      try {
+        if (t === 'kde-refresh') return await bridgeCall('/kde/refresh', {});
+        if (t === 'kde-list') {
+          await bridgeCall('/kde/refresh', {});
+          const r = await kdeListDevices(!!cmd.available);
+          if (r && r.devices && r.devices.length && !__kdeCurrentDevice) {
+            const pick = await askDeviceChoice(r.devices);
+            if (pick) return { ok: true, devices: r.devices, chosen: pick };
+          }
+          return { ok: true, devices: r?.devices || [] };
+        }
+        if (t === 'kde-myid') return await bridgeCall('/kde/my-id', {});
+        if (t === 'kde-ping') return await bridgeCall('/kde/ping', { device: deviceId, message: cmd.message || '' });
+        if (t === 'kde-ring') return await bridgeCall('/kde/ring', { device: deviceId });
+        if (t === 'kde-share') return await bridgeCall('/kde/share', { device: deviceId, path: cmd.path });
+        if (t === 'kde-share-text') return await bridgeCall('/kde/share-text', { device: deviceId, text: cmd.text });
+        if (t === 'kde-sms') return await bridgeCall('/kde/sms', { device: deviceId, number: cmd.number, message: cmd.message });
+        if (t === 'kde-lock') return await bridgeCall('/kde/lock', { device: deviceId });
+        if (t === 'kde-notifications') return await bridgeCall('/kde/notifications', { device: deviceId });
+        if (t === 'kde-plugins') return await bridgeCall('/kde/plugins', { device: deviceId });
+        if (t === 'kde-photo') return await bridgeCall('/kde/photo', { device: deviceId, path: cmd.path });
+      } catch (e) {
+        return { ok: false, error: e.message };
+      }
+      return { ok: false, error: 'unknown kde command' };
+    }
     if (t === 'sudo') {
       addBridgeSystemMsg(`Mirox needs root access for: ${cmd.command}`);
       const sudo = await askSudo(cmd.command);
@@ -1171,13 +1417,39 @@
     if (t === 'pkgs') return bridgeCall('/pkgs', { type: cmd.pkgType, cwd: cmd.cwd });
     return { ok: false, error: 'Unknown' };
   }
+
   function formatResultForAI(cmd, result) {
     const ok = result && result.ok;
     if (!ok) {
       const extra = result?.allowed_dirs ? `\nALLOWED: ${result.allowed_dirs.join(', ')}` : '';
-      return `[${cmd.type}] ERROR: ${(result && result.error) || 'unknown'}${extra}`;
+      const hint = result?.install_hint ? `\nHINT: ${result.install_hint}` : '';
+      return `[${cmd.type}] ERROR: ${(result && result.error) || 'unknown'}${extra}${hint}`;
     }
     const trunc = (s, n = 3000) => String(s || '').slice(0, n);
+    if (cmd.type.startsWith('kde-')) {
+      if (cmd.type === 'kde-list') {
+        const list = (result.devices || []).map(d => `${d.reachable ? '*' : ' '} ${d.name} (${d.id})`).join('\n');
+        return `[kde-list] ${result.devices?.length || 0} device(s)\n${list}${result.chosen ? `\nCHOSEN: ${result.chosen.name} (${result.chosen.id})` : ''}`;
+      }
+      if (cmd.type === 'kde-ping') {
+        const d = result.device || {};
+        return `[kde-ping] ${result.online ? 'ONLINE' : 'OFFLINE'} · ${d.name || cmd.device} (${d.id || ''})`;
+      }
+      if (cmd.type === 'kde-share') {
+        const d = result.device || {};
+        return `[kde-share] sent ${result.sent_path} → ${d.name || cmd.device}${result.was_dir ? ' (zipped)' : ''}`;
+      }
+      if (cmd.type === 'kde-myid') return `[kde-my-id] ${result.id}`;
+      if (cmd.type === 'kde-refresh') return `[kde-refresh] ok`;
+      if (cmd.type === 'kde-ring') return `[kde-ring] ringing ${result.device?.name || cmd.device}`;
+      if (cmd.type === 'kde-share-text') return `[kde-share-text] sent to ${result.device?.name || cmd.device}`;
+      if (cmd.type === 'kde-sms') return `[kde-sms] sent to ${result.device?.name || cmd.device}`;
+      if (cmd.type === 'kde-lock') return `[kde-lock] locked ${result.device?.name || cmd.device}`;
+      if (cmd.type === 'kde-notifications') return `[kde-notifications] ${trunc(result.notifications, 1500)}`;
+      if (cmd.type === 'kde-plugins') return `[kde-plugins] ${trunc(result.plugins, 1500)}`;
+      if (cmd.type === 'kde-photo') return `[kde-photo] saved to ${result.path}`;
+      return `[${cmd.type}] ok`;
+    }
     switch (cmd.type) {
       case 'sudo':
       case 'exec': return `[exec] exit=${result.exit_code}\nSTDOUT:\n${trunc(result.stdout)}\nSTDERR:\n${trunc(result.stderr, 1500)}`;
@@ -1216,6 +1488,7 @@
     if (t === 'screenshot') return 'screenshot:' + (cmd.path || 'default');
     if (t === 'git') return 'git:' + cmd.action + ':' + (cmd.cwd || '');
     if (t === 'pkgs') return 'pkgs:' + cmd.pkgType;
+    if (t.startsWith('kde-')) return t + ':' + (cmd.device || '') + ':' + (cmd.path || cmd.text || cmd.number || '');
     return t;
   }
   function shouldBlockSignature(sig) {
@@ -1261,7 +1534,6 @@
   }
   function skipBridgeQuestion() { closeBridgeQuestionModal(); if (__bqResolver) { __bqResolver('[Skipped by user]'); __bqResolver = null; } }
 
-  /* ---------- Mirox Planner modal ---------- */
   function showPlannerModal(designs) {
     return new Promise((resolve) => {
       const modal = $('#plannerModal');
@@ -1278,24 +1550,18 @@
         iframe.setAttribute('sandbox', 'allow-scripts');
         iframe.setAttribute('loading', 'lazy');
         iframe.srcdoc = '<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;height:100%;overflow:auto;font-family:system-ui,sans-serif;background:#fff;color:#111}</style></head><body>' + d.html + '</body></html>';
-
         const footer = document.createElement('div');
         footer.className = 'planner-card-footer';
         footer.innerHTML = `
           <div class="planner-card-label"><span class="planner-card-dot"></span><span class="planner-card-name">${escapeHtml(d.name)}</span><span class="planner-card-id">Design ${d.id}</span></div>
           <button class="planner-choose-btn" type="button"><i class="ri-check-line"></i> Choose</button>
         `;
-
-        card.appendChild(iframe);
-        card.appendChild(footer);
-        grid.appendChild(card);
-
+        card.appendChild(iframe); card.appendChild(footer); grid.appendChild(card);
         footer.querySelector('.planner-choose-btn').addEventListener('click', () => {
           closePlannerModal();
           resolve({ id: d.id, name: d.name });
         });
       });
-
       modal.classList.add('open');
     });
   }
@@ -1314,7 +1580,6 @@
     if (__plannerResolver) { __plannerResolver({ id: 0, name: 'Let Mirox decide' }); __plannerResolver = null; }
   }
 
-  /* ---------- Verification table ---------- */
   async function buildVerificationTable(paths) {
     const rows = [];
     for (const p of paths) {
@@ -1355,7 +1620,6 @@
   }
   function computeProjectRoot(paths, home) {
     if (!paths.length) return home || '';
-    // Take the longest common prefix
     const norm = paths.map(p => String(p).replace(/\\/g, '/'));
     let prefix = norm[0].split('/');
     for (const p of norm.slice(1)) {
@@ -1365,11 +1629,9 @@
       prefix = prefix.slice(0, i);
     }
     const s = prefix.join('/');
-    // Trim to a folder (no dot)
     return s.endsWith('/') ? s.slice(0, -1) : s;
   }
 
-  /* ---------- Bridge loop ---------- */
   async function fetchBridgeReply(history) {
     const env = __bridge.env || {};
     const envBlock = buildEnvBlockString();
@@ -1386,6 +1648,8 @@
           connected: true, name: __bridge.name, model: __bridge.model, mode: 'developer', env,
           sudoAvailable: true,
           plannerAvailable: true,
+          kdeAvailable: __kdeAvailable,
+          kdeDevice: __kdeCurrentDevice,
           filesWritten: bridgeTurn ? [...bridgeTurn.writtenFiles] : [],
           plannedFiles: bridgeTurn ? [...bridgeTurn.plannedFiles] : [],
           failedSignatures: bridgeTurn ? [...bridgeTurn.failedSignatures] : [],
@@ -1421,8 +1685,9 @@
       bridgeProgress = 0;
       updateBridgeProgress(2, 'Starting…');
       addBridgeUserMsg(userText);
-      // Inject strong reminder to use the real home path and structure projects
-      const starterText = `[System] When asked for a file or directory path, respond ONLY with the exact absolute path from home=. NEVER use ".", "~", "here", or placeholders. Create all projects inside <home>/<project-name>/.\n\n${userText}`;
+      const lower = userText.toLowerCase();
+      __lastBuildWasMobile = /\b(phone|mobile|tablet|android|iphone|ipad|device)\b/.test(lower);
+      const starterText = `[System] When asked for a file or directory path, respond ONLY with the exact absolute path from home=. NEVER use ".", "~", "here", or placeholders. Create all projects inside <home>/<project-name>/. For KDE Connect, NEVER invent device IDs — use the picker.\n\n${userText}`;
       bridgeConversation.push({ role: 'user', content: starterText });
     } else {
       setProgressText('Continuing…');
@@ -1450,7 +1715,6 @@
           break;
         }
 
-        // ---------- Mirox Planner ----------
         const designs = extractBridgeDesigns(reply);
         if (designs && designs.length) {
           const narration0 = getNarrationText(reply.replace(/<bridge-designs>[\s\S]*?<\/bridge-designs>/g, ''));
@@ -1470,14 +1734,12 @@
           continue;
         }
 
-        // ---------- Parse everything ----------
         const cmdsInReply = extractBridgeCommands(reply);
         const questionsInReply = extractBridgeQuestions(reply);
         const plan = extractBridgePlan(reply);
         const prog = extractProgressTag(reply);
         const saidDone = /\bDONE\b/i.test(reply);
 
-        // ---------- Free-form question pause (BEFORE any auto-continue) ----------
         if (!cmdsInReply.length && !questionsInReply.length && !saidDone && looksLikeFreeQuestion(reply)) {
           const narrationQ = getNarrationText(reply);
           if (narrationQ) addBridgeAiMsg(narrationQ);
@@ -1488,10 +1750,9 @@
           bridgeTaskComplete = true;
           setProgressText('Waiting for your reply…');
           updateBridgeSendBtn();
-          return; // do not auto-continue
+          return;
         }
 
-        // ---------- No-action streak detection ----------
         const hasActions = cmdsInReply.length > 0 || !!plan || !!prog;
         if (!hasActions && !saidDone) {
           bridgeTurn.noActionStreak = (bridgeTurn.noActionStreak || 0) + 1;
@@ -1510,7 +1771,6 @@
           bridgeTurn.noActionStreak = 0;
         }
 
-        // ---------- Progress ----------
         const totalPlanned = bridgeTurn.plannedFiles.size;
         const doneCount = bridgeTurn.writtenFiles.size;
         if (totalPlanned > 0) { updateBridgeProgress(2 + Math.round((doneCount / totalPlanned) * 93), `Files: ${doneCount} / ${totalPlanned}`); }
@@ -1525,7 +1785,6 @@
         bridgeConversation.push({ role: 'assistant', content: reply });
         if (bridgeConversation.length > 50) bridgeConversation = bridgeConversation.slice(-50);
 
-        // ---------- Structured question modal ----------
         if (questionsInReply.length > 0) {
           const remaining = MAX_BRIDGE_QUESTIONS - bridgeQuestionCount;
           const toAsk = questionsInReply.slice(0, Math.max(0, remaining));
@@ -1552,7 +1811,6 @@
           }
         }
 
-        // ---------- Execute commands ----------
         if (cmdsInReply.length > 0) {
           const resultLines = [];
           for (let i = 0; i < cmdsInReply.length; i++) {
@@ -1581,7 +1839,6 @@
           continue;
         }
 
-        // ---------- DONE with verification ----------
         const hasPlan = bridgeTurn.plannedFiles.size > 0;
         const allFilesWritten = hasPlan && bridgeTurn.writtenFiles.size >= bridgeTurn.plannedFiles.size;
 
@@ -1595,9 +1852,17 @@
             const allOk = rows.every(r => r.exists);
             const home = __bridge.env?.home || '';
             const projRoot = computeProjectRoot(rows.map(r => r.realPath), home);
+            __lastBuildFolder = projRoot;
             updateBridgeProgress(100, allOk ? 'Complete' : 'Complete with warnings');
             if (allOk) addBridgeSuccessMsg(`Project complete · ${rows.length} file${rows.length === 1 ? '' : 's'} · ${projRoot || home}`);
             else addBridgeSuccessMsg(`Project finished · ${rows.filter(r => r.exists).length}/${rows.length} files verified`);
+
+            // Auto-offer to send to phone if the task mentioned mobile and KDE is available.
+            if (__lastBuildWasMobile && __kdeAvailable && projRoot) {
+              addBridgeSystemMsg('Task mentioned a phone/mobile device — offering to send the project…');
+              const sent = await offerKdeSend(projRoot);
+              if (sent) addBridgeSuccessMsg(`Project sent to ${sent.name}`);
+            }
           } else {
             updateBridgeProgress(100, 'Complete');
             addBridgeSuccessMsg('Task complete');
@@ -1612,10 +1877,8 @@
           continue;
         }
 
-        // ---------- Otherwise auto-continue ONLY when there was an action ----------
         if (!saidDone) {
           if (hasActions) {
-            // AI made progress but isn't done → continue normally
             if (autoContinues < MAX_AUTO_CONTINUES) {
               autoContinues++;
               await autoContinueAfterDelay('Auto-continuing');
@@ -1625,7 +1888,6 @@
             addBridgeSystemMsg('Paused by iteration limit. Type "continue" to keep going.');
             break;
           } else {
-            // No actions and not DONE → pause (already handled by noActionStreak above)
             bridgeWaitingForUser = true;
             bridgeTaskComplete = true;
             setProgressText('Waiting for your reply…');
@@ -1650,6 +1912,29 @@
     } finally {
       bridgeRunning = false;
       updateBridgeSendBtn();
+    }
+  }
+
+  async function offerKdeSend(path) {
+    if (!__kdeAvailable) return null;
+    // Ask the user via the KDE picker
+    let device = __kdeCurrentDevice;
+    if (!device) {
+      const devices = await kdeListDevices(false);
+      const list = devices?.devices || [];
+      if (list.length === 1) { device = { id: list[0].id, name: list[0].name }; __kdeCurrentDevice = device; saveKdeDevice(); }
+      else if (list.length > 1) { const pick = await askDeviceChoice(list); if (!pick) return null; device = pick; }
+      else return null;
+    }
+    addBridgeSystemMsg(`Sending ${path} to ${device.name}…`);
+    const bubble = addBridgeActionBubble({ type: 'kde-share', path, device: device.id });
+    try {
+      const r = await bridgeCall('/kde/share', { device: device.id, path });
+      updateBridgeActionBubble(bubble, { type: 'kde-share' }, r);
+      return r.ok ? device : null;
+    } catch (e) {
+      updateBridgeActionBubble(bubble, { type: 'kde-share' }, { ok: false, error: e.message });
+      return null;
     }
   }
 
@@ -1769,6 +2054,13 @@
     on('#bwConnectBtn', 'click', startBridge);
     on('#bwDisconnectBtn', 'click', stopBridge);
     on('#bwSudoForgetBtn', 'click', forgetSudo);
+    on('#bwScanDevicesBtn', 'click', async () => {
+      if (!__bridge.connected) { toast('Connect the bridge first.'); return; }
+      toast('Scanning for devices…');
+      const devices = await refreshKdeDevices(false);
+      if (devices && devices.length) toast(`Found ${devices.length} device${devices.length === 1 ? '' : 's'}`);
+      else toast('No devices found yet.');
+    });
 
     on('#sudoSubmitBtn', 'click', submitSudo);
     on('#sudoSkipBtn', 'click', skipSudo);
@@ -1783,6 +2075,13 @@
 
     on('#plannerCloseBtn', 'click', plannerSkip);
     on('#plannerSkipBtn', 'click', plannerSkip);
+
+    on('#kdeCloseBtn', 'click', kdeSkip);
+    on('#kdeSkipBtn', 'click', kdeSkip);
+    on('#kdeRefreshBtn', 'click', async () => {
+      const sub = $('#kdeSubtitle'); if (sub) sub.textContent = 'Rescanning…';
+      await refreshKdeDevices(true);
+    });
 
     const bwInp = $('#bridgeInput');
     if (bwInp) {
@@ -1799,6 +2098,7 @@
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         closeImageViewer(); closeModelPicker();
+        if ($('#kdeModal')?.classList.contains('open')) { kdeSkip(); return; }
         if ($('#plannerModal')?.classList.contains('open')) { plannerSkip(); return; }
         if ($('#sudoModal')?.classList.contains('open')) { skipSudo(); return; }
         if ($('#bridgeQuestionModal')?.classList.contains('open')) return;
@@ -1811,8 +2111,8 @@
 
   async function init() {
     try {
-      loadAppearance(); loadBridgeLS(); wireAll(); renderModelPicker();
-      renderBridgeStatus(); updateBridgeSendBtn();
+      loadAppearance(); loadBridgeLS(); loadKdeDevice(); wireAll(); renderModelPicker();
+      renderBridgeStatus(); updateBridgeSendBtn(); renderKdeStatus();
       await loadConfig(); loadChats(); renderHistory(); await refreshUsage();
     } catch (e) { console.error('[Mirox init]', e); }
     finally { killLoader(); }
