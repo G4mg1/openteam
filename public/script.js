@@ -1,7 +1,6 @@
 (function () {
   'use strict';
 
-  /* ---------- Loader ---------- */
   function killLoader() {
     const el = document.getElementById('loadingScreen');
     if (!el) return;
@@ -33,9 +32,9 @@
   const BRIDGE_OPTS_KEY = 'miroxai_bridge_opts_v1';
 
   const MAX_BRIDGE_QUESTIONS = 6;
-  const MAX_BRIDGE_ITER = 120;
-  const MAX_AUTO_CONTINUES = 60;
-  const MAX_DUP_COMMANDS = 8;
+  const MAX_BRIDGE_ITER = 200;
+  const MAX_AUTO_CONTINUES = 100;
+  const MAX_DUP_COMMANDS = 40;
   const AUTO_CONTINUE_DELAY_MS = 900;
   const MAX_IMAGE_DIM = 1280;
 
@@ -77,9 +76,7 @@
     if (typeof o.autoRun === 'boolean') __bridgeAutoRun = o.autoRun;
     if (typeof o.showCode === 'boolean') __bridgeShowCode = o.showCode;
   }
-  function saveBridgeOpts() {
-    safeSet(BRIDGE_OPTS_KEY, { autoRun: __bridgeAutoRun, showCode: __bridgeShowCode });
-  }
+  function saveBridgeOpts() { safeSet(BRIDGE_OPTS_KEY, { autoRun: __bridgeAutoRun, showCode: __bridgeShowCode }); }
   function loadKdeDevice() {
     const v = safeGet(KDE_DEVICE_KEY, null);
     if (v && v.id && v.name) __kdeCurrentDevice = v;
@@ -141,81 +138,92 @@
   }
 
   /* ============================================================
-     CODE DETECTION — the bug-killer
+     TEXT SANITIZATION
+     - stripBridgeTags(): only removes complete <bridge-*> tags. Never touches text.
+     - sanitizeForChat(): same as stripBridgeTags + code-fence removal. Kept for bridge.
      ============================================================ */
-  function isCodeLine(line) {
-    const s = String(line || '').trim();
-    if (!s) return false;
-    if (s.length < 3) return false;
-
-    // CSS / HTML / JS keywords at start
-    if (/^(:root|html|body|\*|@media|@import|@font-face|@keyframes)\s*[\{\(]/i.test(s)) return true;
-    if (/^--[\w-]+\s*:/.test(s)) return true;                                            // CSS var
-    if (/^[.#]?[a-zA-Z][\w-]*\s*\{/.test(s)) return true;                               // selector {
-    if (/^<\?xml|^<!DOCTYPE|^<html|^<head|^<body|^<script|^<style|^<meta|^<link|^<div|^<span|^<section|^<main|^<header|^<footer|^<nav|^<article|^<button|^<input|^<form|^<ul|^<li|^<a\s/i.test(s)) return true;
-    if (/^(function|const|let|var|class|import|export|if|for|while|return|async|await)\s/i.test(s)) return true;
-    if (/\{\s*[\w-]+\s*:/.test(s)) return true;                                          // { prop: value }
-    if (/^\s*[\w-]+\s*:\s*[^;]{1,120};\s*$/.test(s)) return true;                        // CSS property line
-
-    // Brace-heavy
-    const braces = (s.match(/[{}]/g) || []).length;
-    if (braces >= 2) return true;
-
-    // Punctuation density
-    const punct = (s.match(/[{};:<>()=\[\]"'`]/g) || []).length;
-    if (s.length > 12 && punct / s.length > 0.22) return true;
-
-    // Long unbroken tokens (like a hex or minified CSS)
-    if (/\S{70,}/.test(s)) return true;
-
-    // CSS var declaration repeated
-    if ((s.match(/--[\w-]+\s*:/g) || []).length >= 2) return true;
-
-    return false;
-  }
-
-  function stripCodeFromText(text) {
-    if (!text) return '';
-    const lines = String(text).split('\n');
-    const kept = [];
-    for (const line of lines) {
-      if (isCodeLine(line)) continue;
-      kept.push(line);
-    }
-    // Collapse runs of blank lines
-    let out = kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
-    // If it's still insanely long (a huge minified blob without newlines), trim hard
-    if (out.length > 400 && !/\n/.test(out)) out = out.slice(0, 380) + '…';
-    return out;
-  }
-
-  // A more aggressive pass to defeat minified/blobby output
-  function sanitizeForChat(text) {
+  function stripBridgeTags(text) {
     if (!text) return '';
     let t = String(text);
-    // Remove anything that looks like a long CSS/HTML/JS block (heuristic)
-    t = t.replace(/```[\s\S]*?```/g, '');
-    t = t.replace(/~~~[\s\S]*?~~~/g, '');
+    // Complete tag pairs
     t = t.replace(/<bridge-designs>[\s\S]*?<\/bridge-designs>/g, '');
     t = t.replace(/<bridge-[a-z][a-z0-9-]*[^>]*>[\s\S]*?<\/bridge-[a-z][a-z0-9-]*>/g, '');
+    // Self-closing
     t = t.replace(/<bridge-[a-z][a-z0-9-]*\s+[^>]*\/>/g, '');
-    // Kill anything resembling a CSS block
-    t = t.replace(/(?:^|\n)\s*:root[\s\S]*?(?=\n\S|\n\n|$)/g, '');
-    t = t.replace(/\{[^{}]{3,}\}/g, '');
-    // Kill long HTML-ish blobs
-    t = t.replace(/<(?:div|span|section|main|header|footer|nav|article|script|style|link|meta)[^>]*>[\s\S]{40,}?<\/(?:div|span|section|main|header|footer|nav|article|script|style)>/gi, '');
-    // Line-level filter
-    t = stripCodeFromText(t);
-    t = t.replace(/\bDONE\b/g, '').replace(/\basking\(\s*\)/gi, '');
-    t = t.replace(/\s+/g, ' ').trim();
-    return t;
+    // Bridge tags that were left open (never closed) — kill just the opening tag
+    t = t.replace(/<\/?bridge-[a-z][a-z0-9-]*[^>]*>/g, '');
+    // Kill lines that are JUST a dangling closing tag
+    t = t.replace(/^\s*<\/(?:bridge-[a-z][a-z0-9-]*|bridge-write|bridge-append|bridge-exec|bridge-read|bridge-list|bridge-delete|bridge-move|bridge-copy|bridge-sudo|bridge-ask|bridge-plan|bridge-progress|bridge-email|bridge-http|bridge-clipboard|bridge-screenshot|bridge-git|bridge-pkgs|bridge-sysinfo|bridge-syscheck|bridge-processes|design)>\s*$/gim, '');
+    t = t.replace(/^\s*<bridge-[a-z][a-z0-9-]*[^>]*>\s*$/gim, '');
+    // Collapse excessive blank lines
+    t = t.replace(/\n{3,}/g, '\n\n');
+    return t.trim();
   }
 
+  function sanitizeForChat(text) {
+    let t = stripBridgeTags(text);
+    // Remove fenced code blocks
+    t = t.replace(/```[\s\S]*?```/g, '');
+    t = t.replace(/~~~[\s\S]*?~~~/g, '');
+    // Remove inline `code`
+    t = t.replace(/`[^`\n]+`/g, '');
+    // Remove trailing "DONE" markers
+    t = t.replace(/\bDONE\b/g, '');
+    t = t.replace(/\basking\(\s*\)/gi, '');
+    t = t.replace(/\n{3,}/g, '\n\n');
+    return t.trim();
+  }
+
+  /* ============================================================
+     MARKDOWN — regular chat keeps code blocks
+     ============================================================ */
   function renderMarkdown(rawText) {
     if (!rawText) return '';
-    let src = sanitizeForChat(String(rawText));
+    const src = stripBridgeTags(String(rawText));
     if (!src) return '';
-    return `<p>${inlineFmt(src)}</p>`;
+    const parts = [];
+    const re = /```([a-zA-Z0-9+#._-]*)\n?([\s\S]*?)```/g;
+    let last = 0, m;
+    while ((m = re.exec(src)) !== null) {
+      if (m.index > last) parts.push({ type: 'text', content: src.slice(last, m.index) });
+      parts.push({ type: 'code', lang: (m[1] || '').trim(), content: m[2], closed: true });
+      last = re.lastIndex;
+    }
+    const rest = src.slice(last);
+    const openM = rest.match(/```([a-zA-Z0-9+#._-]*)\n?([\s\S]*)$/);
+    if (openM) {
+      const before = rest.slice(0, openM.index);
+      if (before) parts.push({ type: 'text', content: before });
+      parts.push({ type: 'code', lang: (openM[1] || '').trim(), content: openM[2], closed: false });
+    } else if (rest) parts.push({ type: 'text', content: rest });
+    return parts.map(p => p.type === 'code' ? renderCode(p.lang, p.content, p.closed) : renderText(p.content)).join('');
+  }
+  function renderCode(lang, code, closed) {
+    const cleanLang = (lang || '').trim().toLowerCase();
+    const label = (cleanLang || 'CODE').toUpperCase();
+    const raw = String(code || '').replace(/\n$/, '');
+    const btn = closed
+      ? `<button class="code-action-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button>`
+      : `<span style="font-size:11px;color:var(--accent);opacity:.75;">writing…</span>`;
+    return `<div class="code-block"><div class="code-block-header"><span class="code-lang-label">${escapeHtml(label)}</span>${btn}</div><pre><code>${escapeHtml(raw)}</code></pre></div>`;
+  }
+  function renderText(text) {
+    const lines = String(text).split('\n');
+    let out = '';
+    const buf = [];
+    const flush = () => { if (buf.length) { out += `<p>${inlineFmt(buf.join(' '))}</p>`; buf.length = 0; } };
+    for (const raw of lines) {
+      const t = raw.trim();
+      if (!t) { flush(); continue; }
+      const hm = t.match(/^(#{1,4})\s+(.+)$/);
+      if (hm) { flush(); out += `<h${hm[1].length}>${inlineFmt(hm[2])}</h${hm[1].length}>`; continue; }
+      const um = t.match(/^[-*+]\s+(.+)$/);
+      if (um) { out += `<div style="margin:2px 0;">• ${inlineFmt(um[1])}</div>`; continue; }
+      const om = t.match(/^(\d+)\.\s+(.+)$/);
+      if (om) { out += `<div style="margin:2px 0;">${om[1]}. ${inlineFmt(om[2])}</div>`; continue; }
+      buf.push(t);
+    }
+    flush(); return out;
   }
   function inlineFmt(t) {
     t = escapeHtml(t);
@@ -223,12 +231,20 @@
     t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
     return t;
   }
+  function wireCopyButtons(scope) {
+    (scope || document).querySelectorAll('.code-action-btn[data-copy]').forEach(btn => {
+      if (btn.__wired) return; btn.__wired = true;
+      btn.onclick = async () => {
+        const code = btn.closest('.code-block')?.querySelector('pre code')?.textContent || '';
+        try { await navigator.clipboard.writeText(code); btn.innerHTML = '<i class="ri-check-line"></i> Copied'; setTimeout(() => { btn.innerHTML = '<i class="ri-file-copy-line"></i> Copy'; }, 1200); } catch {}
+      };
+    });
+  }
 
   function currentConvo() { return __conversations.find(c => c.id === currentConversationId) || null; }
   function saveChats() { safeSet(LS_KEY, __conversations); }
   function loadChats() { __conversations = safeGet(LS_KEY, []); }
 
-  /* ---------- Chat ---------- */
   function welcomeHTML() {
     return `<div class="welcome-screen">
       <img src="/logo.png" alt="MiroxAI" class="welcome-logo theme-aware-logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';">
@@ -303,7 +319,7 @@
     const bt = el.querySelector('.bubble-text');
     const bubble = el.querySelector('.bubble');
     if (role === 'user') { bt.textContent = content || ''; if (!content) bt.style.display = 'none'; }
-    else { bubble.dataset.rawText = content || ''; if (content) { bt.innerHTML = renderMarkdown(content); } }
+    else { bubble.dataset.rawText = content || ''; if (content) { bt.innerHTML = renderMarkdown(content); wireCopyButtons(bt); } }
     if (role === 'ai' && image) { const img = el.querySelector('img'); if (img) img.onclick = () => openImageViewer(image); }
     wireMessageActions(el); scrollToBottom();
     return el;
@@ -441,14 +457,14 @@
                 bubbleText = bubble.querySelector('.bubble-text');
                 firstChunk = false;
               }
-              if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); }
+              if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); wireCopyButtons(bubbleText); }
               scrollToBottom();
             }
             if (o.error) throw new Error(o.error.message || o.error);
           } catch {}
         }
       }
-      if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); }
+      if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); wireCopyButtons(bubbleText); }
       if (convo) convo.messages.push({ id: aiMsgId, role: 'assistant', content: full, ts: Date.now(), image: generatedImage });
       saveChats();
       if (timeEl) timeEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -569,7 +585,7 @@
     wrap.innerHTML = '<div class="sidebar-empty">Loading…</div>';
     const items = await fetchImageHistory();
     __imageCache = items;
-    if (!items.length) { wrap.innerHTML = '<div class="sidebar-empty">No images yet.<br><span style="font-size:11px;">Ask Mirox to generate one.</span></div>'; return; }
+    if (!items.length) { wrap.innerHTML = '<div class="sidebar-empty">No images yet.</div>'; return; }
     wrap.innerHTML = items.map((it, i) => `
       <div class="sidebar-image-item" data-idx="${i}" title="${escapeHtml(it.prompt || '')}">
         <img src="${it.image}" alt="" loading="lazy">
@@ -703,13 +719,11 @@
     renderSudoStatus();
     renderToggles();
   }
-
   function renderToggles() {
     const ar = $('#bwToggleAutoRun'); if (ar) ar.classList.toggle('active', __bridgeAutoRun);
     const sc = $('#bwToggleShowCode'); if (sc) sc.classList.toggle('active', __bridgeShowCode);
     const sb = $('#bwStopBtn'); if (sb) sb.style.display = bridgeRunning ? 'inline-flex' : 'none';
   }
-
   function renderSudoStatus() {
     const s = $('#bwSudoStatus');
     if (!s) return;
@@ -757,7 +771,7 @@
       });
       row.querySelector('[data-kde-ping]')?.addEventListener('click', async () => {
         toast(`Pinging ${dev.name}…`);
-        try { const r = await bridgeCall('/kde/ping', { device: dev.id }); toast(r.ok ? `📱 ${dev.name} is online` : `✗ No response from ${dev.name}`); } catch { toast('Ping failed'); }
+        try { const r = await bridgeCall('/kde/ping', { device: dev.id }); toast(r.ok ? `📱 ${dev.name} is online` : `✗ No response`); } catch { toast('Ping failed'); }
       });
       row.querySelector('[data-kde-ring]')?.addEventListener('click', async () => {
         toast(`Ringing ${dev.name}…`);
@@ -832,8 +846,7 @@
       renderBridgeStatus(); renderKdeStatus();
       const empty = $('#bridgeEmpty'); if (empty) empty.remove();
       const home = __bridge.env?.home || '(unknown)';
-      const os = __bridge.env?.platform || '(unknown)';
-      setBwHint(`Connected · Home: ${home} · OS: ${os}`, 'ok');
+      setBwHint(`Connected · Home: ${home}`, 'ok');
       addBridgeSystemMsg(`Connected. Home: ${home}`);
       if (__kdeAvailable) addBridgeSystemMsg('KDE Connect detected.');
     } else {
@@ -881,14 +894,12 @@
     renderBuildStatus();
   }
   function scrollBridgeBottom() { const c = $('#bridgeMessages'); if (c) c.scrollTop = c.scrollHeight; }
-
   function renderBuildStatus() {
     const s = $('#bwBuildStatus'); if (!s) return;
     if (__lastBuildFolder) { s.textContent = __lastBuildFolder; s.style.color = 'var(--success)'; }
     else { s.textContent = 'No project yet'; s.style.color = ''; }
   }
 
-  /* ---------- Message helpers ---------- */
   function addBridgeUserMsg(text) {
     const container = $('#bridgeMessages'); if (!container) return;
     const empty = $('#bridgeEmpty'); if (empty) empty.remove();
@@ -963,7 +974,6 @@
     if (ok) { status.className = 'bridge-action-status ok'; status.innerHTML = '<i class="ri-check-line"></i> Done'; }
     else if (result && result.cancelled) { status.className = 'bridge-action-status err'; status.innerHTML = '<i class="ri-close-line"></i> Cancelled'; }
     else { status.className = 'bridge-action-status err'; status.innerHTML = '<i class="ri-close-line"></i> Failed'; }
-    // Show code ONLY if user enabled Show Code AND this is a write
     const codeWrap = el.querySelector('.bridge-action-code');
     if (codeWrap) {
       if (__bridgeShowCode && cmd.type === 'write' && typeof cmd.content === 'string') {
@@ -979,35 +989,35 @@
   function getActionData(cmd) {
     const t = cmd.type;
     const base = getBaseName(cmd.path) || getBaseName(cmd.from) || '';
-    if (t === 'kde-list') return { icon: 'ri-radar-line', iconClass: 'list', label: 'Scanning for devices' };
-    if (t === 'kde-refresh') return { icon: 'ri-refresh-line', iconClass: 'list', label: 'Refreshing device list' };
-    if (t === 'kde-ping') return { icon: 'ri-wifi-line', iconClass: 'exec', label: `Pinging <code>${escapeHtml((cmd.device || '').slice(0, 10))}</code>` };
+    if (t === 'kde-list') return { icon: 'ri-radar-line', iconClass: 'list', label: 'Scanning devices' };
+    if (t === 'kde-refresh') return { icon: 'ri-refresh-line', iconClass: 'list', label: 'Refreshing' };
+    if (t === 'kde-ping') return { icon: 'ri-wifi-line', iconClass: 'exec', label: `Pinging device` };
     if (t === 'kde-ring') return { icon: 'ri-notification-3-line', iconClass: 'exec', label: 'Ringing device' };
-    if (t === 'kde-share') return { icon: 'ri-send-plane-fill', iconClass: 'write', label: `Sending <code>${escapeHtml(getBaseName(cmd.path) || cmd.path)}</code> to device` };
-    if (t === 'kde-share-text') return { icon: 'ri-file-text-line', iconClass: 'write', label: 'Sharing text to device' };
-    if (t === 'kde-sms') return { icon: 'ri-message-3-line', iconClass: 'write', label: `SMS → <code>${escapeHtml(cmd.number || '')}</code>` };
+    if (t === 'kde-share') return { icon: 'ri-send-plane-fill', iconClass: 'write', label: `Sending <code>${escapeHtml(getBaseName(cmd.path) || cmd.path)}</code>` };
+    if (t === 'kde-share-text') return { icon: 'ri-file-text-line', iconClass: 'write', label: 'Sharing text' };
+    if (t === 'kde-sms') return { icon: 'ri-message-3-line', iconClass: 'write', label: `SMS` };
     if (t === 'kde-lock') return { icon: 'ri-lock-line', iconClass: 'exec', label: 'Locking device' };
-    if (t === 'kde-notifications') return { icon: 'ri-notification-badge-line', iconClass: 'read', label: 'Reading notifications' };
-    if (t === 'kde-plugins') return { icon: 'ri-puzzle-line', iconClass: 'list', label: 'Listing plugins' };
-    if (t === 'kde-photo') return { icon: 'ri-camera-lens-line', iconClass: 'write', label: 'Taking photo' };
-    if (t === 'kde-myid') return { icon: 'ri-fingerprint-line', iconClass: 'read', label: 'Reading own ID' };
-    if (t === 'sudo') return { icon: 'ri-shield-keyhole-line', iconClass: 'exec', label: `Running with sudo` };
+    if (t === 'kde-notifications') return { icon: 'ri-notification-badge-line', iconClass: 'read', label: 'Notifications' };
+    if (t === 'kde-plugins') return { icon: 'ri-puzzle-line', iconClass: 'list', label: 'Plugins' };
+    if (t === 'kde-photo') return { icon: 'ri-camera-lens-line', iconClass: 'write', label: 'Photo' };
+    if (t === 'kde-myid') return { icon: 'ri-fingerprint-line', iconClass: 'read', label: 'Own ID' };
+    if (t === 'sudo') return { icon: 'ri-shield-keyhole-line', iconClass: 'exec', label: `sudo` };
     if (t === 'write') return { icon: 'ri-file-add-line', iconClass: 'write', label: `Writing <code>${escapeHtml(base)}</code>` };
-    if (t === 'append') return { icon: 'ri-file-edit-line', iconClass: 'write', label: `Appending to <code>${escapeHtml(base)}</code>` };
+    if (t === 'append') return { icon: 'ri-file-edit-line', iconClass: 'write', label: `Appending <code>${escapeHtml(base)}</code>` };
     if (t === 'delete') return { icon: 'ri-delete-bin-line', iconClass: 'exec', label: `Deleting <code>${escapeHtml(base)}</code>` };
     if (t === 'move') return { icon: 'ri-drag-move-line', iconClass: 'exec', label: `Moving <code>${escapeHtml(base)}</code>` };
     if (t === 'copy') return { icon: 'ri-file-copy-2-line', iconClass: 'exec', label: `Copying <code>${escapeHtml(base)}</code>` };
     if (t === 'read') return { icon: 'ri-file-text-line', iconClass: 'read', label: `Reading <code>${escapeHtml(base)}</code>` };
     if (t === 'list') return { icon: 'ri-folder-line', iconClass: 'list', label: `Listing <code>${escapeHtml(base || cmd.path)}</code>` };
     if (t === 'sysinfo') return { icon: 'ri-cpu-line', iconClass: 'list', label: 'System info' };
-    if (t === 'syscheck') return { icon: 'ri-heart-pulse-line', iconClass: 'list', label: 'System health check' };
-    if (t === 'processes') return { icon: 'ri-list-check-2', iconClass: 'list', label: 'Listing processes' };
-    if (t === 'email') return { icon: 'ri-mail-send-line', iconClass: 'write', label: `Email → <code>${escapeHtml(cmd.to || '')}</code>` };
-    if (t === 'http') return { icon: 'ri-global-line', iconClass: 'exec', label: `HTTP ${escapeHtml(cmd.method || 'GET')}` };
-    if (t === 'clipboard') return { icon: 'ri-clipboard-line', iconClass: 'read', label: cmd.action === 'set' ? 'Copying to clipboard' : 'Reading clipboard' };
-    if (t === 'screenshot') return { icon: 'ri-screenshot-2-line', iconClass: 'list', label: 'Taking screenshot' };
-    if (t === 'git') return { icon: 'ri-git-branch-line', iconClass: 'exec', label: `Git ${escapeHtml(cmd.action || 'status')}` };
-    if (t === 'pkgs') return { icon: 'ri-archive-line', iconClass: 'list', label: `Listing ${escapeHtml(cmd.pkgType || 'pip')} packages` };
+    if (t === 'syscheck') return { icon: 'ri-heart-pulse-line', iconClass: 'list', label: 'Health check' };
+    if (t === 'processes') return { icon: 'ri-list-check-2', iconClass: 'list', label: 'Processes' };
+    if (t === 'email') return { icon: 'ri-mail-send-line', iconClass: 'write', label: `Email` };
+    if (t === 'http') return { icon: 'ri-global-line', iconClass: 'exec', label: `HTTP` };
+    if (t === 'clipboard') return { icon: 'ri-clipboard-line', iconClass: 'read', label: 'Clipboard' };
+    if (t === 'screenshot') return { icon: 'ri-screenshot-2-line', iconClass: 'list', label: 'Screenshot' };
+    if (t === 'git') return { icon: 'ri-git-branch-line', iconClass: 'exec', label: `Git ${escapeHtml(cmd.action || '')}` };
+    if (t === 'pkgs') return { icon: 'ri-archive-line', iconClass: 'list', label: `Packages` };
     if (t === 'exec') {
       let friendly = 'Running command';
       const c = cmd.command;
@@ -1042,6 +1052,7 @@
     const cmds = []; let m;
     const add = (type, m, extra) => cmds.push(Object.assign({ type, index: m.index }, extra));
     let re;
+    // KDE
     re = /<bridge-kde-refresh\s*\/>/g; while ((m = re.exec(text)) !== null) add('kde-refresh', m, {});
     re = /<bridge-kde-list(?:\s+available="([^"]*)")?\s*\/>/g; while ((m = re.exec(text)) !== null) add('kde-list', m, { available: m[1] === 'true' });
     re = /<bridge-kde-ping\s+device="([^"]+)"(?:\s*\/>|>([\s\S]*?)<\/bridge-kde-ping>)/g; while ((m = re.exec(text)) !== null) add('kde-ping', m, { device: m[1], message: (m[2] || '').trim() });
@@ -1054,6 +1065,7 @@
     re = /<bridge-kde-plugins\s+device="([^"]+)"\s*\/>/g; while ((m = re.exec(text)) !== null) add('kde-plugins', m, { device: m[1] });
     re = /<bridge-kde-photo\s+device="([^"]+)"(?:\s+path="([^"]*)")?\s*\/>/g; while ((m = re.exec(text)) !== null) add('kde-photo', m, { device: m[1], path: m[2] || '' });
     re = /<bridge-kde-my-id\s*\/>/g; while ((m = re.exec(text)) !== null) add('kde-myid', m, {});
+    // Core
     re = /<bridge-sudo>([\s\S]*?)<\/bridge-sudo>/g; while ((m = re.exec(text)) !== null) add('sudo', m, { command: m[1].trim() });
     re = /<bridge-exec>([\s\S]*?)<\/bridge-exec>/g; while ((m = re.exec(text)) !== null) add('exec', m, { command: m[1].trim() });
     re = /<bridge-write\s+path="([^"]+)">([\s\S]*?)<\/bridge-write>/g; while ((m = re.exec(text)) !== null) add('write', m, { path: m[1], content: m[2] });
@@ -1074,6 +1086,20 @@
     re = /<bridge-pkgs\s+type="([^"]+)"(?:\s+cwd="([^"]*)")?\s*\/>/g; while ((m = re.exec(text)) !== null) add('pkgs', m, { pkgType: m[1], cwd: m[2] || '' });
     cmds.sort((a, b) => a.index - b.index);
     return cmds;
+  }
+  function hasUnclosedWriteOrAppend(text) {
+    const t = String(text || '');
+    // Count opens vs closes
+    const opensW = (t.match(/<bridge-write\b/g) || []).length;
+    const closesW = (t.match(/<\/bridge-write>/g) || []).length;
+    const opensA = (t.match(/<bridge-append\b/g) || []).length;
+    const closesA = (t.match(/<\/bridge-append>/g) || []).length;
+    return (opensW > closesW) || (opensA > closesA);
+  }
+  function lastWriteOrAppendPath(text) {
+    const t = String(text || '');
+    const matches = [...t.matchAll(/<bridge-(?:write|append)\s+path="([^"]+)"/g)];
+    return matches.length ? matches[matches.length - 1][1] : null;
   }
   function extractBridgeDesigns(text) {
     const m = /<bridge-designs>([\s\S]*?)<\/bridge-designs>/.exec(text);
@@ -1116,23 +1142,19 @@
     if (!m) return null;
     return { step: parseInt(m[1], 10), total: parseInt(m[2], 10), label: m[3] || '' };
   }
-  function getNarrationText(text) {
-    return sanitizeForChat(text);
-  }
+  function getNarrationText(text) { return sanitizeForChat(text); }
   function looksLikeFreeQuestion(text) {
     const t = String(text || '').trim();
     if (!t) return false;
     if (/(?:^|\n)\s*asking\(\s*\)/i.test(t)) return true;
+    // Only consider the END of the text
     const stripped = t.replace(/\bDONE\b/i, '').trim();
     if (!stripped) return false;
-    if (stripped.includes('?')) return true;
-    const askingPatterns = [
-      /^\s*(?:what|which|who|where|when|why|how)\b/i,
-      /^\s*(?:tell me|send me|give me|provide|specify|clarify|confirm)\b/i,
-      /\b(?:if you mean|do you mean|did you mean|are you referring)\b/i,
-    ];
-    for (const p of askingPatterns) if (p.test(stripped)) return true;
-    return false;
+    // Must end with a question mark
+    if (!/\?\s*$/.test(stripped)) return false;
+    // And must not contain commands
+    if (/<bridge-/.test(stripped)) return false;
+    return true;
   }
   function isEnvQuestion(question) {
     const q = String(question || '').toLowerCase();
@@ -1158,7 +1180,10 @@
       `kdeConnect=${env.kde_connect_available ? 'true' : 'false'}`,
       __kdeCurrentDevice ? `currentKdeDevice=${__kdeCurrentDevice.id} name="${__kdeCurrentDevice.name}"` : '',
       ``,
-      `REMINDER: NEVER paste code, CSS, HTML, or JS into your visible reply. All file contents go INSIDE <bridge-write>...</bridge-write>. Your visible text is only short teammate-style narration.`,
+      `CRITICAL:`,
+      `- Never paste code, CSS, HTML, or JS into your visible reply. All file content goes inside <bridge-write> or <bridge-append> tags.`,
+      `- Always CLOSE your tags. Never leave a <bridge-write> or <bridge-append> open.`,
+      `- For long files, write the first chunk with <bridge-write>, then use <bridge-append> for the rest.`,
     ].filter(Boolean).join('\n');
   }
 
@@ -1175,7 +1200,7 @@
       __kdeResolver = resolve;
       grid.innerHTML = '';
       if (!devices || !devices.length) {
-        grid.innerHTML = '<div class="kde-empty">No devices found. Make sure KDE Connect is installed on your phone and it is on the same Wi-Fi.</div>';
+        grid.innerHTML = '<div class="kde-empty">No devices found.</div>';
       } else {
         devices.forEach((d, i) => {
           const card = document.createElement('div');
@@ -1313,16 +1338,9 @@
         return `[kde-list] ${result.devices?.length || 0} device(s)\n${list}${result.chosen ? `\nCHOSEN: ${result.chosen.name} (${result.chosen.id})` : ''}`;
       }
       if (cmd.type === 'kde-ping') { const d = result.device || {}; return `[kde-ping] ${result.online ? 'ONLINE' : 'OFFLINE'} · ${d.name || cmd.device}`; }
-      if (cmd.type === 'kde-share') { const d = result.device || {}; return `[kde-share] sent ${result.sent_path} → ${d.name || cmd.device}${result.was_dir ? ' (zipped)' : ''}`; }
+      if (cmd.type === 'kde-share') { const d = result.device || {}; return `[kde-share] sent → ${d.name || cmd.device}${result.was_dir ? ' (zipped)' : ''}`; }
       if (cmd.type === 'kde-myid') return `[kde-my-id] ${result.id}`;
       if (cmd.type === 'kde-refresh') return `[kde-refresh] ok`;
-      if (cmd.type === 'kde-ring') return `[kde-ring] ringing ${result.device?.name || cmd.device}`;
-      if (cmd.type === 'kde-share-text') return `[kde-share-text] sent to ${result.device?.name || cmd.device}`;
-      if (cmd.type === 'kde-sms') return `[kde-sms] sent to ${result.device?.name || cmd.device}`;
-      if (cmd.type === 'kde-lock') return `[kde-lock] locked ${result.device?.name || cmd.device}`;
-      if (cmd.type === 'kde-notifications') return `[kde-notifications] ${trunc(result.notifications, 1500)}`;
-      if (cmd.type === 'kde-plugins') return `[kde-plugins] ${trunc(result.plugins, 1500)}`;
-      if (cmd.type === 'kde-photo') return `[kde-photo] saved to ${result.path}`;
       return `[${cmd.type}] ok`;
     }
     switch (cmd.type) {
@@ -1350,6 +1368,7 @@
   function cmdSignature(cmd) {
     const t = cmd.type;
     if (t === 'exec' || t === 'sudo') return t + ':' + cmd.command.trim();
+    // For write: only path + length. Different lengths = different content, so both are allowed.
     if (t === 'write') return 'write:' + cmd.path + ':' + (cmd.content || '').length;
     if (t === 'append') return 'append:' + cmd.path + ':' + (cmd.content || '').length;
     if (t === 'delete') return 'delete:' + cmd.path;
@@ -1409,7 +1428,7 @@
   }
   function skipBridgeQuestion() { closeBridgeQuestionModal(); if (__bqResolver) { __bqResolver('[Skipped by user]'); __bqResolver = null; } }
 
-  /* ---------- Mirox Planner ---------- */
+  /* ---------- Planner ---------- */
   function showPlannerModal(designs) {
     return new Promise((resolve) => {
       const modal = $('#plannerModal'), grid = $('#plannerGrid');
@@ -1560,7 +1579,15 @@
       addBridgeUserMsg(userText);
       const lower = userText.toLowerCase();
       __lastBuildWasMobile = /\b(phone|mobile|tablet|android|iphone|ipad|device)\b/.test(lower);
-      const starterText = `[System] Talk like a teammate. NEVER paste code into visible text — all file content goes inside <bridge-write>...</bridge-write>. Create projects inside <home>/<project-name>/. When done, reply DONE on its own line.\n\n${userText}`;
+      const starterText = `[System] Rules for this turn:
+1. NEVER paste code into visible text. All file content goes inside <bridge-write>...</bridge-write> or <bridge-append>...</bridge-append>.
+2. ALWAYS close tags. Never leave a <bridge-write> or <bridge-append> open.
+3. If a file is long, write the first chunk with <bridge-write>, then use <bridge-append> for the rest.
+4. Never complain about truncation. Never ask the user to pick a "plan" for a small file. Just build it.
+5. Create projects inside <home>/<project-name>/.
+6. When the whole project is on disk, reply DONE on its own line.
+
+${userText}`;
       bridgeConversation.push({ role: 'user', content: starterText });
     } else {
       setProgressText('Continuing…');
@@ -1614,9 +1641,11 @@
         const plan = extractBridgePlan(reply);
         const prog = extractProgressTag(reply);
         const saidDone = /\bDONE\b/i.test(reply);
+        const truncatedWrite = hasUnclosedWriteOrAppend(reply);
+        const lastPath = lastWriteOrAppendPath(reply);
 
-        // Free-form question pause
-        if (!cmdsInReply.length && !questionsInReply.length && !saidDone && looksLikeFreeQuestion(reply)) {
+        // Free-form question pause (only if it's actually a question, no commands, no truncation)
+        if (!cmdsInReply.length && !questionsInReply.length && !saidDone && !truncatedWrite && looksLikeFreeQuestion(reply)) {
           const narrationQ = getNarrationText(reply);
           if (narrationQ) addBridgeAiMsg(narrationQ);
           addBridgeSystemMsg('Mirox is waiting for you — type your reply below.');
@@ -1645,7 +1674,7 @@
         if (bridgeConversation.length > 50) bridgeConversation = bridgeConversation.slice(-50);
 
         // Questions
-        if (questionsInReply.length > 0) {
+        if (questionsInReply.length > 0 && !truncatedWrite) {
           const remaining = MAX_BRIDGE_QUESTIONS - bridgeQuestionCount;
           const toAsk = questionsInReply.slice(0, Math.max(0, remaining));
           if (toAsk.length > 0) {
@@ -1695,7 +1724,26 @@
             role: 'user',
             content: [`[Bridge environment]`, `home=${env.home || '?'}`, `cwd=${env.cwd || '?'}`, `platform=${env.platform || '?'}`, `allowed_dirs=${allowed}`, ``, `[Progress] ${dc2}/${tp2 || '?'} files`, `[Results]`, resultLines.join('\n\n'), `Write inside allowed_dirs only.`, `If done, reply DONE. Otherwise next batch.`].join('\n'),
           });
+          // If the previous reply had an unclosed write, hint the model to append
+          if (truncatedWrite && lastPath) {
+            bridgeConversation.push({ role: 'user', content: `[System] Your previous reply was cut off mid-file (path="${lastPath}"). Continue EXACTLY where you stopped using <bridge-append path="${lastPath}">...</bridge-append>. Close the tag.` });
+          }
           continue;
+        }
+
+        // Truncated write without complete commands — special handling
+        if (truncatedWrite) {
+          if (__bridgeAutoRun && autoContinues < MAX_AUTO_CONTINUES) {
+            autoContinues++;
+            const p = lastPath || 'your file';
+            setProgressText('Continuing the truncated file…');
+            bridgeConversation.push({ role: 'user', content: `[System] Your last reply ended with an unclosed <bridge-write> or <bridge-append> tag (path="${p}"). Continue from the LAST character you wrote. Emit <bridge-append path="${p}"> with the remaining content and CLOSE the tag with </bridge-append>. Do NOT restart the file. Do NOT re-explain. Do NOT ask questions.` });
+            continue;
+          }
+          addBridgeSystemMsg('File was truncated. Type "continue" to resume.');
+          bridgeWaitingForUser = true;
+          updateBridgeSendBtn();
+          return;
         }
 
         // DONE
@@ -1712,7 +1760,6 @@
             const home = __bridge.env?.home || '';
             projRoot = computeProjectRoot(rows.map(r => r.realPath), home);
             __lastBuildFolder = projRoot;
-            // Find index.html for preview
             const previewFile = rows.find(r => /(^|\/)index\.html?$/i.test(r.realPath));
             __lastPreviewFile = previewFile ? previewFile.realPath : (rows[0]?.realPath || '');
             updateBridgeProgress(100, allOk ? 'Complete' : 'Complete with warnings');
@@ -1721,12 +1768,10 @@
               { folder: projRoot, previewPath: __lastPreviewFile || '' }
             );
             renderBuildStatus();
-            // Auto-offer KDE send if user asked for mobile
             if (__lastBuildWasMobile && __kdeAvailable && projRoot) {
               const sent = await offerKdeSend(projRoot);
               if (sent) addBridgeSuccessMsg(`Sent to ${sent.name}`);
             }
-            // Auto-open preview if we have index.html
             if (__lastPreviewFile && /\.html?$/i.test(__lastPreviewFile)) {
               setTimeout(() => openPreview(__lastPreviewFile), 400);
             }
@@ -1748,7 +1793,7 @@
           if (__bridgeAutoRun && autoContinues < MAX_AUTO_CONTINUES) {
             autoContinues++;
             await autoContinueAfterDelay('Auto-continuing');
-            bridgeConversation.push({ role: 'user', content: `[System] Continue. Output the next actions.` });
+            bridgeConversation.push({ role: 'user', content: `[System] Continue. Output the next actions. If you were writing a file, use <bridge-append> to add the rest and CLOSE the tag.` });
             continue;
           }
           if (!__bridgeAutoRun) {
@@ -1820,7 +1865,7 @@
     runBridgeTurn(text, false);
   }
 
-  /* ---------- Live preview ---------- */
+  /* ---------- Preview ---------- */
   async function openPreview(pathOrEmpty) {
     const modal = $('#bwPreviewModal'); if (!modal) return;
     const frame = $('#bwPreviewFrame');
@@ -1831,22 +1876,19 @@
     let targetPath = pathOrEmpty || pathInput?.value.trim() || __lastPreviewFile || '';
     if (pathInput) pathInput.value = targetPath;
     if (!targetPath) {
-      if (subtitle) subtitle.textContent = 'No file path yet — enter a path or build a project first.';
+      if (subtitle) subtitle.textContent = 'No file path yet.';
       if (frame) frame.srcdoc = '<html><body style="font-family:system-ui;padding:40px;color:#888;text-align:center"><h2>No preview</h2><p>Build a project, or type an absolute path to an .html file.</p></body></html>';
       return;
     }
-
     if (subtitle) subtitle.textContent = targetPath;
 
     try {
-      // Read the HTML file
       const r = await bridgeCall('/read', { path: targetPath });
       if (!r || !r.ok) throw new Error(r?.error || 'could not read file');
-
       let html = r.content || '';
       const baseDir = targetPath.replace(/\/[^/]*$/, '');
 
-      // Inline CSS: <link href="..."> → <style>...</style>
+      // Inline CSS
       const linkRe = /<link\s+[^>]*href=["']([^"']+\.css[^"']*)["'][^>]*>/gi;
       const cssMatches = [...html.matchAll(linkRe)];
       for (const m of cssMatches) {
@@ -1855,13 +1897,10 @@
         const cssPath = href.startsWith('/') ? href : `${baseDir}/${href}`.replace(/\/\.\//g, '/');
         try {
           const cr = await bridgeCall('/read', { path: cssPath });
-          if (cr && cr.ok) {
-            html = html.replace(m[0], `<style>\n${cr.content}\n</style>`);
-          }
+          if (cr && cr.ok) html = html.replace(m[0], `<style>\n${cr.content}\n</style>`);
         } catch {}
       }
-
-      // Inline JS: <script src="...">...</script>
+      // Inline JS
       const scriptRe = /<script\s+[^>]*src=["']([^"']+\.js[^"']*)["'][^>]*>\s*<\/script>/gi;
       const jsMatches = [...html.matchAll(scriptRe)];
       for (const m of jsMatches) {
@@ -1870,12 +1909,9 @@
         const jsPath = src.startsWith('/') ? src : `${baseDir}/${src}`.replace(/\/\.\//g, '/');
         try {
           const jr = await bridgeCall('/read', { path: jsPath });
-          if (jr && jr.ok) {
-            html = html.replace(m[0], `<script>\n${jr.content}\n</script>`);
-          }
+          if (jr && jr.ok) html = html.replace(m[0], `<script>\n${jr.content}\n</script>`);
         } catch {}
       }
-
       if (frame) frame.srcdoc = html;
     } catch (e) {
       if (frame) frame.srcdoc = `<html><body style="font-family:system-ui;padding:40px;color:#b91c1c"><h2>Preview failed</h2><p>${escapeHtml(e.message)}</p></body></html>`;
@@ -1980,7 +2016,6 @@
     on('#bwDisconnectBtn', 'click', stopBridge);
     on('#bwSudoForgetBtn', 'click', forgetSudo);
 
-    // NEW toggles
     on('#bwToggleAutoRun', 'click', () => {
       __bridgeAutoRun = !__bridgeAutoRun;
       saveBridgeOpts(); renderToggles();
@@ -2007,12 +2042,10 @@
       try { await navigator.clipboard.writeText(__lastBuildFolder); toast('Path copied.'); } catch {}
     });
 
-    // Preview modal
     on('#bwPreviewCloseBtn', 'click', closePreview);
     on('#bwPreviewReloadBtn', 'click', () => openPreview());
     on('#bwPreviewLoadBtn', 'click', () => openPreview());
 
-    // Sudo
     on('#sudoSubmitBtn', 'click', submitSudo);
     on('#sudoSkipBtn', 'click', skipSudo);
     on('#sudoCloseBtn', 'click', skipSudo);
@@ -2024,16 +2057,13 @@
     });
     on('#sudoPasswordInput', 'keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitSudo(); } });
 
-    // Planner
     on('#plannerCloseBtn', 'click', plannerSkip);
     on('#plannerSkipBtn', 'click', plannerSkip);
 
-    // KDE
     on('#kdeCloseBtn', 'click', kdeSkip);
     on('#kdeSkipBtn', 'click', kdeSkip);
     on('#kdeRefreshBtn', 'click', async () => { const sub = $('#kdeSubtitle'); if (sub) sub.textContent = 'Rescanning…'; await refreshKdeDevices(true); });
 
-    // Bridge input
     const bwInp = $('#bridgeInput');
     if (bwInp) {
       bwInp.addEventListener('input', () => { bwInp.style.height = 'auto'; bwInp.style.height = Math.min(bwInp.scrollHeight, 140) + 'px'; updateBridgeSendBtn(); });
