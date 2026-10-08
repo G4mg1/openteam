@@ -1,4 +1,4 @@
-/* MiroxAI — Styles v92 */
+/* MiroxAI — Styles v93 */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
@@ -335,6 +335,24 @@ ul { list-style: none; } img { max-width: 100%; display: block; } a { color: inh
 .bw-quick { display: block; width: 100%; text-align: left; padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--panel-2); font-size: 12.5px; color: var(--text-muted); margin-bottom: 6px; transition: all .15s; }
 .bw-quick:hover { background: var(--panel-3); color: var(--text); border-color: var(--accent); }
 
+/* ==================== VERIFICATION TABLE ==================== */
+.verify-card { max-width: 92%; border-radius: 14px; border: 1px solid var(--border); background: var(--panel); overflow: hidden; animation: actionIn .35s cubic-bezier(.34,1.15,.64,1); }
+.verify-card.ok { border-color: rgba(78,168,46,.35); background: linear-gradient(180deg, rgba(78,168,46,.05), var(--panel)); }
+.verify-card.err { border-color: rgba(220,38,38,.35); background: linear-gradient(180deg, rgba(220,38,38,.05), var(--panel)); }
+.verify-header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 13.5px; font-weight: 600; }
+.verify-card.ok .verify-header { color: var(--success); }
+.verify-card.err .verify-header { color: #dc2626; }
+.verify-header i { font-size: 18px; }
+.verify-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.verify-table th { text-align: left; padding: 8px 12px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-faint); background: var(--panel-2); border-bottom: 1px solid var(--border); }
+.verify-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.verify-table tr:last-child td { border-bottom: none; }
+.verify-table tr.ok td:first-child { color: var(--success); font-weight: 700; }
+.verify-table tr.err td:first-child { color: #dc2626; font-weight: 700; }
+.verify-table code { font-family: 'SF Mono', monospace; font-size: 11.5px; background: var(--panel-2); border: 1px solid var(--border); padding: 2px 6px; border-radius: 4px; color: var(--text); word-break: break-all; }
+.vt-ok { color: var(--success); font-weight: 600; }
+.vt-err { color: #dc2626; font-weight: 600; }
+
 /* ==================== MIROX PLANNER ==================== */
 .planner-overlay { position: fixed; inset: 0; z-index: 5100; background: rgba(15,10,5,.72); display: none; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
 .planner-overlay.open { display: flex; animation: plannerFade .25s ease; }
@@ -465,7 +483,7 @@ ul { list-style: none; } img { max-width: 100%; display: block; } a { color: inh
   .bridge-workspace-title { font-size: 15px; }
   .bridge-workspace-title span { display: none; }
   .bridge-workspace-status { font-size: 11px; padding: 4px 9px; }
-  .bridge-msg .bridge-bubble, .bridge-action, .bridge-success { max-width: 92%; }
+  .bridge-msg .bridge-bubble, .bridge-action, .bridge-success, .verify-card { max-width: 92%; }
   .question-panel { padding: 20px 18px 16px; max-width: 100%; }
   .question-title { font-size: 16px; }
   .question-text { font-size: 14.5px; }
@@ -482,6 +500,8 @@ ul { list-style: none; } img { max-width: 100%; display: block; } a { color: inh
   .planner-grid { gap: 12px; }
   .planner-preview { min-height: 240px; }
   .planner-footer { padding: 12px 16px; }
+  .verify-table th, .verify-table td { padding: 6px 8px; font-size: 11.5px; }
+  .verify-table code { font-size: 10.5px; padding: 1px 4px; }
 }
 @media (max-width: 400px) {
   :root { --base-font: 14px; --sidebar-width: 240px; }
