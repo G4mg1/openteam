@@ -1,11 +1,12 @@
 /* ============================================================
-   MiroxAI Backend v93
-   - AIroute as final fallback
-   - KDE Connect integration (device scan, ping, file share, sms, ring, ...)
-   - Co-worker bridge prompt
-   - Search (DDG + Wikipedia)
-   - Auto image intent + vision
-   - Loginment OAuth, API keys, admin, image history
+   MiroxAI Backend v94
+   - Durable DB (Upstash Redis if configured, else file)
+   - Plans no longer reset: writes are blocked if the DB failed to load
+   - Admin password required from env (no hardcoded fallback)
+   - Email login disabled unless ALLOW_EMAIL_LOGIN=1
+   - API keys enforced on /v1/* (Bearer mxk_live_...)
+   - Loginment secrets from env
+   - AIroute as final fallback, KDE Connect hooks, search, vision
    ============================================================ */
 
 import express from 'express';
@@ -18,13 +19,20 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+/* ---------- Env ---------- */
 const HF_API_KEY   = (process.env.HF_API_KEY || '').trim();
 const PL_KEY       = (process.env.PL_KEY || '').trim();
 const F_API        = (process.env.F_API || '').trim();
-const SECRET       = process.env.SECRET_KEY || 'mirox-fallback-secret';
-const ADMIN_PASS   = (process.env.ADMIN_PASSWORD || '2010').trim();
+const SECRET       = (process.env.SECRET_KEY || '').trim();
+const ADMIN_PASS   = (process.env.ADMIN_PASSWORD || '').trim();
 const PORT         = process.env.PORT || 3000;
 const DB_FILE      = process.env.DB_FILE || '/tmp/mirox-db.json';
+const ALLOW_EMAIL_LOGIN = process.env.ALLOW_EMAIL_LOGIN === '1';
+
+if (!SECRET) console.warn('[Mirox] SECRET_KEY is not set. Sessions will be insecure until you set it.');
+if (!ADMIN_PASS) console.warn('[Mirox] ADMIN_PASSWORD is not set. Admin login is disabled.');
+
+const SESSION_SECRET = SECRET || crypto.randomBytes(32).toString('hex');
 
 /* ---------- AIroute (final fallback) ---------- */
 const AIROUTE_KEY  = (process.env.AR_KEY || process.env.AIRoute_KEY || process.env.AIROUTE_KEY || '').trim();
@@ -32,10 +40,11 @@ const AIROUTE_BASE = (process.env.AR_BASE || 'https://route-ai-playground.lovabl
 const AIROUTE_CHAT = `${AIROUTE_BASE}/api/public/v1/chat`;
 const AIROUTE_IMG  = `${AIROUTE_BASE}/api/public/v1/images`;
 
-const LOGINMENT_CLIENT_ID = 'lm_e8f7193647f744c6ae45a8af85a7cfd3';
-const LOGINMENT_API_KEY   = 'lm_sk_22dbd3282847bf44bf2270e5e7fd34dfd839a18bfc41eeef';
-const LOGINMENT_DOMAIN    = 'https://logint.lovable.app';
-const PUBLIC_ORIGIN       = process.env.PUBLIC_ORIGIN || 'https://miroxai.org';
+/* ---------- Loginment (from env only) ---------- */
+const LOGINMENT_CLIENT_ID = (process.env.LOGINMENT_CLIENT_ID || '').trim();
+const LOGINMENT_API_KEY   = (process.env.LOGINMENT_API_KEY || '').trim();
+const LOGINMENT_DOMAIN    = (process.env.LOGINMENT_DOMAIN || 'https://logint.lovable.app').replace(/\/+$/, '');
+const PUBLIC_ORIGIN       = (process.env.PUBLIC_ORIGIN || 'https://miroxai.org').replace(/\/+$/, '');
 const OAUTH_REDIRECT_URI  = PUBLIC_ORIGIN + '/callback';
 
 const IMG_TOTAL_MS = 60000;
@@ -49,10 +58,15 @@ const PROVIDERS = {
   fish: !!F_API,
   airoute: !!AIROUTE_KEY,
 };
-console.log('[Mirox] v93 — providers:', PROVIDERS, '· airoute base:', AIROUTE_BASE);
+console.log('[Mirox] v94 — providers:', PROVIDERS, '· airoute base:', AIROUTE_BASE);
 
+/* ---------- Helpers ---------- */
 const safe = (v, max = 100000) => {
-  try { if (v == null) return ''; const s = typeof v === 'string' ? v : JSON.stringify(v); return s.length > max ? s.slice(0, max) : s; } catch { return ''; }
+  try {
+    if (v == null) return '';
+    const s = typeof v === 'string' ? v : JSON.stringify(v);
+    return s.length > max ? s.slice(0, max) : s;
+  } catch { return ''; }
 };
 const safeArr = v => { try { return Array.isArray(v) ? v : []; } catch { return []; } };
 
@@ -68,6 +82,7 @@ function extractReplyText(data) {
   if (typeof data.content === 'string') return data.content;
   return '';
 }
+
 async function fetchT(url, opts = {}, ms = 20000) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => { try { ctrl.abort(); } catch {} }, ms);
@@ -75,30 +90,6 @@ async function fetchT(url, opts = {}, ms = 20000) {
   finally { clearTimeout(timer); }
 }
 
-/* ---------- DB ---------- */
-let db = null, dbReady = false, writeChain = Promise.resolve();
-const emptyDb = () => ({ users: {}, apiKeys: {}, counters: {}, chats: [], images: [], events: [] });
-async function loadDb() {
-  if (db) return db;
-  try {
-    const raw = await fs.readFile(DB_FILE, 'utf8');
-    db = Object.assign(emptyDb(), JSON.parse(raw));
-    db.users = db.users || {}; db.apiKeys = db.apiKeys || {}; db.counters = db.counters || {};
-    db.chats = Array.isArray(db.chats) ? db.chats : [];
-    db.images = Array.isArray(db.images) ? db.images : [];
-    db.events = Array.isArray(db.events) ? db.events : [];
-    dbReady = true;
-  } catch (e) {
-    if (e.code === 'ENOENT') { db = emptyDb(); dbReady = true; try { await fs.writeFile(DB_FILE, JSON.stringify(db), 'utf8'); } catch {} }
-    else { db = emptyDb(); dbReady = false; }
-  }
-  return db;
-}
-function persist() {
-  if (!db) return Promise.resolve();
-  writeChain = writeChain.then(async () => { try { await fs.writeFile(DB_FILE, JSON.stringify(db, null, 2), 'utf8'); } catch {} });
-  return writeChain;
-}
 const now = () => Math.floor(Date.now() / 1000);
 const today = () => new Date().toISOString().slice(0, 10);
 const monthKey = () => new Date().toISOString().slice(0, 7);
@@ -106,9 +97,82 @@ function pushLog(arr, item, cap = MAX_LOGS) {
   try { arr.push(item); if (arr.length > cap) arr.splice(0, arr.length - cap); } catch {}
 }
 
-async function getUser(email) { await loadDb(); const u = db.users[email]; return u ? { ...u } : null; }
+/* ============================================================
+   DB — durable. Upstash Redis REST if configured, else file.
+   Writes are blocked when the last load failed, so a transient
+   read error can never wipe paid plans.
+   ============================================================ */
+const KV_URL   = (process.env.UPSTASH_REDIS_REST_URL || '').replace(/\/+$/, '');
+const KV_TOKEN = (process.env.UPSTASH_REDIS_REST_TOKEN || '').trim();
+const KV_ON    = !!(KV_URL && KV_TOKEN);
+const KV_KEY   = 'mirox:db:v1';
+
+let db = null;
+let dbWritable = false;
+let writeChain = Promise.resolve();
+
+const emptyDb = () => ({ users: {}, apiKeys: {}, counters: {}, chats: [], images: [], events: [] });
+function normalizeDb(d) {
+  const out = Object.assign(emptyDb(), d || {});
+  out.users ||= {};
+  out.apiKeys ||= {};
+  out.counters ||= {};
+  out.chats = Array.isArray(out.chats) ? out.chats : [];
+  out.images = Array.isArray(out.images) ? out.images : [];
+  out.events = Array.isArray(out.events) ? out.events : [];
+  return out;
+}
+
+async function kvCmd(args) {
+  const r = await fetchT(KV_URL, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(args),
+  }, 8000);
+  if (!r.ok) throw new Error('kv_' + r.status);
+  return (await r.json()).result;
+}
+
+async function readRaw() {
+  if (KV_ON) return await kvCmd(['GET', KV_KEY]);
+  try { return await fs.readFile(DB_FILE, 'utf8'); }
+  catch (e) { if (e.code === 'ENOENT') return null; throw e; }
+}
+
+async function loadDb(force = false) {
+  if (db && !force && !KV_ON) return db;
+  try {
+    const raw = await readRaw();
+    db = normalizeDb(raw ? JSON.parse(raw) : null);
+    dbWritable = true;
+  } catch (e) {
+    if (!db) db = emptyDb();
+    dbWritable = false;
+    console.error('[db] load failed, writes disabled:', e.message);
+  }
+  return db;
+}
+
+function persist() {
+  if (!db || !dbWritable) return Promise.resolve();
+  const snapshot = JSON.stringify(db);
+  writeChain = writeChain.then(async () => {
+    try {
+      if (KV_ON) await kvCmd(['SET', KV_KEY, snapshot]);
+      else await fs.writeFile(DB_FILE, snapshot, 'utf8');
+    } catch (e) { console.error('[db] write failed:', e.message); }
+  });
+  return writeChain;
+}
+
+async function getUser(email) {
+  await loadDb(KV_ON);
+  const u = db.users[email];
+  return u ? { ...u } : null;
+}
+
 async function saveUser(rec) {
-  await loadDb();
+  await loadDb(KV_ON);
   if (!rec || !rec.email) return false;
   db.users[rec.email] = {
     email: rec.email, name: rec.name || '', tier: rec.tier || 'free',
@@ -121,17 +185,27 @@ async function saveUser(rec) {
     api_keys: Array.isArray(rec.api_keys) ? rec.api_keys : [],
     provider: rec.provider || 'email', lm_user_id: rec.lm_user_id || null,
   };
-  await persist(); return true;
+  await persist();
+  return true;
 }
+
 async function ensureFreshUser(email) {
   if (!email) return null;
   let rec = await getUser(email);
   if (!rec) {
-    rec = { email, name: '', tier: 'free', daily_used: 0, vision_used: 0, image_used: 0, eclipse_used: 0, daily_reset: today(), month_key: monthKey(), keys_this_month: 0, created_at: now(), last_login: 0, persona: null, memory: [], voice_id: null, api_keys: [], provider: 'email', lm_user_id: null };
-    await saveUser(rec); return rec;
+    rec = {
+      email, name: '', tier: 'free', daily_used: 0, vision_used: 0, image_used: 0, eclipse_used: 0,
+      daily_reset: today(), month_key: monthKey(), keys_this_month: 0, created_at: now(), last_login: 0,
+      persona: null, memory: [], voice_id: null, api_keys: [], provider: 'email', lm_user_id: null,
+    };
+    await saveUser(rec);
+    return rec;
   }
   let dirty = false;
-  if (rec.daily_reset !== today()) { rec.daily_used = 0; rec.vision_used = 0; rec.image_used = 0; rec.eclipse_used = 0; rec.daily_reset = today(); dirty = true; }
+  if (rec.daily_reset !== today()) {
+    rec.daily_used = 0; rec.vision_used = 0; rec.image_used = 0; rec.eclipse_used = 0;
+    rec.daily_reset = today(); dirty = true;
+  }
   if (rec.month_key !== monthKey()) { rec.keys_this_month = 0; rec.month_key = monthKey(); dirty = true; }
   if (!Array.isArray(rec.api_keys)) { rec.api_keys = []; dirty = true; }
   if (dirty) await saveUser(rec);
@@ -139,20 +213,34 @@ async function ensureFreshUser(email) {
 }
 
 /* ---------- Session ---------- */
-function signSession(d) { const p = Buffer.from(JSON.stringify(d)).toString('base64url'); return p + '.' + crypto.createHmac('sha256', SECRET).update(p).digest('base64url'); }
+function signSession(d) {
+  const p = Buffer.from(JSON.stringify(d)).toString('base64url');
+  return p + '.' + crypto.createHmac('sha256', SESSION_SECRET).update(p).digest('base64url');
+}
 function verifySession(t) {
   if (!t || typeof t !== 'string') return {};
-  const a = t.split('.'); if (a.length !== 2) return {};
-  const e = crypto.createHmac('sha256', SECRET).update(a[0]).digest('base64url');
-  if (e !== a[1]) return {};
+  const a = t.split('.');
+  if (a.length !== 2) return {};
+  const e = crypto.createHmac('sha256', SESSION_SECRET).update(a[0]).digest('base64url');
+  const ok = e.length === a[1].length && crypto.timingSafeEqual(Buffer.from(e), Buffer.from(a[1]));
+  if (!ok) return {};
   try { return JSON.parse(Buffer.from(a[0], 'base64url').toString()); } catch { return {}; }
 }
-function setSession(res, d) { const t = signSession(d); res.setHeader('Set-Cookie', `mirox_sess=${t}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30*24*60*60}`); return t; }
-function clearSession(res) { res.setHeader('Set-Cookie', 'mirox_sess=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0'); }
+function setSession(res, d) {
+  const t = signSession(d);
+  res.setHeader('Set-Cookie', `mirox_sess=${t}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${30 * 24 * 60 * 60}`);
+  return t;
+}
+function clearSession(res) {
+  res.setHeader('Set-Cookie', 'mirox_sess=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0');
+}
 function getSession(req) {
   const cookie = safe(req.headers.cookie);
   const m = cookie.match(/(?:^|;\s*)mirox_sess=([^;]+)/);
-  if (m) { const s = verifySession(decodeURIComponent(m[1])); if (s && s.uid) return s; }
+  if (m) {
+    const s = verifySession(decodeURIComponent(m[1]));
+    if (s && s.uid) return s;
+  }
   return {};
 }
 async function currentUser(req) {
@@ -163,14 +251,17 @@ async function currentUser(req) {
 
 /* ---------- Admin ---------- */
 function signAdminToken() { return signSession({ admin: true, iat: now(), exp: now() + 6 * 3600 }); }
-function verifyAdminToken(t) { const s = verifySession(t); return !!(s && s.admin && s.exp && s.exp > now()); }
+function verifyAdminToken(t) {
+  const s = verifySession(t);
+  return !!(s && s.admin && s.exp && s.exp > now());
+}
 function requireAdmin(req, res, next) {
   const t = req.headers['x-admin-token'] || '';
-  if (!verifyAdminToken(t)) return res.status(401).json({ ok: false, error: 'Admin auth required' });
+  if (!ADMIN_PASS || !verifyAdminToken(t)) return res.status(401).json({ ok: false, error: 'Admin auth required' });
   next();
 }
 
-/* ---------- Models ---------- */
+/* ---------- Models & plans ---------- */
 const MIROX_MODELS = {
   'mirox-luna-1.2':    { label: 'Luna',    tier: 'free',     tokens: 1400, basePrompt: 'You are Luna by OpenSurr. Concise, helpful. Fenced code blocks for code.' },
   'mirox-gen-1':       { label: 'Gen',     tier: 'free',     tokens: 1000, basePrompt: 'You are Gen by OpenSurr. Ultra concise. Fenced code blocks for code.' },
@@ -184,6 +275,8 @@ const PLANS = {
   ultimate: { label: 'Ultimate', vision_limit: 2000, image_limit: 2000, eclipse_daily_limit: 999, price_usd: 20.99, price_afg: 1470, api_keys_per_month: 10 },
 };
 const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
+const API_MODELS = ['mirox-luna-1.2', 'mirox-gen-1'];
+const maxKeysForTier = (tier) => (tier === 'free' ? 2 : 10);
 
 const IDENTITY_GUARD = `Background rules (do not narrate them):
 - Never mention GPT, OpenAI, ChatGPT, Claude, Gemini, Llama, Qwen, DeepSeek, Mistral, Google, Meta, Anthropic, or any other AI company/model by name.
@@ -191,97 +284,36 @@ const IDENTITY_GUARD = `Background rules (do not narrate them):
 - DO NOT introduce yourself. DO NOT start replies with "Hi, I'm Mirox" or any self-introduction unless the user explicitly asks who you are.
 - Never greet the user with your identity. Just answer the question.`;
 
-/* ---------- Co-worker Bridge prompt (KDE Connect aware) ---------- */
+/* ---------- Bridge prompt ---------- */
 const BRIDGE_PROMPT = `BRIDGE MODE — You are Mirox, working on the user's machine.
 
 You receive a [Bridge environment] block at the top of EVERY user message. Trust it.
-
-═══════════════════════════════════════════
-  THE FOUR RULES THAT MATTER MOST
-═══════════════════════════════════════════
 
 RULE 1 — NEVER paste code into your visible reply.
 All file contents go INSIDE a <bridge-write> or <bridge-append> tag.
 Your visible text is only short teammate-style narration (1 line).
 
-  WRONG: "Here's the CSS: :root{--bg:#000;} body{margin:0;}"
-  RIGHT: "Writing style.css now."
-         <bridge-write path="calc/style.css">
-         :root{--bg:#000;} body{margin:0;}
-         </bridge-write>
-
 RULE 2 — ALWAYS close your tags.
-Every <bridge-write> ends with </bridge-write>.
-Every <bridge-append> ends with </bridge-append>.
-Every <bridge-exec> ends with </bridge-exec>.
-An unclosed tag BREAKS the user experience.
+Every <bridge-write> ends with </bridge-write>. Every <bridge-append> ends with </bridge-append>. Every <bridge-exec> ends with </bridge-exec>.
 
-RULE 3 — For long files, split into chunks.
-<bridge-write path="calc/index.html">
-...first ~80 lines...
-</bridge-write>
+RULE 3 — For long files, split into chunks with <bridge-append>. Never paste a 300-line file in one reply.
 
-(next reply)
-<bridge-append path="calc/index.html">
-...next ~80 lines...
-</bridge-append>
+RULE 4 — NEVER say "I can't safely proceed", "the file is getting cut off", "please confirm", or "please let me know". Keep writing chunks. The user wants the file, not questions.
 
-(next reply)
-<bridge-append path="calc/index.html">
-...final ~80 lines...
-</bridge-append>
+RULE 5 — PATHS are absolute. Use the home= value from [Bridge environment] as the base (for example home + "/calculator/index.html"). NEVER write "." or "~" in a path.
 
-NEVER paste a 300-line file in one reply.
+HOW TO TALK: short, teammate-style. "Writing index.html." "Next: style.css." "Done — 3 files in ~/calculator/."
+When done: reply DONE on its own line + 1-line summary. No code.
 
-RULE 4 — NEVER say any of these phrases:
-  ✗ "I can't safely proceed"
-  ✗ "the file is getting cut off"
-  ✗ "the writes are being truncated"
-  ✗ "Tell me which you prefer: 1) ... 2) ..."
-  ✗ "please let me know"
-  ✗ "please confirm"
-  ✗ "please fix it"
-  ✗ "please choose one"
-
-If you feel yourself typing any of those, STOP and just keep writing chunks
-with <bridge-append>. The user does NOT want to be asked. They want the file.
-
-═══════════════════════════════════════════
-  HOW TO TALK
-═══════════════════════════════════════════
-Short, teammate-style:
-  "Writing index.html."
-  "Next: style.css."
-  "Appending more HTML."
-  "Done — 3 files in ~/calculator/."
-
-DO NOT:
-- echo file contents
-- write "Here is the code:"
-- ask for confirmation on small files
-- offer the user multiple "plans"
-
-═══════════════════════════════════════════
-  HOW TO BUILD
-═══════════════════════════════════════════
-- Create projects inside <home>/<project-name>/.
-- For UI projects: emit <bridge-designs> with 3 designs, wait for user_chosed(N),
-  then write index.html / style.css / app.js.
-- Split each file across replies if it exceeds ~80 lines.
-- Close every tag.
-- When done, reply DONE on its own line + 1-line summary.
-
-═══════════════════════════════════════════
-  TAGS
-═══════════════════════════════════════════
-  <bridge-write path="calc/index.html">...</bridge-write>
-  <bridge-append path="calc/index.html">...</bridge-append>
-  <bridge-read path="calc/index.html"/>
-  <bridge-list path="calc/"/>
-  <bridge-delete path="old.txt"/>
-  <bridge-move from="a" to="b"/>
-  <bridge-copy from="a" to="b"/>
-  <bridge-exec>cd ~/calc && ls -la</bridge-exec>
+TAGS:
+  <bridge-write path="/abs/path">...</bridge-write>
+  <bridge-append path="/abs/path">...</bridge-append>
+  <bridge-read path="/abs/path"/>
+  <bridge-list path="/abs/path"/>
+  <bridge-delete path="/abs/path"/>
+  <bridge-move from="/abs/a" to="/abs/b"/>
+  <bridge-copy from="/abs/a" to="/abs/b"/>
+  <bridge-exec>cd /abs/dir && ls -la</bridge-exec>
   <bridge-sudo>apt install foo</bridge-sudo>
   <bridge-sysinfo/>
   <bridge-syscheck/>
@@ -300,7 +332,7 @@ DO NOT:
   <bridge-kde-list/>
   <bridge-kde-ping device="ID"/>
   <bridge-kde-ring device="ID"/>
-  <bridge-kde-share device="ID" path="~/calc"/>
+  <bridge-kde-share device="ID" path="/abs/path"/>
   <bridge-kde-share-text device="ID">text</bridge-kde-share-text>
   <bridge-kde-sms device="ID" number="+1...">hi</bridge-kde-sms>
   <bridge-kde-lock device="ID"/>
@@ -310,18 +342,9 @@ DO NOT:
   <bridge-http url="https://..." method="GET"/>
   <bridge-clipboard action="get"/>
   <bridge-clipboard action="set">text</bridge-clipboard>
-  <bridge-screenshot path="~/shot.png"/>
-  <bridge-git action="status" cwd="~/calc"/>
-  <bridge-pkgs type="pip"/>
-
-═══════════════════════════════════════════
-  DONE
-═══════════════════════════════════════════
-When done: reply DONE on its own line + 1-line summary. No code. No excuses.
-
-Example:
-  DONE
-  Built ~/calculator/ — index.html, style.css, app.js.`;
+  <bridge-screenshot path="/abs/shot.png"/>
+  <bridge-git action="status" cwd="/abs/dir"/>
+  <bridge-pkgs type="pip"/>`;
 
 function buildSystemPrompt(cfg, bridge, searchUsed) {
   let p = IDENTITY_GUARD + '\n\n---\n\n' + cfg.basePrompt;
@@ -342,7 +365,7 @@ function buildSystemPrompt(cfg, bridge, searchUsed) {
     if (bridge.filesWritten?.length) p += `filesWritten=${bridge.filesWritten.join(', ')}\n`;
     if (bridge.plannedFiles?.length) p += `plannedFiles=${bridge.plannedFiles.join(', ')}\n`;
     if (bridge.kdeDevice) p += `currentKdeDevice=${bridge.kdeDevice.id} name="${bridge.kdeDevice.name}"\n`;
-    p += `Use ONLY these paths. NEVER say "." or "~" when asked for a path.`;
+    p += `Use ONLY absolute paths under home. NEVER say "." or "~" when asked for a path.`;
   }
   return p;
 }
@@ -459,10 +482,7 @@ async function wikiSearch(query) {
 }
 
 async function webSearch(query, max = 5) {
-  const [organic, instant] = await Promise.all([
-    duckSearch(query, max),
-    ddgInstantAnswer(query),
-  ]);
+  const [organic, instant] = await Promise.all([duckSearch(query, max), ddgInstantAnswer(query)]);
   let results = organic;
   if (!results.length) results = await wikiSearch(query);
   const seen = new Set();
@@ -505,16 +525,13 @@ function formatSearchContext(query, searchData) {
 }
 
 /* ============================================================
-   Provider URLs
+   Provider URLs & chains
    ============================================================ */
 const HF_URL = 'https://router.huggingface.co/v1/chat/completions';
 const PL_URL = 'https://gen.pollinations.ai/v1/chat/completions';
 const PL_IMG_BASE = 'https://gen.pollinations.ai/image';
 const HF_CHAT_MODELS = ['meta-llama/Llama-3.3-70B-Instruct:together', 'Qwen/Qwen2.5-72B-Instruct:together'];
-const HF_VISION_MODELS = [
-  'meta-llama/Llama-3.2-11B-Vision-Instruct:together',
-  'Qwen/Qwen2-VL-7B-Instruct:hyperbolic',
-];
+const HF_VISION_MODELS = ['meta-llama/Llama-3.2-11B-Vision-Instruct:together', 'Qwen/Qwen2-VL-7B-Instruct:hyperbolic'];
 const PL_CHAT_MODELS = ['openai', 'openai-fast', 'mistral'];
 const PL_VISION_MODELS = ['openai', 'openai-fast'];
 const PL_IMG_MODELS = ['flux', 'turbo'];
@@ -522,14 +539,22 @@ const PL_IMG_MODELS = ['flux', 'turbo'];
 async function hfChat(modelId, messages, maxTokens, stream) {
   if (!HF_API_KEY) throw new Error('no_hf');
   const body = { model: modelId, messages, max_tokens: maxTokens, stream: !!stream, temperature: 0.7 };
-  const res = await fetchT(HF_URL, { method: 'POST', headers: { Authorization: `Bearer ${HF_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, 20000);
+  const res = await fetchT(HF_URL, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${HF_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }, 20000);
   if (!res.ok) throw new Error(`hf_${res.status}`);
   return res;
 }
 async function plChat(modelId, messages, maxTokens, stream) {
   if (!PL_KEY) throw new Error('no_pl');
   const body = { model: modelId, messages, max_tokens: maxTokens, stream: !!stream, temperature: 0.7 };
-  const res = await fetchT(PL_URL, { method: 'POST', headers: { Authorization: `Bearer ${PL_KEY}`, 'Content-Type': 'application/json', 'Accept': stream ? 'text/event-stream' : 'application/json' }, body: JSON.stringify(body) }, 20000);
+  const res = await fetchT(PL_URL, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${PL_KEY}`, 'Content-Type': 'application/json', Accept: stream ? 'text/event-stream' : 'application/json' },
+    body: JSON.stringify(body),
+  }, 20000);
   if (!res.ok) throw new Error(`pl_${res.status}`);
   return res;
 }
@@ -571,14 +596,9 @@ async function airouteChat({ messages, model, fast = true, memory = true, timeou
   if (fast) body.fast = true;
   if (model) body.model = model;
   if (memory === false) body.memory = false;
-
   const res = await fetchT(AIROUTE_CHAT, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${AIROUTE_KEY}`,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
+    headers: { Authorization: `Bearer ${AIROUTE_KEY}`, 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify(body),
   }, timeoutMs);
   if (!res.ok) throw new Error(`airoute_${res.status}`);
@@ -601,13 +621,12 @@ function textToSyntheticSSE(text) {
     start(controller) {
       try {
         for (const c of chunks) {
-          const line = `data: ${JSON.stringify({ choices: [{ delta: { content: c } }] })}\n\n`;
-          controller.enqueue(enc.encode(line));
+          controller.enqueue(enc.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: c } }] })}\n\n`));
         }
         controller.enqueue(enc.encode('data: [DONE]\n\n'));
       } catch {}
       try { controller.close(); } catch {}
-    }
+    },
   });
 }
 
@@ -615,15 +634,8 @@ async function airouteImage(prompt, timeoutMs = 60000) {
   if (!AIROUTE_KEY) throw new Error('no_airoute');
   const res = await fetchT(AIROUTE_IMG, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${AIROUTE_KEY}`,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'black-forest-labs/FLUX.1-schnell',
-      prompt: String(prompt || '').slice(0, 2000),
-    }),
+    headers: { Authorization: `Bearer ${AIROUTE_KEY}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ model: 'black-forest-labs/FLUX.1-schnell', prompt: String(prompt || '').slice(0, 2000) }),
   }, timeoutMs);
   if (!res.ok) throw new Error(`airoute_img_${res.status}`);
   const data = await res.json().catch(() => ({}));
@@ -665,25 +677,20 @@ async function miroxChatChain({ messages, cfg, stream, vision }) {
   if (PROVIDERS.airoute) {
     try {
       const res = await airouteChat({ messages, fast: true, memory: true });
-      if (stream) {
-        const data = await res.json().catch(() => ({}));
-        const text = data.text || '';
-        return { res: { body: textToSyntheticSSE(text), ok: true }, provider: 'airoute' };
-      }
-      return { res, provider: 'airoute' };
+      const data = await res.json().catch(() => ({}));
+      const text = extractReplyText(data);
+      if (stream) return { res: { body: textToSyntheticSSE(text), ok: true }, provider: 'airoute' };
+      return { res: { json: async () => ({ reply: text }) }, provider: 'airoute' };
     } catch (e1) {
       try {
         const res = await airouteChat({ messages, fast: false, model: 'meta-llama/Llama-3.3-70B-Instruct', memory: true });
-        if (stream) {
-          const data = await res.json().catch(() => ({}));
-          const text = data.text || '';
-          return { res: { body: textToSyntheticSSE(text), ok: true }, provider: 'airoute' };
-        }
-        return { res, provider: 'airoute' };
+        const data = await res.json().catch(() => ({}));
+        const text = extractReplyText(data);
+        if (stream) return { res: { body: textToSyntheticSSE(text), ok: true }, provider: 'airoute' };
+        return { res: { json: async () => ({ reply: text }) }, provider: 'airoute' };
       } catch (e2) {}
     }
   }
-
   throw new Error(GENERIC_ERR);
 }
 
@@ -698,8 +705,7 @@ async function toDataUrl(response) {
   try {
     const data = await response.json();
     const url = data?.data?.[0]?.url || data?.images?.[0]?.url || data?.url || data?.image;
-    if (typeof url === 'string' && url.startsWith('data:image')) return url;
-    if (typeof url === 'string' && url.startsWith('http')) return url;
+    if (typeof url === 'string' && (url.startsWith('data:image') || url.startsWith('http'))) return url;
   } catch {}
   return null;
 }
@@ -711,7 +717,7 @@ async function generateImage(prompt) {
     try {
       const params = new URLSearchParams({ model: mid, width: '1024', height: '1024', nologo: 'true', seed: String(Date.now() % 99999) });
       const url = `${PL_IMG_BASE}/${encodeURIComponent(prompt)}?${params.toString()}`;
-      const headers = { 'Accept': 'image/png' };
+      const headers = { Accept: 'image/png' };
       if (PL_KEY) headers.Authorization = `Bearer ${PL_KEY}`;
       const res = await fetchT(url, { method: 'GET', headers }, 30000);
       if (!res.ok) continue;
@@ -737,36 +743,68 @@ function sseInit(res) {
   if (res.flushHeaders) { try { res.flushHeaders(); } catch {} }
 }
 function sseWrite(res, obj) {
-  try { if (res.writableEnded || res.destroyed) return false; res.write('data: ' + JSON.stringify(obj) + '\n\n'); return true; } catch { return false; }
+  try {
+    if (res.writableEnded || res.destroyed) return false;
+    res.write('data: ' + JSON.stringify(obj) + '\n\n');
+    return true;
+  } catch { return false; }
 }
 function sseDone(res) { try { res.write('data: [DONE]\n\n'); } catch {} }
 
+/* ---------- Auth for /v1 (API key OR web session) ---------- */
+async function authFromRequest(req) {
+  const h = safe(req.headers.authorization, 200);
+  if (h) {
+    const m = h.match(/^Bearer\s+(mxk_live_[A-Za-z0-9]+)$/);
+    if (!m) return { error: 'invalid' };
+    await loadDb(KV_ON);
+    for (const u of Object.values(db.users)) {
+      const k = (u.api_keys || []).find(x => !x.revoked && x.key === m[1]);
+      if (k) {
+        k.last_used = now();
+        await persist();
+        return { user: await ensureFreshUser(u.email), viaKey: true };
+      }
+    }
+    return { error: 'invalid' };
+  }
+  return { user: await currentUser(req), viaKey: false };
+}
+
 /* ---------- App ---------- */
 const app = express();
+app.set('trust proxy', 1);
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '60mb' }));
 try { app.use(express.static(path.join(__dirname, '../public'))); } catch {}
-app.use(async (req, res, next) => { try { await loadDb(); } catch {} next(); });
+app.use(async (req, res, next) => { try { await loadDb(KV_ON); } catch {} next(); });
 
-app.get(['/api/health','/health','/ping'], (req, res) => {
+app.get(['/api/health', '/health', '/ping'], (req, res) => {
   res.json({
-    ok: true,
-    app: 'MiroxAI',
-    version: 'v93',
-    providers: PROVIDERS,
+    ok: true, app: 'MiroxAI', version: 'v94', providers: PROVIDERS,
     airoute: { enabled: PROVIDERS.airoute, base: AIROUTE_BASE, chat: AIROUTE_CHAT, images: AIROUTE_IMG },
+    db: { durable: KV_ON, writable: dbWritable },
     search: true, vision: true, image_intent: true, kde_connect: true,
-    loginment: !!LOGINMENT_CLIENT_ID,
-    time: now(),
+    loginment: !!LOGINMENT_CLIENT_ID, time: now(),
   });
+});
+
+app.get('/api/web/status', async (req, res) => {
+  const t0 = Date.now();
+  const [ddg, wiki] = await Promise.all([
+    duckSearch('test', 1).then(r => r.length > 0).catch(() => false),
+    wikiSearch('Python').then(r => r.length > 0).catch(() => false),
+  ]);
+  res.json({ ok: true, duckduckgo: ddg, wikipedia: wiki, ms: Date.now() - t0 });
 });
 
 /* ============================================================
    LOGINMENT OAUTH
    ============================================================ */
 app.get('/api/auth/loginment/start', (req, res) => {
+  if (!LOGINMENT_CLIENT_ID) return res.status(500).send('Loginment not configured');
   const state = crypto.randomBytes(16).toString('hex');
-  res.setHeader('Set-Cookie', `mirox_lm_state=${state}; Path=/; HttpOnly; SameSite=Lax; Max-Age=600`);
+  res.setHeader('Set-Cookie', `mirox_lm_state=${state}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`);
   const url = `${LOGINMENT_DOMAIN}/authorize?client_id=${encodeURIComponent(LOGINMENT_CLIENT_ID)}&redirect_uri=${encodeURIComponent(OAUTH_REDIRECT_URI)}&state=${state}`;
   res.redirect(url);
 });
@@ -777,9 +815,11 @@ app.get(['/callback', '/api/auth/loginment/callback'], async (req, res) => {
     const state = safe(req.query.state, 200);
     const cookieHeader = req.headers.cookie || '';
     const savedState = (cookieHeader.match(/(?:^|;\s*)mirox_lm_state=([^;]+)/) || [])[1];
-    res.setHeader('Set-Cookie', 'mirox_lm_state=; Path=/; Max-Age=0');
+    res.setHeader('Set-Cookie', 'mirox_lm_state=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax');
     if (!code) return res.status(400).send('Missing code');
     if (!state || !savedState || state !== savedState) return res.status(400).send('Invalid state');
+    if (!LOGINMENT_API_KEY) return res.status(500).send('Loginment not configured');
+
     const r = await fetchT(`${LOGINMENT_DOMAIN}/api/public/v1/token`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${LOGINMENT_API_KEY}`, 'Content-Type': 'application/json' },
@@ -794,33 +834,36 @@ app.get(['/callback', '/api/auth/loginment/callback'], async (req, res) => {
     const u = data.user;
     const email = String(u.email).toLowerCase();
     let rec = await getUser(email);
-    if (!rec) rec = { email, name: String(u.email).split('@')[0], tier: 'free', api_keys: [] };
+    if (!rec) rec = { email, name: email.split('@')[0], tier: 'free', api_keys: [] };
     if (!Array.isArray(rec.api_keys)) rec.api_keys = [];
     rec.provider = u.provider || 'email';
     rec.lm_user_id = u.id || null;
     rec.last_login = now();
-    if (!rec.name) rec.name = String(u.email).split('@')[0];
+    if (!rec.name) rec.name = email.split('@')[0];
     await saveUser(rec);
     pushLog(db.events, { email, event: 'loginment_login', ts: now(), provider: rec.provider });
     await persist();
     setSession(res, { uid: email, name: rec.name, tier: rec.tier });
     res.redirect('/');
   } catch (e) {
-    res.status(500).send('Server error: ' + (e.message || 'unknown'));
+    res.status(500).send('Server error');
+    console.error('[callback]', e.message);
   }
 });
 
 app.get('/api/auth/loginment/url', (req, res) => {
+  if (!LOGINMENT_CLIENT_ID) return res.status(500).json({ ok: false, error: 'Loginment not configured' });
   const state = crypto.randomBytes(16).toString('hex');
-  res.setHeader('Set-Cookie', `mirox_lm_state=${state}; Path=/; HttpOnly; SameSite=Lax; Max-Age=600`);
+  res.setHeader('Set-Cookie', `mirox_lm_state=${state}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`);
   const url = `${LOGINMENT_DOMAIN}/authorize?client_id=${encodeURIComponent(LOGINMENT_CLIENT_ID)}&redirect_uri=${encodeURIComponent(OAUTH_REDIRECT_URI)}&state=${state}`;
   res.json({ ok: true, url });
 });
 
 /* ============================================================
-   SIMPLE EMAIL LOGIN
+   EMAIL LOGIN (disabled unless ALLOW_EMAIL_LOGIN=1)
    ============================================================ */
-app.post(['/api/auth/simple-login','/auth/simple-login'], async (req, res) => {
+app.post(['/api/auth/simple-login', '/auth/simple-login'], async (req, res) => {
+  if (!ALLOW_EMAIL_LOGIN) return res.status(403).json({ ok: false, error: 'Email login is disabled. Use Loginment.' });
   try {
     const { name, email } = req.body || {};
     const n = safe(name, 60).trim();
@@ -829,29 +872,37 @@ app.post(['/api/auth/simple-login','/auth/simple-login'], async (req, res) => {
     let rec = await getUser(e);
     if (!rec) rec = { email: e, name: n, tier: 'free', api_keys: [] };
     if (!Array.isArray(rec.api_keys)) rec.api_keys = [];
-    rec.name = n; rec.last_login = now(); rec.provider = rec.provider || 'email';
+    rec.name = n;
+    rec.last_login = now();
+    rec.provider = rec.provider || 'email';
     await saveUser(rec);
     pushLog(db.events, { email: e, event: 'login', ts: now() });
     await persist();
     const token = setSession(res, { uid: e, name: n, tier: rec.tier });
     res.json({ ok: true, token, user: { id: e, email: e, name: n, tier: rec.tier } });
-  } catch { res.status(500).json({ ok: false }); }
+  } catch {
+    res.status(500).json({ ok: false });
+  }
 });
-app.post(['/api/logout','/logout'], (req, res) => { clearSession(res); res.json({ ok: true }); });
-app.get(['/api/me','/me'], async (req, res) => {
+
+app.post(['/api/logout', '/logout'], (req, res) => { clearSession(res); res.json({ ok: true }); });
+
+app.get(['/api/me', '/me'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   try {
     const u = await currentUser(req);
     if (!u) return res.json({ user: null });
     const plan = PLANS[u.tier] || PLANS.free;
-    res.json({ user: {
-      id: u.email, email: u.email, name: u.name, tier: u.tier, provider: u.provider || 'email',
-      vision_limit: plan.vision_limit, vision_used: u.vision_used || 0,
-      image_limit: plan.image_limit, image_used: u.image_used || 0,
-      eclipse_limit: plan.eclipse_daily_limit, eclipse_used: u.eclipse_used || 0,
-      api_keys_used: (u.api_keys || []).filter(k => !k.revoked).length,
-      api_keys_limit: maxKeysForTier(u.tier),
-    }});
+    res.json({
+      user: {
+        id: u.email, email: u.email, name: u.name, tier: u.tier, provider: u.provider || 'email',
+        vision_limit: plan.vision_limit, vision_used: u.vision_used || 0,
+        image_limit: plan.image_limit, image_used: u.image_used || 0,
+        eclipse_limit: plan.eclipse_daily_limit, eclipse_used: u.eclipse_used || 0,
+        api_keys_used: (u.api_keys || []).filter(k => !k.revoked).length,
+        api_keys_limit: maxKeysForTier(u.tier),
+      },
+    });
   } catch { res.json({ user: null }); }
 });
 
@@ -861,9 +912,8 @@ app.get(['/api/me','/me'], async (req, res) => {
 function publicKeyView(k) {
   return { id: k.id, name: k.name, key: k.key, prefix: k.key.slice(0, 14) + '…', created: k.created, last_used: k.last_used || 0, revoked: !!k.revoked };
 }
-function maxKeysForTier(tier) { return tier === 'free' ? 2 : 10; }
 
-app.get(['/api/keys','/keys'], async (req, res) => {
+app.get(['/api/keys', '/keys'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const u = await currentUser(req);
   if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
@@ -872,7 +922,8 @@ app.get(['/api/keys','/keys'], async (req, res) => {
   const active = keys.filter(k => !k.revoked).length;
   res.json({ ok: true, keys, limit, active, tier: u.tier });
 });
-app.post(['/api/keys','/keys'], async (req, res) => {
+
+app.post(['/api/keys', '/keys'], async (req, res) => {
   const u = await currentUser(req);
   if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
   const limit = maxKeysForTier(u.tier);
@@ -882,41 +933,48 @@ app.post(['/api/keys','/keys'], async (req, res) => {
   const name = safe(req.body?.name, 60).trim() || ('Key ' + (list.length + 1));
   const raw = 'mxk_live_' + crypto.randomBytes(24).toString('hex');
   const key = { id: 'k_' + crypto.randomBytes(6).toString('hex'), name, key: raw, created: now(), last_used: 0, revoked: false };
-  list.push(key); u.api_keys = list;
+  list.push(key);
+  u.api_keys = list;
   u.keys_this_month = (u.keys_this_month || 0) + 1;
   await saveUser(u);
   pushLog(db.events, { email: u.email, event: 'key_created', ts: now(), id: key.id });
   await persist();
   res.json({ ok: true, key: publicKeyView(key) });
 });
-app.post(['/api/keys/rename','/keys/rename'], async (req, res) => {
+
+app.post(['/api/keys/rename', '/keys/rename'], async (req, res) => {
   const u = await currentUser(req);
   if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
-  const id = safe(req.body?.id, 40); const name = safe(req.body?.name, 60).trim();
+  const id = safe(req.body?.id, 40);
+  const name = safe(req.body?.name, 60).trim();
   if (!id || !name) return res.status(400).json({ ok: false, error: 'id and name required' });
   const list = Array.isArray(u.api_keys) ? u.api_keys : [];
   const key = list.find(k => k.id === id);
   if (!key) return res.status(404).json({ ok: false, error: 'Key not found' });
-  key.name = name; u.api_keys = list;
+  key.name = name;
+  u.api_keys = list;
   await saveUser(u);
   pushLog(db.events, { email: u.email, event: 'key_renamed', ts: now(), id });
   await persist();
   res.json({ ok: true, key: publicKeyView(key) });
 });
-app.post(['/api/keys/revoke','/keys/revoke'], async (req, res) => {
+
+app.post(['/api/keys/revoke', '/keys/revoke'], async (req, res) => {
   const u = await currentUser(req);
   if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
   const id = safe(req.body?.id, 40);
   const list = Array.isArray(u.api_keys) ? u.api_keys : [];
   const key = list.find(k => k.id === id);
   if (!key) return res.status(404).json({ ok: false, error: 'Key not found' });
-  key.revoked = true; u.api_keys = list;
+  key.revoked = true;
+  u.api_keys = list;
   await saveUser(u);
   pushLog(db.events, { email: u.email, event: 'key_revoked', ts: now(), id });
   await persist();
   res.json({ ok: true });
 });
-app.post(['/api/keys/delete','/keys/delete'], async (req, res) => {
+
+app.post(['/api/keys/delete', '/keys/delete'], async (req, res) => {
   const u = await currentUser(req);
   if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
   const id = safe(req.body?.id, 40);
@@ -930,7 +988,7 @@ app.post(['/api/keys/delete','/keys/delete'], async (req, res) => {
 /* ============================================================
    IMAGE HISTORY
    ============================================================ */
-app.get(['/api/images/history','/images/history'], async (req, res) => {
+app.get(['/api/images/history', '/images/history'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const u = await currentUser(req);
   if (!u) return res.json({ ok: true, images: [] });
@@ -941,14 +999,15 @@ app.get(['/api/images/history','/images/history'], async (req, res) => {
 /* ============================================================
    ADMIN
    ============================================================ */
-app.post(['/api/admin/auth','/admin/auth'], async (req, res) => {
+app.post(['/api/admin/auth', '/admin/auth'], async (req, res) => {
   try {
     const pass = safe(req.body?.password, 200);
-    if (!pass || pass !== ADMIN_PASS) return res.status(401).json({ ok: false, error: 'Invalid password' });
+    if (!ADMIN_PASS || !pass || pass !== ADMIN_PASS) return res.status(401).json({ ok: false, error: 'Invalid password' });
     res.json({ ok: true, token: signAdminToken() });
   } catch { res.status(500).json({ ok: false, error: 'Server error' }); }
 });
-app.get(['/api/admin/stats','/admin/stats'], requireAdmin, async (req, res) => {
+
+app.get(['/api/admin/stats', '/admin/stats'], requireAdmin, async (req, res) => {
   try {
     const users = db.users || {};
     const users_data = {};
@@ -961,7 +1020,8 @@ app.get(['/api/admin/stats','/admin/stats'], requireAdmin, async (req, res) => {
     }
     res.json({
       ok: true,
-      warning: process.env.VERCEL === '1' ? 'Running on Vercel — file DB is ephemeral (/tmp).' : null,
+      warning: !KV_ON ? 'No durable store configured — plans can reset. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.' : null,
+      db_writable: dbWritable,
       users: Object.keys(users).length,
       chats: (db.chats || []).length,
       images: (db.images || []).length,
@@ -973,18 +1033,20 @@ app.get(['/api/admin/stats','/admin/stats'], requireAdmin, async (req, res) => {
     });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
-app.post(['/api/admin/set-tier','/admin/set-tier'], requireAdmin, async (req, res) => {
+
+app.post(['/api/admin/set-tier', '/admin/set-tier'], requireAdmin, async (req, res) => {
   try {
+    if (!dbWritable) return res.status(503).json({ ok: false, error: 'Database not writable. Refusing to change tiers.' });
     const email = safe(req.body?.email, 200).trim().toLowerCase();
     const tier = safe(req.body?.tier, 20).trim();
     if (!email || !tier) return res.status(400).json({ ok: false, error: 'email and tier required' });
-    if (!['free','pro','ultimate'].includes(tier)) return res.status(400).json({ ok: false, error: 'Invalid tier' });
+    if (!['free', 'pro', 'ultimate'].includes(tier)) return res.status(400).json({ ok: false, error: 'Invalid tier' });
     const u = await ensureFreshUser(email);
     u.tier = tier;
     await saveUser(u);
     pushLog(db.events, { email, event: 'tier_set', ts: now(), tier });
     await persist();
-    res.json({ ok: true });
+    res.json({ ok: true, email, tier });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
@@ -1010,15 +1072,14 @@ app.get('/api/bridge/download', async (req, res) => {
 
     const configJson = JSON.stringify({
       bridge_name: name, port, allowed_dirs: ['~'], max_output_bytes: 200000,
-      smtp: { enabled: false, host: '', port: 587, user: '', pass: '', from: '', use_tls: true }
+      smtp: { enabled: false, host: '', port: 587, user: '', pass: '', from: '', use_tls: true },
     }, null, 2);
 
     const readme = `# MiroxAI Bridge\n\n1. pip install aiohttp\n2. (optional) pip install pillow for screenshots\n3. (optional) pip install pyperclip for clipboard\n4. (optional) sudo apt install kdeconnect  # for phone control\n5. python runner.py\n6. Open MiroxAI -> Bridge -> Connect\n`;
 
-    // Minimal runner embedded in the zip. For the full runner, users pull from the repo.
     const runner = `#!/usr/bin/env python3
-# NOTE: this is a minimal bootstrap. Download the full runner.py from the repo for KDE Connect support.
-import os, sys, json, time, platform, tempfile, subprocess, shutil
+# Minimal bootstrap. For the full runner (KDE Connect, sudo, git, etc.), use runner.py from the repo.
+import os, sys, json, time, platform, tempfile
 from pathlib import Path
 try:
     from aiohttp import web
@@ -1026,54 +1087,29 @@ except ImportError:
     print("pip install aiohttp"); sys.exit(1)
 CONFIG_FILE = Path(__file__).parent / "config.json"
 CONFIG = json.load(open(CONFIG_FILE, encoding="utf-8")) if CONFIG_FILE.exists() else {}
-CONFIG.setdefault("bridge_name","My Laptop"); CONFIG.setdefault("port",8765)
-CONFIG.setdefault("allowed_dirs",["~"]); CONFIG.setdefault("max_output_bytes",200000)
-PORT=int(CONFIG["port"]); NAME=CONFIG["bridge_name"]; MAX_OUTPUT=int(CONFIG["max_output_bytes"])
-def _resolve(p):
-    try: return Path(p).expanduser().resolve()
-    except: return None
-raw=[d for d in (CONFIG.get("allowed_dirs") or ["~"]) if d and d!="."]
-ALLOWED=[r for r in (_resolve(d) for d in raw) if r]
-for e in (_resolve("~"),_resolve("."),_resolve(tempfile.gettempdir())):
-    if e and e not in ALLOWED: ALLOWED.append(e)
-def allowed(p):
-    try: p=p.expanduser().resolve()
-    except: return False
-    for b in ALLOWED:
-        try: p.relative_to(b); return True
-        except: pass
-    return False
-def safe_path(raw):
-    if not raw: return None
-    p=Path(raw).expanduser()
-    if not p.is_absolute(): p=Path.home()/p
-    try: p=p.resolve()
-    except: return None
-    return p if allowed(p) else None
+CONFIG.setdefault("bridge_name", "My Laptop"); CONFIG.setdefault("port", 8765)
+PORT = int(CONFIG["port"]); NAME = CONFIG["bridge_name"]
 @web.middleware
-async def cors_mw(request, handler, **kwargs):
-    if handler is None: handler = kwargs.get("handler")
-    if request is None: request = kwargs.get("request")
+async def cors_mw(request, handler):
     if request.method == "OPTIONS": resp = web.Response()
     else:
         try: resp = await handler(request)
         except web.HTTPException as e: resp = e
         except Exception as e: resp = web.json_response({"ok": False, "error": str(e)}, status=500)
-    resp.headers["Access-Control-Allow-Origin"]="*"
-    resp.headers["Access-Control-Allow-Methods"]="GET, POST, OPTIONS"
-    resp.headers["Access-Control-Allow-Headers"]="Content-Type"
-    resp.headers["Access-Control-Allow-Private-Network"]="true"
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    resp.headers["Access-Control-Allow-Private-Network"] = "true"
     return resp
-async def ping(req): return web.json_response({"ok": True, "name": NAME, "cwd": os.getcwd(), "time": time.time()})
+async def ping(req): return web.json_response({"ok": True, "name": NAME, "time": time.time()})
 async def env_info(req):
     import shutil as sh
-    return web.json_response({"ok": True, "name": NAME, "home": str(Path.home()), "cwd": os.getcwd(), "platform": platform.system(), "allowed_dirs": [str(d) for d in ALLOWED], "kde_connect_available": bool(sh.which("kdeconnect-cli")), "time": time.time()})
+    home = str(Path.home())
+    return web.json_response({"ok": True, "name": NAME, "home": home, "cwd": home, "platform": platform.system(), "allowed_dirs": [home, tempfile.gettempdir()], "kde_connect_available": bool(sh.which("kdeconnect-cli")), "time": time.time()})
 def build_app():
     a = web.Application(middlewares=[cors_mw])
     a.router.add_get("/ping", ping)
-    a.router.add_options("/ping", lambda r: web.Response())
     a.router.add_get("/env", env_info)
-    a.router.add_options("/env", lambda r: web.Response())
     return a
 if __name__ == "__main__":
     web.run_app(build_app(), host="127.0.0.1", port=PORT, print=None, access_log=None)
@@ -1088,37 +1124,44 @@ if __name__ == "__main__":
   }
 });
 
-/* ---------- Config ---------- */
-app.get(['/api/config','/config'], async (req, res) => {
+/* ---------- Config & plans ---------- */
+app.get(['/api/config', '/config'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tier: m.tier }));
   res.json({
-    app: { name: 'MiroxAI', version: 'v93' },
+    app: { name: 'MiroxAI', version: 'v94' },
     models, default_model: models[0].id, plans: PLANS,
     tts_available: !!F_API,
     search_available: true,
     vision_available: true,
     image_intent: true,
     loginment_available: !!LOGINMENT_CLIENT_ID,
+    email_login_available: ALLOW_EMAIL_LOGIN,
     airoute_available: PROVIDERS.airoute,
     kde_connect_available: true,
   });
 });
 
-app.get(['/api/subscription/plans','/subscription/plans'], (req, res) => {
+app.get(['/api/subscription/plans', '/subscription/plans'], (req, res) => {
   const out = Object.entries(PLANS).map(([id, p]) => ({
     id, label: p.label,
     tagline: { free: 'Free forever', pro: 'Most popular', ultimate: 'Power users' }[id],
     vision_limit: p.vision_limit, image_limit: p.image_limit, eclipse_limit: p.eclipse_daily_limit,
     price_usd: p.price_usd, price_afg: p.price_afg,
     api_keys_limit: p.api_keys_per_month,
-    perks: id === 'free' ? ['Luna & Gen unlimited', '10 image uploads/day', '10 image gens/day', '5 Eclipse/day', '2 API keys', 'Web search', 'Vision', 'KDE Connect']
-      : id === 'pro' ? ['Pro & Ultra models', '200 image uploads/gens/day', '10 API keys', 'Web search', 'Vision', 'KDE Connect']
-      : ['Eclipse — best model', '2000 image uploads/gens/day', '10 API keys', 'Web search', 'Vision', 'KDE Connect'],
+    perks: id === 'free'
+      ? ['Luna & Gen unlimited', '10 image uploads/day', '10 image gens/day', '5 Eclipse/day', '2 API keys', 'Web search', 'Vision', 'KDE Connect']
+      : id === 'pro'
+        ? ['Pro & Ultra models', '200 image uploads/gens/day', '10 API keys', 'Web search', 'Vision', 'KDE Connect']
+        : ['Eclipse — best model', '2000 image uploads/gens/day', '10 API keys', 'Web search', 'Vision', 'KDE Connect'],
   }));
   res.json({ ok: true, plans: out });
 });
-app.get('/api/persona', async (req, res) => { const u = await currentUser(req); res.json({ ok: true, persona: u?.persona || '' }); });
+
+app.get('/api/persona', async (req, res) => {
+  const u = await currentUser(req);
+  res.json({ ok: true, persona: u?.persona || '' });
+});
 app.post('/api/persona', async (req, res) => {
   const u = await currentUser(req);
   if (!u) return res.status(401).json({ ok: false });
@@ -1128,7 +1171,7 @@ app.post('/api/persona', async (req, res) => {
 });
 
 /* ---------- Public search endpoint ---------- */
-app.get(['/api/search','/search'], async (req, res) => {
+app.get(['/api/search', '/search'], async (req, res) => {
   try {
     const q = safe(req.query.q, 400).trim();
     if (!q) return res.status(400).json({ ok: false, error: 'Query required' });
@@ -1144,21 +1187,30 @@ app.post('/v1/images/generations', async (req, res) => {
   try {
     const prompt = safe(req.body?.prompt, 2000).trim();
     if (!prompt) return res.status(400).json({ error: { message: 'Prompt required' } });
-    const u = await currentUser(req);
-    if (u && u.tier === 'free' && (u.image_used || 0) >= 10) {
+
+    const auth = await authFromRequest(req);
+    if (auth.error) return res.status(401).json({ error: { message: 'Invalid API key' } });
+    const u = auth.user || null;
+
+    const tier = u?.tier || 'free';
+    const plan = PLANS[tier] || PLANS.free;
+    if ((u?.image_used || 0) >= plan.image_limit) {
       return res.status(429).json({ error: { message: 'Daily image limit reached' } });
     }
+
     const imageUrl = await generateImage(prompt);
     if (u) { u.image_used = (u.image_used || 0) + 1; try { await saveUser(u); } catch {} }
     pushLog(db.images, { email: u?.email || 'guest', prompt, image: imageUrl, ts: now() }, 300);
     pushLog(db.events, { email: u?.email || 'guest', event: 'image_generated', ts: now() });
-    try { await persist(); } catch {}
+    await persist();
     res.json({ ok: true, image: imageUrl });
-  } catch { res.status(502).json({ error: { message: GENERIC_ERR } }); }
+  } catch {
+    res.status(502).json({ error: { message: GENERIC_ERR } });
+  }
 });
 
 /* ============================================================
-   CHAT COMPLETIONS
+   CHAT COMPLETIONS (web app = session cookie; API = Bearer key)
    ============================================================ */
 app.post('/v1/chat/completions', async (req, res) => {
   const t0 = Date.now();
@@ -1175,7 +1227,15 @@ app.post('/v1/chat/completions', async (req, res) => {
     const forceSearch = body.search === true;
     const attachedFiles = safeArr(body.files);
 
-    let u = null; try { u = await currentUser(req); } catch {}
+    const auth = await authFromRequest(req);
+    if (auth.error) return res.status(401).json({ error: { message: 'Invalid API key' } });
+    const u = auth.user || null;
+    const viaKey = !!auth.viaKey;
+
+    if (viaKey && !API_MODELS.includes(requestedModel)) {
+      return res.status(403).json({ error: { message: 'Model not allowed via API' } });
+    }
+
     const cfg = MIROX_MODELS[requestedModel];
     if (!cfg) return res.status(404).json({ error: { message: 'Model not found.' } });
 
@@ -1183,8 +1243,13 @@ app.post('/v1/chat/completions', async (req, res) => {
     const plan = PLANS[tier] || PLANS.free;
     if (cfg.tier === 'pro' && TIER_RANK[tier] < 1) return res.status(403).json({ error: { message: 'Pro plan required' } });
     if (cfg.tier === 'ultimate' && tier !== 'ultimate') {
-      if (tier === 'free') { if ((u?.eclipse_used || 0) >= plan.eclipse_daily_limit) return res.status(429).json({ error: { message: 'Eclipse daily limit reached' } }); }
-      else return res.status(403).json({ error: { message: 'Ultimate plan required' } });
+      if (tier === 'free') {
+        if ((u?.eclipse_used || 0) >= plan.eclipse_daily_limit) {
+          return res.status(429).json({ error: { message: 'Eclipse daily limit reached' } });
+        }
+      } else {
+        return res.status(403).json({ error: { message: 'Ultimate plan required' } });
+      }
     }
 
     const text = safe(rawMessage, 100000).trim();
@@ -1197,7 +1262,7 @@ app.post('/v1/chat/completions', async (req, res) => {
         if (u) { u.image_used = (u.image_used || 0) + 1; try { await saveUser(u); } catch {} }
         pushLog(db.images, { email: u?.email || 'guest', prompt: imageIntent, image: imageUrl, ts: now() }, 300);
         pushLog(db.events, { email: u?.email || 'guest', event: 'image_generated_chat', ts: now() });
-        try { await persist(); } catch {}
+        await persist();
         if (!stream) return res.json({ reply: '', image: imageUrl, _ms: Date.now() - t0 });
         sseInit(res);
         sseWrite(res, { img: imageUrl });
@@ -1232,14 +1297,14 @@ app.post('/v1/chat/completions', async (req, res) => {
           parts.push({ type: 'text', text: `\n\n[Attached file: ${f.name || 'file'}]\n${String(f.content).slice(0, 60000)}` });
         }
       }
-      if (parts.length) msgs.push({ role: 'user', content: parts });
-      else msgs.push({ role: 'user', content: userText });
+      msgs.push({ role: 'user', content: parts.length ? parts : userText });
     } else {
       msgs.push({ role: 'user', content: userText });
     }
 
     for (const h of safeArr(rawHistory).slice(-14)) {
-      const role = safe(h.role, 20); const txt = safe(h.content, 4000).trim();
+      const role = safe(h.role, 20);
+      const txt = safe(h.content, 4000).trim();
       if ((role === 'user' || role === 'assistant') && txt) msgs.push({ role, content: txt });
     }
 
@@ -1251,7 +1316,7 @@ app.post('/v1/chat/completions', async (req, res) => {
         try { await saveUser(u); } catch {}
       }
       pushLog(db.chats, { email: u?.email || 'guest', model: requestedModel, message: (text || '(vision)').slice(0, 400), ts: now() });
-      try { await persist(); } catch {}
+      await persist();
     };
 
     if (!stream) {
@@ -1278,19 +1343,26 @@ app.post('/v1/chat/completions', async (req, res) => {
 
     sseInit(res);
     let streamEnded = false;
-    const guard = setTimeout(() => { if (streamEnded || res.writableEnded) return; try { sseDone(res); } catch {} try { res.end(); } catch {} streamEnded = true; }, 300000);
+    const guard = setTimeout(() => {
+      if (streamEnded || res.writableEnded) return;
+      try { sseDone(res); } catch {}
+      try { res.end(); } catch {}
+      streamEnded = true;
+    }, 300000);
 
     try {
       if (searchQuery) {
         sseWrite(res, { search: { query: searchQuery } });
         const searchData = await webSearch(searchQuery, 5);
         if (searchData.overview && searchData.overview.text) {
-          sseWrite(res, { overview: {
-            source: searchData.overview.source,
-            heading: searchData.overview.heading || '',
-            text: searchData.overview.text,
-            url: searchData.overview.url || '',
-          }});
+          sseWrite(res, {
+            overview: {
+              source: searchData.overview.source,
+              heading: searchData.overview.heading || '',
+              text: searchData.overview.text,
+              url: searchData.overview.url || '',
+            },
+          });
         }
         for (const r of searchData.results) {
           if (clientClosed || res.writableEnded) break;
@@ -1307,15 +1379,18 @@ app.post('/v1/chat/completions', async (req, res) => {
 
       const result = await miroxChatChain({ messages: msgs, cfg, stream: true, vision: visionUsed });
       sseWrite(res, { p: result.provider });
-      const reader = result.res.body.getReader(); const dec = new TextDecoder();
+      const reader = result.res.body.getReader();
+      const dec = new TextDecoder();
       let buf = '';
       while (true) {
         if (clientClosed || res.writableEnded) break;
-        const { value, done } = await reader.read(); if (done) break;
+        const { value, done } = await reader.read();
+        if (done) break;
         buf += dec.decode(value, { stream: true });
         let idx;
         while ((idx = buf.indexOf('\n')) !== -1) {
-          let line = buf.slice(0, idx); buf = buf.slice(idx + 1);
+          let line = buf.slice(0, idx);
+          buf = buf.slice(idx + 1);
           if (line.endsWith('\r')) line = line.slice(0, -1);
           const t = line.trim();
           if (!t.startsWith('data:')) continue;
@@ -1333,20 +1408,30 @@ app.post('/v1/chat/completions', async (req, res) => {
       await updateUsage();
     } catch (e) {
       if (e.name !== 'AbortError') console.warn('[stream]', e.message);
-      if (!clientClosed && !res.writableEnded) { try { sseWrite(res, { error: { message: GENERIC_ERR } }); } catch {} try { sseDone(res); } catch {} }
+      if (!clientClosed && !res.writableEnded) {
+        try { sseWrite(res, { error: { message: GENERIC_ERR } }); } catch {}
+        try { sseDone(res); } catch {}
+      }
     } finally {
-      clearTimeout(guard); streamEnded = true;
+      clearTimeout(guard);
+      streamEnded = true;
       try { if (!res.writableEnded) res.end(); } catch {}
     }
     return;
   } catch (e) {
     console.error('[handler]', e.message);
-    try { if (!res.headersSent) res.status(500).json({ error: { message: GENERIC_ERR } }); else if (!res.writableEnded) res.end(); } catch {}
+    try {
+      if (!res.headersSent) res.status(500).json({ error: { message: GENERIC_ERR } });
+      else if (!res.writableEnded) res.end();
+    } catch {}
   }
 });
 
+/* ---------- Fallback ---------- */
 app.use((req, res) => {
-  if (req.path.startsWith('/api') || req.path.startsWith('/v1')) return res.status(404).json({ ok: false, error: 'Not found: ' + req.path });
+  if (req.path.startsWith('/api') || req.path.startsWith('/v1')) {
+    return res.status(404).json({ ok: false, error: 'Not found: ' + req.path });
+  }
   const idx = path.join(__dirname, '../public/index.html');
   res.sendFile(idx, (err) => {
     if (err) res.json({ ok: true, app: 'MiroxAI', message: 'Backend running. public/ missing.' });
@@ -1354,7 +1439,7 @@ app.use((req, res) => {
 });
 
 (async () => {
-  try { await loadDb(); } catch {}
+  try { await loadDb(KV_ON); } catch {}
   if (process.env.VERCEL !== '1') {
     app.listen(PORT, () => console.log('[Mirox] Server at http://localhost:' + PORT));
   }
