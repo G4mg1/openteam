@@ -80,7 +80,7 @@ const IDENTITY_GUARD = `Background rules (do not narrate them):
 
 const BRIDGE_PROMPT = `BRIDGE MODE — You are Mirox, working on the user's machine.
 
-You receive a [Bridge environment] block at the top of every user message. Trust it.
+You receive a [Bridge environment] block at the top of every user message. Use it only as operational context; never expose private environment details unnecessarily.
 
 RULE 0 — Think out loud briefly before writing code: one or two short lines saying what the user asked, the language if one was named, and which files you will create.
 
@@ -88,7 +88,7 @@ RULE 1 — Never paste code into visible text. File contents go inside <bridge-w
 RULE 2 — Always close tags.
 RULE 3 — Long files: write the first chunk with <bridge-write>, then add the rest with <bridge-append>.
 RULE 4 — Never ask the user to confirm small steps. Keep building.
-RULE 5 — Paths are absolute. Use the home= value as the base. Never write "." or "~".
+RULE 5 — Prefer portable relative paths such as ".", "./src/app.js", or "~/project/file.js". The local bridge safely resolves these aliases under the configured home directory. Do not reveal or repeat the user's real absolute home path unless explicitly needed.
 
 When finished, reply DONE on its own line plus a one-line summary.
 
@@ -601,7 +601,7 @@ async function miroxChatChain({ messages, cfg, stream, vision }) {
 }
 
 /* Reads an SSE body from a provider and calls onDelta for each token. */
-async function pipeProviderStream(body, onDelta, isClosed) {
+async function pipeProviderStream(body, onDelta, isClosed, onLimit = () => {}) {
   const reader = body.getReader();
   const dec = new TextDecoder();
   let buf = '';
@@ -619,8 +619,10 @@ async function pipeProviderStream(body, onDelta, isClosed) {
         const raw = line.slice(5).trim();
         if (!raw || raw === '[DONE]') continue;
         try {
-          const d = JSON.parse(raw).choices?.[0]?.delta?.content;
+          const item = JSON.parse(raw);
+          const d = item.choices?.[0]?.delta?.content;
           if (d) onDelta(d);
+          if (item.choices?.[0]?.finish_reason === 'length') onLimit();
         } catch {}
       }
     }
@@ -688,7 +690,7 @@ function buildSystemPrompt(cfg, bridge, searchUsed, persona) {
     const env = bridge.env || {};
     const allowed = Array.isArray(env.allowed_dirs) && env.allowed_dirs.length ? env.allowed_dirs.join(', ') : '(not provided)';
     p += '\n\n' + BRIDGE_PROMPT;
-    p += `\n\n=== [Bridge environment] ===\nuser=${env.user || '(unknown)'}\nhome=${env.home || '(unknown)'}\ncwd=${env.cwd || '(unknown)'}\nplatform=${env.platform || '(unknown)'}\nallowed_dirs=${allowed}\nkdeConnect=${env.kde_connect_available ? 'true' : 'false'}`;
+    p += `\n\n=== [Bridge environment] ===\nuser=${env.user || '(unknown)'}\nhome=~\ncwd=.\nplatform=${env.platform || '(unknown)'}\nallowed_dirs=home and explicitly configured project folders\nkdeConnect=${env.kde_connect_available ? 'true' : 'false'}`;
   }
   return p;
 }
@@ -697,10 +699,10 @@ function buildEnvBlock(env) {
   return [
     '[Bridge environment]',
     `user=${env.user || '?'}`,
-    `home=${env.home || '?'}`,
-    `cwd=${env.cwd || '?'}`,
+    'home=~',
+    'cwd=.',
     `platform=${env.platform || '?'}`,
-    `allowed_dirs=${(env.allowed_dirs || []).join(', ') || '(none)'}`,
+    'allowed_dirs=home and explicitly configured project folders',
     `kdeConnect=${env.kde_connect_available ? 'true' : 'false'}`,
   ].join('\n');
 }
@@ -1142,7 +1144,7 @@ app.post('/v1/chat/completions', async (req, res) => {
     }
 
     sseWrite(res, { p: result.provider });
-    await pipeProviderStream(result.res.body, (d) => sseWrite(res, { d }), isClosed);
+    await pipeProviderStream(result.res.body, (d) => sseWrite(res, { d }), isClosed, () => sseWrite(res, { limit: true }));
     if (!closed) sseWrite(res, { done: true });
     sseDone(res);
     await finishUsage();
