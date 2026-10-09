@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 MiroxAI Bridge Client v5
-- Reports the REAL home folder (no "." or "~" paths anywhere)
+- Supports safe relative paths such as "." and "~/project" (resolved locally under the configured home)
 - Every path the AI sends is resolved to an absolute path under home
 - Sudo (password kept in memory only), SMTP email, git, clipboard, screenshots
 - KDE Connect endpoints via kdeconnect-cli (list, ping, ring, share, sms, lock, ...)
