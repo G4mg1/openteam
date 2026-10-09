@@ -106,6 +106,7 @@
       <div class="credit-pill" data-credit="eclipse" title="Eclipse messages today"><i class="ri-sparkling-2-line"></i><span>5/5</span></div>
     </div>
     <div class="chat-header-actions">
+      <div id="tokenUsage" class="token-usage" title="Estimated tokens used in this conversation"><i class="ri-cpu-line"></i><span>0 / 10k tokens</span></div>
       <div id="modelPicker" class="model-picker-wrap">
         <button id="modelPickerBtn" class="model-picker-btn" type="button">
           <i class="ri-sparkling-2-line"></i>
@@ -140,6 +141,8 @@
       </div>
     </div>
   </div>
+
+  <button id="scrollBottomBtn" class="scroll-bottom-btn" type="button" aria-label="Scroll to latest message" title="Scroll to latest message"><i class="ri-arrow-down-line"></i><span>Latest</span></button>
 
   <div class="composer-wrap">
     <div id="attachmentPreview" class="attachment-preview" style="display:none;">
