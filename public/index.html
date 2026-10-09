@@ -120,8 +120,12 @@
   <div id="chatMessages" class="chat-messages">
     <div class="welcome-screen">
       <div class="welcome-mascot">
-        <div class="mascot mascot-lg wave" id="welcomeMascot">
-          <span class="eye left"></span><span class="eye right"></span><span class="mouth"></span><span class="prop"></span>
+        <div class="mascot mascot-lg" id="welcomeMascot" data-mood="idle">
+          <span class="brow left"></span><span class="brow right"></span>
+          <span class="eye left"></span><span class="eye right"></span>
+          <span class="cheek left"></span><span class="cheek right"></span>
+          <span class="mouth"></span>
+          <span class="prop"></span>
         </div>
         <div class="mascot-ring"></div>
         <div class="mascot-ring r2"></div>
@@ -152,7 +156,7 @@
     </div>
 
     <div class="composer">
-      <button type="button" id="attachBtn" class="icon-btn" title="Attach files" aria-label="Attach files"><i class="ri-attachment-2"></i></button>
+      <button type="button" id="attachBtn" class="icon-btn attach-btn" title="Attach files" aria-label="Attach files"><i class="ri-attachment-2"></i></button>
       <input type="file" id="fileInput" multiple hidden accept="image/*,.txt,.md,.json,.csv,.log,.py,.js,.ts,.html,.css,.yml,.yaml,.xml,.sh,.sql,.java,.c,.cpp,.go,.rs,.rb,.php,.lua">
       <textarea id="messageInput" class="message-input" placeholder="How can I help you today? (paste big text → becomes an attachment)" rows="1"></textarea>
       <button type="button" id="stopBtn" class="icon-btn stop-btn" style="display:none;" aria-label="Stop"><i class="ri-stop-circle-line"></i></button>
@@ -214,7 +218,12 @@
       <div class="bridge-workspace-main">
         <div class="bridge-messages" id="bridgeMessages">
           <div class="bridge-empty" id="bridgeEmpty">
-            <div class="mascot mascot-md wave"><span class="eye left"></span><span class="eye right"></span><span class="mouth"></span><span class="prop"></span></div>
+            <div class="mascot mascot-md" data-mood="idle">
+              <span class="brow left"></span><span class="brow right"></span>
+              <span class="eye left"></span><span class="eye right"></span>
+              <span class="cheek left"></span><span class="cheek right"></span>
+              <span class="mouth"></span><span class="prop"></span>
+            </div>
             <h3>Bridge Workspace</h3>
             <p>Tell Mirox what to build. It writes the files into <code>~/&lt;project&gt;/</code>, verifies them, and shows you a live preview.</p>
             <ol class="bridge-empty-steps">
@@ -300,7 +309,7 @@
 
 <!-- LIVE PREVIEW -->
 <div id="bwPreviewModal" class="planner-overlay">
-  <div class="planner-panel" style="max-width:1400px;">
+  <div class="planner-panel preview-panel">
     <header class="planner-top">
       <div class="planner-title">
         <i class="ri-eye-line"></i>
@@ -324,7 +333,7 @@
 
 <!-- KDE DEVICE PICKER -->
 <div id="kdeModal" class="planner-overlay">
-  <div class="planner-panel" style="max-width:760px;">
+  <div class="planner-panel kde-panel">
     <header class="planner-top">
       <div class="planner-title">
         <i class="ri-smartphone-line"></i>
@@ -335,7 +344,7 @@
       </div>
       <button class="icon-btn" id="kdeCloseBtn" type="button"><i class="ri-close-line"></i></button>
     </header>
-    <div class="planner-body" style="padding:16px;">
+    <div class="planner-body kde-body">
       <div id="kdeGrid" class="kde-device-grid"></div>
     </div>
     <footer class="planner-footer">
@@ -428,19 +437,26 @@
   <div class="modal">
     <button class="icon-btn modal-close" type="button" data-close="loginModal" aria-label="Close"><i class="ri-close-line"></i></button>
     <div class="modal-mascot">
-      <div class="mascot mascot-md wave"><span class="eye left"></span><span class="eye right"></span><span class="mouth"></span><span class="prop"></span></div>
+      <div class="mascot mascot-md" data-mood="idle">
+        <span class="brow left"></span><span class="brow right"></span>
+        <span class="eye left"></span><span class="eye right"></span>
+        <span class="cheek left"></span><span class="cheek right"></span>
+        <span class="mouth"></span><span class="prop"></span>
+      </div>
     </div>
     <h2 class="modal-title">Sign in</h2>
     <p class="modal-sub">Sign in with Google, Apple, or email — powered by Loginment.</p>
     <button id="loginmentBtn" class="modal-btn primary login-main" type="button">
       <i class="ri-shield-user-line"></i> Continue with Loginment
     </button>
-    <div class="login-divider">or use a quick demo login</div>
-    <form id="simpleLoginForm" class="modal-form">
-      <input type="text" id="loginName" class="modal-input" placeholder="Name" required maxlength="60">
-      <input type="email" id="loginEmail" class="modal-input" placeholder="Email" required>
-      <button type="submit" class="modal-btn">Continue</button>
-    </form>
+    <div id="emailLoginWrap">
+      <div class="login-divider">or use a quick demo login</div>
+      <form id="simpleLoginForm" class="modal-form">
+        <input type="text" id="loginName" class="modal-input" placeholder="Name" required maxlength="60">
+        <input type="email" id="loginEmail" class="modal-input" placeholder="Email" required>
+        <button type="submit" class="modal-btn">Continue</button>
+      </form>
+    </div>
   </div>
 </div>
 
