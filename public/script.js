@@ -1,7 +1,6 @@
 (function () {
   'use strict';
 
-  /* ═══════════ Loader: removed as early as possible, never blocks ═══════════ */
   let __loaderGone = false;
   function killLoader() {
     if (__loaderGone) return;
@@ -71,7 +70,6 @@
   function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
   function setToken(t) { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch {} }
 
-  /* Every network call gets a timeout so nothing can hang the UI. */
   async function netFetch(url, opts = {}, ms = NET_TIMEOUT_MS) {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), ms);
@@ -92,7 +90,6 @@
     } catch { return fallback; }
   }
 
-  /* ═══════════ IndexedDB (generated images) ═══════════ */
   const idb = (() => {
     let p = null;
     const open = () => p || (p = new Promise((res, rej) => {
@@ -103,27 +100,11 @@
       r.onerror = () => rej(r.error);
     }));
     return {
-      async set(k, v) {
-        const db = await open();
-        return new Promise((res, rej) => {
-          const t = db.transaction('kv', 'readwrite');
-          t.objectStore('kv').put(v, k);
-          t.oncomplete = () => res(true);
-          t.onerror = () => rej(t.error);
-        });
-      },
-      async get(k) {
-        const db = await open();
-        return new Promise((res, rej) => {
-          const q = db.transaction('kv').objectStore('kv').get(k);
-          q.onsuccess = () => res(q.result || null);
-          q.onerror = () => rej(q.error);
-        });
-      },
+      async set(k, v) { const db = await open(); return new Promise((res, rej) => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = () => res(true); t.onerror = () => rej(t.error); }); },
+      async get(k) { const db = await open(); return new Promise((res, rej) => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result || null); q.onerror = () => rej(q.error); }); },
     };
   })();
 
-  /* ═══════════ Mascot ═══════════ */
   document.addEventListener('mousemove', (e) => {
     const x = ((e.clientX / window.innerWidth) - .5) * 5;
     const y = ((e.clientY / window.innerHeight) - .5) * 3.5;
@@ -132,29 +113,35 @@
     r.setProperty('--look-y', y.toFixed(1) + 'px');
   }, { passive: true });
 
+  /* ── Mascot: simple blob, minimal motion ── */
   const MASCOT_MOODS = {
     idle: '', happy: '', love: '', wink: '', sad: '', surprised: '', sleepy: '',
     thinking: '', reasoning: '', searching: '', reading: '', learning: '',
     coding: '', celebrate: '', error: '', listening: '', cool: '', confused: '', focus: '',
   };
   const MOOD_KEYS = Object.keys(MASCOT_MOODS);
-  const BLOB_SVG_SOURCE = `<svg class="blob-svg" viewBox="-125 -125 250 250" role="img" aria-label="MiroxAI animated blob" xmlns="http://www.w3.org/2000/svg"><defs>__GRADIENT_DEFS__</defs><g class="blob-wobble"><path class="blob-body" d="M0-87 C24-91 44-80 60-64 C78-48 88-26 87-3 C88 18 78 43 62 59 C45 77 22 88 0 86 C-25 89-47 78-64 61 C-81 43-88 21-86-3 C-88-27-76-50-59-65 C-42-81-22-87 0-87Z" fill="url(__GRADIENT_URL__)"/><g class="blob-face"><ellipse class="eye left" cx="-27" cy="-8" rx="6.2" ry="9" fill="#24233a"/><ellipse class="eye right" cx="27" cy="-8" rx="6.2" ry="9" fill="#24233a"/><circle class="eye-glint" cx="-29" cy="-11" r="2.1"/><circle class="eye-glint" cx="25" cy="-11" r="2.1"/><ellipse class="cheek left" cx="-43" cy="13" rx="9" ry="4.5"/><ellipse class="cheek right" cx="43" cy="13" rx="9" ry="4.5"/><path class="blob-mouth" d="M-11 20 Q0 30 11 20" fill="none" stroke-width="4"/><g class="blob-glasses" fill="none" stroke="#24233a" stroke-width="3.5"><rect x="-43" y="-21" width="32" height="26" rx="9"/><rect x="11" y="-21" width="32" height="26" rx="9"/><path d="M-11-11 Q0-16 11-11"/></g></g><g class="blob-sparkles" fill="white"><path d="M-72-48 l3 8 8 3-8 3-3 8-3-8-8-3 8-3z"/><path d="M69 35 l2.5 6 6 2.5-6 2.5-2.5 6-2.5-6-6-2.5 6-2.5z"/></g></g></svg>`;
+
+  // Organic blob path derived from the reference black blob shape.
+  const BLOB_PATH = 'M0-92 C26-92 50-80 62-60 C82-54 98-38 100-16 C104 6 96 30 80 46 C74 68 56 84 34 88 C12 92 -10 92 -32 88 C-54 84 -72 68 -78 46 C-94 30 -102 6 -98-16 C-96-38 -80-54 -60-60 C-48-80 -24-92 0-92 Z';
+
+  const BLOB_SVG_SOURCE = `<svg class="blob-svg" viewBox="-110 -110 220 220" role="img" aria-label="Mirox avatar" xmlns="http://www.w3.org/2000/svg"><defs>__GRADIENT_DEFS__</defs><g class="blob-float"><path class="blob-body" d="${BLOB_PATH}" fill="url(__GRADIENT_URL__)"/></g><ellipse class="blob-shine" cx="-34" cy="-38" rx="22" ry="14" fill="white" opacity="0.28"/></svg>`;
+
   let blobMascotId = 0;
   function blobSvg() {
     const id = 'mirox-blob-' + (++blobMascotId);
-    const gradient = `<linearGradient id="${id}-gradient" x1="12%" y1="8%" x2="88%" y2="92%"><stop offset="0%" stop-color="var(--blob-start)"/><stop offset="48%" stop-color="var(--blob-mid)"/><stop offset="100%" stop-color="var(--blob-end)"/></linearGradient>`;
+    const gradient = `<linearGradient id="${id}-gradient" x1="20%" y1="5%" x2="80%" y2="95%"><stop offset="0%" stop-color="var(--blob-start)"/><stop offset="52%" stop-color="var(--blob-mid)"/><stop offset="100%" stop-color="var(--blob-end)"/></linearGradient>`;
     return BLOB_SVG_SOURCE
       .replace('__GRADIENT_DEFS__', gradient)
       .replace('__GRADIENT_URL__', `#${id}-gradient`);
   }
   function mascotHTML(cls, mood) {
     const m = MOOD_KEYS.includes(mood) ? mood : 'idle';
-    return `<div class="mascot ${cls || ''} m-${m}" data-mood="${m}">${blobSvg()}<span class="prop" aria-hidden="true">${escapeHtml(MASCOT_MOODS[m])}</span></div>`;
+    return `<div class="mascot ${cls || ''} m-${m}" data-mood="${m}">${blobSvg()}</div>`;
   }
   function upgradeStaticMascots(scope = document) {
     scope.querySelectorAll('.mascot:not([data-blob-ready])').forEach((el) => {
       const m = MOOD_KEYS.includes(el.dataset.mood) ? el.dataset.mood : 'idle';
-      el.innerHTML = blobSvg() + `<span class="prop" aria-hidden="true">${escapeHtml(MASCOT_MOODS[m])}</span>`;
+      el.innerHTML = blobSvg();
       el.dataset.mood = m;
       el.classList.add('m-' + m);
       el.dataset.blobReady = '1';
@@ -168,11 +155,13 @@
       el.className = el.className.split(' ').filter((c) => !/^m-/.test(c)).join(' ');
       el.classList.add('m-' + m);
       el.dataset.mood = m;
-      const p = el.querySelector('.prop');
-      if (p) p.textContent = MASCOT_MOODS[m];
     });
   }
   upgradeStaticMascots();
+  // Loading blob: inject once
+  const lb = document.getElementById('loadingBlob');
+  if (lb) lb.innerHTML = blobSvg();
+
   function pickMoodFor(text) {
     const t = String(text || '').toLowerCase();
     if (/\b(search|look up|google|latest|news|find)\b/.test(t)) return 'searching';
@@ -190,7 +179,6 @@
     }, 7000);
   }
 
-  /* ═══════════ Status labels ═══════════ */
   function pickStatusLabel(text) {
     const t = String(text || '').toLowerCase();
     if (!t) return 'Thinking';
@@ -212,13 +200,7 @@
     return 'Thinking';
   }
 
-  /* ═══════════ Reasoning trace (built from what the user asked) ═══════════ */
-  const LANG_WORDS = {
-    lua: 'Lua', python: 'Python', py: 'Python', javascript: 'JavaScript', js: 'JavaScript',
-    typescript: 'TypeScript', ts: 'TypeScript', html: 'HTML', css: 'CSS', java: 'Java',
-    'c++': 'C++', cpp: 'C++', c: 'C', go: 'Go', rust: 'Rust', ruby: 'Ruby', php: 'PHP',
-    bash: 'Bash', sql: 'SQL', swift: 'Swift', kotlin: 'Kotlin',
-  };
+  const LANG_WORDS = { lua: 'Lua', python: 'Python', py: 'Python', javascript: 'JavaScript', js: 'JavaScript', typescript: 'TypeScript', ts: 'TypeScript', html: 'HTML', css: 'CSS', java: 'Java', 'c++': 'C++', cpp: 'C++', c: 'C', go: 'Go', rust: 'Rust', ruby: 'Ruby', php: 'PHP', bash: 'Bash', sql: 'SQL', swift: 'Swift', kotlin: 'Kotlin' };
   function detectLanguage(text) {
     const t = String(text || '').toLowerCase();
     for (const k of Object.keys(LANG_WORDS)) {
@@ -230,26 +212,40 @@
     const raw = String(text || '').trim().replace(/\s+/g, ' ');
     const steps = [];
     const short = raw.length > 110 ? raw.slice(0, 110) + '…' : raw;
-    if (raw) steps.push(`The user asked: "${short}"`);
+    if (raw) steps.push(`Analyzing request: "${short}"`);
     const lang = detectLanguage(raw);
-    if (lang) steps.push(`They want this in ${lang}, so I'll write idiomatic ${lang} and keep the syntax exact.`);
+    if (lang) steps.push(`Target language: ${lang}`);
     const t = raw.toLowerCase();
-    if (/\b(build|create|make|write|code|script|app|game|site|page)\b/.test(t)) steps.push('Breaking the task into parts: structure, core logic, then how it runs or gets tested.');
-    if (/\b(fix|bug|error|broken|crash|wrong|fail)\b/.test(t)) steps.push('Finding the root cause first, then checking the fix against the original behavior.');
-    if (/\b(search|latest|news|current|today)\b/.test(t)) steps.push("This needs current information, so I'll check sources before answering.");
-    if (/\b(explain|why|how does|what is)\b/.test(t)) steps.push('Explaining step by step with a small concrete example.');
-    if (files && files.length) steps.push(`Reading the ${files.length} attached file${files.length === 1 ? '' : 's'} before answering.`);
-    if (!steps.length) steps.push('Planning a clear, accurate answer.');
+    if (/\b(build|create|make|write|code|script|app|game|site|page)\b/.test(t)) steps.push('Planning project structure');
+    if (/\b(fix|bug|error|broken|crash|wrong|fail)\b/.test(t)) steps.push('Diagnosing the issue');
+    if (/\b(search|latest|news|current|today)\b/.test(t)) steps.push('Preparing a web search');
+    if (/\b(explain|why|how does|what is)\b/.test(t)) steps.push('Preparing a step-by-step explanation');
+    if (files && files.length) steps.push(`Reading ${files.length} attached file${files.length === 1 ? '' : 's'}`);
+    if (!steps.length) steps.push('Planning a clear answer');
     return steps;
   }
 
-  /* ═══════════ Modals ═══════════ */
+  /* ── Icon picker for thinking steps ── */
+  function pickStepIcon(text, state) {
+    if (state === 'run') return 'ri-loader-4-line';
+    if (state === 'ok') return 'ri-checkbox-circle-line';
+    if (state === 'warn') return 'ri-error-warning-line';
+    const t = String(text || '').toLowerCase();
+    if (/exec|run|python|node|lua|command|terminal|shell/.test(t)) return 'ri-terminal-box-line';
+    if (/write|file|update|edit|create|append/.test(t)) return 'ri-file-edit-line';
+    if (/read|list|folder|directory/.test(t)) return 'ri-folder-open-line';
+    if (/search|find|look up|google/.test(t)) return 'ri-search-line';
+    if (/done|complete|finish/.test(t)) return 'ri-checkbox-circle-line';
+    if (/analysis|analyze|think|plan/.test(t)) return 'ri-sparkling-2-line';
+    return 'ri-sparkling-2-line';
+  }
+
   const openModal = (id) => { const el = document.getElementById(id); if (el) el.classList.add('open'); };
   const closeModal = (id) => { const el = document.getElementById(id); if (el) el.classList.remove('open'); };
   const openSidebar = () => { $('#sidebar')?.classList.add('open'); $('#sidebarScrim')?.classList.add('open'); };
   const closeSidebar = () => { $('#sidebar')?.classList.remove('open'); $('#sidebarScrim')?.classList.remove('open'); };
 
-  /* ═══════════ Appearance ═══════════ */
+  /* ── Appearance: fixed accent switching ── */
   function applyAppearance(prefs) {
     const root = document.documentElement;
     const mode = prefs.mode || 'light';
@@ -266,7 +262,6 @@
     applyAppearance(prefs);
   }
 
-  /* ═══════════ Text cleanup for bridge replies ═══════════ */
   function stripBridgeTags(text) {
     if (!text) return '';
     let t = String(text);
@@ -284,7 +279,6 @@
     return t.replace(/\n{3,}/g, '\n\n').trim();
   }
 
-  /* ═══════════ Markdown & highlighting ═══════════ */
   const HL_ALIASES = { html: 'xml', htm: 'xml', js: 'javascript', mjs: 'javascript', ts: 'typescript', py: 'python', python3: 'python', sh: 'bash', shell: 'bash', zsh: 'bash', yml: 'yaml', jsonc: 'json', cxx: 'cpp' };
   function highlightCode(lang, code) {
     const raw = String(code || '').replace(/\n$/, '');
@@ -336,7 +330,6 @@
     for (let i = 0; i < lines.length; i++) {
       const raw = lines[i], t = raw.trim();
       if (!t) { flush(); continue; }
-      // GitHub-style Markdown table. Build safe HTML cell-by-cell (inlineFmt escapes input).
       if (t.includes('|') && i + 1 < lines.length && /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[i + 1])) {
         flush();
         const headers = cells(t); i += 1;
@@ -383,7 +376,7 @@
     });
   }
 
-  /* ═══════════ Thinking panel: always ends (finish / fail / destroy) ═══════════ */
+  /* ── Thinking panel: terminal-style list with remix icons ── */
   function createThinkPanel(label, steps) {
     const el = document.createElement('div');
     el.className = 'think-wrap';
@@ -409,11 +402,9 @@
     function addStep(text, state = 'info') {
       const row = document.createElement('div');
       row.className = 'think-step ' + state;
-      const icon = state === 'run' ? '<i class="ri-loader-4-line spin"></i>'
-        : state === 'ok' ? '<i class="ri-check-line"></i>'
-        : state === 'warn' ? '<i class="ri-error-warning-line"></i>'
-        : '<i class="ri-sparkling-2-line"></i>';
-      row.innerHTML = `<span class="ts-icon">${icon}</span><span class="ts-text">${escapeHtml(text)}</span>`;
+      const iconName = pickStepIcon(text, state);
+      const spinClass = state === 'run' ? ' spin' : '';
+      row.innerHTML = `<span class="ts-icon"><i class="${iconName}${spinClass}"></i></span><span class="ts-text">${escapeHtml(text)}</span>`;
       body.appendChild(row);
       body.scrollTop = body.scrollHeight;
       return row;
@@ -421,7 +412,8 @@
     function markStepDone(row) {
       if (!row) return;
       row.className = 'think-step ok';
-      row.querySelector('.ts-icon').innerHTML = '<i class="ri-check-line"></i>';
+      const icon = row.querySelector('.ts-icon i');
+      if (icon) icon.className = 'ri-checkbox-circle-line';
     }
     if (Array.isArray(steps)) {
       steps.forEach((s) => {
@@ -448,17 +440,18 @@
       el,
       addStep,
       setMood(mood) { setMascotMood(mood, el); },
-      markWriting() { if (!writeStep) writeStep = addStep('Writing the answer…', 'run'); },
+      markWriting() { if (!writeStep) writeStep = addStep('Writing the answer', 'run'); },
       finish() {
         if (writeStep) markStepDone(writeStep);
         body.querySelectorAll('.think-step.run').forEach(markStepDone);
-        addStep('Done.', 'ok');
+        addStep('Thinking complete', 'ok');
         close('Done', 'happy');
       },
       fail(msg) {
         body.querySelectorAll('.think-step.run').forEach((r) => {
           r.className = 'think-step warn';
-          r.querySelector('.ts-icon').innerHTML = '<i class="ri-error-warning-line"></i>';
+          const icon = r.querySelector('.ts-icon i');
+          if (icon) icon.className = 'ri-error-warning-line';
         });
         addStep(msg || 'Stopped with an error.', 'warn');
         close('Stopped', 'error');
@@ -467,7 +460,6 @@
     };
   }
 
-  /* ═══════════ Conversations ═══════════ */
   function currentConvo() { return __conversations.find((c) => c.id === currentConversationId) || null; }
   function saveChats() {
     const slim = __conversations.map((c) => ({
@@ -491,14 +483,7 @@
   function welcomeHTML() {
     return `<div class="welcome-screen">
       <div class="welcome-mascot">
-        <div class="mascot mascot-lg m-idle" id="welcomeMascot" data-mood="idle">
-          <span class="brow left"></span><span class="brow right"></span>
-          <span class="eye left"></span><span class="eye right"></span>
-          <span class="cheek left"></span><span class="cheek right"></span>
-          <span class="mouth"></span><span class="prop"></span>
-        </div>
-        <div class="mascot-ring"></div>
-        <div class="mascot-ring r2"></div>
+        <div class="mascot mascot-lg m-idle" id="welcomeMascot" data-mood="idle"></div>
       </div>
       <h1 class="welcome-title">Hi, I'm Mirox</h1>
       <p class="welcome-sub">Luna and Gen are unlimited and free. Try asking me to search the web, generate an image, or build a project with Bridge.</p>
@@ -514,6 +499,7 @@
     currentConversationId = null;
     const t = $('#chatTitle'); if (t) t.textContent = 'New chat';
     const c = $('#chatMessages'); if (c) c.innerHTML = welcomeHTML();
+    upgradeStaticMascots($('#chatMessages'));
     bindSuggestionClicks(); updateTokenUsage();
     renderHistory(); updateTokenUsage();
   }
@@ -766,7 +752,6 @@
       timeEl = msgEl.querySelector('.message-time');
       bubble.querySelector('[data-continue]')?.remove();
       bubble.querySelector('.token-limit-note')?.remove();
-      // Do not insert another mascot/thinking card into the same assistant response.
       panel = { el: document.createElement('span'), addStep() {}, setMood() {}, markWriting() {}, finish() {}, fail() {}, destroy() {} };
       const prev = String(continuation.messageObj.content || '');
       var full = prev ? prev + '\n\n' : '';
@@ -843,7 +828,7 @@
 
           if (o.search && o.search.query && !searchStepAdded) {
             searchStepAdded = true;
-            panel.addStep(`Searching the web for "${o.search.query}"…`, 'run');
+            panel.addStep(`Searching the web for "${o.search.query}"`, 'run');
             panel.setMood('searching');
           }
           if (o.overview && o.overview.text) panel.addStep(`Overview from ${o.overview.source || 'web'} acquired`, 'ok');
@@ -853,7 +838,7 @@
             panel.setMood('reading');
           }
           if (o.p) {
-            panel.addStep(`Connected to ${o.p} · generating…`, 'ok');
+            panel.addStep(`Connected to ${o.p}`, 'ok');
             panel.setMood('reasoning');
           }
           if (o.img) {
@@ -953,7 +938,6 @@
     updateSendButtonState();
   }
 
-  /* ═══════════ Files & paste-as-attachment ═══════════ */
   function hasAttachment(name, size) { return pendingFiles.some((f) => f.name === name && f.size === size); }
 
   function readImageAsResizedDataUrl(file) {
@@ -1038,7 +1022,6 @@
     ).join('');
   }
 
-  /* ═══════════ Toast ═══════════ */
   function toast(msg, ms) {
     const t = document.createElement('div');
     t.className = 'mirox-toast';
@@ -1047,7 +1030,6 @@
     setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 350); }, ms || 1800);
   }
 
-  /* ═══════════ Image viewer & history ═══════════ */
   function openImageViewer(url) {
     if (!url) return;
     __ivDataUrl = url;
@@ -1095,7 +1077,6 @@
     });
   }
 
-  /* ═══════════ Model picker, credits, config ═══════════ */
   function getModelsList() { return __config?.models?.length ? __config.models : FALLBACK_MODELS; }
   function canUseModel(tier) {
     if (tier === 'free' || tier === 'ultimate') return true;
@@ -1148,7 +1129,6 @@
     setPill('[data-credit="eclipse"]', __usage.eclipse_used || 0, __usage.eclipse_limit || 5);
   }
 
-  /* Fetches /api/me. Never throws, never loops: a failure just means "guest". */
   async function refreshUsage() {
     const res = await jsonOr('/api/me', {}, null, 7000);
     if (!res || !res.user) {
@@ -1204,8 +1184,6 @@
     }
   }
 
-  /* Loginment: one attempt per page load. If the callback fails, we stop
-     instead of sending the user around the sign-in cycle again. */
   function doLoginment() {
     const tries = Number(sessionStorage.getItem('mirox_lm_tries') || 0);
     if (tries >= 2) {
@@ -1289,7 +1267,6 @@
     }
   }
 
-  /* ═══════════ Bridge: settings & status ═══════════ */
   function loadBridgeLS() {
     const b = safeGet(BRIDGE_KEY, {});
     __bridge = { ...__bridge, ...b, connected: false, baseUrl: null, env: null };
@@ -1379,7 +1356,6 @@
     });
   }
 
-  /* Sudo modal */
   function showSudoModal(command) {
     return new Promise((resolve) => {
       __sudoResolver = resolve;
@@ -1419,7 +1395,6 @@
     return await showSudoModal(command);
   }
 
-  /* ═══════════ Bridge: connection ═══════════ */
   async function testBridge(port) {
     for (const host of ['localhost', '127.0.0.1']) {
       try {
@@ -1696,7 +1671,6 @@
     if (text) setProgressText(text);
   }
 
-  /* ═══════════ Bridge: tag parsing ═══════════ */
   function extractBridgeCommands(text) {
     const cmds = [];
     const add = (type, mm, extra) => cmds.push(Object.assign({ type, index: mm.index }, extra));
@@ -1819,7 +1793,6 @@
     return s;
   }
 
-  /* ═══════════ Bridge: KDE Connect ═══════════ */
   async function kdeListDevices(availableOnly = false) {
     if (!__bridge.connected) throw new Error('Bridge not connected');
     const r = await bridgeCall('/kde/list', { available: !!availableOnly });
@@ -1892,7 +1865,6 @@
     return pick ? devices : null;
   }
 
-  /* ═══════════ Bridge: command execution ═══════════ */
   async function executeBridgeCommand(cmd) {
     const home = __bridge.env?.home || '';
     if (cmd.path) cmd.path = absBridgePath(cmd.path, home);
@@ -2031,7 +2003,6 @@
     return (bridgeTurn.commandLog.get(sig) || 0) >= MAX_DUP_COMMANDS;
   }
 
-  /* ═══════════ Bridge: questions & planner ═══════════ */
   function showBridgeQuestionModal(q, index, total) {
     return new Promise((resolve) => {
       __bqResolver = resolve;
@@ -2128,7 +2099,6 @@
     if (__plannerResolver) { __plannerResolver({ id: 0, name: 'Let Mirox decide' }); __plannerResolver = null; }
   }
 
-  /* ═══════════ Bridge: verification & project summary ═══════════ */
   async function buildVerificationTable(paths) {
     const rows = [];
     for (const p of paths) {
@@ -2182,7 +2152,6 @@
     return s.endsWith('/') ? s.slice(0, -1) : s;
   }
 
-  /* ═══════════ Bridge: AI loop ═══════════ */
   async function fetchBridgeReply(history) {
     const envBlock = buildEnvBlockString();
     const lastMsg = history[history.length - 1];
@@ -2222,7 +2191,7 @@
     cmds.filter((c) => c.type === 'exec' || c.type === 'sudo').forEach((c) => {
       steps.push(`Running: ${(c.command || '').split(/\s+/).slice(0, 4).join(' ')}`);
     });
-    if (/\bDONE\b/i.test(reply)) steps.push('Checking that every planned file exists.');
+    if (/\bDONE\b/i.test(reply)) steps.push('Verifying every planned file exists.');
     return steps;
   }
 
@@ -2515,7 +2484,6 @@ ${userText}`,
     runBridgeTurn(text, false);
   }
 
-  /* ═══════════ Preview ═══════════ */
   async function openPreview(pathOrEmpty) {
     const modal = $('#bwPreviewModal'); if (!modal) return;
     const frame = $('#bwPreviewFrame');
@@ -2552,7 +2520,6 @@ ${userText}`,
   }
   function closePreview() { $('#bwPreviewModal')?.classList.remove('open'); }
 
-  /* ═══════════ Open a saved chat ═══════════ */
   async function openConversation(id) {
     const convo = __conversations.find((c) => c.id === id);
     if (!convo) return;
@@ -2575,7 +2542,6 @@ ${userText}`,
     scrollToBottom(true);
   }
 
-  /* ═══════════ Wiring ═══════════ */
   function wireAll() {
     on('#hamburgerBtn', 'click', openSidebar);
     on('#sidebarCloseBtn', 'click', closeSidebar);
@@ -2625,13 +2591,13 @@ ${userText}`,
       });
     }
     on('#sendBtn', 'click', handleSend);
-  on('#scrollBottomBtn', 'click', () => { autoScrollEnabled = true; userIsAtBottom = true; scrollToBottom(true); });
-  on('#chatMessages', 'scroll', () => {
-    const c = $('#chatMessages'); userIsAtBottom = atChatBottom(c);
-    if (!userIsAtBottom) autoScrollEnabled = false;
-    else autoScrollEnabled = true;
-    updateScrollButton();
-  });
+    on('#scrollBottomBtn', 'click', () => { autoScrollEnabled = true; userIsAtBottom = true; scrollToBottom(true); });
+    on('#chatMessages', 'scroll', () => {
+      const c = $('#chatMessages'); userIsAtBottom = atChatBottom(c);
+      if (!userIsAtBottom) autoScrollEnabled = false;
+      else autoScrollEnabled = true;
+      updateScrollButton();
+    });
     on('#attachBtn', 'click', () => $('#fileInput')?.click());
     on('#fileInput', 'change', (e) => { handleFiles(e.target.files); e.target.value = ''; });
     on('#removeAttachmentBtn', 'click', () => { pendingFiles = []; updatePreview(); updateSendButtonState(); });
@@ -2804,7 +2770,6 @@ ${userText}`,
     });
   }
 
-  /* ═══════════ Init: wire the UI first, then load data in the background ═══════════ */
   function init() {
     try {
       loadAppearance();
@@ -2824,7 +2789,6 @@ ${userText}`,
     } finally {
       killLoader();
     }
-    /* Network data loads after the UI is already usable. A failure only leaves defaults in place. */
     loadConfig().catch(() => {});
     refreshUsage().catch(() => {});
     renderSidebarImageHistory().catch(() => {});
