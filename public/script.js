@@ -1,15 +1,16 @@
 (function () {
   'use strict';
 
+  /* ═══════════ Loader ═══════════ */
   function killLoader() {
     const el = document.getElementById('loadingScreen');
     if (!el) return;
     el.classList.add('hidden');
-    setTimeout(() => { el.style.display = 'none'; }, 700);
+    setTimeout(() => { el.style.display = 'none'; }, 750);
   }
   window.__miroxKillLoader = killLoader;
-  setTimeout(killLoader, 1000);
-  setTimeout(killLoader, 2500);
+  setTimeout(killLoader, 1400);
+  setTimeout(killLoader, 3000);
   window.addEventListener('error', () => killLoader());
 
   const $ = (s) => document.querySelector(s);
@@ -30,6 +31,7 @@
   const BRIDGE_KEY = 'miroxai_bridge_v23';
   const KDE_DEVICE_KEY = 'miroxai_kde_device_v1';
   const BRIDGE_OPTS_KEY = 'miroxai_bridge_opts_v1';
+  const PASTE_ATTACH_THRESHOLD = 1024; // 1KB
 
   const MAX_BRIDGE_QUESTIONS = 6;
   const MAX_BRIDGE_ITER = 200;
@@ -71,24 +73,25 @@
   function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
   function setToken(t) { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch {} }
 
-  function loadBridgeOpts() {
-    const o = safeGet(BRIDGE_OPTS_KEY, {});
-    if (typeof o.autoRun === 'boolean') __bridgeAutoRun = o.autoRun;
-    if (typeof o.showCode === 'boolean') __bridgeShowCode = o.showCode;
-  }
-  function saveBridgeOpts() { safeSet(BRIDGE_OPTS_KEY, { autoRun: __bridgeAutoRun, showCode: __bridgeShowCode }); }
-  function loadKdeDevice() {
-    const v = safeGet(KDE_DEVICE_KEY, null);
-    if (v && v.id && v.name) __kdeCurrentDevice = v;
-  }
-  function saveKdeDevice() {
-    if (__kdeCurrentDevice) safeSet(KDE_DEVICE_KEY, __kdeCurrentDevice);
-    else try { localStorage.removeItem(KDE_DEVICE_KEY); } catch {}
+  /* ═══════════ Mascot eyes follow cursor ═══════════ */
+  document.addEventListener('mousemove', (e) => {
+    const x = ((e.clientX / window.innerWidth) - .5) * 5;
+    const y = ((e.clientY / window.innerHeight) - .5) * 3.5;
+    const r = document.documentElement.style;
+    r.setProperty('--look-x', x.toFixed(1) + 'px');
+    r.setProperty('--look-y', y.toFixed(1) + 'px');
+  }, { passive: true });
+
+  function mascotHTML(cls) {
+    return `<div class="mascot ${cls || ''}"><span class="eye left"></span><span class="eye right"></span><span class="mouth"></span></div>`;
   }
 
+  /* ═══════════ Status labels ═══════════ */
   function pickStatusLabel(text) {
     const t = String(text || '').toLowerCase();
     if (!t) return 'Thinking';
+    if (/\b(remove|delete|kick|block|forget|unpair)\b/.test(t) && /\b(wifi|wi-fi|network|router)\b/.test(t)) return 'Planning a safe answer';
+    if (/\b(password|hack|exploit|crack|bypass)\b/.test(t)) return 'Checking safety first';
     if (/\b(scan|check).*(device|phone|tablet|kde)\b/.test(t)) return 'Scanning devices';
     if (/\b(ping|online|reachable)\b/.test(t)) return 'Pinging device';
     if (/\b(send|share|move|push).*(phone|mobile|device|tablet)\b/.test(t)) return 'Sending to device';
@@ -103,6 +106,21 @@
     if (/\b(test|unit test|integration)\b/.test(t)) return 'Running tests';
     if (/\b(sudo|root|admin|privilege)\b/.test(t)) return 'Elevating privileges';
     return 'Thinking';
+  }
+
+  /* Build a short, safe reasoning seed from the user's message */
+  function makeReasoning(text) {
+    const t = String(text || '').trim().replace(/\s+/g, ' ');
+    if (!t) return 'Understanding the request and planning a clear, safe, helpful answer.';
+    const short = t.length > 130 ? t.slice(0, 130) + '…' : t;
+    let extra = 'Planning a clear, accurate and safe answer.';
+    const l = t.toLowerCase();
+    if (/\b(wifi|wi-fi|router|network)\b/.test(l) && /\b(remove|delete|kick|block)\b/.test(l))
+      extra = 'This touches the user\'s own network — give safe, legitimate steps (router admin panel, MAC filtering, password change). No harmful content.';
+    else if (/\b(password|login|account)\b/.test(l)) extra = 'Sensitive topic — provide safe recovery and security best practices only.';
+    else if (/\b(code|bug|error|fix)\b/.test(l)) extra = 'Will answer with a fenced code block and a short explanation.';
+    else if (/\b(vs|difference|compare|better)\b/.test(l)) extra = 'Will compare both sides fairly and end with a clear recommendation.';
+    return `User said: "${short}" — ${extra}`;
   }
 
   async function authJson(url, opts = {}, fallback = null) {
@@ -137,46 +155,45 @@
     applyAppearance(prefs);
   }
 
-  /* ============================================================
-     TEXT SANITIZATION
-     - stripBridgeTags(): only removes complete <bridge-*> tags. Never touches text.
-     - sanitizeForChat(): same as stripBridgeTags + code-fence removal. Kept for bridge.
-     ============================================================ */
+  /* ═══════════ Text sanitization (bridge) ═══════════ */
   function stripBridgeTags(text) {
     if (!text) return '';
     let t = String(text);
-    // Complete tag pairs
     t = t.replace(/<bridge-designs>[\s\S]*?<\/bridge-designs>/g, '');
     t = t.replace(/<bridge-[a-z][a-z0-9-]*[^>]*>[\s\S]*?<\/bridge-[a-z][a-z0-9-]*>/g, '');
-    // Self-closing
     t = t.replace(/<bridge-[a-z][a-z0-9-]*\s+[^>]*\/>/g, '');
-    // Bridge tags that were left open (never closed) — kill just the opening tag
     t = t.replace(/<\/?bridge-[a-z][a-z0-9-]*[^>]*>/g, '');
-    // Kill lines that are JUST a dangling closing tag
     t = t.replace(/^\s*<\/(?:bridge-[a-z][a-z0-9-]*|bridge-write|bridge-append|bridge-exec|bridge-read|bridge-list|bridge-delete|bridge-move|bridge-copy|bridge-sudo|bridge-ask|bridge-plan|bridge-progress|bridge-email|bridge-http|bridge-clipboard|bridge-screenshot|bridge-git|bridge-pkgs|bridge-sysinfo|bridge-syscheck|bridge-processes|design)>\s*$/gim, '');
     t = t.replace(/^\s*<bridge-[a-z][a-z0-9-]*[^>]*>\s*$/gim, '');
-    // Collapse excessive blank lines
     t = t.replace(/\n{3,}/g, '\n\n');
     return t.trim();
   }
-
   function sanitizeForChat(text) {
     let t = stripBridgeTags(text);
-    // Remove fenced code blocks
     t = t.replace(/```[\s\S]*?```/g, '');
     t = t.replace(/~~~[\s\S]*?~~~/g, '');
-    // Remove inline `code`
     t = t.replace(/`[^`\n]+`/g, '');
-    // Remove trailing "DONE" markers
     t = t.replace(/\bDONE\b/g, '');
     t = t.replace(/\basking\(\s*\)/gi, '');
     t = t.replace(/\n{3,}/g, '\n\n');
     return t.trim();
   }
 
-  /* ============================================================
-     MARKDOWN — regular chat keeps code blocks
-     ============================================================ */
+  /* ═══════════ Syntax highlight ═══════════ */
+  const HL_ALIASES = { html: 'xml', htm: 'xml', js: 'javascript', mjs: 'javascript', ts: 'typescript', py: 'python', python3: 'python', sh: 'bash', shell: 'bash', zsh: 'bash', yml: 'yaml', jsonc: 'json', lua: 'lua', cxx: 'cpp' };
+  function highlightCode(lang, code) {
+    const raw = String(code || '').replace(/\n$/, '');
+    try {
+      if (window.hljs) {
+        const l = (HL_ALIASES[String(lang || '').toLowerCase()] || String(lang || '').toLowerCase()).trim();
+        if (l && hljs.getLanguage && hljs.getLanguage(l)) return hljs.highlight(raw, { language: l }).value;
+        return hljs.highlightAuto(raw).value;
+      }
+    } catch {}
+    return escapeHtml(raw);
+  }
+
+  /* ═══════════ Markdown (chat keeps code blocks, now highlighted) ═══════════ */
   function renderMarkdown(rawText) {
     if (!rawText) return '';
     const src = stripBridgeTags(String(rawText));
@@ -204,8 +221,8 @@
     const raw = String(code || '').replace(/\n$/, '');
     const btn = closed
       ? `<button class="code-action-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button>`
-      : `<span style="font-size:11px;color:var(--accent);opacity:.75;">writing…</span>`;
-    return `<div class="code-block"><div class="code-block-header"><span class="code-lang-label">${escapeHtml(label)}</span>${btn}</div><pre><code>${escapeHtml(raw)}</code></pre></div>`;
+      : `<span style="font-size:11px;color:var(--accent);opacity:.8;display:inline-flex;align-items:center;gap:5px;"><i class="ri-loader-4-line" style="animation:spin 1s linear infinite;"></i> writing…</span>`;
+    return `<div class="code-block"><div class="code-block-header"><span class="code-lang-label">${escapeHtml(label)}</span>${btn}</div><pre><code class="hljs">${highlightCode(cleanLang, raw)}</code></pre></div>`;
   }
   function renderText(text) {
     const lines = String(text).split('\n');
@@ -241,14 +258,82 @@
     });
   }
 
+  /* ═══════════ Thinking panel (min / max) ═══════════ */
+  function createThinkPanel(label, reasonText) {
+    const el = document.createElement('div');
+    el.className = 'think-wrap';
+    el.innerHTML = `
+      <div class="think-head">
+        ${mascotHTML('mascot-sm thinking')}
+        <span class="think-label">${escapeHtml(label || 'Thinking')}</span>
+        <span class="think-timer">0.0s</span>
+        <button class="think-btn" data-think="min" type="button" title="Minimize"><i class="ri-subtract-line"></i></button>
+        <button class="think-btn" data-think="max" type="button" title="Expand"><i class="ri-fullscreen-line"></i></button>
+      </div>
+      <div class="think-body"></div>`;
+    const body = el.querySelector('.think-body');
+    const timerEl = el.querySelector('.think-timer');
+    const labelEl = el.querySelector('.think-label');
+    const mascotEl = el.querySelector('.mascot');
+    const t0 = performance.now();
+    let done = false, writeStep = null;
+    const timer = setInterval(() => {
+      if (done) { clearInterval(timer); return; }
+      timerEl.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
+    }, 100);
+
+    function addStep(text, state = 'info') {
+      const row = document.createElement('div');
+      row.className = 'think-step ' + state;
+      const icon = state === 'run' ? '<i class="ri-loader-4-line"></i>' : state === 'ok' ? '<i class="ri-check-line"></i>' : '<i class="ri-sparkling-2-line"></i>';
+      row.innerHTML = `<span class="ts-icon">${icon}</span><span class="ts-text">${escapeHtml(text)}</span>`;
+      body.appendChild(row);
+      body.scrollTop = body.scrollHeight;
+      return row;
+    }
+    if (reasonText) {
+      const r = document.createElement('div');
+      r.className = 'think-reason';
+      r.textContent = reasonText;
+      body.appendChild(r);
+    }
+    el.querySelector('[data-think="min"]').addEventListener('click', () => { el.classList.toggle('collapsed'); });
+    el.querySelector('[data-think="max"]').addEventListener('click', () => { el.classList.toggle('expanded'); });
+
+    return {
+      el,
+      addStep,
+      setLabel(t) { labelEl.textContent = t; },
+      markWriting() {
+        if (!writeStep) { writeStep = addStep('Writing the answer…', 'run'); }
+      },
+      finish() {
+        if (done) return; done = true;
+        clearInterval(timer);
+        timerEl.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
+        if (writeStep) { writeStep.className = 'think-step ok'; writeStep.querySelector('.ts-icon').innerHTML = '<i class="ri-check-line"></i>'; }
+        else addStep('Done.', 'ok');
+        el.classList.add('done');
+        mascotEl.classList.remove('thinking');
+        mascotEl.classList.add('happy');
+        setTimeout(() => { el.classList.add('collapsed'); }, 1400);
+      },
+      destroy() { clearInterval(timer); }
+    };
+  }
+
+  /* ═══════════ Conversations ═══════════ */
   function currentConvo() { return __conversations.find(c => c.id === currentConversationId) || null; }
   function saveChats() { safeSet(LS_KEY, __conversations); }
   function loadChats() { __conversations = safeGet(LS_KEY, []); }
 
   function welcomeHTML() {
     return `<div class="welcome-screen">
-      <img src="/logo.png" alt="MiroxAI" class="welcome-logo theme-aware-logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';">
-      <div class="logo-fallback logo-fallback-lg" style="display:none;">M</div>
+      <div class="welcome-mascot">
+        ${mascotHTML('mascot-lg wave')}
+        <div class="mascot-ring"></div>
+        <div class="mascot-ring r2"></div>
+      </div>
       <h1 class="welcome-title">Hi, I'm Mirox</h1>
       <p class="welcome-sub">Luna and Gen are unlimited and free. Try asking me to search the web, generate an image, or build a project with Bridge.</p>
       <div class="suggestion-grid">
@@ -279,8 +364,8 @@
   function renderHistory() {
     const list = $('#historyList'); if (!list) return;
     if (!__conversations.length) { list.innerHTML = '<li class="history-empty">No conversations yet</li>'; return; }
-    list.innerHTML = __conversations.map(c =>
-      `<li class="history-item${c.id === currentConversationId ? ' active' : ''}" data-id="${c.id}">
+    list.innerHTML = __conversations.map((c, i) =>
+      `<li class="history-item${c.id === currentConversationId ? ' active' : ''}" data-id="${c.id}" style="animation-delay:${Math.min(i * 25, 250)}ms">
         <i class="ri-chat-3-line"></i>
         <span class="history-title">${escapeHtml(c.title || 'Chat')}</span>
         <button class="history-delete icon-btn"><i class="ri-delete-bin-line"></i></button>
@@ -288,6 +373,8 @@
     ).join('');
   }
   function scrollToBottom() { const c = $('#chatMessages'); if (c) c.scrollTop = c.scrollHeight; }
+
+  function fmtSize(n) { if (n == null) return ''; if (n < 1024) return n + ' B'; if (n < 1048576) return (n / 1024).toFixed(1) + ' KB'; return (n / 1048576).toFixed(1) + ' MB'; }
 
   function addMessageToDOM(role, content, ts, msgId, files, image) {
     const container = $('#chatMessages'); if (!container) return null;
@@ -300,8 +387,8 @@
     if (role === 'user' && files && files.length) {
       inner += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;">';
       for (const f of files) {
-        if (f.type === 'image' && f.dataUrl) inner += `<div class="attach-chip"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name || '')}</div>`;
-        else inner += `<div class="attach-chip"><i class="ri-file-line"></i>${escapeHtml(f.name || 'file')}</div>`;
+        if (f.type === 'image' && f.dataUrl) inner += `<div class="attach-chip"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name || '')}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`;
+        else inner += `<div class="attach-chip"><i class="ri-file-text-line"></i>${escapeHtml(f.name || 'file')}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`;
       }
       inner += '</div>';
     }
@@ -324,17 +411,7 @@
     wireMessageActions(el); scrollToBottom();
     return el;
   }
-  function addThinkingBubble(label) {
-    const container = $('#chatMessages'); if (!container) return null;
-    const welcome = container.querySelector('.welcome-screen'); if (welcome) welcome.remove();
-    const id = uid();
-    const el = document.createElement('div');
-    el.className = 'message ai'; el.dataset.msgId = id; el.dataset.role = 'ai';
-    const text = escapeHtml(label || 'Thinking');
-    el.innerHTML = `<div class="bubble thinking"><span class="thinking-text">${text}</span><span class="thinking-dots"><span></span><span></span><span></span></span></div><div class="message-time"></div>`;
-    container.appendChild(el); scrollToBottom();
-    return el;
-  }
+
   function wireMessageActions(el) {
     el.querySelectorAll('.action-btn').forEach(btn => {
       if (btn.__wired) return; btn.__wired = true;
@@ -408,14 +485,25 @@
       setTimeout(() => { toast('Tip: open Bridge — it can actually write the files and run your project.', 4200); }, 400);
     }
 
+    const container = $('#chatMessages');
+    const welcome = container?.querySelector('.welcome-screen'); if (welcome) welcome.remove();
+
+    /* Thinking message with expandable reasoning panel */
+    const msgEl = document.createElement('div');
+    msgEl.className = 'message ai';
+    const aiMsgId = uid();
+    msgEl.dataset.msgId = aiMsgId; msgEl.dataset.role = 'ai';
     const label = pickStatusLabel(text);
-    const el = addThinkingBubble(label);
-    if (!el) { isReplying = false; return; }
-    const bubble = el.querySelector('.bubble');
-    const timeEl = el.querySelector('.message-time');
-    const aiMsgId = el.dataset.msgId;
+    const panel = createThinkPanel(label, makeReasoning(text));
+    msgEl.appendChild(panel.el);
+    const timeEl = document.createElement('div');
+    timeEl.className = 'message-time';
+    msgEl.appendChild(timeEl);
+    container?.appendChild(msgEl);
+    scrollToBottom();
+
     activeStreamController = new AbortController();
-    let full = '', generatedImage = null, bubbleText = null, firstChunk = true;
+    let full = '', generatedImage = null, bubble = null, bubbleText = null, gotToken = false;
 
     try {
       const res = await fetch('/v1/chat/completions', {
@@ -429,7 +517,7 @@
       });
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error?.message || `HTTP ${res.status}`); }
       const reader = res.body.getReader(); const dec = new TextDecoder();
-      let buf = '';
+      let buf = '', searchStepAdded = false;
       while (true) {
         const { value, done } = await reader.read(); if (done) break;
         buf += dec.decode(value, { stream: true });
@@ -441,36 +529,69 @@
           if (!pl || pl === '[DONE]') continue;
           try {
             const o = JSON.parse(pl);
+            if (o.search && o.search.query && !searchStepAdded) {
+              searchStepAdded = true;
+              panel.addStep(`Searching the web for "${o.search.query}"…`, 'run');
+            }
+            if (o.overview && o.overview.text) {
+              panel.addStep(`Overview from ${o.overview.source || 'web'} acquired`, 'ok');
+            }
+            if (o.source && o.source.title) {
+              panel.addStep(`Source: ${o.source.title}`, 'ok');
+            }
+            if (o.search_done) {
+              panel.addStep(`Search finished — ${o.count || 0} result(s)`, 'ok');
+            }
+            if (o.p) {
+              panel.addStep(`Connected to ${o.p} · generating…`, 'ok');
+            }
             if (o.img) {
               generatedImage = o.img;
-              bubble.classList.remove('thinking');
+              panel.markWriting();
+              if (!bubble) {
+                bubble = document.createElement('div');
+                bubble.className = 'bubble';
+                msgEl.insertBefore(bubble, timeEl);
+              }
               bubble.innerHTML = `<div style="margin-bottom:10px;border-radius:14px;overflow:hidden;border:1px solid var(--border);max-width:100%;cursor:zoom-in;"><img src="${o.img}" style="display:block;width:100%;" draggable="false"></div><div class="bubble-text"></div>`;
               bubbleText = bubble.querySelector('.bubble-text');
               const img = bubble.querySelector('img'); if (img) img.onclick = () => openImageViewer(o.img);
-              firstChunk = false; scrollToBottom(); refreshUsage(); continue;
+              scrollToBottom(); refreshUsage(); continue;
             }
             if (o.d) {
               full += o.d;
-              if (firstChunk) {
-                bubble.classList.remove('thinking');
+              if (!gotToken) {
+                gotToken = true;
+                panel.markWriting();
+                if (!bubble) {
+                  bubble = document.createElement('div');
+                  bubble.className = 'bubble';
+                  msgEl.insertBefore(bubble, timeEl);
+                }
                 bubble.innerHTML = '<div class="bubble-text"></div>';
                 bubbleText = bubble.querySelector('.bubble-text');
-                firstChunk = false;
               }
               if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); wireCopyButtons(bubbleText); }
               scrollToBottom();
             }
             if (o.error) throw new Error(o.error.message || o.error);
-          } catch {}
+          } catch (e) { if (e instanceof SyntaxError) {} else throw e; }
         }
       }
+      panel.finish();
       if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); wireCopyButtons(bubbleText); }
+      wireMessageActions(msgEl);
       if (convo) convo.messages.push({ id: aiMsgId, role: 'assistant', content: full, ts: Date.now(), image: generatedImage });
       saveChats();
       if (timeEl) timeEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       refreshUsage();
     } catch (e) {
-      bubble.classList.remove('thinking');
+      panel.destroy();
+      if (!bubble) {
+        bubble = document.createElement('div');
+        bubble.className = 'bubble';
+        msgEl.insertBefore(bubble, timeEl);
+      }
       bubble.textContent = e.name === 'AbortError' ? '(stopped)' : 'Error: ' + e.message;
     } finally {
       isReplying = false; activeStreamController = null;
@@ -485,6 +606,7 @@
     updateSendButtonState();
   }
 
+  /* ═══════════ Files & paste-as-attachment ═══════════ */
   function readImageAsResizedDataUrl(file) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -509,6 +631,12 @@
       reader.onerror = () => resolve(null);
       reader.readAsDataURL(file);
     });
+  }
+  function addTextAttachment(text, name) {
+    const fname = name || ('pasted-' + new Date().toISOString().slice(11, 19).replace(/:/g, '-') + '.txt');
+    pendingFiles.push({ name: fname, size: text.length, type: 'text', content: String(text).slice(0, 60000) });
+    updatePreview(); updateSendButtonState();
+    toast(`Large text added as attachment (${fmtSize(text.length)})`, 2200);
   }
   function handleFiles(fileList) {
     if (!fileList || !fileList.length) return;
@@ -539,11 +667,21 @@
     if (!pendingFiles.length) { p.style.display = 'none'; list.innerHTML = ''; return; }
     p.style.display = 'flex';
     list.innerHTML = pendingFiles.map(f => f.type === 'image' && f.dataUrl
-      ? `<div class="attach-chip"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name)}</div>`
-      : `<div class="attach-chip"><i class="ri-file-line"></i>${escapeHtml(f.name)}</div>`
+      ? `<div class="attach-chip"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name)}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`
+      : `<div class="attach-chip"><i class="ri-file-text-line"></i>${escapeHtml(f.name)}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`
     ).join('');
   }
 
+  /* ═══════════ Toast ═══════════ */
+  function toast(msg, ms) {
+    const t = document.createElement('div');
+    t.textContent = msg;
+    t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);max-width:min(560px,calc(100vw - 32px));text-align:center;background:var(--panel);color:var(--text);border:1px solid var(--border);padding:10px 16px;border-radius:12px;font-size:13px;box-shadow:var(--shadow-lg);z-index:9999;animation:bubbleIn .3s var(--ease-spring);';
+    document.body.appendChild(t);
+    setTimeout(() => { t.style.transition = 'opacity .3s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 350); }, ms || 1800);
+  }
+
+  /* ═══════════ Image viewer & history ═══════════ */
   let __ivDataUrl = '';
   function openImageViewer(url) {
     if (!url) return;
@@ -571,7 +709,7 @@
     __imageCache = items;
     if (!items.length) { wrap.innerHTML = '<div style="padding:14px;color:var(--text-faint);font-size:13px;text-align:center;grid-column:1/-1;">No images yet.</div>'; return; }
     wrap.innerHTML = items.map((it, i) => `
-      <div class="image-history-item" data-idx="${i}">
+      <div class="image-history-item" data-idx="${i}" style="animation-delay:${Math.min(i * 30, 300)}ms">
         <img src="${it.image}" alt="" loading="lazy">
         <div class="image-history-prompt">${escapeHtml(it.prompt || '')}</div>
       </div>
@@ -587,7 +725,7 @@
     __imageCache = items;
     if (!items.length) { wrap.innerHTML = '<div class="sidebar-empty">No images yet.</div>'; return; }
     wrap.innerHTML = items.map((it, i) => `
-      <div class="sidebar-image-item" data-idx="${i}" title="${escapeHtml(it.prompt || '')}">
+      <div class="sidebar-image-item" data-idx="${i}" title="${escapeHtml(it.prompt || '')}" style="animation-delay:${Math.min(i * 30, 300)}ms">
         <img src="${it.image}" alt="" loading="lazy">
       </div>
     `).join('');
@@ -596,6 +734,7 @@
     });
   }
 
+  /* ═══════════ Model picker / credits / config ═══════════ */
   function getModelsList() { return __config?.models?.length ? __config.models : FALLBACK_MODELS; }
   function canUseModel(tier) { if (tier === 'free') return true; if (tier === 'ultimate') return true; return TIER_RANK[__tier] >= TIER_RANK[tier]; }
   function renderModelPicker() {
@@ -607,7 +746,7 @@
         <span class="model-option-label"><span class="dot"></span>${escapeHtml(m.label)}</span></div>`;
     }).join('');
     menu.querySelectorAll('.model-option').forEach(opt => {
-      opt.onclick = (e) => { e.stopPropagation(); if (opt.dataset.usable === 'false') return; selectModel(opt.dataset.modelId); };
+      opt.onclick = (e) => { e.stopPropagation(); if (opt.dataset.usable === 'false') { toast('Upgrade to use this model'); return; } selectModel(opt.dataset.modelId); };
     });
     const c = models.find(m => m.id === cur);
     if (c) { const lbl = $('#currentModelLabel'); if (lbl) lbl.textContent = c.label; }
@@ -658,11 +797,11 @@
     const name = $('#loginName')?.value.trim(); const email = $('#loginEmail')?.value.trim().toLowerCase();
     if (!name || !email) return;
     const res = await authJson('/api/auth/simple-login', { method: 'POST', body: JSON.stringify({ name, email }) }, null);
-    if (res?.ok) { setToken(res.token); closeModal('loginModal'); await refreshUsage(); }
+    if (res?.ok) { setToken(res.token); closeModal('loginModal'); await refreshUsage(); toast('Welcome, ' + name + '!'); }
     else alert(res?.error || 'Login failed');
   }
   function doLoginment() { window.location.href = '/api/auth/loginment/start'; }
-  async function doLogout() { await authJson('/api/logout', { method: 'POST' }, null); setToken(''); await refreshUsage(); closeModal('settingsModal'); }
+  async function doLogout() { await authJson('/api/logout', { method: 'POST' }, null); setToken(''); await refreshUsage(); closeModal('settingsModal'); toast('Signed out'); }
   async function loadPlans() {
     const grid = $('#plansGrid'); if (!grid) return;
     const res = await authJson('/api/subscription/plans', {}, null);
@@ -688,8 +827,8 @@
     const inp = $('#imagePrompt'); const prompt = inp?.value.trim();
     if (!prompt) return alert('Describe the image first.');
     const btn = $('#generateImageBtn'), result = $('#imageResult');
-    if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
-    if (result) result.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);">Generating…</div>';
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line" style="animation:spin 1s linear infinite;"></i> Generating…'; }
+    if (result) result.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);"><i class="ri-loader-4-line" style="animation:spin 1s linear infinite;font-size:22px;color:var(--accent);"></i><div style="margin-top:8px;font-size:13px;">Painting your image…</div></div>';
     try {
       const res = await fetch('/v1/images/generations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, aspect_ratio: '1:1' }) });
       const data = await res.json().catch(() => ({}));
@@ -699,11 +838,23 @@
     finally { if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-image-add-line"></i> Generate'; } }
   }
 
-  /* ============================================================
-     BRIDGE
-     ============================================================ */
+  /* ═══════════ Bridge ═══════════ */
   function loadBridgeLS() { const b = safeGet(BRIDGE_KEY, {}); __bridge = { ...__bridge, ...b, connected: false, baseUrl: null, env: null }; }
   function saveBridgeLS() { safeSet(BRIDGE_KEY, { name: __bridge.name, model: __bridge.model, port: __bridge.port }); }
+  function loadBridgeOpts() {
+    const o = safeGet(BRIDGE_OPTS_KEY, {});
+    if (typeof o.autoRun === 'boolean') __bridgeAutoRun = o.autoRun;
+    if (typeof o.showCode === 'boolean') __bridgeShowCode = o.showCode;
+  }
+  function saveBridgeOpts() { safeSet(BRIDGE_OPTS_KEY, { autoRun: __bridgeAutoRun, showCode: __bridgeShowCode }); }
+  function loadKdeDevice() {
+    const v = safeGet(KDE_DEVICE_KEY, null);
+    if (v && v.id && v.name) __kdeCurrentDevice = v;
+  }
+  function saveKdeDevice() {
+    if (__kdeCurrentDevice) safeSet(KDE_DEVICE_KEY, __kdeCurrentDevice);
+    else try { localStorage.removeItem(KDE_DEVICE_KEY); } catch {}
+  }
 
   function renderBridgeStatus() {
     [['#bridgeStatus', '.bridge-status-dot'], ['#bwStatusPill', '.bridge-status-dot'], ['#bwStatusBox', '.bridge-status-dot']].forEach(([sel, dotSel]) => {
@@ -780,6 +931,7 @@
     });
   }
 
+  /* Sudo modal */
   function showSudoModal(command) {
     return new Promise((resolve) => {
       __sudoResolver = resolve;
@@ -807,14 +959,6 @@
   async function askSudo(command) {
     if (__sudoPassword) return { password: __sudoPassword, remember: __sudoRemember, reused: true };
     return await showSudoModal(command);
-  }
-
-  function toast(msg, ms) {
-    const t = document.createElement('div');
-    t.textContent = msg;
-    t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);max-width:min(560px,calc(100vw - 32px));text-align:center;background:var(--panel);color:var(--text);border:1px solid var(--border);padding:10px 16px;border-radius:12px;font-size:13px;box-shadow:var(--shadow-lg);z-index:9999;';
-    document.body.appendChild(t);
-    setTimeout(() => { t.style.transition = 'opacity .3s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 350); }, ms || 1800);
   }
 
   async function testBridge(port) {
@@ -881,8 +1025,16 @@
     btn.setAttribute('aria-disabled', String(!enabled));
     renderToggles();
   }
-  function openBridgeWorkspace() { $('#bridgeWorkspace')?.classList.add('open'); document.body.style.overflow = 'hidden'; setTimeout(() => { if (__bridge.connected) startBridge(); }, 50); }
-  function closeBridgeWorkspace() { $('#bridgeWorkspace')?.classList.remove('open'); document.body.style.overflow = ''; }
+  function openBridgeWorkspace() {
+    $('#bridgeWorkspace')?.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    setTimeout(() => { if (__bridge.connected) startBridge(); }, 50);
+  }
+  function closeBridgeWorkspace() {
+    $('#bridgeWorkspace')?.classList.remove('open');
+    $('#bwPanel')?.classList.remove('side-open');
+    document.body.style.overflow = '';
+  }
   function clearBridgeChat() {
     const m = $('#bridgeMessages'); if (m) m.innerHTML = '';
     bridgeConversation = []; bridgeQuestionCount = 0; bridgeProgress = 0; bridgeTurn = null;
@@ -948,10 +1100,11 @@
     const empty = $('#bridgeEmpty'); if (empty) empty.remove();
     const el = document.createElement('div'); el.className = 'bridge-msg ai';
     const text = escapeHtml(label || 'Thinking');
-    el.innerHTML = `<div class="bridge-thinking"><span>${text}</span><span class="thinking-dots"><span></span><span></span><span></span></span></div>`;
+    el.innerHTML = `<div class="bridge-thinking">${mascotHTML('mascot-xs thinking')}<span>${text}</span><span class="thinking-dots"><span></span><span></span><span></span></span></div>`;
     container.appendChild(el); scrollBridgeBottom();
     return el;
   }
+
   function addBridgeActionBubble(cmd) {
     const container = $('#bridgeMessages'); if (!container) return null;
     const el = document.createElement('div'); el.className = 'bridge-msg ai';
@@ -1047,12 +1200,11 @@
     if (text) setProgressText(text);
   }
 
-  /* ---------- Tag extraction ---------- */
+  /* ---------- Bridge tag extraction ---------- */
   function extractBridgeCommands(text) {
     const cmds = []; let m;
     const add = (type, m, extra) => cmds.push(Object.assign({ type, index: m.index }, extra));
     let re;
-    // KDE
     re = /<bridge-kde-refresh\s*\/>/g; while ((m = re.exec(text)) !== null) add('kde-refresh', m, {});
     re = /<bridge-kde-list(?:\s+available="([^"]*)")?\s*\/>/g; while ((m = re.exec(text)) !== null) add('kde-list', m, { available: m[1] === 'true' });
     re = /<bridge-kde-ping\s+device="([^"]+)"(?:\s*\/>|>([\s\S]*?)<\/bridge-kde-ping>)/g; while ((m = re.exec(text)) !== null) add('kde-ping', m, { device: m[1], message: (m[2] || '').trim() });
@@ -1065,7 +1217,6 @@
     re = /<bridge-kde-plugins\s+device="([^"]+)"\s*\/>/g; while ((m = re.exec(text)) !== null) add('kde-plugins', m, { device: m[1] });
     re = /<bridge-kde-photo\s+device="([^"]+)"(?:\s+path="([^"]*)")?\s*\/>/g; while ((m = re.exec(text)) !== null) add('kde-photo', m, { device: m[1], path: m[2] || '' });
     re = /<bridge-kde-my-id\s*\/>/g; while ((m = re.exec(text)) !== null) add('kde-myid', m, {});
-    // Core
     re = /<bridge-sudo>([\s\S]*?)<\/bridge-sudo>/g; while ((m = re.exec(text)) !== null) add('sudo', m, { command: m[1].trim() });
     re = /<bridge-exec>([\s\S]*?)<\/bridge-exec>/g; while ((m = re.exec(text)) !== null) add('exec', m, { command: m[1].trim() });
     re = /<bridge-write\s+path="([^"]+)">([\s\S]*?)<\/bridge-write>/g; while ((m = re.exec(text)) !== null) add('write', m, { path: m[1], content: m[2] });
@@ -1089,7 +1240,6 @@
   }
   function hasUnclosedWriteOrAppend(text) {
     const t = String(text || '');
-    // Count opens vs closes
     const opensW = (t.match(/<bridge-write\b/g) || []).length;
     const closesW = (t.match(/<\/bridge-write>/g) || []).length;
     const opensA = (t.match(/<bridge-append\b/g) || []).length;
@@ -1147,12 +1297,9 @@
     const t = String(text || '').trim();
     if (!t) return false;
     if (/(?:^|\n)\s*asking\(\s*\)/i.test(t)) return true;
-    // Only consider the END of the text
     const stripped = t.replace(/\bDONE\b/i, '').trim();
     if (!stripped) return false;
-    // Must end with a question mark
     if (!/\?\s*$/.test(stripped)) return false;
-    // And must not contain commands
     if (/<bridge-/.test(stripped)) return false;
     return true;
   }
@@ -1368,7 +1515,6 @@
   function cmdSignature(cmd) {
     const t = cmd.type;
     if (t === 'exec' || t === 'sudo') return t + ':' + cmd.command.trim();
-    // For write: only path + length. Different lengths = different content, so both are allowed.
     if (t === 'write') return 'write:' + cmd.path + ':' + (cmd.content || '').length;
     if (t === 'append') return 'append:' + cmd.path + ':' + (cmd.content || '').length;
     if (t === 'delete') return 'delete:' + cmd.path;
@@ -1616,7 +1762,6 @@ ${userText}`;
           break;
         }
 
-        // Designs
         const designs = extractBridgeDesigns(reply);
         if (designs && designs.length) {
           const narration0 = getNarrationText(reply.replace(/<bridge-designs>[\s\S]*?<\/bridge-designs>/g, ''));
@@ -1644,7 +1789,6 @@ ${userText}`;
         const truncatedWrite = hasUnclosedWriteOrAppend(reply);
         const lastPath = lastWriteOrAppendPath(reply);
 
-        // Free-form question pause (only if it's actually a question, no commands, no truncation)
         if (!cmdsInReply.length && !questionsInReply.length && !saidDone && !truncatedWrite && looksLikeFreeQuestion(reply)) {
           const narrationQ = getNarrationText(reply);
           if (narrationQ) addBridgeAiMsg(narrationQ);
@@ -1658,7 +1802,6 @@ ${userText}`;
           return;
         }
 
-        // Progress
         const tp = bridgeTurn.plannedFiles.size;
         const dc = bridgeTurn.writtenFiles.size;
         if (tp > 0) updateBridgeProgress(2 + Math.round((dc / tp) * 93), `Files: ${dc} / ${tp}`);
@@ -1673,7 +1816,6 @@ ${userText}`;
         bridgeConversation.push({ role: 'assistant', content: reply });
         if (bridgeConversation.length > 50) bridgeConversation = bridgeConversation.slice(-50);
 
-        // Questions
         if (questionsInReply.length > 0 && !truncatedWrite) {
           const remaining = MAX_BRIDGE_QUESTIONS - bridgeQuestionCount;
           const toAsk = questionsInReply.slice(0, Math.max(0, remaining));
@@ -1697,7 +1839,6 @@ ${userText}`;
           }
         }
 
-        // Commands
         if (cmdsInReply.length > 0) {
           const resultLines = [];
           for (let i = 0; i < cmdsInReply.length; i++) {
@@ -1724,14 +1865,12 @@ ${userText}`;
             role: 'user',
             content: [`[Bridge environment]`, `home=${env.home || '?'}`, `cwd=${env.cwd || '?'}`, `platform=${env.platform || '?'}`, `allowed_dirs=${allowed}`, ``, `[Progress] ${dc2}/${tp2 || '?'} files`, `[Results]`, resultLines.join('\n\n'), `Write inside allowed_dirs only.`, `If done, reply DONE. Otherwise next batch.`].join('\n'),
           });
-          // If the previous reply had an unclosed write, hint the model to append
           if (truncatedWrite && lastPath) {
             bridgeConversation.push({ role: 'user', content: `[System] Your previous reply was cut off mid-file (path="${lastPath}"). Continue EXACTLY where you stopped using <bridge-append path="${lastPath}">...</bridge-append>. Close the tag.` });
           }
           continue;
         }
 
-        // Truncated write without complete commands — special handling
         if (truncatedWrite) {
           if (__bridgeAutoRun && autoContinues < MAX_AUTO_CONTINUES) {
             autoContinues++;
@@ -1746,7 +1885,6 @@ ${userText}`;
           return;
         }
 
-        // DONE
         const hasPlan = bridgeTurn.plannedFiles.size > 0;
         const allFilesWritten = hasPlan && bridgeTurn.writtenFiles.size >= bridgeTurn.plannedFiles.size;
         if (saidDone && (allFilesWritten || !hasPlan)) {
@@ -1788,7 +1926,6 @@ ${userText}`;
           continue;
         }
 
-        // Auto-continue
         if (!saidDone) {
           if (__bridgeAutoRun && autoContinues < MAX_AUTO_CONTINUES) {
             autoContinues++;
@@ -1888,7 +2025,6 @@ ${userText}`;
       let html = r.content || '';
       const baseDir = targetPath.replace(/\/[^/]*$/, '');
 
-      // Inline CSS
       const linkRe = /<link\s+[^>]*href=["']([^"']+\.css[^"']*)["'][^>]*>/gi;
       const cssMatches = [...html.matchAll(linkRe)];
       for (const m of cssMatches) {
@@ -1900,7 +2036,6 @@ ${userText}`;
           if (cr && cr.ok) html = html.replace(m[0], `<style>\n${cr.content}\n</style>`);
         } catch {}
       }
-      // Inline JS
       const scriptRe = /<script\s+[^>]*src=["']([^"']+\.js[^"']*)["'][^>]*>\s*<\/script>/gi;
       const jsMatches = [...html.matchAll(scriptRe)];
       for (const m of jsMatches) {
@@ -1959,6 +2094,16 @@ ${userText}`;
     if (inp) {
       inp.addEventListener('input', () => { inp.style.height = 'auto'; inp.style.height = Math.min(inp.scrollHeight, 180) + 'px'; updateSendButtonState(); });
       inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); handleSend(); } });
+      /* Paste-as-attachment: text bigger than 1KB becomes a file chip */
+      inp.addEventListener('paste', (e) => {
+        const cd = e.clipboardData;
+        if (!cd) return;
+        const text = cd.getData('text/plain') || '';
+        if (text.length > PASTE_ATTACH_THRESHOLD) {
+          e.preventDefault();
+          addTextAttachment(text);
+        }
+      });
     }
     on('#sendBtn', 'click', handleSend);
     on('#attachBtn', 'click', () => $('#fileInput')?.click());
@@ -1972,9 +2117,9 @@ ${userText}`;
       e.preventDefault();
       forceSearchNext = !forceSearchNext;
       const btn = $('#searchModeBtn'); if (btn) btn.classList.toggle('active', forceSearchNext);
-      toast(forceSearchNext ? 'Web search enabled.' : 'Web search disabled.');
+      toast(forceSearchNext ? 'Web search enabled for next message.' : 'Web search disabled.');
       const ta = $('#messageInput');
-      if (ta) { ta.placeholder = forceSearchNext ? 'What should I search the web for?' : 'How can I help you today?'; ta.focus(); }
+      if (ta) { ta.placeholder = forceSearchNext ? 'What should I search the web for?' : 'How can I help you today? (paste big text → becomes an attachment)'; ta.focus(); }
     });
 
     on('#imageModeBtn', 'click', () => { openModal('imageModal'); renderImageHistory(); });
@@ -2007,7 +2152,7 @@ ${userText}`;
     document.addEventListener('click', (e) => { if (e.target.closest('[data-iv-close]')) closeImageViewer(); });
     on('#ivDownload', 'click', () => { if (!__ivDataUrl) return; const a = document.createElement('a'); a.href = __ivDataUrl; a.download = `mirox-${Date.now()}.png`; document.body.appendChild(a); a.click(); document.body.removeChild(a); });
 
-    // Bridge
+    /* Bridge */
     on('#bwCloseBtn', 'click', closeBridgeWorkspace);
     on('#bwNewBtn', 'click', clearBridgeChat);
     on('#bwDownloadBtn', 'click', downloadBridgeClient);
@@ -2015,6 +2160,7 @@ ${userText}`;
     on('#bwConnectBtn', 'click', startBridge);
     on('#bwDisconnectBtn', 'click', stopBridge);
     on('#bwSudoForgetBtn', 'click', forgetSudo);
+    on('#bwSideToggle', 'click', () => { $('#bwPanel')?.classList.toggle('side-open'); });
 
     on('#bwToggleAutoRun', 'click', () => {
       __bridgeAutoRun = !__bridgeAutoRun;
@@ -2091,7 +2237,7 @@ ${userText}`;
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); $('#messageInput')?.focus(); }
     });
-    window.addEventListener('resize', () => { if (window.innerWidth > 860) closeSidebar(); });
+    window.addEventListener('resize', () => { if (window.innerWidth > 860) { closeSidebar(); $('#bwPanel')?.classList.remove('side-open'); } });
   }
 
   async function init() {
