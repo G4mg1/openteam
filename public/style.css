@@ -722,3 +722,60 @@ code { font-family: 'SF Mono', 'Cascadia Code', Consolas, monospace; }
 .message.ai .bubble-text .md-table th,.message.ai .bubble-text .md-table td{padding:9px 11px;border-bottom:1px solid var(--border);border-right:1px solid var(--border);vertical-align:top}
 .message.ai .bubble-text .md-table tr:last-child td{border-bottom:0}.message.ai .bubble-text .md-table th:last-child,.message.ai .bubble-text .md-table td:last-child{border-right:0}
 .message.ai .bubble-text blockquote{margin:10px 0;padding:8px 12px;border-left:3px solid var(--accent);background:var(--panel-2);border-radius:0 8px 8px 0;color:var(--text-muted)}
+
+
+/* ═══════════ MINIMAL KIMI-INSPIRED FINISH ═══════════
+   Calm surfaces, restrained cool gradients, no decorative orbit or emoji badges. */
+:root {
+  --blob-start: #f8fdff;
+  --blob-mid: #9edcf7;
+  --blob-end: #9c9aff;
+  --ui-gradient: linear-gradient(115deg, #8bdcf2 0%, #a6a5ff 55%, #d5b8ff 100%);
+  --accent: #7777e8;
+  --accent-hover: #6666d5;
+  --accent-soft: rgba(119,119,232,.09);
+  --accent-glow: rgba(119,119,232,.12);
+}
+:root[data-mode="dark"] {
+  --blob-start: #c9f3ff;
+  --blob-mid: #6daeea;
+  --blob-end: #9b87f5;
+  --ui-gradient: linear-gradient(115deg, #68cde8 0%, #8889ef 55%, #b28af0 100%);
+  --accent: #9b9af5;
+  --accent-hover: #b3b1ff;
+  --accent-soft: rgba(155,154,245,.12);
+  --accent-glow: rgba(155,154,245,.16);
+}
+:root[data-theme="sage"], :root[data-theme="sky"], :root[data-theme="plum"], :root[data-theme="amber"] {
+  --blob-start: #f8fdff; --blob-mid: #9edcf7; --blob-end: #9c9aff;
+}
+.bg-glow .glow { opacity: .18; filter: blur(105px); animation-duration: 30s; }
+:root[data-mode="dark"] .bg-glow .glow { opacity: .12; }
+.mascot {
+  filter: none !important;
+  transform-origin: 50% 55%;
+  transition: transform .28s ease, opacity .28s ease;
+}
+.mascot .blob-svg { display:block; width:100%; height:100%; overflow:visible; }
+.mascot .blob-svg > g[opacity="1"] { transform-box: fill-box; transform-origin:center; animation: minimalBlobFloat 5.5s ease-in-out infinite; }
+.mascot .blob-orbit, .mascot .blob-sparkles, .mascot .prop,
+.mascot .blob-glasses, .mascot .blob-face, .mascot .blob-shadow { display:none !important; }
+.mascot.m-thinking .blob-svg > g[opacity="1"],
+.mascot.m-reasoning .blob-svg > g[opacity="1"],
+.mascot.m-searching .blob-svg > g[opacity="1"],
+.mascot.m-coding .blob-svg > g[opacity="1"] { animation-duration: 2.8s; }
+.mascot.m-celebrate .blob-svg > g[opacity="1"] { animation: minimalBlobPop .55s ease-in-out 2; }
+.mascot.m-error .blob-svg > g[opacity="1"] { animation: minimalBlobNudge .3s ease-in-out 2; }
+@keyframes minimalBlobFloat { 0%,100% { transform: translateY(0) rotate(-1deg) scale(1); } 50% { transform: translateY(-3px) rotate(1deg) scale(1.018); } }
+@keyframes minimalBlobPop { 0%,100% { transform: scale(1); } 50% { transform: scale(1.08) translateY(-3px); } }
+@keyframes minimalBlobNudge { 0%,100% { transform: translateX(0); } 35% { transform: translateX(-2px); } 70% { transform: translateX(2px); } }
+/* Keep the welcome screen quiet; the blob itself is the focal point. */
+.mascot-ring { display:none !important; }
+/* A soft gradient on primary actions, with no neon glow. */
+button.primary, .btn-primary, .send-btn, .new-chat-btn:hover {
+  background-image: var(--ui-gradient);
+  box-shadow: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mascot .blob-svg > g[opacity="1"] { animation:none !important; }
+}
