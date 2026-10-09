@@ -856,49 +856,20 @@ code { font-family: 'SF Mono', 'Cascadia Code', Consolas, monospace; }
 }
 
 
-/* MiroxAI refinement pack: rich responses, accessible controls, expressive mascot */
-.md-table-wrap{max-width:100%;overflow:auto;margin:1rem 0;border:1px solid var(--border);border-radius:12px;background:var(--panel)}
-.md-table{width:100%;border-collapse:separate;border-spacing:0;font-size:.94em;line-height:1.55}
-.md-table th,.md-table td{padding:10px 13px;text-align:left;border-bottom:1px solid var(--border);vertical-align:top;min-width:100px}
-.md-table th{font-weight:700;background:var(--panel-2);color:var(--text)}
-.md-table tr:last-child td{border-bottom:0}
-.md-table tbody tr:nth-child(even){background:color-mix(in srgb,var(--panel-2) 45%,transparent)}
-.bubble-text blockquote{margin:.7rem 0;padding:.65rem .9rem;border-left:3px solid var(--accent);background:var(--panel-2);border-radius:0 9px 9px 0;color:var(--text-muted)}
-.continue-answer-btn{display:inline-flex;align-items:center;gap:7px;margin-top:12px;padding:8px 13px;border:1px solid var(--border-strong);border-radius:999px;background:var(--panel);color:var(--text);font:600 13px/1.2 inherit;cursor:pointer;transition:transform .18s ease,background .18s ease,border-color .18s ease}
-.continue-answer-btn:hover{transform:translateY(-1px);background:var(--panel-2);border-color:var(--accent)}
-.continue-answer-btn i{font-size:16px}
-.mascot{transform-origin:50% 65%;transition:filter .25s ease,transform .25s ease}
-.mascot .prop{display:flex;align-items:center;justify-content:center;min-width:1.1em;min-height:1.1em;filter:drop-shadow(0 2px 2px rgba(0,0,0,.08))}
-.mascot.m-studying,.mascot.m-glasses,.mascot.m-bookworm,.mascot.m-reading{animation:mascotStudy 2.6s ease-in-out infinite}
-.mascot.m-searching,.mascot.m-researching,.mascot.m-web{animation:mascotSearch 1.7s ease-in-out infinite}
-.mascot.m-reasoning,.mascot.m-deepwork,.mascot.m-thinking,.mascot.m-focus{animation:mascotThink 2.1s ease-in-out infinite}
-.mascot.m-celebrate,.mascot.m-excited,.mascot.m-proud{animation:mascotCelebrate .75s ease-in-out 2}
-.mascot.m-coding,.mascot.m-typing,.mascot.m-debugging,.mascot.m-building{animation:mascotWork 1.15s ease-in-out infinite}
-.mascot.m-sleepy,.mascot.m-sleepy2{animation:mascotSleep 3s ease-in-out infinite}
-@keyframes mascotStudy{0%,100%{transform:rotate(-2deg) translateY(0)}50%{transform:rotate(2deg) translateY(-3px)}}
-@keyframes mascotSearch{0%,100%{transform:translateX(-2px) rotate(-2deg)}50%{transform:translateX(2px) rotate(2deg)}}
-@keyframes mascotThink{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-3px) rotate(1deg)}}
-@keyframes mascotCelebrate{0%,100%{transform:scale(1) rotate(0)}35%{transform:scale(1.08) rotate(-5deg)}70%{transform:scale(1.04) rotate(5deg)}}
-@keyframes mascotWork{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px) rotate(1deg)}}
-@keyframes mascotSleep{0%,100%{transform:rotate(0);opacity:1}50%{transform:rotate(3deg);opacity:.85}}
-@media(prefers-reduced-motion:reduce){.mascot,.continue-answer-btn{animation:none!important;transition:none!important}}
+/* MiroxAI chat reliability + token/scroll controls */
+.token-usage{display:flex;align-items:center;gap:6px;white-space:nowrap;font-size:11px;color:var(--text-muted);padding:6px 9px;border:1px solid var(--border);border-radius:999px;background:var(--panel);}
+.token-usage i{font-size:14px}.token-usage.token-near-limit{color:#a16207;border-color:rgba(217,119,6,.35)}.token-usage.token-limit{color:#b91c1c;border-color:rgba(220,38,38,.45)}
+.scroll-bottom-btn{position:absolute;z-index:25;left:50%;bottom:142px;transform:translate(-50%,8px);display:flex;align-items:center;gap:7px;padding:9px 14px;border:1px solid var(--border);border-radius:999px;background:var(--panel);color:var(--text);box-shadow:var(--shadow-lg);opacity:0;pointer-events:none;transition:opacity .18s,transform .18s;font:inherit;font-size:12px;cursor:pointer}
+.scroll-bottom-btn.visible{opacity:1;pointer-events:auto;transform:translate(-50%,0)}.scroll-bottom-btn i{font-size:16px}
+.continue-response-btn{display:inline-flex;align-items:center;gap:7px;margin-top:14px;padding:8px 13px;border:1px solid var(--border);border-radius:999px;background:var(--panel-2);color:var(--text);font:inherit;font-size:12px;cursor:pointer;transition:background .18s,transform .18s}
+.continue-response-btn:hover{background:var(--panel-3);transform:translateY(-1px)}.continue-response-btn:disabled{opacity:.65;cursor:wait;transform:none}.continue-response-btn i{font-size:16px}
+.token-limit-note{margin-top:14px;padding:10px 12px;border-radius:10px;background:var(--panel-2);border:1px solid var(--border);color:var(--text-muted);font-size:12px;line-height:1.5}
+.message.ai .bubble-text{overflow-wrap:anywhere}.message.ai .bubble-text table{display:block;max-width:100%;overflow-x:auto;border-collapse:collapse}.message.ai .bubble-text th,.message.ai .bubble-text td{padding:8px 10px;border:1px solid var(--border);text-align:left}
+@media(max-width:860px){.token-usage{display:none}.scroll-bottom-btn{bottom:128px}}
 
-
-/* Refined layout surfaces and interactions */
-.sidebar{backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-right-color:color-mix(in srgb,var(--border) 75%,transparent)}
-.chat-header,.topbar{backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
-.composer{border:1px solid color-mix(in srgb,var(--border-strong) 75%,transparent);box-shadow:0 12px 36px rgba(25,20,12,.07);transition:border-color .2s ease,box-shadow .2s ease,transform .2s ease}
-.composer:focus-within{border-color:color-mix(in srgb,var(--accent) 60%,var(--border));box-shadow:0 14px 40px rgba(25,20,12,.10)}
-.message.ai .bubble{box-shadow:0 2px 12px rgba(20,18,12,.025)}
-.suggestion-card,.model-option,.sidebar-item,.action-btn,.attach-chip{transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease,background .18s ease}
-.suggestion-card:hover,.model-option:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(20,18,12,.07)}
-.message-actions .action-btn:hover{transform:translateY(-1px)}
-.bubble-text p{line-height:1.72}
-.bubble-text h1,.bubble-text h2,.bubble-text h3,.bubble-text h4{line-height:1.3;letter-spacing:-.025em;margin:1.05em 0 .45em}
-.bubble-text a{color:var(--accent);text-decoration:underline;text-underline-offset:3px;overflow-wrap:anywhere}
-.bubble-text ul,.bubble-text ol{padding-left:1.4rem}
-.bubble-text code:not(pre code){border:1px solid var(--border);border-radius:5px;padding:.1em .35em;background:var(--panel-2)}
-@media(max-width:680px){.md-table th,.md-table td{padding:8px 10px;min-width:90px}.continue-answer-btn{min-height:36px}}
-
-.assistant-mascot-row{display:flex;align-items:center;gap:8px;margin:0 0 8px;color:var(--text-muted);font-size:12px;font-weight:650;letter-spacing:.01em}
-.assistant-mascot-row .mascot{flex:0 0 auto;transform:scale(.72);transform-origin:left center;margin-right:-6px}
+.md-table-wrap{max-width:100%;overflow-x:auto;margin:12px 0;border:1px solid var(--border);border-radius:10px}
+.message.ai .bubble-text .md-table{width:100%;min-width:300px;border-collapse:collapse;font-size:.92em;margin:0}
+.message.ai .bubble-text .md-table th{font-weight:650;background:var(--panel-2)}
+.message.ai .bubble-text .md-table th,.message.ai .bubble-text .md-table td{padding:9px 11px;border-bottom:1px solid var(--border);border-right:1px solid var(--border);vertical-align:top}
+.message.ai .bubble-text .md-table tr:last-child td{border-bottom:0}.message.ai .bubble-text .md-table th:last-child,.message.ai .bubble-text .md-table td:last-child{border-right:0}
+.message.ai .bubble-text blockquote{margin:10px 0;padding:8px 12px;border-left:3px solid var(--accent);background:var(--panel-2);border-radius:0 8px 8px 0;color:var(--text-muted)}
