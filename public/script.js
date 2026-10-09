@@ -82,8 +82,37 @@
     r.setProperty('--look-y', y.toFixed(1) + 'px');
   }, { passive: true });
 
-  function mascotHTML(cls) {
-    return `<div class="mascot ${cls || ''}"><span class="eye left"></span><span class="eye right"></span><span class="mouth"></span></div>`;
+  /* ═══════════ Mascot emotes (v24) ═══════════ */
+  const MASCOT_EMOTES = ['idle','thinking','happy','searching','reading','learning','reasoning','typing','coding','sad','surprised','sleepy','love','laugh','focused','error','celebrate','confused','proud','curious'];
+  function mascotHTML(cls, emote) {
+    const e = MASCOT_EMOTES.includes(emote) ? emote : (/thinking/.test(cls || '') ? 'thinking' : 'idle');
+    return `<div class="mascot ${cls || ''} emote-${e}" data-emote="${e}"><span class="eye left"></span><span class="eye right"></span><span class="mouth"></span><span class="acc acc-glasses"></span><span class="acc acc-book"></span><span class="acc acc-lens"></span><span class="acc acc-bulb"></span><span class="acc acc-pen"></span><span class="acc acc-spark"></span><span class="acc acc-dots"></span><span class="acc acc-heart"></span><span class="acc acc-tear"></span><span class="acc acc-bang"></span><span class="acc acc-q">?</span></div>`;
+  }
+  function setMascotEmote(el, name) {
+    if (!el) return;
+    const e = MASCOT_EMOTES.includes(name) ? name : 'idle';
+    el.className = el.className.replace(/\bemote-[a-z]+\b/g, '').trim() + ' emote-' + e;
+    el.dataset.emote = e;
+  }
+  function emoteForLabel(label) {
+    const l = String(label || '');
+    if (/search/i.test(l)) return 'searching';
+    if (/image|paint/i.test(l)) return 'curious';
+    if (/build|design|refactor|test/i.test(l)) return 'coding';
+    if (/analy|problem|safe|check/i.test(l)) return 'focused';
+    if (/plan/i.test(l)) return 'reasoning';
+    if (/scan|ping|send/i.test(l)) return 'learning';
+    return 'thinking';
+  }
+  function emoteForText(t) {
+    const s = String(t || '').toLowerCase();
+    if (/writing/.test(s)) return 'typing';
+    if (/overview|source/.test(s)) return 'reading';
+    if (/finished|done/.test(s)) return 'reasoning';
+    if (/search/.test(s)) return 'searching';
+    if (/connected|generat/.test(s)) return 'learning';
+    if (/error|fail|wrong/.test(s)) return 'error';
+    return null;
   }
 
   /* ═══════════ Status labels ═══════════ */
@@ -159,6 +188,8 @@
   function stripBridgeTags(text) {
     if (!text) return '';
     let t = String(text);
+    // a block still streaming (opening tag, no close yet) is hidden entirely
+    t = t.replace(/<bridge-([a-z][a-z0-9-]*)\b[^>]*(?<!\/)>(?![\s\S]*<\/bridge-\1>)[\s\S]*$/, '');
     t = t.replace(/<bridge-designs>[\s\S]*?<\/bridge-designs>/g, '');
     t = t.replace(/<bridge-[a-z][a-z0-9-]*[^>]*>[\s\S]*?<\/bridge-[a-z][a-z0-9-]*>/g, '');
     t = t.replace(/<bridge-[a-z][a-z0-9-]*\s+[^>]*\/>/g, '');
@@ -264,7 +295,7 @@
     el.className = 'think-wrap';
     el.innerHTML = `
       <div class="think-head">
-        ${mascotHTML('mascot-sm thinking')}
+        ${mascotHTML('mascot-sm thinking', emoteForLabel(label))}
         <span class="think-label">${escapeHtml(label || 'Thinking')}</span>
         <span class="think-timer">0.0s</span>
         <button class="think-btn" data-think="min" type="button" title="Minimize"><i class="ri-subtract-line"></i></button>
@@ -275,6 +306,7 @@
     const timerEl = el.querySelector('.think-timer');
     const labelEl = el.querySelector('.think-label');
     const mascotEl = el.querySelector('.mascot');
+    const setPhase = (t) => { const e = emoteForText(t); if (e) setMascotEmote(mascotEl, e); };
     const t0 = performance.now();
     let done = false, writeStep = null;
     const timer = setInterval(() => {
@@ -283,6 +315,7 @@
     }, 100);
 
     function addStep(text, state = 'info') {
+      setPhase(text);
       const row = document.createElement('div');
       row.className = 'think-step ' + state;
       const icon = state === 'run' ? '<i class="ri-loader-4-line"></i>' : state === 'ok' ? '<i class="ri-check-line"></i>' : '<i class="ri-sparkling-2-line"></i>';
@@ -315,16 +348,115 @@
         else addStep('Done.', 'ok');
         el.classList.add('done');
         mascotEl.classList.remove('thinking');
-        mascotEl.classList.add('happy');
+        setMascotEmote(mascotEl, 'celebrate');
+        setTimeout(() => setMascotEmote(mascotEl, 'happy'), 1200);
         setTimeout(() => { el.classList.add('collapsed'); }, 1400);
       },
-      destroy() { clearInterval(timer); }
+      destroy() { clearInterval(timer); setMascotEmote(mascotEl, 'sad'); }
     };
   }
 
   /* ═══════════ Conversations ═══════════ */
   function currentConvo() { return __conversations.find(c => c.id === currentConversationId) || null; }
-  function saveChats() { safeSet(LS_KEY, __conversations); }
+  /* ═══════════ Media store (IndexedDB) ═══════════
+     Images are base64 data URLs (~1 MB). localStorage holds ~5 MB in total, so big
+     media goes to IndexedDB and localStorage keeps only a key. */
+  const IMG_DB = 'miroxai-media', IMG_STORE = 'media';
+  function idbOpen() {
+    return new Promise((res, rej) => {
+      const r = indexedDB.open(IMG_DB, 1);
+      r.onupgradeneeded = () => r.result.createObjectStore(IMG_STORE);
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+  }
+  async function mediaPut(key, val) {
+    try {
+      const db = await idbOpen();
+      return await new Promise((res, rej) => {
+        const tx = db.transaction(IMG_STORE, 'readwrite');
+        tx.objectStore(IMG_STORE).put(val, key);
+        tx.oncomplete = () => res(true); tx.onerror = () => rej(tx.error);
+      });
+    } catch { return false; }
+  }
+  async function mediaGet(key) {
+    try {
+      const db = await idbOpen();
+      return await new Promise((res, rej) => {
+        const q = db.transaction(IMG_STORE).objectStore(IMG_STORE).get(key);
+        q.onsuccess = () => res(q.result || null); q.onerror = () => rej(q.error);
+      });
+    } catch { return null; }
+  }
+  const BIG = 20000;
+  function saveChats() {
+    for (const c of __conversations) {
+      for (const m of c.messages || []) {
+        if (!m.id) m.id = uid();
+        if (typeof m.image === 'string' && m.image.length > BIG) {
+          m.imageKey = 'img:' + m.id; mediaPut(m.imageKey, m.image); m.image = null;
+        }
+        if (Array.isArray(m.files)) {
+          m.files.forEach((f, i) => {
+            if (f && typeof f.dataUrl === 'string' && f.dataUrl.length > BIG) {
+              f.dataKey = 'file:' + m.id + ':' + i; mediaPut(f.dataKey, f.dataUrl); f.dataUrl = null;
+            }
+          });
+        }
+      }
+    }
+    safeSet(LS_KEY, __conversations);
+  }
+  /* Put stored media back into an already-rendered conversation */
+  async function hydrateMedia(convo) {
+    for (const m of convo.messages || []) {
+      const el = document.querySelector('#chatMessages [data-msg-id="' + m.id + '"]');
+      if (!el) continue;
+      if (m.imageKey && !el.querySelector('.gen-image')) {
+        const url = await mediaGet(m.imageKey);
+        if (url) {
+          const wrap = document.createElement('div');
+          wrap.className = 'gen-image';
+          wrap.innerHTML = '<img src="' + url + '" alt="" draggable="false">';
+          wrap.querySelector('img').onclick = () => openImageViewer(url);
+          el.querySelector('.bubble')?.insertBefore(wrap, el.querySelector('.bubble').firstChild);
+        }
+      }
+      if (Array.isArray(m.files)) {
+        const chips = el.querySelectorAll('.attach-chip');
+        for (let i = 0; i < m.files.length; i++) {
+          const f = m.files[i];
+          if (f && f.dataKey && f.type === 'image') {
+            const url = await mediaGet(f.dataKey);
+            const img = chips[i]?.querySelector('img');
+            if (url && img) img.src = url;
+          }
+        }
+      }
+    }
+  }
+  function fileIconHTML(name) {
+    const ext = String(name || '').split('.').pop().toLowerCase();
+    const map = {
+      pdf: 'ri-file-pdf-2-line', doc: 'ri-file-word-2-line', docx: 'ri-file-word-2-line',
+      xls: 'ri-file-excel-2-line', xlsx: 'ri-file-excel-2-line', csv: 'ri-file-excel-2-line',
+      ppt: 'ri-file-ppt-2-line', pptx: 'ri-file-ppt-2-line',
+      js: 'ri-javascript-line', ts: 'ri-javascript-line', py: 'ri-code-s-slash-line', html: 'ri-html5-line',
+      css: 'ri-css3-line', json: 'ri-braces-line', java: 'ri-code-s-slash-line', c: 'ri-code-s-slash-line',
+      cpp: 'ri-code-s-slash-line', go: 'ri-code-s-slash-line', rs: 'ri-code-s-slash-line', sh: 'ri-terminal-box-line',
+      zip: 'ri-file-zip-line', rar: 'ri-file-zip-line', '7z': 'ri-file-zip-line',
+      png: 'ri-image-line', jpg: 'ri-image-line', jpeg: 'ri-image-line', gif: 'ri-image-line', webp: 'ri-image-line',
+      md: 'ri-markdown-line', txt: 'ri-file-text-line'
+    };
+    return '<i class="' + (map[ext] || 'ri-file-line') + ' attach-icon"></i>';
+  }
+  function flashSearchHit() {
+    const q = (__chatSearch || '').trim().toLowerCase();
+    if (!q) return;
+    const hit = $$('#chatMessages .message').find(m => (m.textContent || '').toLowerCase().includes(q));
+    if (hit) { hit.scrollIntoView({ behavior: 'smooth', block: 'center' }); hit.classList.add('flash-hit'); setTimeout(() => hit.classList.remove('flash-hit'), 1800); }
+  }
   function loadChats() { __conversations = safeGet(LS_KEY, []); }
 
   function welcomeHTML() {
@@ -361,8 +493,37 @@
       };
     });
   }
+  let __chatSearch = '';
+  function escHL(text, q) {
+    const s = String(text || '');
+    const i = q ? s.toLowerCase().indexOf(q) : -1;
+    if (i < 0) return escapeHtml(s);
+    return escapeHtml(s.slice(0, i)) + '<mark>' + escapeHtml(s.slice(i, i + q.length)) + '</mark>' + escapeHtml(s.slice(i + q.length));
+  }
+  function snippetAround(text, q) {
+    const s = String(text || ''); const i = s.toLowerCase().indexOf(q);
+    if (i < 0) return '';
+    const start = Math.max(0, i - 30);
+    return (start ? '…' : '') + s.slice(start, i + q.length + 60);
+  }
   function renderHistory() {
     const list = $('#historyList'); if (!list) return;
+    const q = (__chatSearch || '').trim().toLowerCase();
+    if (q) {
+      const hits = [];
+      for (const c of __conversations) {
+        const msg = (c.messages || []).find(m => String(m.content || '').toLowerCase().includes(q));
+        const titleHit = String(c.title || '').toLowerCase().includes(q);
+        if (msg || titleHit) hits.push({ c, snippet: msg ? snippetAround(msg.content, q) : '' });
+      }
+      list.innerHTML = hits.length ? hits.map(({ c, snippet }) =>
+        `<li class="history-item search-hit${c.id === currentConversationId ? ' active' : ''}" data-id="${c.id}">
+          <i class="ri-chat-search-line"></i>
+          <span class="history-title">${escHL(c.title || 'Chat', q)}</span>
+          ${snippet ? `<span class="hit-snippet">${escHL(snippet, q)}</span>` : ''}
+        </li>`).join('') : '<li class="history-empty">No matches</li>';
+      return;
+    }
     if (!__conversations.length) { list.innerHTML = '<li class="history-empty">No conversations yet</li>'; return; }
     list.innerHTML = __conversations.map((c, i) =>
       `<li class="history-item${c.id === currentConversationId ? ' active' : ''}" data-id="${c.id}" style="animation-delay:${Math.min(i * 25, 250)}ms">
@@ -372,11 +533,11 @@
       </li>`
     ).join('');
   }
-  function scrollToBottom() { const c = $('#chatMessages'); if (c) c.scrollTop = c.scrollHeight; }
+    function scrollToBottom() { const c = $('#chatMessages'); if (c) c.scrollTop = c.scrollHeight; }
 
   function fmtSize(n) { if (n == null) return ''; if (n < 1024) return n + ' B'; if (n < 1048576) return (n / 1024).toFixed(1) + ' KB'; return (n / 1048576).toFixed(1) + ' MB'; }
 
-  function addMessageToDOM(role, content, ts, msgId, files, image) {
+  function addMessageToDOM(role, content, ts, msgId, files, image, thinkLabel) {
     const container = $('#chatMessages'); if (!container) return null;
     const welcome = container.querySelector('.welcome-screen'); if (welcome) welcome.remove();
     const id = msgId || uid();
@@ -387,27 +548,28 @@
     if (role === 'user' && files && files.length) {
       inner += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;">';
       for (const f of files) {
-        if (f.type === 'image' && f.dataUrl) inner += `<div class="attach-chip"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name || '')}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`;
-        else inner += `<div class="attach-chip"><i class="ri-file-text-line"></i>${escapeHtml(f.name || 'file')}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`;
+        if (f.type === 'image' && (f.dataUrl || f.dataKey)) inner += `<div class="attach-chip"><img src="${f.dataUrl || ''}" alt="">${escapeHtml(f.name || '')}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`;
+        else inner += `<div class="attach-chip">${fileIconHTML(f.name)}${escapeHtml(f.name || 'file')}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`;
       }
       inner += '</div>';
     }
-    if (role === 'ai' && image) {
+    if (role !== 'user' && image) {
       inner += `<div style="margin-bottom:10px;border-radius:14px;overflow:hidden;border:1px solid var(--border);max-width:100%;cursor:zoom-in;"><img src="${image}" style="display:block;width:100%;" draggable="false"></div>`;
     }
     inner += '<div class="bubble-text"></div>';
     el.innerHTML = `<div class="bubble">${inner}</div>
       <div class="message-actions">
         <button class="action-btn" data-action="copy"><i class="ri-file-copy-line"></i></button>
-        ${role === 'ai' ? '<button class="action-btn" data-action="retry"><i class="ri-refresh-line"></i></button>' : ''}
+        ${role !== 'user' ? '<button class="action-btn" data-action="retry"><i class="ri-refresh-line"></i></button>' : ''}
       </div>
       <div class="message-time">${ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</div>`;
     container.appendChild(el);
+    if (thinkLabel && role !== 'user') { const p = createThinkPanel(thinkLabel, ''); p.finish(); el.insertBefore(p.el, el.firstChild); }
     const bt = el.querySelector('.bubble-text');
     const bubble = el.querySelector('.bubble');
     if (role === 'user') { bt.textContent = content || ''; if (!content) bt.style.display = 'none'; }
     else { bubble.dataset.rawText = content || ''; if (content) { bt.innerHTML = renderMarkdown(content); wireCopyButtons(bt); } }
-    if (role === 'ai' && image) { const img = el.querySelector('img'); if (img) img.onclick = () => openImageViewer(image); }
+    if (role !== 'user' && image) { const img = el.querySelector('img'); if (img) img.onclick = () => openImageViewer(image); }
     wireMessageActions(el); scrollToBottom();
     return el;
   }
@@ -581,7 +743,7 @@
       panel.finish();
       if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); wireCopyButtons(bubbleText); }
       wireMessageActions(msgEl);
-      if (convo) convo.messages.push({ id: aiMsgId, role: 'assistant', content: full, ts: Date.now(), image: generatedImage });
+      if (convo) convo.messages.push({ id: aiMsgId, role: 'assistant', content: full, ts: Date.now(), image: generatedImage, thinkLabel: label });
       saveChats();
       if (timeEl) timeEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       refreshUsage();
@@ -633,6 +795,7 @@
     });
   }
   function addTextAttachment(text, name) {
+    if (pendingFiles.some(f => f.type === 'text' && f.content === String(text).slice(0, 60000))) { toast('Attachment already added', 2000); return; }
     const fname = name || ('pasted-' + new Date().toISOString().slice(11, 19).replace(/:/g, '-') + '.txt');
     pendingFiles.push({ name: fname, size: text.length, type: 'text', content: String(text).slice(0, 60000) });
     updatePreview(); updateSendButtonState();
@@ -640,7 +803,14 @@
   }
   function handleFiles(fileList) {
     if (!fileList || !fileList.length) return;
-    const arr = Array.from(fileList);
+    const seen = new Set(); let dupes = 0;
+    const arr = Array.from(fileList).filter(f => {
+      const key = f.name + '|' + f.size;
+      if (seen.has(key) || pendingFiles.some(p => p.name === f.name && p.size === f.size)) { dupes++; return false; }
+      seen.add(key); return true;
+    });
+    if (dupes) toast('Attachment already added', 2000);
+    if (!arr.length) return;
     let done = 0; const newFiles = [];
     arr.forEach((f, idx) => {
       const isImg = (f.type || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(f.name);
@@ -668,7 +838,7 @@
     p.style.display = 'flex';
     list.innerHTML = pendingFiles.map(f => f.type === 'image' && f.dataUrl
       ? `<div class="attach-chip"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name)}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`
-      : `<div class="attach-chip"><i class="ri-file-text-line"></i>${escapeHtml(f.name)}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`
+      : `<div class="attach-chip">${fileIconHTML(f.name)}${escapeHtml(f.name)}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`
     ).join('');
   }
 
@@ -2085,8 +2255,9 @@ ${userText}`;
       currentConversationId = id;
       const t = $('#chatTitle'); if (t) t.textContent = convo.title || 'Chat';
       const c = $('#chatMessages'); if (c) c.innerHTML = '';
-      for (const m of convo.messages || []) addMessageToDOM(m.role, m.content, m.ts, m.id, m.files || [], m.image);
-      renderHistory(); scrollToBottom();
+      for (const m of convo.messages || []) addMessageToDOM(m.role, m.content, m.ts, m.id, m.files || [], m.image || null, m.thinkLabel || '');
+      hydrateMedia(convo);
+      renderHistory(); scrollToBottom(); flashSearchHit();
       if (window.innerWidth <= 860) closeSidebar();
     });
 
@@ -2110,6 +2281,7 @@ ${userText}`;
     on('#fileInput', 'change', (e) => { handleFiles(e.target.files); e.target.value = ''; });
     on('#removeAttachmentBtn', 'click', () => { pendingFiles = []; updatePreview(); updateSendButtonState(); });
     on('#stopBtn', 'click', stopStreaming);
+    on('#chatSearch', 'input', (e) => { __chatSearch = e.target.value || ''; renderHistory(); });
     on('#modelPickerBtn', 'click', (e) => { e.stopPropagation(); const menu = $('#modelPickerMenu'); if (menu?.classList.contains('open')) closeModelPicker(); else openModelPicker(); });
     document.addEventListener('click', (e) => { if (!e.target.closest('#modelPicker')) closeModelPicker(); });
 
