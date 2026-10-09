@@ -48,6 +48,9 @@
 
   let __config = null, __user = null, __tier = 'free', __model = 'mirox-luna-1.2';
   let currentConversationId = null, isReplying = false;
+  let continuationBusy = false, streamRenderPending = false, streamRenderAt = 0, userIsAtBottom = true;
+  const FREE_CONVO_TOKEN_LIMIT = 10000;
+  let autoScrollEnabled = true;
   let __conversations = [], pendingFiles = [], activeStreamController = null, __usage = null;
   let __bridge = { name: 'My Laptop', model: 'mirox-luna-1.2', port: 8765, connected: false, baseUrl: null, env: null };
   let bridgeConversation = [], bridgeRunning = false, bridgeQuestionCount = 0, bridgeProgress = 0;
@@ -131,12 +134,8 @@
 
   const MASCOT_MOODS = {
     idle: '', happy: '✨', love: '❤', wink: '😉', sad: '💧', surprised: '!', sleepy: 'z',
-    thinking: '…', reasoning: '∴', searching: '⌕', reading: '📖', learning: '💡',
+    thinking: '…', reasoning: '?', searching: '⌕', reading: '≡', learning: '💡',
     coding: '</>', celebrate: '★', error: '!', listening: '♪', cool: '▬', confused: '?', focus: '◎',
-    studying: '🎓', glasses: '👓', bookworm: '📚', researching: '🔎', building: '🛠️',
-    writing: '✍️', planning: '🗺️', testing: '🧪', debugging: '🐞', curious: '❔',
-    idea: '💭', proud: '🌟', waiting: '⌛', web: '🌐', deepwork: '🧠', typing: '⌨️',
-    reviewing: '🧐', excited: '🎉', worried: '😅', calm: '☁️',
   };
   const MOOD_KEYS = Object.keys(MASCOT_MOODS);
 
@@ -161,14 +160,10 @@
   }
   function pickMoodFor(text) {
     const t = String(text || '').toLowerCase();
-    if (/\b(search|look up|google|latest|news|find|browse|website|web)\b/.test(t)) return 'searching';
-    if (/\b(debug|bug|test|trace|stack trace|error log)\b/.test(t)) return 'debugging';
-    if (/\b(build|code|script|fix|function|lua|python|javascript|html|css|program|implement)\b/.test(t)) return 'coding';
-    if (/\b(read|book|chapter|study|research|paper|document)\b/.test(t)) return 'bookworm';
-    if (/\b(plan|architecture|design|steps|strategy)\b/.test(t)) return 'planning';
-    if (/\b(explain|teach|learn|how does|why|what is|compare)\b/.test(t)) return 'learning';
-    if (/\b(deeply|reason|reasoning|analyze|analysis|complex|carefully)\b/.test(t) || t.length > 300) return 'deepwork';
-    if (/\b(thank|great|awesome|nice|congratulations)\b/.test(t)) return 'celebrate';
+    if (/\b(search|look up|google|latest|news|find)\b/.test(t)) return 'searching';
+    if (/\b(build|code|script|fix|bug|function|debug|lua|python|javascript|html|css)\b/.test(t)) return 'coding';
+    if (/\b(explain|teach|learn|how does|why|what is)\b/.test(t)) return 'learning';
+    if (t.length > 300) return 'reasoning';
     return 'thinking';
   }
   function startIdleMascot() {
@@ -319,41 +314,44 @@
   }
   function renderText(text) {
     const lines = String(text).split('\n');
-    let out = '', i = 0;
+    let out = '';
     const buf = [];
     const flush = () => { if (buf.length) { out += `<p>${inlineFmt(buf.join(' '))}</p>`; buf.length = 0; } };
-    const cells = (line) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(x => x.trim());
-    const isSep = (line) => /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
-    while (i < lines.length) {
-      const t = lines[i].trim();
-      if (!t) { flush(); i++; continue; }
-      if (t.includes('|') && i + 1 < lines.length && isSep(lines[i + 1])) {
-        flush(); const headers = cells(t); i += 2; let rows = '';
-        while (i < lines.length && lines[i].trim() && lines[i].includes('|')) {
-          const cols = cells(lines[i]);
-          rows += '<tr>' + headers.map((_, j) => `<td>${inlineFmt(cols[j] || '')}</td>`).join('') + '</tr>'; i++;
+    const cells = (line) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((v) => v.trim());
+    for (let i = 0; i < lines.length; i++) {
+      const raw = lines[i], t = raw.trim();
+      if (!t) { flush(); continue; }
+      // GitHub-style Markdown table. Build safe HTML cell-by-cell (inlineFmt escapes input).
+      if (t.includes('|') && i + 1 < lines.length && /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[i + 1])) {
+        flush();
+        const headers = cells(t); i += 1;
+        let table = '<div class="md-table-wrap"><table class="md-table"><thead><tr>';
+        headers.forEach((c) => { table += `<th>${inlineFmt(c)}</th>`; });
+        table += '</tr></thead><tbody>';
+        while (i + 1 < lines.length && lines[i + 1].trim().includes('|') && lines[i + 1].trim() !== '') {
+          i++; const row = cells(lines[i]); table += '<tr>';
+          for (let j = 0; j < headers.length; j++) table += `<td>${inlineFmt(row[j] || '')}</td>`;
+          table += '</tr>';
         }
-        out += `<div class="md-table-wrap"><table class="md-table"><thead><tr>${headers.map(h => `<th>${inlineFmt(h)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
+        out += table + '</tbody></table></div>';
         continue;
       }
       const hm = t.match(/^(#{1,4})\s+(.+)$/);
-      if (hm) { flush(); out += `<h${hm[1].length}>${inlineFmt(hm[2])}</h${hm[1].length}>`; i++; continue; }
-      if (/^>\s?/.test(t)) { flush(); out += `<blockquote>${inlineFmt(t.replace(/^>\s?/, ''))}</blockquote>`; i++; continue; }
-      if (/^[-*+]\s+/.test(t)) { flush(); out += `<div class="md-li">• ${inlineFmt(t.replace(/^[-*+]\s+/, ''))}</div>`; i++; continue; }
+      if (hm) { flush(); out += `<h${hm[1].length}>${inlineFmt(hm[2])}</h${hm[1].length}>`; continue; }
+      const um = t.match(/^[-*+]\s+(.+)$/);
+      if (um) { flush(); out += `<div class="md-li">• ${inlineFmt(um[1])}</div>`; continue; }
       const om = t.match(/^(\d+)\.\s+(.+)$/);
-      if (om) { flush(); out += `<div class="md-li">${om[1]}. ${inlineFmt(om[2])}</div>`; i++; continue; }
-      buf.push(t); i++;
+      if (om) { flush(); out += `<div class="md-li">${om[1]}. ${inlineFmt(om[2])}</div>`; continue; }
+      if (/^>\s?/.test(t)) { flush(); out += `<blockquote>${inlineFmt(t.replace(/^>\s?/, ''))}</blockquote>`; continue; }
+      buf.push(t);
     }
-    flush(); return out;
+    flush();
+    return out;
   }
   function inlineFmt(t) {
     t = escapeHtml(t);
-    t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
     t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    t = t.replace(/~~([^~]+)~~/g, '<del>$1</del>');
-    t = t.replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, '$1<em>$2</em>');
-    t = t.replace(/(^|_)_([^_]+)_(?!_)/g, '$1<em>$2</em>');
-    t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
     return t;
   }
   function wireCopyButtons(scope) {
@@ -501,8 +499,8 @@
     currentConversationId = null;
     const t = $('#chatTitle'); if (t) t.textContent = 'New chat';
     const c = $('#chatMessages'); if (c) c.innerHTML = welcomeHTML();
-    bindSuggestionClicks();
-    renderHistory();
+    bindSuggestionClicks(); updateTokenUsage();
+    renderHistory(); updateTokenUsage();
   }
   function bindSuggestionClicks() {
     $$('.suggestion-card').forEach((card) => {
@@ -546,7 +544,59 @@
         <button class="history-delete icon-btn" aria-label="Delete chat"><i class="ri-delete-bin-line"></i></button>
       </li>`).join('');
   }
-  function scrollToBottom() { const c = $('#chatMessages'); if (c) c.scrollTop = c.scrollHeight; }
+  function estimateTokens(text) { return Math.ceil(String(text || '').length / 4); }
+  function conversationTokenUsage(convo = currentConvo()) {
+    if (!convo) return 0;
+    return (convo.messages || []).reduce((sum, m) => sum + estimateTokens(m.content || ''), 0);
+  }
+  function updateTokenUsage() {
+    const el = $('#tokenUsage'); if (!el) return;
+    const used = conversationTokenUsage();
+    const limit = __tier === 'free' ? FREE_CONVO_TOKEN_LIMIT : null;
+    const span = el.querySelector('span');
+    if (span) span.textContent = limit ? `${Math.min(used, limit).toLocaleString()} / 10k tokens` : `${used.toLocaleString()} tokens`;
+    el.classList.toggle('token-near-limit', !!limit && used >= limit * .85);
+    el.classList.toggle('token-limit', !!limit && used >= limit);
+    el.title = limit ? `Estimated conversation usage. Free limit: ${limit.toLocaleString()} tokens.` : 'Estimated tokens used in this conversation';
+  }
+  function atChatBottom(c = $('#chatMessages')) { return !c || c.scrollHeight - c.scrollTop - c.clientHeight < 100; }
+  function scrollToBottom(force = false) {
+    const c = $('#chatMessages'); if (!c) return;
+    if (force || (autoScrollEnabled && userIsAtBottom)) c.scrollTop = c.scrollHeight;
+    updateScrollButton();
+  }
+  function updateScrollButton() {
+    const c = $('#chatMessages'), b = $('#scrollBottomBtn'); if (!c || !b) return;
+    b.classList.toggle('visible', !atChatBottom(c));
+  }
+  function freeLimitReached(convo = currentConvo()) {
+    return __tier === 'free' && conversationTokenUsage(convo) >= FREE_CONVO_TOKEN_LIMIT;
+  }
+  function showLimitNote(bubble) {
+    if (!bubble || bubble.querySelector('.token-limit-note')) return;
+    const note = document.createElement('div'); note.className = 'token-limit-note';
+    note.textContent = 'Max tokens length reached — try new chat or upgrade to Pro / Ultimate.';
+    bubble.appendChild(note);
+  }
+  function attachContinueButton(msgEl, bubble, messageObj) {
+    if (!msgEl || !bubble || !messageObj || bubble.querySelector('[data-continue]')) return;
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'continue-response-btn'; btn.dataset.continue = '1';
+    btn.innerHTML = '<i class="ri-play-circle-line"></i><span>Continue</span>';
+    btn.addEventListener('click', () => continueAssistantMessage(msgEl, bubble, messageObj, btn));
+    bubble.appendChild(btn);
+  }
+  async function continueAssistantMessage(msgEl, bubble, messageObj, btn) {
+    if (isReplying || continuationBusy || freeLimitReached()) return;
+    continuationBusy = true;
+    btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line spin"></i><span>Continuing…</span>';
+    try {
+      await sendToAPI('Continue your previous response from exactly where it stopped. Do not repeat the completed text. Continue in the same response.', [], false, { existingMsgEl: msgEl, existingBubble: bubble, messageObj, continuation: true });
+    } finally {
+      continuationBusy = false;
+      if (btn.isConnected) btn.remove();
+    }
+  }
   function fmtSize(n) {
     if (n == null) return '';
     if (n < 1024) return n + ' B';
@@ -563,7 +613,7 @@
     el.className = 'message ' + (role === 'user' ? 'user' : 'ai');
     el.dataset.msgId = id;
     el.dataset.role = role;
-    let inner = role === 'ai' ? `<div class="assistant-mascot-row">${mascotHTML('mascot-sm', 'idle')}<span>Mirox</span></div>` : '';
+    let inner = '';
     if (role === 'user' && files && files.length) {
       inner += '<div class="attach-row">';
       for (const f of files) {
@@ -615,62 +665,6 @@
       };
     });
   }
-  function addContinueButton(bubble, msgEl) {
-    if (!bubble || bubble.querySelector('[data-continue]')) return;
-    const btn = document.createElement('button');
-    btn.type = 'button'; btn.className = 'continue-answer-btn'; btn.dataset.continue = '1';
-    btn.innerHTML = '<i class="ri-arrow-down-line"></i> Continue';
-    btn.addEventListener('click', () => continueAssistant(msgEl, btn));
-    bubble.appendChild(btn);
-  }
-
-  async function continueAssistant(msgEl, btn) {
-    if (isReplying || !msgEl) return;
-    const convo = currentConvo(), msgId = msgEl.dataset.msgId;
-    const saved = convo?.messages?.find(m => m.id === msgId);
-    const bubble = msgEl.querySelector('.bubble'), textEl = bubble?.querySelector('.bubble-text');
-    if (!convo || !saved || !bubble || !textEl) { toast('Could not find this conversation message.', 2200); return; }
-    const prior = saved.content || textEl.textContent || '';
-    btn.remove(); isReplying = true; updateSendButtonState();
-    const stopBtn = $('#stopBtn'); if (stopBtn) stopBtn.style.display = 'grid';
-    const panel = createThinkPanel('Continuing answer', []);
-    msgEl.insertBefore(panel.el, msgEl.querySelector('.message-time'));
-    const controller = new AbortController(); activeStreamController = controller;
-    let appended = '', buf = '', wasLimited = false;
-    const timeout = setTimeout(() => controller.abort(), 120000);
-    try {
-      const history = convo.messages.slice(-14).map(m => ({ role: m.role, content: m.content }));
-      const res = await fetch('/v1/chat/completions', {
-        method: 'POST', headers: {'Content-Type':'application/json'}, credentials:'same-origin',
-        body: JSON.stringify({ message: 'Continue your previous answer exactly where it stopped. Do not repeat earlier text. Finish the remaining response.', history, model: __model || 'mirox-luna-1.2', stream: true }),
-        signal: controller.signal
-      });
-      if (!res.ok) { const d = await res.json().catch(()=>({})); throw new Error(d.error?.message || `HTTP ${res.status}`); }
-      const reader = res.body.getReader(), dec = new TextDecoder();
-      while (true) {
-        const {value, done} = await reader.read(); if (done) break;
-        buf += dec.decode(value, {stream:true}); let idx;
-        while ((idx = buf.indexOf('\n')) >= 0) {
-          const line = buf.slice(0,idx).trim(); buf = buf.slice(idx+1);
-          if (!line.startsWith('data:')) continue;
-          const raw = line.slice(5).trim(); if (!raw || raw === '[DONE]') continue;
-          let o; try { o = JSON.parse(raw); } catch { continue; }
-          if (o.d) { appended += o.d; saved.content = prior + appended; textEl.innerHTML = renderMarkdown(saved.content); wireCopyButtons(textEl); scrollToBottom(); }
-          if (o.limit) wasLimited = true;
-          if (o.error) throw new Error(o.error.message || 'Stream error');
-        }
-      }
-      saved.content = prior + appended; saveChats(); panel.finish();
-      if (wasLimited) addContinueButton(bubble, msgEl);
-    } catch (e) {
-      panel.fail(e.message || 'Unable to continue'); addContinueButton(bubble, msgEl);
-    } finally {
-      clearTimeout(timeout); panel.destroy(); isReplying = false;
-      if (stopBtn) stopBtn.style.display = 'none';
-      updateSendButtonState(); activeStreamController = null;
-    }
-  }
-
   async function handleRetry(el) {
     if (isReplying) return;
     const convo = currentConvo(); if (!convo) return;
@@ -700,6 +694,7 @@
     const inp = $('#messageInput'); if (!inp) return;
     const text = inp.value.trim();
     if (!text && !pendingFiles.length) return;
+    if (freeLimitReached()) { toast('Max tokens length reached — try new chat or upgrade to Pro / Ultimate.', 5000); updateTokenUsage(); return; }
     const files = pendingFiles.slice();
     const searchFlag = forceSearchNext;
     forceSearchNext = false;
@@ -718,17 +713,26 @@
     updatePreview();
     updateSendButtonState();
     saveChats();
-    renderHistory();
+    renderHistory(); updateTokenUsage();
+    if (freeLimitReached(convo)) {
+      const lastUserEl = $('#chatMessages')?.querySelector(`[data-msg-id="${msgId}"]`);
+      showLimitNote(lastUserEl?.querySelector('.bubble'));
+      saveChats(); toast('Max tokens length reached — try new chat or upgrade to Pro / Ultimate.', 5000);
+      updateSendButtonState(); return;
+    }
     sendToAPI(text, files, searchFlag);
   }
 
-  async function sendToAPI(text, files, forceSearch) {
+  async function sendToAPI(text, files, forceSearch, continuation = null) {
+    const isContinuation = !!(continuation && continuation.continuation);
+    const convoAtStart = currentConvo();
+    if (!isContinuation && freeLimitReached(convoAtStart)) { toast('Max tokens length reached — try new chat or upgrade to Pro / Ultimate.', 5000); return; }
     isReplying = true;
     updateSendButtonState();
     const stopBtn = $('#stopBtn');
     if (stopBtn) stopBtn.style.display = 'grid';
     const convo = currentConvo();
-    const history = convo ? convo.messages.slice(-14).map((m) => ({ role: m.role, content: m.content })) : [];
+    const history = convo ? convo.messages.slice(-14).map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })) : [];
     const model = __model || 'mirox-luna-1.2';
 
     if (/\b(build|create|make|write|scaffold|generate|develop|code)\b.*\b(app|site|website|game|project|page|landing|dashboard|api|script|bot|tool|todo|chat|portfolio)\b/i.test(text)) {
@@ -738,23 +742,48 @@
     const container = $('#chatMessages');
     container?.querySelector('.welcome-screen')?.remove();
 
-    const msgEl = document.createElement('div');
-    msgEl.className = 'message ai';
-    const aiMsgId = uid();
-    msgEl.dataset.msgId = aiMsgId;
-    msgEl.dataset.role = 'ai';
-    const panel = createThinkPanel(pickStatusLabel(text), buildThinkingSteps(text, files));
-    panel.setMood(pickMoodFor(text));
-    msgEl.appendChild(panel.el);
-    const timeEl = document.createElement('div');
-    timeEl.className = 'message-time';
-    msgEl.appendChild(timeEl);
-    container?.appendChild(msgEl);
-    scrollToBottom();
-
+    let msgEl, bubble, bubbleText, timeEl, panel;
+    const aiMsgId = isContinuation ? continuation.messageObj.id : uid();
+    if (isContinuation) {
+      msgEl = continuation.existingMsgEl;
+      bubble = continuation.existingBubble;
+      bubbleText = bubble.querySelector('.bubble-text');
+      timeEl = msgEl.querySelector('.message-time');
+      bubble.querySelector('[data-continue]')?.remove();
+      bubble.querySelector('.token-limit-note')?.remove();
+      // Do not insert another mascot/thinking card into the same assistant response.
+      panel = { el: document.createElement('span'), addStep() {}, setMood() {}, markWriting() {}, finish() {}, fail() {}, destroy() {} };
+      const prev = String(continuation.messageObj.content || '');
+      var full = prev ? prev + '\n\n' : '';
+    } else {
+      msgEl = document.createElement('div');
+      msgEl.className = 'message ai';
+      msgEl.dataset.msgId = aiMsgId;
+      msgEl.dataset.role = 'ai';
+      panel = createThinkPanel(pickStatusLabel(text), buildThinkingSteps(text, files));
+      panel.setMood(pickMoodFor(text));
+      msgEl.appendChild(panel.el);
+      timeEl = document.createElement('div'); timeEl.className = 'message-time';
+      msgEl.appendChild(timeEl);
+      container?.appendChild(msgEl);
+      bubble = null; bubbleText = null; var full = '';
+      scrollToBottom(true);
+    }
     activeStreamController = new AbortController();
-    let full = '', generatedImage = null, bubble = null, bubbleText = null, gotToken = false;
-    const streamTimeout = setTimeout(() => { try { activeStreamController?.abort(); } catch {} }, 120000);
+    let generatedImage = null, gotToken = !!isContinuation, limitHit = false;
+    let renderTimer = null;
+    const renderStreamText = () => {
+      renderTimer = null;
+      if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); wireCopyButtons(bubbleText); }
+      scrollToBottom();
+    };
+    const scheduleRender = () => {
+      const now = performance.now();
+      if (renderTimer) return;
+      renderTimer = setTimeout(renderStreamText, Math.max(50, 120 - (now - streamRenderAt)));
+      streamRenderAt = now;
+    };
+    const streamTimeout = setTimeout(() => { try { activeStreamController?.abort(); } catch {} }, 90000);
 
     try {
       const res = await fetch('/v1/chat/completions', {
@@ -773,7 +802,7 @@
       }
       const reader = res.body.getReader();
       const dec = new TextDecoder();
-      let buf = '', searchStepAdded = false, responseLimited = false;
+      let buf = '', searchStepAdded = false;
 
       const ensureBubble = () => {
         if (!bubble) {
@@ -817,7 +846,7 @@
             panel.markWriting();
             panel.setMood('celebrate');
             ensureBubble();
-            bubble.innerHTML = `<div class="assistant-mascot-row">${mascotHTML('mascot-sm', 'celebrate')}<span>Mirox</span></div><div class="gen-image"><img src="${o.img}" draggable="false" alt=""></div><div class="bubble-text"></div>`;
+            bubble.innerHTML = `<div class="gen-image"><img src="${o.img}" draggable="false" alt=""></div><div class="bubble-text"></div>`;
             bubbleText = bubble.querySelector('.bubble-text');
             const img = bubble.querySelector('img');
             if (img) img.onclick = () => openImageViewer(o.img);
@@ -827,28 +856,32 @@
           }
           if (o.d) {
             full += o.d;
+            if (__tier === 'free' && convo && conversationTokenUsage(convo) + estimateTokens(full) >= FREE_CONVO_TOKEN_LIMIT) {
+              full = full.slice(0, Math.max(0, (FREE_CONVO_TOKEN_LIMIT - conversationTokenUsage(convo)) * 4));
+              limitHit = true;
+              if (!gotToken) { gotToken = true; ensureBubble(); bubble.innerHTML = '<div class="bubble-text"></div>'; bubbleText = bubble.querySelector('.bubble-text'); }
+              if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); }
+              try { await reader.cancel(); } catch {}
+              break;
+            }
             if (!gotToken) {
               gotToken = true;
               panel.markWriting();
               panel.setMood('learning');
               ensureBubble();
-              bubble.innerHTML = `<div class="assistant-mascot-row">${mascotHTML('mascot-sm', 'thinking')}<span>Mirox</span></div><div class="bubble-text"></div>`;
+              bubble.innerHTML = '<div class="bubble-text"></div>';
               bubbleText = bubble.querySelector('.bubble-text');
             }
-            if (bubbleText) {
-              bubbleText.innerHTML = renderMarkdown(full);
-              wireCopyButtons(bubbleText);
-            }
-            scrollToBottom();
+            scheduleRender();
           }
-          if (o.limit) responseLimited = true;
           if (o.error) throw new Error(o.error.message || 'Stream error');
         }
+        if (limitHit) break;
       }
       clearTimeout(streamTimeout);
       panel.finish();
+      if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
       if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); wireCopyButtons(bubbleText); }
-      if (bubble && responseLimited) addContinueButton(bubble, msgEl);
       wireMessageActions(msgEl);
 
       let imageKey = null;
@@ -856,21 +889,37 @@
         imageKey = 'img:' + aiMsgId;
         await idb.set(imageKey, generatedImage).catch(() => { imageKey = null; });
       }
-      if (convo) convo.messages.push({ id: aiMsgId, role: 'assistant', content: full, ts: Date.now(), imageKey });
-      saveChats();
+      let savedMsg;
+      if (convo) {
+        if (isContinuation) {
+          savedMsg = convo.messages.find((m) => m.id === aiMsgId) || continuation.messageObj;
+          savedMsg.content = full; savedMsg.ts = Date.now(); if (imageKey) savedMsg.imageKey = imageKey;
+        } else {
+          savedMsg = { id: aiMsgId, role: 'assistant', content: full, ts: Date.now(), imageKey };
+          convo.messages.push(savedMsg);
+        }
+      }
+      saveChats(); updateTokenUsage();
       timeEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      refreshUsage();
-      renderSidebarImageHistory();
+      if (savedMsg && full && !limitHit) attachContinueButton(msgEl, bubble, savedMsg);
+      if (limitHit || freeLimitReached(convo)) showLimitNote(bubble);
+      refreshUsage(); renderSidebarImageHistory();
     } catch (e) {
       clearTimeout(streamTimeout);
       const aborted = e.name === 'AbortError';
       panel.fail(aborted ? 'Stopped (timed out or by you).' : (e.message || 'Something went wrong.'));
       if (!bubble) {
-        bubble = document.createElement('div');
-        bubble.className = 'bubble';
-        msgEl.insertBefore(bubble, timeEl);
+        bubble = document.createElement('div'); bubble.className = 'bubble'; msgEl.insertBefore(bubble, timeEl);
       }
-      bubble.textContent = aborted ? '(stopped)' : 'Error: ' + e.message;
+      if (full) {
+        if (!bubbleText) { bubbleText = document.createElement('div'); bubbleText.className = 'bubble-text'; bubble.prepend(bubbleText); }
+        bubbleText.innerHTML = renderMarkdown(full); wireCopyButtons(bubbleText);
+        let savedMsg = convo?.messages.find((m) => m.id === aiMsgId);
+        if (isContinuation && continuation.messageObj) savedMsg = continuation.messageObj;
+        if (!savedMsg && convo) { savedMsg = { id: aiMsgId, role: 'assistant', content: full, ts: Date.now() }; convo.messages.push(savedMsg); }
+        if (savedMsg) { savedMsg.content = full; saveChats(); attachContinueButton(msgEl, bubble, savedMsg); }
+      } else bubble.textContent = aborted ? '(stopped)' : 'Error: ' + e.message;
+      updateTokenUsage();
     } finally {
       clearTimeout(streamTimeout);
       panel.destroy();
@@ -878,6 +927,7 @@
       activeStreamController = null;
       if (stopBtn) stopBtn.style.display = 'none';
       updateSendButtonState();
+      updateTokenUsage();
     }
   }
 
@@ -1110,7 +1160,7 @@
       chip.querySelector('.user-name').textContent = res.user.name || res.user.email;
       chip.querySelector('.user-sub').textContent = (__tier.charAt(0).toUpperCase() + __tier.slice(1)) + ' plan';
     }
-    renderModelPicker();
+    renderModelPicker(); updateTokenUsage();
   }
 
   async function loadConfig() {
@@ -2492,14 +2542,22 @@ ${userText}`,
     const convo = __conversations.find((c) => c.id === id);
     if (!convo) return;
     currentConversationId = id;
+    updateTokenUsage();
     const t = $('#chatTitle'); if (t) t.textContent = convo.title || 'Chat';
     const c = $('#chatMessages'); if (c) c.innerHTML = '';
+    let lastAiEl = null, lastAiMessage = null;
     for (const m of convo.messages || []) {
       const img = m.imageKey ? await idb.get(m.imageKey).catch(() => null) : null;
-      addMessageToDOM(m.role, m.content, m.ts, m.id, m.files || [], img);
+      const rendered = addMessageToDOM(m.role, m.content, m.ts, m.id, m.files || [], img);
+      if (m.role === 'assistant') { lastAiEl = rendered; lastAiMessage = m; }
     }
-    renderHistory();
-    scrollToBottom();
+    if (lastAiEl && lastAiMessage) {
+      const lastBubble = lastAiEl.querySelector('.bubble');
+      if (freeLimitReached(convo)) showLimitNote(lastBubble);
+      else if (lastBubble) attachContinueButton(lastAiEl, lastBubble, lastAiMessage);
+    }
+    renderHistory(); updateTokenUsage();
+    scrollToBottom(true);
   }
 
   /* ═══════════ Wiring ═══════════ */
@@ -2552,6 +2610,13 @@ ${userText}`,
       });
     }
     on('#sendBtn', 'click', handleSend);
+  on('#scrollBottomBtn', 'click', () => { autoScrollEnabled = true; userIsAtBottom = true; scrollToBottom(true); });
+  on('#chatMessages', 'scroll', () => {
+    const c = $('#chatMessages'); userIsAtBottom = atChatBottom(c);
+    if (!userIsAtBottom) autoScrollEnabled = false;
+    else autoScrollEnabled = true;
+    updateScrollButton();
+  });
     on('#attachBtn', 'click', () => $('#fileInput')?.click());
     on('#fileInput', 'change', (e) => { handleFiles(e.target.files); e.target.value = ''; });
     on('#removeAttachmentBtn', 'click', () => { pendingFiles = []; updatePreview(); updateSendButtonState(); });
