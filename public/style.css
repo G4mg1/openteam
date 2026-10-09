@@ -628,3 +628,99 @@ code { font-family: 'SF Mono', 'Cascadia Code', Consolas, monospace; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* ═══════════ v24: Sidebar search ═══════════ */
+.sidebar-search { display: flex; align-items: center; gap: 8px; margin: 0 12px 10px; padding: 8px 11px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); transition: border-color .15s, box-shadow .15s; }
+.sidebar-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.sidebar-search i { color: var(--text-faint); font-size: 15px; }
+.sidebar-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; font-size: 13.5px; }
+.history-item.search-hit { flex-wrap: wrap; row-gap: 3px; }
+.history-item.search-hit .hit-snippet { flex-basis: 100%; padding-left: 23px; font-size: 12px; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-item mark, .search-hit mark { background: rgba(224,176,40,.45); color: inherit; border-radius: 3px; padding: 0 1px; }
+.message.flash-hit .bubble { animation: flashHit 1.8s ease; }
+@keyframes flashHit { 0%, 40% { box-shadow: 0 0 0 4px var(--accent-soft); } 100% { box-shadow: 0 0 0 0 transparent; } }
+
+/* ═══════════ v24: Media + attachments ═══════════ */
+.gen-image { margin-bottom: 10px; border-radius: 14px; overflow: hidden; border: 1px solid var(--border); max-width: 100%; cursor: zoom-in; }
+.gen-image img { display: block; width: 100%; }
+.attach-chip { animation: chipIn .28s var(--ease-spring, ease) both; }
+.attach-chip:hover .attach-icon { transform: translateY(-1px) scale(1.08); }
+.attach-icon { color: var(--accent); font-size: 15px; transition: transform .18s; }
+@keyframes chipIn { from { opacity: 0; transform: translateY(6px) scale(.96); } to { opacity: 1; transform: none; } }
+
+/* ═══════════ v24: Mascot emotes ═══════════ */
+.mascot { overflow: visible; }
+.mascot .acc { position: absolute; display: none; pointer-events: none; }
+.mascot.emote-searching .acc-lens, .mascot.emote-reading .acc-glasses, .mascot.emote-reading .acc-book,
+.mascot.emote-learning .acc-spark, .mascot.emote-reasoning .acc-bulb, .mascot.emote-typing .acc-pen,
+.mascot.emote-coding .acc-glasses, .mascot.emote-coding .acc-dots, .mascot.emote-sad .acc-tear,
+.mascot.emote-surprised .acc-bang, .mascot.emote-sleepy .acc-dots, .mascot.emote-love .acc-heart,
+.mascot.emote-error .acc-bang, .mascot.emote-celebrate .acc-spark, .mascot.emote-confused .acc-q,
+.mascot.emote-curious .acc-q, .mascot.emote-proud .acc-spark, .mascot.emote-focused .acc-glasses { display: block; }
+
+/* accessories (pure CSS, so they animate) */
+.mascot .acc-glasses { left: 10%; top: 30%; width: 80%; height: 26%; }
+.mascot .acc-glasses::before, .mascot .acc-glasses::after { content: ''; position: absolute; top: 0; width: 42%; height: 100%; border: 2px solid #2b1a12; border-radius: 50%; box-sizing: border-box; background: rgba(255,255,255,.25); }
+.mascot .acc-glasses::before { left: 0; } .mascot .acc-glasses::after { right: 0; }
+.mascot .acc-book { left: 16%; bottom: -26%; width: 68%; height: 22%; background: #c96442; border-radius: 3px; box-shadow: inset 0 0 0 2px rgba(255,255,255,.35); animation: bookBob 1.6s ease-in-out infinite; }
+.mascot .acc-lens { right: -18%; top: -10%; width: 36%; height: 36%; border: 3px solid #2b1a12; border-radius: 50%; background: rgba(255,255,255,.35); animation: lensOrbit 2.4s ease-in-out infinite; }
+.mascot .acc-lens::after { content: ''; position: absolute; right: -40%; bottom: -46%; width: 46%; height: 3px; background: #2b1a12; transform: rotate(45deg); transform-origin: left center; }
+.mascot .acc-bulb { left: 36%; top: -40%; width: 28%; height: 28%; border-radius: 50%; background: #ffd34d; box-shadow: 0 0 12px #ffd34d; animation: bulbFlick 1.2s steps(2) infinite; }
+.mascot .acc-pen { right: -14%; bottom: 6%; width: 9%; height: 46%; background: #3d7bd6; border-radius: 2px; transform: rotate(35deg); animation: penWrite .5s ease-in-out infinite alternate; }
+.mascot .acc-spark { top: -22%; right: -14%; width: 22%; height: 22%; background: radial-gradient(circle, #ffd34d 35%, transparent 70%); animation: twinkle 1.1s ease-in-out infinite; }
+.mascot .acc-dots { left: 50%; top: -34%; transform: translateX(-50%); width: 56%; height: 14%; background: radial-gradient(circle, #2b1a12 42%, transparent 48%) 0 0 / 33.4% 100% repeat-x; animation: dotsFade 1.2s steps(3) infinite; }
+.mascot .acc-heart { top: -26%; right: -8%; width: 24%; height: 24%; background: #e0556a; transform: rotate(-45deg); border-radius: 0 50% 50% 50%; animation: heartBeat 1s ease-in-out infinite; }
+.mascot .acc-tear { left: 30%; top: 56%; width: 10%; height: 16%; background: #6fb7ff; border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; animation: tearDrop 1.6s ease-in infinite; }
+.mascot .acc-bang { left: 50%; top: -48%; transform: translateX(-50%); width: 12%; height: 34%; background: #e5484d; border-radius: 4px; animation: bangPop .6s ease-out infinite alternate; }
+.mascot .acc-q { left: 50%; top: -52%; transform: translateX(-50%); font: 700 calc(var(--ms) * .42) Inter, sans-serif; color: var(--accent); animation: bulbFlick 1.4s ease-in-out infinite; }
+
+/* eyes + mouth per emote (translate/rotate are separate from transform, so they don't clash) */
+.mascot.emote-searching .eye { animation: none; translate: 0 0; }
+.mascot.emote-searching .eye.left, .mascot.emote-searching .eye.right { animation: scanEyes 2.2s ease-in-out infinite; }
+.mascot.emote-reading .eye { height: 12%; }
+.mascot.emote-learning .eye { height: 26%; width: 17%; }
+.mascot.emote-learning .mouth { width: 10%; height: 10%; border-radius: 50%; }
+.mascot.emote-reasoning .eye { translate: 0 -14%; }
+.mascot.emote-typing .eye { translate: 0 14%; }
+.mascot.emote-coding .eye { height: 13%; }
+.mascot.emote-coding .mouth { width: 16%; height: 3%; border-radius: 2px; }
+.mascot.emote-sad .eye.left { rotate: -14deg; height: 16%; }
+.mascot.emote-sad .eye.right { rotate: 14deg; height: 16%; }
+.mascot.emote-sad .mouth { top: 74%; height: 7%; border-radius: 99px 99px 0 0; }
+.mascot.emote-surprised .eye { width: 19%; height: 30%; border-radius: 50%; }
+.mascot.emote-surprised .mouth { width: 12%; height: 14%; border-radius: 50%; }
+.mascot.emote-sleepy .eye { height: 4%; }
+.mascot.emote-sleepy .mouth { width: 10%; height: 8%; border-radius: 50%; }
+.mascot.emote-sleepy { animation: breathe 3.2s ease-in-out infinite; }
+.mascot.emote-love .eye { background: #e0556a; height: 18%; width: 17%; }
+.mascot.emote-laugh .mouth { width: 32%; height: 20%; border-radius: 0 0 99px 99px; }
+.mascot.emote-laugh { animation: bounce .5s ease-in-out infinite alternate; }
+.mascot.emote-focused .eye { height: 10%; }
+.mascot.emote-focused .mouth { width: 16%; height: 3%; border-radius: 2px; }
+.mascot.emote-error { animation: shake .4s ease-in-out 3; }
+.mascot.emote-error .eye { background: #e5484d; }
+.mascot.emote-celebrate { animation: bounce .6s ease-in-out 3; }
+.mascot.emote-confused { rotate: -9deg; }
+.mascot.emote-confused .eye.right { top: 30%; }
+.mascot.emote-proud .eye { height: 8%; }
+.mascot.emote-proud .mouth { width: 30%; height: 14%; }
+.mascot.emote-curious .eye { height: 26%; width: 17%; }
+.mascot.emote-curious .eye.left { translate: -6% 0; } .mascot.emote-curious .eye.right { translate: 6% 0; }
+
+@keyframes scanEyes { 0%, 100% { translate: -12% 0; } 50% { translate: 12% 0; } }
+@keyframes lensOrbit { 0%, 100% { transform: translate(0, 0) rotate(-8deg); } 50% { transform: translate(-6px, 4px) rotate(8deg); } }
+@keyframes bookBob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px) rotate(-2deg); } }
+@keyframes bulbFlick { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+@keyframes penWrite { from { transform: rotate(28deg) translateX(-2px); } to { transform: rotate(42deg) translateX(2px); } }
+@keyframes twinkle { 0%, 100% { transform: scale(.7); opacity: .5; } 50% { transform: scale(1.1); opacity: 1; } }
+@keyframes dotsFade { 0% { opacity: .3; } 33% { opacity: 1; } 66%, 100% { opacity: .5; } }
+@keyframes heartBeat { 0%, 100% { transform: rotate(-45deg) scale(1); } 50% { transform: rotate(-45deg) scale(1.2); } }
+@keyframes tearDrop { 0% { transform: translateY(0); opacity: 0; } 20% { opacity: 1; } 100% { transform: translateY(14px); opacity: 0; } }
+@keyframes bangPop { from { transform: translateX(-50%) scale(.9); } to { transform: translateX(-50%) scale(1.1); } }
+@keyframes breathe { 0%, 100% { scale: 1; } 50% { scale: 1.04; } }
+@keyframes bounce { from { translate: 0 0; } to { translate: 0 -6%; } }
+@keyframes shake { 0%, 100% { translate: 0 0; } 25% { translate: -3px 0; } 75% { translate: 3px 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .mascot *, .mascot { animation: none !important; }
+  .attach-chip { animation: none; }
+}
