@@ -25,10 +25,10 @@
     { id: 'mirox-eclipse-2.0', label: 'Eclipse', tier: 'ultimate' },
   ];
   const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
-  const LS_KEY = 'miroxai_conversations_v24';
+  const LS_KEY = 'miroxai_conversations_v25';
   const TOKEN_KEY = 'mirox_token';
-  const APPEARANCE_KEY = 'miroxai_appearance_v24';
-  const BRIDGE_KEY = 'miroxai_bridge_v24';
+  const APPEARANCE_KEY = 'miroxai_appearance_v25';
+  const BRIDGE_KEY = 'miroxai_bridge_v25';
   const KDE_DEVICE_KEY = 'miroxai_kde_device_v1';
   const BRIDGE_OPTS_KEY = 'miroxai_bridge_opts_v1';
   const PASTE_ATTACH_THRESHOLD = 1024;
@@ -114,31 +114,54 @@
     r.setProperty('--look-y', y.toFixed(1) + 'px');
   }, { passive: true });
 
+  /* Each mood maps to a badge (small icon) and a CSS class that drives the face. */
   const MASCOT_MOODS = {
-    idle: '', happy: '✨', love: '❤️', wink: '😉', sad: '💧', surprised: '❗', sleepy: '💤',
-    thinking: '💭', reasoning: '🧠', searching: '🔍', reading: '📖', learning: '💡',
-    coding: '💻', celebrate: '🎉', error: '⚠️', listening: '🎧', cool: '😎', confused: '❓', focus: '🎯',
+    idle:      { badge: '' },
+    happy:     { badge: '✨' },
+    love:      { badge: '❤' },
+    wink:      { badge: '😉' },
+    sad:       { badge: '💧' },
+    surprised: { badge: '!' },
+    sleepy:    { badge: 'z' },
+    thinking:  { badge: '…' },
+    reasoning: { badge: '?' },
+    searching: { badge: '⌕' },
+    reading:   { badge: '≡' },
+    learning:  { badge: '💡' },
+    coding:    { badge: '</>' },
+    celebrate: { badge: '★' },
+    error:     { badge: '!' },
+    listening: { badge: '♪' },
+    cool:      { badge: '▬' },
+    confused:  { badge: '?' },
+    focus:     { badge: '◎' },
   };
+  const MOOD_KEYS = Object.keys(MASCOT_MOODS);
+
   function mascotHTML(cls, mood) {
-    const m = MASCOT_MOODS[mood] !== undefined ? mood : 'idle';
-    const moodCls = m !== 'idle' ? ' m-' + m : '';
-    return `<div class="mascot ${cls || ''}${moodCls}"><span class="eye left"></span><span class="eye right"></span><span class="mouth"></span><span class="prop">${MASCOT_MOODS[m]}</span></div>`;
+    const m = MOOD_KEYS.includes(mood) ? mood : 'idle';
+    const badge = MASCOT_MOODS[m].badge;
+    return `<div class="mascot ${cls || ''} m-${m}" data-mood="${m}">` +
+      `<span class="brow left"></span><span class="brow right"></span>` +
+      `<span class="eye left"></span><span class="eye right"></span>` +
+      `<span class="cheek left"></span><span class="cheek right"></span>` +
+      `<span class="mouth"></span><span class="prop">${escapeHtml(badge)}</span></div>`;
   }
   function setMascotMood(mood, scope) {
     const root = scope || document;
-    const m = MASCOT_MOODS[mood] !== undefined ? mood : 'idle';
+    const m = MOOD_KEYS.includes(mood) ? mood : 'idle';
     root.querySelectorAll('.mascot').forEach((el) => {
       el.className = el.className.split(' ').filter((c) => !/^m-/.test(c)).join(' ');
-      if (m !== 'idle') el.classList.add('m-' + m);
-      let p = el.querySelector('.prop');
-      if (!p) { p = document.createElement('span'); p.className = 'prop'; el.appendChild(p); }
-      p.textContent = MASCOT_MOODS[m];
+      el.classList.add('m-' + m);
+      el.dataset.mood = m;
+      const p = el.querySelector('.prop');
+      if (p) p.textContent = MASCOT_MOODS[m].badge;
     });
   }
   function pickMoodFor(text) {
     const t = String(text || '').toLowerCase();
     if (/\b(search|look up|google|latest|news|find)\b/.test(t)) return 'searching';
-    if (/\b(build|code|script|fix|bug|function|debug)\b/.test(t)) return 'coding';
+    if (/\b(build|code|script|fix|bug|function|debug|lua|python|javascript|html|css)\b/.test(t)) return 'coding';
     if (/\b(explain|teach|learn|how does|why|what is)\b/.test(t)) return 'learning';
     if (t.length > 300) return 'reasoning';
     return 'thinking';
@@ -173,18 +196,51 @@
     if (/\b(sudo|root|admin|privilege)\b/.test(t)) return 'Elevating privileges';
     return 'Thinking';
   }
-  function makeReasoning(text) {
-    const t = String(text || '').trim().replace(/\s+/g, ' ');
-    if (!t) return 'Understanding the request and planning a clear, safe, helpful answer.';
-    const short = t.length > 130 ? t.slice(0, 130) + '…' : t;
-    let extra = 'Planning a clear, accurate and safe answer.';
-    const l = t.toLowerCase();
-    if (/\b(wifi|wi-fi|router|network)\b/.test(l) && /\b(remove|delete|kick|block)\b/.test(l))
-      extra = 'This touches the user\'s own network — give safe, legitimate steps (router admin panel, MAC filtering, password change). No harmful content.';
-    else if (/\b(password|login|account)\b/.test(l)) extra = 'Sensitive topic — provide safe recovery and security best practices only.';
-    else if (/\b(code|bug|error|fix)\b/.test(l)) extra = 'Will answer with a fenced code block and a short explanation.';
-    else if (/\b(vs|difference|compare|better)\b/.test(l)) extra = 'Will compare both sides fairly and end with a clear recommendation.';
-    return `User said: "${short}" — ${extra}`;
+
+  /* ═══════════ Deep reasoning trace ═══════════
+     Builds a short, human-readable plan from what the user asked, so the
+     thinking panel shows real steps (e.g. "The user asked for Lua, so I'll
+     check the Lua files") instead of a generic label. */
+  const LANG_WORDS = {
+    lua: 'Lua', python: 'Python', py: 'Python', javascript: 'JavaScript', js: 'JavaScript',
+    typescript: 'TypeScript', ts: 'TypeScript', html: 'HTML', css: 'CSS', java: 'Java',
+    'c++': 'C++', cpp: 'C++', c: 'C', go: 'Go', rust: 'Rust', ruby: 'Ruby', php: 'PHP',
+    bash: 'Bash', sql: 'SQL', swift: 'Swift', kotlin: 'Kotlin',
+  };
+  function detectLanguage(text) {
+    const t = String(text || '').toLowerCase();
+    for (const k of Object.keys(LANG_WORDS)) {
+      if (new RegExp('\\b' + k.replace(/\+/g, '\\+') + '\\b').test(t)) return LANG_WORDS[k];
+    }
+    return null;
+  }
+  function buildThinkingSteps(text, files) {
+    const raw = String(text || '').trim().replace(/\s+/g, ' ');
+    const steps = [];
+    const short = raw.length > 110 ? raw.slice(0, 110) + '…' : raw;
+    if (raw) steps.push(`The user asked: "${short}"`);
+
+    const lang = detectLanguage(raw);
+    if (lang) steps.push(`They want this in ${lang}, so I'll write idiomatic ${lang} and keep the syntax exact.`);
+
+    const t = raw.toLowerCase();
+    if (/\b(build|create|make|write|code|script|app|game|site|page)\b/.test(t)) {
+      steps.push('Breaking the task into parts: structure, core logic, then how it's run or tested.');
+    }
+    if (/\b(fix|bug|error|broken|crash|wrong|fail)\b/.test(t)) {
+      steps.push('Looking for the root cause first, then checking the fix against the original behavior.');
+    }
+    if (/\b(search|latest|news|current|today)\b/.test(t)) {
+      steps.push('This needs current information, so I\'ll check sources before answering.');
+    }
+    if (/\b(explain|why|how does|what is)\b/.test(t)) {
+      steps.push('Explaining it step by step with a small concrete example.');
+    }
+    if (files && files.length) {
+      steps.push(`Reading the ${files.length} attached file${files.length === 1 ? '' : 's'} before answering.`);
+    }
+    if (!steps.length) steps.push('Planning a clear, accurate answer.');
+    return steps;
   }
 
   /* ═══════════ Network helpers ═══════════ */
@@ -327,13 +383,15 @@
     });
   }
 
-  /* ═══════════ Thinking panel ═══════════ */
-  function createThinkPanel(label, reasonText) {
+  /* ═══════════ Thinking panel ═══════════
+     The panel always ends: finish() or destroy() is called on every path,
+     and the label switches from "Thinking" to "Done" so it never looks stuck. */
+  function createThinkPanel(label, steps) {
     const el = document.createElement('div');
     el.className = 'think-wrap';
     el.innerHTML = `
       <div class="think-head">
-        ${mascotHTML('mascot-sm thinking', 'thinking')}
+        ${mascotHTML('mascot-sm', 'thinking')}
         <span class="think-label">${escapeHtml(label || 'Thinking')}</span>
         <span class="think-timer">0.0s</span>
         <button class="think-btn" data-think="min" type="button" title="Minimize"><i class="ri-subtract-line"></i></button>
@@ -343,7 +401,6 @@
     const body = el.querySelector('.think-body');
     const timerEl = el.querySelector('.think-timer');
     const labelEl = el.querySelector('.think-label');
-    const mascotEl = el.querySelector('.mascot');
     const t0 = performance.now();
     let done = false, writeStep = null;
     const timer = setInterval(() => {
@@ -354,40 +411,64 @@
     function addStep(text, state = 'info') {
       const row = document.createElement('div');
       row.className = 'think-step ' + state;
-      const icon = state === 'run' ? '<i class="ri-loader-4-line"></i>' : state === 'ok' ? '<i class="ri-check-line"></i>' : '<i class="ri-sparkling-2-line"></i>';
+      const icon = state === 'run' ? '<i class="ri-loader-4-line"></i>'
+        : state === 'ok' ? '<i class="ri-check-line"></i>'
+        : state === 'warn' ? '<i class="ri-error-warning-line"></i>'
+        : '<i class="ri-sparkling-2-line"></i>';
       row.innerHTML = `<span class="ts-icon">${icon}</span><span class="ts-text">${escapeHtml(text)}</span>`;
       body.appendChild(row);
       body.scrollTop = body.scrollHeight;
       return row;
     }
-    if (reasonText) {
-      const r = document.createElement('div');
-      r.className = 'think-reason';
-      r.textContent = reasonText;
-      body.appendChild(r);
+    function markStepDone(row) {
+      if (!row) return;
+      row.className = 'think-step ok';
+      row.querySelector('.ts-icon').innerHTML = '<i class="ri-check-line"></i>';
+    }
+
+    if (Array.isArray(steps)) {
+      steps.forEach((s) => {
+        const r = document.createElement('div');
+        r.className = 'think-reason';
+        r.textContent = s;
+        body.appendChild(r);
+      });
     }
     el.querySelector('[data-think="min"]').addEventListener('click', () => el.classList.toggle('collapsed'));
     el.querySelector('[data-think="max"]').addEventListener('click', () => el.classList.toggle('expanded'));
+
+    function close(finalLabel, mood) {
+      if (done) return; done = true;
+      clearInterval(timer);
+      timerEl.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
+      labelEl.textContent = finalLabel;
+      el.classList.add('done');
+      setMascotMood(mood, el);
+      setTimeout(() => el.classList.add('collapsed'), 1600);
+    }
 
     return {
       el,
       addStep,
       setMood(mood) { setMascotMood(mood, el); },
-      setLabel(t) { labelEl.textContent = t; },
+      setLabel(t) { if (!done) labelEl.textContent = t; },
       markWriting() {
         if (!writeStep) writeStep = addStep('Writing the answer…', 'run');
       },
+      /* Called when the answer finished: closes every running step. */
       finish() {
-        if (done) return; done = true;
-        clearInterval(timer);
-        timerEl.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
-        if (writeStep) { writeStep.className = 'think-step ok'; writeStep.querySelector('.ts-icon').innerHTML = '<i class="ri-check-line"></i>'; }
-        else addStep('Done.', 'ok');
-        el.classList.add('done');
-        setMascotMood('happy', el);
-        setTimeout(() => el.classList.add('collapsed'), 1400);
+        if (writeStep) markStepDone(writeStep);
+        body.querySelectorAll('.think-step.run').forEach(markStepDone);
+        addStep('Done.', 'ok');
+        close('Done', 'happy');
       },
-      destroy() { clearInterval(timer); },
+      /* Called on error or abort: shows the failure instead of spinning forever. */
+      fail(msg) {
+        body.querySelectorAll('.think-step.run').forEach((r) => { r.className = 'think-step warn'; r.querySelector('.ts-icon').innerHTML = '<i class="ri-error-warning-line"></i>'; });
+        addStep(msg || 'Stopped with an error.', 'warn');
+        close('Stopped', 'error');
+      },
+      destroy() { clearInterval(timer); if (!done) close('Stopped', 'idle'); },
     };
   }
 
@@ -403,7 +484,6 @@
       })),
     }));
     if (!safeSet(LS_KEY, slim)) {
-      // Storage full: drop oldest chats until it fits
       let copy = slim.slice();
       while (copy.length > 1 && !safeSet(LS_KEY, copy)) copy = copy.slice(0, -1);
     }
@@ -413,7 +493,7 @@
   function welcomeHTML() {
     return `<div class="welcome-screen">
       <div class="welcome-mascot">
-        ${mascotHTML('mascot-lg wave', 'idle').replace('class="mascot ', 'id="welcomeMascot" class="mascot ')}
+        ${mascotHTML('mascot-lg', 'idle').replace('class="mascot ', 'id="welcomeMascot" class="mascot ')}
         <div class="mascot-ring"></div>
         <div class="mascot-ring r2"></div>
       </div>
@@ -496,13 +576,11 @@
       inner += '<div class="attach-row">';
       for (const f of files) {
         if (f.type === 'image' && f.dataUrl) inner += `<div class="attach-chip"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name || '')}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`;
-        else inner += `<div class="attach-chip"><i class="ri-file-text-line"></i>${escapeHtml(f.name || 'file')}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`;
+        else inner += `<div class="attach-chip">${fileIconSvg()}${escapeHtml(f.name || 'file')}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`;
       }
       inner += '</div>';
     }
-    if (role === 'ai' && image) {
-      inner += `<div class="gen-image"><img src="${image}" draggable="false" alt=""></div>`;
-    }
+    if (role === 'ai' && image) inner += `<div class="gen-image"><img src="${image}" draggable="false" alt=""></div>`;
     inner += '<div class="bubble-text"></div>';
     el.innerHTML = `<div class="bubble">${inner}</div>
       <div class="message-actions">
@@ -525,6 +603,11 @@
     wireMessageActions(el);
     scrollToBottom();
     return el;
+  }
+
+  /* Attachment icon: Remix Icon SVG-style glyph, animatable via CSS */
+  function fileIconSvg() {
+    return '<span class="file-glyph" aria-hidden="true"><i class="ri-file-text-line"></i></span>';
   }
 
   function wireMessageActions(el) {
@@ -612,7 +695,7 @@
     const aiMsgId = uid();
     msgEl.dataset.msgId = aiMsgId; msgEl.dataset.role = 'ai';
     const label = pickStatusLabel(text);
-    const panel = createThinkPanel(label, makeReasoning(text));
+    const panel = createThinkPanel(label, buildThinkingSteps(text, files));
     panel.setMood(pickMoodFor(text));
     msgEl.appendChild(panel.el);
     const timeEl = document.createElement('div');
@@ -692,6 +775,7 @@
             if (!gotToken) {
               gotToken = true;
               panel.markWriting();
+              panel.setMood('learning');
               if (!bubble) {
                 bubble = document.createElement('div');
                 bubble.className = 'bubble';
@@ -721,15 +805,16 @@
       refreshUsage();
       renderSidebarImageHistory();
     } catch (e) {
-      panel.destroy();
-      panel.setMood('error');
+      const aborted = e.name === 'AbortError';
+      panel.fail(aborted ? 'Stopped by you.' : (e.message || 'Something went wrong.'));
       if (!bubble) {
         bubble = document.createElement('div');
         bubble.className = 'bubble';
         msgEl.insertBefore(bubble, timeEl);
       }
-      bubble.textContent = e.name === 'AbortError' ? '(stopped)' : 'Error: ' + e.message;
+      bubble.textContent = aborted ? '(stopped)' : 'Error: ' + e.message;
     } finally {
+      panel.destroy();
       isReplying = false;
       activeStreamController = null;
       if (stopBtn) stopBtn.style.display = 'none';
@@ -830,7 +915,7 @@
     p.style.display = 'flex';
     list.innerHTML = pendingFiles.map(f => f.type === 'image' && f.dataUrl
       ? `<div class="attach-chip"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name)}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`
-      : `<div class="attach-chip"><i class="ri-file-text-line"></i>${escapeHtml(f.name)}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`
+      : `<div class="attach-chip">${fileIconSvg()}${escapeHtml(f.name)}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`
     ).join('');
   }
 
@@ -988,6 +1073,8 @@
     if (!__config) __config = { models: FALLBACK_MODELS };
     __model = getModelsList()[0].id;
     renderModelPicker();
+    const wrap = $('#emailLoginWrap');
+    if (wrap && __config.email_login_available === false) wrap.style.display = 'none';
   }
 
   async function doLogin(e) {
@@ -1387,16 +1474,18 @@
     container.appendChild(el);
     scrollBridgeBottom();
   }
-  function addBridgeThinkingBubble(label) {
+
+  /* Bridge thinking bubble: a live panel with real steps, removed in a finally block */
+  function addBridgeThinkingPanel(label, steps) {
     const container = $('#bridgeMessages'); if (!container) return null;
     const empty = $('#bridgeEmpty'); if (empty) empty.remove();
-    const el = document.createElement('div');
-    el.className = 'bridge-msg ai';
-    el.innerHTML = `<div class="bridge-thinking">${mascotHTML('mascot-xs', 'thinking')}<span>${escapeHtml(label || 'Thinking')}</span><span class="thinking-dots"><span></span><span></span><span></span></span></div>`;
-    container.appendChild(el);
+    const panel = createThinkPanel(label || 'Thinking', steps || []);
+    panel.el.classList.add('bridge-think');
+    container.appendChild(panel.el);
     scrollBridgeBottom();
-    return el;
+    return panel;
   }
+
   function addBridgeActionBubble(cmd) {
     const container = $('#bridgeMessages'); if (!container) return null;
     const el = document.createElement('div');
@@ -1475,6 +1564,7 @@
       else if (/^(ls|dir)\b/i.test(c)) friendly = 'Listing files';
       else if (/^(cat|type)\b/i.test(c)) friendly = 'Reading file';
       else if (/^(python|python3)\s/i.test(c)) friendly = 'Running Python';
+      else if (/^lua\s/i.test(c)) friendly = 'Running Lua';
       else if (/^node\s/i.test(c)) friendly = 'Running Node';
       else if (/^git\s/i.test(c)) friendly = 'Git operation';
       else if (/^npm\s+run/i.test(c)) friendly = 'Running project';
@@ -2050,6 +2140,22 @@
     clearInterval(ticker);
   }
 
+  /* Plain-language plan for what the AI is about to do, based on the reply's tags.
+     Used so the thinking panel explains each step instead of just "Working…". */
+  function describeReplyPlan(reply, cmds) {
+    const steps = [];
+    const files = cmds.filter(c => c.type === 'write' || c.type === 'append').map(c => getBaseName(c.path));
+    const uniq = [...new Set(files)];
+    if (uniq.length) steps.push(`Writing ${uniq.length} file${uniq.length === 1 ? '' : 's'}: ${uniq.slice(0, 4).join(', ')}${uniq.length > 4 ? '…' : ''}`);
+    const execs = cmds.filter(c => c.type === 'exec' || c.type === 'sudo');
+    execs.forEach(c => {
+      const s = (c.command || '').split(/\s+/).slice(0, 4).join(' ');
+      steps.push(`Running: ${s}`);
+    });
+    if (/\bDONE\b/i.test(reply)) steps.push('Checking that every planned file exists.');
+    return steps;
+  }
+
   async function runBridgeTurn(userText, isResume = false) {
     if (!__bridge.connected) { setBwHint('Bridge is not connected.', 'err'); return; }
     if (bridgeRunning) return;
@@ -2067,13 +2173,15 @@
       updateBridgeProgress(2, 'Starting…');
       addBridgeUserMsg(userText);
       __lastBuildWasMobile = /\b(phone|mobile|tablet|android|iphone|ipad|device)\b/i.test(userText);
+      const lang = detectLanguage(userText);
       const starterText = `[System] Rules for this turn:
 1. NEVER paste code into visible text. All file content goes inside <bridge-write>...</bridge-write> or <bridge-append>...</bridge-append>.
 2. ALWAYS close tags. Never leave a <bridge-write> or <bridge-append> open.
 3. If a file is long, write the first chunk with <bridge-write>, then use <bridge-append> for the rest.
 4. Never complain about truncation. Never ask the user to pick a "plan" for a small file. Just build it.
 5. Create projects inside <home>/<project-name>/. Use absolute paths only.
-6. When the whole project is on disk, reply DONE on its own line.
+6. Before writing code, think out loud in one or two short lines: what the user asked, the language${lang ? ' (' + lang + ')' : ''}, and the files you'll create.
+7. When the whole project is on disk, reply DONE on its own line.
 
 ${userText}`;
       bridgeConversation.push({ role: 'user', content: starterText });
@@ -2088,16 +2196,20 @@ ${userText}`;
         bridgeTurn.runs++;
         const lastUser = bridgeConversation.filter(h => h.role === 'user').slice(-1)[0];
         const label = pickStatusLabel(lastUser?.content || '') || 'Working';
-        const thinkingEl = addBridgeThinkingBubble(label);
+        const thinkingPanel = addBridgeThinkingPanel(label, buildThinkingSteps(lastUser?.content || '', []));
+        thinkingPanel?.setMood(pickMoodFor(lastUser?.content || ''));
+
         let reply = '';
         try {
           reply = await fetchBridgeReply(bridgeConversation);
         } catch (e) {
-          if (thinkingEl) thinkingEl.remove();
+          thinkingPanel?.fail('AI error: ' + e.message);
           addBridgeSystemMsg('AI error: ' + e.message);
           break;
+        } finally {
+          /* The model call is over: the panel must never keep spinning. */
+          if (thinkingPanel) thinkingPanel.finish();
         }
-        if (thinkingEl) thinkingEl.remove();
 
         if (!reply || !reply.trim()) {
           if (autoContinues < MAX_AUTO_CONTINUES && __bridgeAutoRun) {
@@ -2134,6 +2246,13 @@ ${userText}`;
         const saidDone = /\bDONE\b/i.test(reply);
         const truncatedWrite = hasUnclosedWriteOrAppend(reply);
         const lastPath = lastWriteOrAppendPath(reply);
+
+        /* Show what the reply is planning, as its own short "thinking" panel. */
+        const plan = describeReplyPlan(reply, cmdsInReply);
+        if (plan.length) {
+          const planPanel = addBridgeThinkingPanel('Plan', plan);
+          if (planPanel) planPanel.finish();
+        }
 
         if (!cmdsInReply.length && !questionsInReply.length && !saidDone && !truncatedWrite && looksLikeFreeQuestion(reply)) {
           const narrationQ = sanitizeForChat(reply);
@@ -2302,6 +2421,7 @@ ${userText}`;
     } finally {
       bridgeRunning = false;
       updateBridgeSendBtn();
+      setProgressText(bridgeTaskComplete ? 'Done' : 'Paused');
     }
   }
 
