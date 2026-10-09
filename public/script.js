@@ -133,23 +133,45 @@
   }, { passive: true });
 
   const MASCOT_MOODS = {
-    idle: '', happy: '✨', love: '❤', wink: '😉', sad: '💧', surprised: '!', sleepy: 'z',
-    thinking: '…', reasoning: '?', searching: '⌕', reading: '≡', learning: '💡',
+    idle: '', happy: '✨', love: '♥', wink: '😉', sad: '💧', surprised: '!', sleepy: 'z',
+    thinking: '…', reasoning: '?', searching: '⌕', reading: '📖', learning: '✦',
     coding: '</>', celebrate: '★', error: '!', listening: '♪', cool: '▬', confused: '?', focus: '◎',
   };
   const MOOD_KEYS = Object.keys(MASCOT_MOODS);
+  let blobMascotId = 0;
+  const BLOB_PATH = 'M91.77 .1C93.07 3.09 94.1 6.27 94.79 9.46C95.48 12.64 95.87 15.96 95.93 19.23C95.99 22.49 95.72 25.82 95.14 29.03C94.57 32.24 93.66 35.46 92.47 38.49C91.28 41.53 89.76 44.5 88 47.25C86.24 49.99 84.18 52.61 81.92 54.96C79.66 57.3 77.13 59.47 74.46 61.32C71.78 63.18 68.88 64.8 65.9 66.1C62.92 67.4 59.75 68.42 56.57 69.11C53.39 69.8 49.49 69.05 46.84 70.23C44.19 71.41 42.87 74.34 40.68 76.19C38.48 78.03 36.13 79.76 33.67 81.28C31.21 82.81 28.6 84.18 25.93 85.34C23.26 86.49 20.47 87.47 17.65 88.23C14.82 88.99 11.91 89.55 9 89.88C6.09 90.21 3.12 90.33 .2 90.24C-2.73 90.14-5.68 89.82-8.55 89.29C-11.42 88.77-14.28 88.02-17.03 87.09C-19.77 86.15-22.48 85-25.04 83.68C-27.61 82.37-30.06 80.8-32.41 79.2C-34.77 77.59-36.39 74.92-39.15 74.05C-41.9 73.18-45.69 74.3-48.94 73.98C-52.19 73.66-55.48 73.03-58.63 72.11C-61.78 71.2-64.92 69.97-67.87 68.48C-70.81 66.99-73.68 65.19-76.31 63.18C-78.94 61.16-81.44 58.86-83.66 56.39C-85.88 53.92-87.91 51.19-89.64 48.34C-91.37 45.49-92.86 42.43-94.04 39.31C-95.22 36.19-96.12 32.91-96.7 29.63C-97.28 26.35-97.56 22.95-97.53 19.63C-97.5 16.3-97.16 12.92-96.52 9.67C-95.88 6.41-94.92 3.17-93.71 .1C-92.49-2.97-90.96-5.97-89.22-8.75C-87.47-11.53-85.44-14.18-83.24-16.58C-81.04-18.98-77.96-20.93-76.02-23.13C-74.08-25.33-72.46-27.29-71.61-29.79C-70.76-32.28-71.39-35.36-70.92-38.09C-70.45-40.83-69.73-43.59-68.79-46.22C-67.85-48.85-66.66-51.45-65.27-53.88C-63.88-56.32-62.24-58.67-60.44-60.83C-58.65-62.99-56.62-65.02-54.47-66.83C-52.32-68.64-49.97-70.29-47.54-71.69C-45.11-73.09-42.51-74.29-39.88-75.24C-37.25-76.19-34.49-76.91-31.74-77.38C-29-77.85-26.17-78.07-23.4-78.06C-20.63-78.04-17.82-77.77-15.12-77.27C-12.42-76.78-9.73-76.03-7.17-75.09C-4.62-74.14-2.13-72.96 .2-71.61C2.52-70.27 4.64-68.2 6.78-67.02C8.91-65.84 10.72-64.55 12.99-64.54C15.27-64.53 17.9-66.38 20.44-66.95C22.99-67.53 25.64-67.89 28.27-68C30.9-68.11 33.6-67.98 36.22-67.61C38.84-67.24 41.48-66.62 44-65.77C46.52-64.92 49.02-63.83 51.35-62.53C53.69-61.23 55.94-59.69 58.01-57.99C60.07-56.28 62.01-54.35 63.73-52.29C65.45-50.23 67-47.97 68.32-45.64C69.63-43.3 70.75-40.8 71.62-38.26C72.49-35.72 73.13-33.06 73.52-30.42C73.91-27.77 72.78-24.79 73.97-22.39C75.15-19.98 78.46-18.29 80.63-15.98C82.8-13.66 85.13-11.17 86.99-8.49C88.85-5.81 90.47-2.9 91.77 .1Z';
 
+  function blobSvg() {
+    const id = 'mirox-blob-' + (++blobMascotId);
+    return `<svg class="blob-svg" viewBox="-125 -125 250 250" role="img" aria-label="Mirox animated blob mascot" xmlns="http://www.w3.org/2000/svg">
+      <defs><linearGradient id="${id}" x1=".12" y1=".08" x2=".88" y2=".94"><stop class="blob-stop-light" offset="0%" stop-color="#fff"/><stop class="blob-stop-dark" offset="0%" stop-color="var(--panel-3)"/><stop offset="54%" stop-color="var(--accent)"/><stop offset="100%" stop-color="var(--accent-hover)"/></linearGradient>
+      <radialGradient id="${id}-shine" cx="28%" cy="18%" r="65%"><stop offset="0%" stop-color="#fff" stop-opacity=".8"/><stop offset="100%" stop-color="#fff" stop-opacity="0"/></radialGradient>
+      <filter id="${id}-shadow" x="-35%" y="-35%" width="170%" height="180%"><feGaussianBlur stdDeviation="5"/></filter></defs>
+      <ellipse class="blob-shadow" cx="0" cy="94" rx="65" ry="11" fill="var(--accent)" opacity=".18" filter="url(#${id}-shadow)"/>
+      <g class="blob-wobble"><path class="blob-body" d="${BLOB_PATH}" fill="url(#${id})" stroke="rgba(255,255,255,.55)" stroke-width="1.6"/><path d="${BLOB_PATH}" fill="url(#${id}-shine)" opacity=".55" pointer-events="none"/>
+      <g class="blob-face" fill="var(--face-ink)"><ellipse class="eye left" cx="-27" cy="-23" rx="7.2" ry="11.5"/><ellipse class="eye right" cx="35" cy="-34" rx="7.2" ry="11.5"/><circle class="eye-glint left" cx="-29" cy="-28" r="2.6"/><circle class="eye-glint right" cx="33" cy="-39" r="2.6"/><ellipse class="cheek left" cx="-48" cy="7" rx="11" ry="6"/><ellipse class="cheek right" cx="51" cy="-1" rx="11" ry="6"/><path class="blob-mouth" d="M-12 29 Q1 43 15 27" fill="none" stroke="var(--face-ink)" stroke-width="4.5" stroke-linecap="round"/></g>
+      <g class="blob-glasses" fill="none" stroke="var(--face-ink)" stroke-width="3.6"><circle cx="-27" cy="-22" r="16"/><circle cx="35" cy="-33" r="16"/><path d="M-11 -24 Q3 -31 19 -34 M-44 -25 L-55 -29 M51 -36 L62 -40" stroke-linecap="round"/></g>
+      <g class="blob-sparkles" fill="var(--accent-hover)"><path d="M-70 -69 l4 10 10 4 -10 4 -4 10 -4 -10 -10 -4 10 -4Z"/><path d="M70 31 l3 7 7 3 -7 3 -3 7 -3 -7 -7 -3 7 -3Z"/></g>
+      </g><circle class="blob-orbit" cx="0" cy="0" r="111" fill="none" stroke="var(--accent)" stroke-width=".8" stroke-dasharray="2 8" opacity=".45"/>
+    </svg>`;
+  }
   function mascotHTML(cls, mood) {
     const m = MOOD_KEYS.includes(mood) ? mood : 'idle';
-    return `<div class="mascot ${cls || ''} m-${m}" data-mood="${m}">` +
-      `<span class="brow left"></span><span class="brow right"></span>` +
-      `<span class="eye left"></span><span class="eye right"></span>` +
-      `<span class="cheek left"></span><span class="cheek right"></span>` +
-      `<span class="mouth"></span><span class="prop">${escapeHtml(MASCOT_MOODS[m])}</span></div>`;
+    return `<div class="mascot ${cls || ''} m-${m}" data-mood="${m}">${blobSvg()}<span class="prop" aria-hidden="true">${escapeHtml(MASCOT_MOODS[m])}</span></div>`;
+  }
+  function upgradeStaticMascots(scope = document) {
+    scope.querySelectorAll('.mascot:not([data-blob-ready])').forEach((el) => {
+      const m = MOOD_KEYS.includes(el.dataset.mood) ? el.dataset.mood : 'idle';
+      el.innerHTML = blobSvg() + `<span class="prop" aria-hidden="true">${escapeHtml(MASCOT_MOODS[m])}</span>`;
+      el.dataset.mood = m;
+      el.classList.add('m-' + m);
+      el.dataset.blobReady = '1';
+    });
   }
   function setMascotMood(mood, scope) {
     const root = scope || document;
     const m = MOOD_KEYS.includes(mood) ? mood : 'idle';
+    upgradeStaticMascots(root);
     root.querySelectorAll('.mascot').forEach((el) => {
       el.className = el.className.split(' ').filter((c) => !/^m-/.test(c)).join(' ');
       el.classList.add('m-' + m);
@@ -158,6 +180,7 @@
       if (p) p.textContent = MASCOT_MOODS[m];
     });
   }
+  upgradeStaticMascots();
   function pickMoodFor(text) {
     const t = String(text || '').toLowerCase();
     if (/\b(search|look up|google|latest|news|find)\b/.test(t)) return 'searching';
