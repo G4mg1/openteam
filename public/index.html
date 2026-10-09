@@ -5,94 +5,55 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5.0">
 <meta name="theme-color" content="#faf9f5">
 <title>MiroxAI — by OpenSurr</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23f09268'/%3E%3Cstop offset='1' stop-color='%23b3502c'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='32' cy='32' r='29' fill='url(%23g)'/%3E%3Cpath d='M18 43 V23 L32 37 L46 23 V43' fill='none' stroke='%23fff' stroke-width='6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="icon" href="/logo.png" type="image/png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/remixicon@4.9.0/fonts/remixicon.css" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
-<base target="_blank">
 </head>
 <body>
 
-<!-- Ambient animated background -->
 <div class="bg-glow" aria-hidden="true">
   <span class="glow g1"></span>
   <span class="glow g2"></span>
   <span class="glow g3"></span>
 </div>
 
-<!-- ══════════ LOADING SCREEN ══════════ -->
+<!-- LOADING SCREEN -->
 <div id="loadingScreen" class="loading-screen">
-  <div class="loading-logo">
-    <svg class="logo-svg logo-anim" viewBox="0 0 64 64" aria-hidden="true">
-      <defs>
-        <linearGradient id="miroxGrad" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="#f09268"/>
-          <stop offset="100%" stop-color="#b3502c"/>
-        </linearGradient>
-      </defs>
-      <circle class="logo-orb" cx="32" cy="32" r="29" fill="url(#miroxGrad)"/>
-      <circle cx="23" cy="21" r="6" fill="#ffffff" opacity=".22"/>
-      <path class="logo-m" d="M18 43 V23 L32 37 L46 23 V43" fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
-  </div>
+  <img class="loading-logo" src="/logo.png" alt="MiroxAI" onerror="this.style.display='none'">
   <div class="loading-brand">Mirox</div>
   <div class="loading-line"><div class="loading-line-fill"></div></div>
   <div class="loading-tip" id="loadingTip">Waking up Luna…</div>
 </div>
 
-<script>
-(function () {
-  var tips = ['Waking up Luna…', 'Polishing the pixels…', 'Charging the mascot…', 'Ready.'];
-  var ti = 0;
-  var tipEl = document.getElementById('loadingTip');
-  var tipTimer = setInterval(function () {
-    ti++;
-    if (tipEl && tips[ti]) tipEl.textContent = tips[ti];
-    if (ti >= tips.length - 1) clearInterval(tipTimer);
-  }, 650);
-  function kill() {
-    var el = document.getElementById('loadingScreen');
-    if (!el) return;
-    el.classList.add('hidden');
-    setTimeout(function () { el.style.display = 'none'; }, 750);
-  }
-  window.__miroxKillLoader = kill;
-  setTimeout(kill, 1400);
-  setTimeout(kill, 3000);
-  window.addEventListener('error', function () { kill(); });
-})();
-</script>
-
 <div id="sidebarScrim" class="sidebar-scrim"></div>
 
-<!-- ══════════ SIDEBAR ══════════ -->
+<!-- SIDEBAR -->
 <aside id="sidebar" class="sidebar">
   <div class="sidebar-header">
     <a href="#" id="brandLogo" class="brand">
-      <svg class="logo-svg brand-logo-svg" viewBox="0 0 64 64" aria-hidden="true">
-        <circle cx="32" cy="32" r="29" fill="url(#miroxGrad)"/>
-        <circle cx="23" cy="21" r="6" fill="#ffffff" opacity=".22"/>
-        <path d="M18 43 V23 L32 37 L46 23 V43" fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
+      <img class="brand-logo" src="/logo.png" alt="" onerror="this.style.display='none'">
       <span class="brand-text">MiroxAI</span>
     </a>
-    <button id="sidebarCloseBtn" class="icon-btn sidebar-close" type="button"><i class="ri-close-line"></i></button>
+    <button id="sidebarCloseBtn" class="icon-btn sidebar-close" type="button" aria-label="Close sidebar"><i class="ri-close-line"></i></button>
   </div>
 
   <button id="newChatBtn" class="new-chat-btn" type="button"><i class="ri-add-line"></i><span>New chat</span></button>
 
-  <div class="sidebar-tabs">
+  <div class="sidebar-tabs" role="tablist">
     <button class="sidebar-tab active" type="button" data-tab="chats"><i class="ri-chat-3-line"></i> Chats</button>
     <button class="sidebar-tab" type="button" data-tab="bridge"><i class="ri-link"></i> Bridge</button>
     <button class="sidebar-tab" type="button" data-tab="images"><i class="ri-image-line"></i> Images</button>
   </div>
 
-  <div class="sidebar-search"><i class="ri-search-line" aria-hidden="true"></i><input id="chatSearch" type="search" placeholder="Search your messages…" autocomplete="off" spellcheck="false"></div>
-
   <div class="sidebar-section" data-pane="chats">
+    <div class="history-search">
+      <i class="ri-search-line"></i>
+      <input id="historySearch" type="search" placeholder="Search chats & messages…" autocomplete="off" spellcheck="false">
+    </div>
     <ul id="historyList" class="history-list"><li class="history-empty">No conversations yet</li></ul>
   </div>
 
@@ -103,8 +64,8 @@
         <span>Disconnected</span>
       </div>
       <p class="bridge-hint">Give Mirox direct control of your laptop.</p>
-      <button id="bridgeOpenBtn" class="modal-btn primary" type="button" style="width:100%;"><i class="ri-terminal-box-line"></i> Open Bridge Workspace</button>
-      <button id="bridgeDownloadBtn" class="modal-btn" type="button" style="width:100%;margin-top:8px;"><i class="ri-download-2-line"></i> Download client</button>
+      <button id="bridgeOpenBtn" class="modal-btn primary" type="button"><i class="ri-terminal-box-line"></i> Open Bridge Workspace</button>
+      <button id="bridgeDownloadBtn" class="modal-btn" type="button"><i class="ri-download-2-line"></i> Download client</button>
     </div>
   </div>
 
@@ -123,7 +84,7 @@
         <span class="user-name">Guest mode</span>
         <span class="user-sub">Sign in to save chats</span>
       </div>
-      <button id="upgradeBtn" class="upgrade-btn" type="button"><i class="ri-vip-crown-line"></i></button>
+      <button id="upgradeBtn" class="upgrade-btn" type="button" aria-label="Plans"><i class="ri-vip-crown-line"></i></button>
     </div>
     <div class="sidebar-links">
       <a href="#" id="settingsBtn" class="sidebar-link"><i class="ri-settings-3-line"></i> Settings</a>
@@ -134,10 +95,10 @@
   </div>
 </aside>
 
-<!-- ══════════ MAIN ══════════ -->
+<!-- MAIN -->
 <main class="main">
   <header class="chat-header">
-    <button id="hamburgerBtn" class="icon-btn hamburger" type="button"><i class="ri-menu-line"></i></button>
+    <button id="hamburgerBtn" class="icon-btn hamburger" type="button" aria-label="Open sidebar"><i class="ri-menu-line"></i></button>
     <h2 id="chatTitle" class="chat-title">New chat</h2>
     <div id="creditBar" class="credit-bar" style="display:none;">
       <div class="credit-pill" data-credit="vision" title="Image uploads today"><i class="ri-eye-line"></i><span>10/10</span></div>
@@ -160,7 +121,7 @@
     <div class="welcome-screen">
       <div class="welcome-mascot">
         <div class="mascot mascot-lg wave" id="welcomeMascot">
-          <span class="eye left"></span><span class="eye right"></span><span class="mouth"></span>
+          <span class="eye left"></span><span class="eye right"></span><span class="mouth"></span><span class="prop"></span>
         </div>
         <div class="mascot-ring"></div>
         <div class="mascot-ring r2"></div>
@@ -179,7 +140,7 @@
   <div class="composer-wrap">
     <div id="attachmentPreview" class="attachment-preview" style="display:none;">
       <div id="attachmentList" class="attachment-list"></div>
-      <button id="removeAttachmentBtn" class="icon-btn" type="button"><i class="ri-close-line"></i></button>
+      <button id="removeAttachmentBtn" class="icon-btn" type="button" aria-label="Remove attachments"><i class="ri-close-line"></i></button>
     </div>
 
     <div class="tools-row">
@@ -191,25 +152,22 @@
     </div>
 
     <div class="composer">
-      <button type="button" id="attachBtn" class="icon-btn" title="Attach files"><i class="ri-attachment-2"></i></button>
+      <button type="button" id="attachBtn" class="icon-btn" title="Attach files" aria-label="Attach files"><i class="ri-attachment-2"></i></button>
       <input type="file" id="fileInput" multiple hidden accept="image/*,.txt,.md,.json,.csv,.log,.py,.js,.ts,.html,.css,.yml,.yaml,.xml,.sh,.sql,.java,.c,.cpp,.go,.rs,.rb,.php,.lua">
       <textarea id="messageInput" class="message-input" placeholder="How can I help you today? (paste big text → becomes an attachment)" rows="1"></textarea>
-      <button type="button" id="stopBtn" class="icon-btn stop-btn" style="display:none;"><i class="ri-stop-circle-line"></i></button>
-      <button type="button" id="sendBtn" class="send-btn is-disabled" aria-disabled="true"><i class="ri-arrow-up-line"></i></button>
+      <button type="button" id="stopBtn" class="icon-btn stop-btn" style="display:none;" aria-label="Stop"><i class="ri-stop-circle-line"></i></button>
+      <button type="button" id="sendBtn" class="send-btn is-disabled" aria-disabled="true" aria-label="Send"><i class="ri-arrow-up-line"></i></button>
     </div>
     <div class="composer-note">Mirox can make mistakes — double-check important info.</div>
   </div>
 </main>
 
-<!-- ══════════ BRIDGE WORKSPACE ══════════ -->
+<!-- BRIDGE WORKSPACE -->
 <div id="bridgeWorkspace" class="bridge-workspace-overlay">
   <div class="bridge-workspace-panel" id="bwPanel">
     <header class="bridge-workspace-top">
       <div class="bridge-workspace-title">
-        <svg class="logo-svg bridge-logo-svg" viewBox="0 0 64 64" aria-hidden="true">
-          <circle cx="32" cy="32" r="29" fill="url(#miroxGrad)"/>
-          <path d="M18 43 V23 L32 37 L46 23 V43" fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
+        <img class="bridge-logo" src="/logo.png" alt="" onerror="this.style.display='none'">
         <span>Bridge</span>
       </div>
       <div class="bridge-workspace-status" id="bwStatusPill">
@@ -256,11 +214,9 @@
       <div class="bridge-workspace-main">
         <div class="bridge-messages" id="bridgeMessages">
           <div class="bridge-empty" id="bridgeEmpty">
-            <div class="mascot mascot-md wave">
-              <span class="eye left"></span><span class="eye right"></span><span class="mouth"></span>
-            </div>
+            <div class="mascot mascot-md wave"><span class="eye left"></span><span class="eye right"></span><span class="mouth"></span><span class="prop"></span></div>
             <h3>Bridge Workspace</h3>
-            <p>Tell Mirox what to build. It writes the files silently into <code>~/&lt;project&gt;/</code>, verifies them, and shows you a live preview.</p>
+            <p>Tell Mirox what to build. It writes the files into <code>~/&lt;project&gt;/</code>, verifies them, and shows you a live preview.</p>
             <ol class="bridge-empty-steps">
               <li>Download the client → extract → <code>pip install aiohttp</code> → <code>python runner.py</code>.</li>
               <li>Optional: <code>sudo apt install kdeconnect</code> for phone control.</li>
@@ -270,7 +226,7 @@
         </div>
         <div class="bridge-input-row">
           <textarea id="bridgeInput" placeholder="e.g. Build a calculator in my home folder" rows="1"></textarea>
-          <button id="bridgeSendBtn" class="send-btn is-disabled" type="button" aria-disabled="true"><i class="ri-arrow-up-line"></i></button>
+          <button id="bridgeSendBtn" class="send-btn is-disabled" type="button" aria-disabled="true" aria-label="Send"><i class="ri-arrow-up-line"></i></button>
         </div>
       </div>
 
@@ -281,18 +237,18 @@
             <div class="bridge-status-dot offline"></div>
             <span>Disconnected</span>
           </div>
-          <label class="bw-label">Name</label>
+          <label class="bw-label" for="bwNameInput">Name</label>
           <input id="bwNameInput" class="modal-input" type="text" placeholder="My Laptop" maxlength="60">
-          <label class="bw-label">Model</label>
+          <label class="bw-label" for="bwModelSelect">Model</label>
           <select id="bwModelSelect" class="modal-select">
             <option value="mirox-luna-1.2">Luna (fast, unlimited)</option>
             <option value="mirox-gen-1">Gen (concise, unlimited)</option>
             <option value="mirox-pro-5">Pro (deeper)</option>
           </select>
-          <label class="bw-label">Port</label>
+          <label class="bw-label" for="bwPortInput">Port</label>
           <input id="bwPortInput" class="modal-input" type="number" value="8765" min="1024" max="65535">
-          <button id="bwConnectBtn" class="modal-btn primary" type="button" style="width:100%;margin-top:10px;"><i class="ri-link"></i> Connect</button>
-          <button id="bwDisconnectBtn" class="modal-btn danger" type="button" style="width:100%;margin-top:8px;display:none;"><i class="ri-link-unlink"></i> Disconnect</button>
+          <button id="bwConnectBtn" class="modal-btn primary" type="button"><i class="ri-link"></i> Connect</button>
+          <button id="bwDisconnectBtn" class="modal-btn danger" type="button" style="display:none;"><i class="ri-link-unlink"></i> Disconnect</button>
           <div id="bwConnectHint" class="bw-hint"></div>
         </div>
 
@@ -302,7 +258,7 @@
             <i class="ri-smartphone-line"></i>
             <span id="bwKdeStatus">KDE Connect: checking…</span>
           </div>
-          <button id="bwScanDevicesBtn" class="modal-btn" type="button" style="width:100%;margin-top:6px;"><i class="ri-radar-line"></i> Scan for devices</button>
+          <button id="bwScanDevicesBtn" class="modal-btn" type="button"><i class="ri-radar-line"></i> Scan for devices</button>
           <div id="bwDeviceList" class="bw-device-list"></div>
         </div>
 
@@ -312,8 +268,8 @@
             <i class="ri-folder-3-line"></i>
             <span id="bwBuildStatus">No project yet</span>
           </div>
-          <button id="bwBuildOpenBtn" class="modal-btn" type="button" style="width:100%;margin-top:6px;"><i class="ri-eye-line"></i> Open live preview</button>
-          <button id="bwBuildFolderBtn" class="modal-btn" type="button" style="width:100%;margin-top:6px;"><i class="ri-folder-open-line"></i> Copy folder path</button>
+          <button id="bwBuildOpenBtn" class="modal-btn" type="button"><i class="ri-eye-line"></i> Open live preview</button>
+          <button id="bwBuildFolderBtn" class="modal-btn" type="button"><i class="ri-folder-open-line"></i> Copy folder path</button>
         </div>
 
         <div class="bridge-side-section">
@@ -322,7 +278,7 @@
             <i class="ri-shield-keyhole-line"></i>
             <span id="bwSudoStatus">No password saved</span>
           </div>
-          <button id="bwSudoForgetBtn" class="modal-btn" type="button" style="width:100%;margin-top:6px;"><i class="ri-forbid-2-line"></i> Forget password</button>
+          <button id="bwSudoForgetBtn" class="modal-btn" type="button"><i class="ri-forbid-2-line"></i> Forget password</button>
         </div>
 
         <div class="bridge-side-section">
@@ -342,7 +298,7 @@
   </div>
 </div>
 
-<!-- ══════════ LIVE PREVIEW ══════════ -->
+<!-- LIVE PREVIEW -->
 <div id="bwPreviewModal" class="planner-overlay">
   <div class="planner-panel" style="max-width:1400px;">
     <header class="planner-top">
@@ -353,22 +309,22 @@
           <div class="planner-title-sub" id="bwPreviewSubtitle">No project yet</div>
         </div>
       </div>
-      <div style="display:flex;gap:6px;align-items:center;">
-        <input id="bwPreviewPath" class="modal-input" style="width:280px;" placeholder="~/project/index.html" spellcheck="false">
+      <div class="preview-tools">
+        <input id="bwPreviewPath" class="modal-input" placeholder="~/project/index.html" spellcheck="false">
         <button class="icon-btn" id="bwPreviewLoadBtn" title="Load path"><i class="ri-folder-open-line"></i></button>
         <button class="icon-btn" id="bwPreviewReloadBtn" title="Reload"><i class="ri-refresh-line"></i></button>
         <button class="icon-btn" id="bwPreviewCloseBtn" title="Close"><i class="ri-close-line"></i></button>
       </div>
     </header>
-    <div class="planner-body" style="padding:0;">
-      <iframe id="bwPreviewFrame" sandbox="allow-scripts allow-same-origin allow-forms allow-modals" style="width:100%;height:100%;border:0;background:#fff;"></iframe>
+    <div class="planner-body preview-body">
+      <iframe id="bwPreviewFrame" sandbox="allow-scripts allow-same-origin allow-forms allow-modals"></iframe>
     </div>
   </div>
 </div>
 
-<!-- ══════════ KDE DEVICE PICKER ══════════ -->
+<!-- KDE DEVICE PICKER -->
 <div id="kdeModal" class="planner-overlay">
-  <div class="planner-panel" style="max-width: 760px;">
+  <div class="planner-panel" style="max-width:760px;">
     <header class="planner-top">
       <div class="planner-title">
         <i class="ri-smartphone-line"></i>
@@ -379,7 +335,7 @@
       </div>
       <button class="icon-btn" id="kdeCloseBtn" type="button"><i class="ri-close-line"></i></button>
     </header>
-    <div class="planner-body" style="padding: 16px;">
+    <div class="planner-body" style="padding:16px;">
       <div id="kdeGrid" class="kde-device-grid"></div>
     </div>
     <footer class="planner-footer">
@@ -390,7 +346,7 @@
   </div>
 </div>
 
-<!-- ══════════ MIROX PLANNER ══════════ -->
+<!-- MIROX PLANNER -->
 <div id="plannerModal" class="planner-overlay">
   <div class="planner-panel">
     <header class="planner-top">
@@ -407,13 +363,13 @@
       <div id="plannerGrid" class="planner-grid"></div>
     </div>
     <footer class="planner-footer">
-      <span class="planner-hint"><i class="ri-information-line"></i> Live demos — scroll, hover, click inside each preview. Pick your favorite.</span>
+      <span class="planner-hint"><i class="ri-information-line"></i> Live demos — pick your favorite.</span>
       <button id="plannerSkipBtn" class="modal-btn" type="button"><i class="ri-skip-forward-line"></i> Let Mirox decide</button>
     </footer>
   </div>
 </div>
 
-<!-- ══════════ SUDO ══════════ -->
+<!-- SUDO -->
 <div id="sudoModal" class="question-overlay">
   <div class="question-panel sudo-panel">
     <div class="question-top">
@@ -424,7 +380,7 @@
       </div>
       <button class="icon-btn" id="sudoCloseBtn" type="button" title="Skip"><i class="ri-close-line"></i></button>
     </div>
-    <p class="question-text" id="sudoCommandText" style="font-family:'SF Mono',monospace;font-size:13px;background:var(--panel-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;word-break:break-all;"></p>
+    <p class="question-text sudo-command" id="sudoCommandText"></p>
     <div class="sudo-input-wrap">
       <input type="password" id="sudoPasswordInput" class="modal-input" placeholder="Your sudo password" autocomplete="current-password" spellcheck="false">
       <button class="icon-btn sudo-reveal" type="button" id="sudoRevealBtn" title="Show / hide"><i class="ri-eye-line"></i></button>
@@ -441,7 +397,7 @@
   </div>
 </div>
 
-<!-- ══════════ QUESTION MODAL ══════════ -->
+<!-- BRIDGE QUESTION -->
 <div id="bridgeQuestionModal" class="question-overlay">
   <div class="question-panel">
     <div class="question-top">
@@ -467,19 +423,19 @@
   </div>
 </div>
 
-<!-- ══════════ LOGIN ══════════ -->
+<!-- LOGIN -->
 <div id="loginModal" class="modal-overlay">
   <div class="modal">
-    <button class="icon-btn modal-close" type="button" data-close="loginModal"><i class="ri-close-line"></i></button>
+    <button class="icon-btn modal-close" type="button" data-close="loginModal" aria-label="Close"><i class="ri-close-line"></i></button>
     <div class="modal-mascot">
-      <div class="mascot mascot-md wave"><span class="eye left"></span><span class="eye right"></span><span class="mouth"></span></div>
+      <div class="mascot mascot-md wave"><span class="eye left"></span><span class="eye right"></span><span class="mouth"></span><span class="prop"></span></div>
     </div>
     <h2 class="modal-title">Sign in</h2>
     <p class="modal-sub">Sign in with Google, Apple, or email — powered by Loginment.</p>
-    <button id="loginmentBtn" class="modal-btn primary" type="button" style="width:100%;margin-bottom:14px;">
+    <button id="loginmentBtn" class="modal-btn primary login-main" type="button">
       <i class="ri-shield-user-line"></i> Continue with Loginment
     </button>
-    <div style="text-align:center;font-size:12px;color:var(--text-faint);margin:6px 0 14px;">or use a quick demo login</div>
+    <div class="login-divider">or use a quick demo login</div>
     <form id="simpleLoginForm" class="modal-form">
       <input type="text" id="loginName" class="modal-input" placeholder="Name" required maxlength="60">
       <input type="email" id="loginEmail" class="modal-input" placeholder="Email" required>
@@ -488,10 +444,10 @@
   </div>
 </div>
 
-<!-- ══════════ SETTINGS ══════════ -->
+<!-- SETTINGS -->
 <div id="settingsModal" class="modal-overlay">
   <div class="modal modal-wide">
-    <button class="icon-btn modal-close" type="button" data-close="settingsModal"><i class="ri-close-line"></i></button>
+    <button class="icon-btn modal-close" type="button" data-close="settingsModal" aria-label="Close"><i class="ri-close-line"></i></button>
     <h2 class="modal-title">Settings</h2>
     <div class="settings-tabs">
       <button class="settings-tab active" type="button" data-tab="general">General</button>
@@ -500,7 +456,7 @@
     </div>
     <div class="settings-pane active" data-pane="general">
       <div class="setting-group"><h4>Session</h4><button id="logoutBtn" class="modal-btn danger" type="button">Sign out</button></div>
-      <div class="setting-group"><h4>Developer</h4><a href="/developers/" class="modal-btn" style="text-decoration:none;"><i class="ri-code-s-slash-line"></i> Open Developer Console</a></div>
+      <div class="setting-group"><h4>Developer</h4><a href="/developers/" class="modal-btn link-btn"><i class="ri-code-s-slash-line"></i> Open Developer Console</a></div>
     </div>
     <div class="settings-pane" data-pane="appearance">
       <div class="setting-group"><h4>Mode</h4>
@@ -511,11 +467,11 @@
       </div>
       <div class="setting-group"><h4>Accent</h4>
         <div class="swatch-grid">
-          <button class="swatch" type="button" data-theme="default" style="--sw:#c96442"></button>
-          <button class="swatch" type="button" data-theme="sage" style="--sw:#7a8c6b"></button>
-          <button class="swatch" type="button" data-theme="sky" style="--sw:#5b7ca8"></button>
-          <button class="swatch" type="button" data-theme="plum" style="--sw:#8b5a83"></button>
-          <button class="swatch" type="button" data-theme="amber" style="--sw:#c48a3f"></button>
+          <button class="swatch" type="button" data-theme="default" style="--sw:#c96442" aria-label="Terracotta"></button>
+          <button class="swatch" type="button" data-theme="sage" style="--sw:#7a8c6b" aria-label="Sage"></button>
+          <button class="swatch" type="button" data-theme="sky" style="--sw:#5b7ca8" aria-label="Sky"></button>
+          <button class="swatch" type="button" data-theme="plum" style="--sw:#8b5a83" aria-label="Plum"></button>
+          <button class="swatch" type="button" data-theme="amber" style="--sw:#c48a3f" aria-label="Amber"></button>
         </div>
       </div>
     </div>
@@ -532,55 +488,53 @@
   </div>
 </div>
 
-<!-- ══════════ PLANS ══════════ -->
+<!-- PLANS -->
 <div id="plansModal" class="modal-overlay">
   <div class="modal modal-wide">
-    <button class="icon-btn modal-close" type="button" data-close="plansModal"><i class="ri-close-line"></i></button>
+    <button class="icon-btn modal-close" type="button" data-close="plansModal" aria-label="Close"><i class="ri-close-line"></i></button>
     <h2 class="modal-title">Plans</h2>
     <p class="modal-sub">Luna and Gen are free and unlimited. Bridge is free.</p>
     <div id="plansGrid" class="plans-grid"></div>
   </div>
 </div>
 
-<!-- ══════════ IMAGE STUDIO ══════════ -->
+<!-- IMAGE STUDIO -->
 <div id="imageModal" class="modal-overlay">
   <div class="modal">
-    <button class="icon-btn modal-close" type="button" data-close="imageModal"><i class="ri-close-line"></i></button>
+    <button class="icon-btn modal-close" type="button" data-close="imageModal" aria-label="Close"><i class="ri-close-line"></i></button>
     <h2 class="modal-title">Lumenal 1.0</h2>
     <p class="modal-sub">Strong image generation, powered by Mirox.</p>
     <div class="image-studio">
       <textarea id="imagePrompt" class="modal-textarea" rows="3" placeholder="Describe the image you want…"></textarea>
       <button id="generateImageBtn" class="modal-btn primary" type="button"><i class="ri-image-add-line"></i> Generate</button>
       <div id="imageResult" class="image-result"></div>
-      <div style="margin-top:18px;">
-        <h4 style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-faint);margin-bottom:8px;">Recent images</h4>
-        <div id="imageHistory" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;max-height:260px;overflow-y:auto;"></div>
-      </div>
+      <h4 class="studio-heading">Recent images</h4>
+      <div id="imageHistory" class="studio-grid"></div>
     </div>
   </div>
 </div>
 
-<!-- ══════════ SUPPORT ══════════ -->
+<!-- SUPPORT -->
 <div id="supportModal" class="modal-overlay">
   <div class="modal">
-    <button class="icon-btn modal-close" type="button" data-close="supportModal"><i class="ri-close-line"></i></button>
+    <button class="icon-btn modal-close" type="button" data-close="supportModal" aria-label="Close"><i class="ri-close-line"></i></button>
     <h2 class="modal-title">Contact Support</h2>
     <div class="support-form">
       <input type="text" id="supportSubject" class="modal-input" placeholder="Subject">
       <textarea id="supportMessage" class="modal-textarea" rows="4" placeholder="Message"></textarea>
       <button id="submitReportBtn" class="modal-btn primary" type="button">Submit</button>
-      <a href="/developers/" class="modal-btn" style="text-decoration:none;margin-top:6px;"><i class="ri-code-s-slash-line"></i> Developers</a>
+      <a href="/developers/" class="modal-btn link-btn"><i class="ri-code-s-slash-line"></i> Developers</a>
     </div>
   </div>
 </div>
 
-<!-- ══════════ IMAGE VIEWER ══════════ -->
+<!-- IMAGE VIEWER -->
 <div id="imageViewer" class="image-viewer">
   <div class="image-viewer-backdrop" data-iv-close></div>
-  <div class="image-viewer-panel" oncontextmenu="return false;">
+  <div class="image-viewer-panel">
     <div class="image-viewer-top">
       <div class="image-viewer-title">Generated image</div>
-      <button class="icon-btn" type="button" data-iv-close><i class="ri-close-line"></i></button>
+      <button class="icon-btn" type="button" data-iv-close aria-label="Close"><i class="ri-close-line"></i></button>
     </div>
     <div class="image-viewer-canvas-wrap">
       <canvas id="ivCanvas"></canvas>
