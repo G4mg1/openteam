@@ -131,8 +131,12 @@
 
   const MASCOT_MOODS = {
     idle: '', happy: '✨', love: '❤', wink: '😉', sad: '💧', surprised: '!', sleepy: 'z',
-    thinking: '…', reasoning: '?', searching: '⌕', reading: '≡', learning: '💡',
+    thinking: '…', reasoning: '∴', searching: '⌕', reading: '📖', learning: '💡',
     coding: '</>', celebrate: '★', error: '!', listening: '♪', cool: '▬', confused: '?', focus: '◎',
+    studying: '🎓', glasses: '👓', bookworm: '📚', researching: '🔎', building: '🛠️',
+    writing: '✍️', planning: '🗺️', testing: '🧪', debugging: '🐞', curious: '❔',
+    idea: '💭', proud: '🌟', waiting: '⌛', web: '🌐', deepwork: '🧠', typing: '⌨️',
+    reviewing: '🧐', excited: '🎉', worried: '😅', calm: '☁️',
   };
   const MOOD_KEYS = Object.keys(MASCOT_MOODS);
 
@@ -157,10 +161,14 @@
   }
   function pickMoodFor(text) {
     const t = String(text || '').toLowerCase();
-    if (/\b(search|look up|google|latest|news|find)\b/.test(t)) return 'searching';
-    if (/\b(build|code|script|fix|bug|function|debug|lua|python|javascript|html|css)\b/.test(t)) return 'coding';
-    if (/\b(explain|teach|learn|how does|why|what is)\b/.test(t)) return 'learning';
-    if (t.length > 300) return 'reasoning';
+    if (/\b(search|look up|google|latest|news|find|browse|website|web)\b/.test(t)) return 'searching';
+    if (/\b(debug|bug|test|trace|stack trace|error log)\b/.test(t)) return 'debugging';
+    if (/\b(build|code|script|fix|function|lua|python|javascript|html|css|program|implement)\b/.test(t)) return 'coding';
+    if (/\b(read|book|chapter|study|research|paper|document)\b/.test(t)) return 'bookworm';
+    if (/\b(plan|architecture|design|steps|strategy)\b/.test(t)) return 'planning';
+    if (/\b(explain|teach|learn|how does|why|what is|compare)\b/.test(t)) return 'learning';
+    if (/\b(deeply|reason|reasoning|analyze|analysis|complex|carefully)\b/.test(t) || t.length > 300) return 'deepwork';
+    if (/\b(thank|great|awesome|nice|congratulations)\b/.test(t)) return 'celebrate';
     return 'thinking';
   }
   function startIdleMascot() {
@@ -311,27 +319,41 @@
   }
   function renderText(text) {
     const lines = String(text).split('\n');
-    let out = '';
+    let out = '', i = 0;
     const buf = [];
     const flush = () => { if (buf.length) { out += `<p>${inlineFmt(buf.join(' '))}</p>`; buf.length = 0; } };
-    for (const raw of lines) {
-      const t = raw.trim();
-      if (!t) { flush(); continue; }
+    const cells = (line) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(x => x.trim());
+    const isSep = (line) => /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+    while (i < lines.length) {
+      const t = lines[i].trim();
+      if (!t) { flush(); i++; continue; }
+      if (t.includes('|') && i + 1 < lines.length && isSep(lines[i + 1])) {
+        flush(); const headers = cells(t); i += 2; let rows = '';
+        while (i < lines.length && lines[i].trim() && lines[i].includes('|')) {
+          const cols = cells(lines[i]);
+          rows += '<tr>' + headers.map((_, j) => `<td>${inlineFmt(cols[j] || '')}</td>`).join('') + '</tr>'; i++;
+        }
+        out += `<div class="md-table-wrap"><table class="md-table"><thead><tr>${headers.map(h => `<th>${inlineFmt(h)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
+        continue;
+      }
       const hm = t.match(/^(#{1,4})\s+(.+)$/);
-      if (hm) { flush(); out += `<h${hm[1].length}>${inlineFmt(hm[2])}</h${hm[1].length}>`; continue; }
-      const um = t.match(/^[-*+]\s+(.+)$/);
-      if (um) { flush(); out += `<div class="md-li">• ${inlineFmt(um[1])}</div>`; continue; }
+      if (hm) { flush(); out += `<h${hm[1].length}>${inlineFmt(hm[2])}</h${hm[1].length}>`; i++; continue; }
+      if (/^>\s?/.test(t)) { flush(); out += `<blockquote>${inlineFmt(t.replace(/^>\s?/, ''))}</blockquote>`; i++; continue; }
+      if (/^[-*+]\s+/.test(t)) { flush(); out += `<div class="md-li">• ${inlineFmt(t.replace(/^[-*+]\s+/, ''))}</div>`; i++; continue; }
       const om = t.match(/^(\d+)\.\s+(.+)$/);
-      if (om) { flush(); out += `<div class="md-li">${om[1]}. ${inlineFmt(om[2])}</div>`; continue; }
-      buf.push(t);
+      if (om) { flush(); out += `<div class="md-li">${om[1]}. ${inlineFmt(om[2])}</div>`; i++; continue; }
+      buf.push(t); i++;
     }
-    flush();
-    return out;
+    flush(); return out;
   }
   function inlineFmt(t) {
     t = escapeHtml(t);
-    t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
     t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
+    t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    t = t.replace(/~~([^~]+)~~/g, '<del>$1</del>');
+    t = t.replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, '$1<em>$2</em>');
+    t = t.replace(/(^|_)_([^_]+)_(?!_)/g, '$1<em>$2</em>');
+    t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
     return t;
   }
   function wireCopyButtons(scope) {
@@ -541,7 +563,7 @@
     el.className = 'message ' + (role === 'user' ? 'user' : 'ai');
     el.dataset.msgId = id;
     el.dataset.role = role;
-    let inner = '';
+    let inner = role === 'ai' ? `<div class="assistant-mascot-row">${mascotHTML('mascot-sm', 'idle')}<span>Mirox</span></div>` : '';
     if (role === 'user' && files && files.length) {
       inner += '<div class="attach-row">';
       for (const f of files) {
@@ -593,6 +615,62 @@
       };
     });
   }
+  function addContinueButton(bubble, msgEl) {
+    if (!bubble || bubble.querySelector('[data-continue]')) return;
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'continue-answer-btn'; btn.dataset.continue = '1';
+    btn.innerHTML = '<i class="ri-arrow-down-line"></i> Continue';
+    btn.addEventListener('click', () => continueAssistant(msgEl, btn));
+    bubble.appendChild(btn);
+  }
+
+  async function continueAssistant(msgEl, btn) {
+    if (isReplying || !msgEl) return;
+    const convo = currentConvo(), msgId = msgEl.dataset.msgId;
+    const saved = convo?.messages?.find(m => m.id === msgId);
+    const bubble = msgEl.querySelector('.bubble'), textEl = bubble?.querySelector('.bubble-text');
+    if (!convo || !saved || !bubble || !textEl) { toast('Could not find this conversation message.', 2200); return; }
+    const prior = saved.content || textEl.textContent || '';
+    btn.remove(); isReplying = true; updateSendButtonState();
+    const stopBtn = $('#stopBtn'); if (stopBtn) stopBtn.style.display = 'grid';
+    const panel = createThinkPanel('Continuing answer', []);
+    msgEl.insertBefore(panel.el, msgEl.querySelector('.message-time'));
+    const controller = new AbortController(); activeStreamController = controller;
+    let appended = '', buf = '', wasLimited = false;
+    const timeout = setTimeout(() => controller.abort(), 120000);
+    try {
+      const history = convo.messages.slice(-14).map(m => ({ role: m.role, content: m.content }));
+      const res = await fetch('/v1/chat/completions', {
+        method: 'POST', headers: {'Content-Type':'application/json'}, credentials:'same-origin',
+        body: JSON.stringify({ message: 'Continue your previous answer exactly where it stopped. Do not repeat earlier text. Finish the remaining response.', history, model: __model || 'mirox-luna-1.2', stream: true }),
+        signal: controller.signal
+      });
+      if (!res.ok) { const d = await res.json().catch(()=>({})); throw new Error(d.error?.message || `HTTP ${res.status}`); }
+      const reader = res.body.getReader(), dec = new TextDecoder();
+      while (true) {
+        const {value, done} = await reader.read(); if (done) break;
+        buf += dec.decode(value, {stream:true}); let idx;
+        while ((idx = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0,idx).trim(); buf = buf.slice(idx+1);
+          if (!line.startsWith('data:')) continue;
+          const raw = line.slice(5).trim(); if (!raw || raw === '[DONE]') continue;
+          let o; try { o = JSON.parse(raw); } catch { continue; }
+          if (o.d) { appended += o.d; saved.content = prior + appended; textEl.innerHTML = renderMarkdown(saved.content); wireCopyButtons(textEl); scrollToBottom(); }
+          if (o.limit) wasLimited = true;
+          if (o.error) throw new Error(o.error.message || 'Stream error');
+        }
+      }
+      saved.content = prior + appended; saveChats(); panel.finish();
+      if (wasLimited) addContinueButton(bubble, msgEl);
+    } catch (e) {
+      panel.fail(e.message || 'Unable to continue'); addContinueButton(bubble, msgEl);
+    } finally {
+      clearTimeout(timeout); panel.destroy(); isReplying = false;
+      if (stopBtn) stopBtn.style.display = 'none';
+      updateSendButtonState(); activeStreamController = null;
+    }
+  }
+
   async function handleRetry(el) {
     if (isReplying) return;
     const convo = currentConvo(); if (!convo) return;
@@ -695,7 +773,7 @@
       }
       const reader = res.body.getReader();
       const dec = new TextDecoder();
-      let buf = '', searchStepAdded = false;
+      let buf = '', searchStepAdded = false, responseLimited = false;
 
       const ensureBubble = () => {
         if (!bubble) {
@@ -739,7 +817,7 @@
             panel.markWriting();
             panel.setMood('celebrate');
             ensureBubble();
-            bubble.innerHTML = `<div class="gen-image"><img src="${o.img}" draggable="false" alt=""></div><div class="bubble-text"></div>`;
+            bubble.innerHTML = `<div class="assistant-mascot-row">${mascotHTML('mascot-sm', 'celebrate')}<span>Mirox</span></div><div class="gen-image"><img src="${o.img}" draggable="false" alt=""></div><div class="bubble-text"></div>`;
             bubbleText = bubble.querySelector('.bubble-text');
             const img = bubble.querySelector('img');
             if (img) img.onclick = () => openImageViewer(o.img);
@@ -754,7 +832,7 @@
               panel.markWriting();
               panel.setMood('learning');
               ensureBubble();
-              bubble.innerHTML = '<div class="bubble-text"></div>';
+              bubble.innerHTML = `<div class="assistant-mascot-row">${mascotHTML('mascot-sm', 'thinking')}<span>Mirox</span></div><div class="bubble-text"></div>`;
               bubbleText = bubble.querySelector('.bubble-text');
             }
             if (bubbleText) {
@@ -763,12 +841,14 @@
             }
             scrollToBottom();
           }
+          if (o.limit) responseLimited = true;
           if (o.error) throw new Error(o.error.message || 'Stream error');
         }
       }
       clearTimeout(streamTimeout);
       panel.finish();
       if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); wireCopyButtons(bubbleText); }
+      if (bubble && responseLimited) addContinueButton(bubble, msgEl);
       wireMessageActions(msgEl);
 
       let imageKey = null;
