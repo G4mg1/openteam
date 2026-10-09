@@ -5,42 +5,78 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5.0">
 <meta name="theme-color" content="#faf9f5">
 <title>MiroxAI — by OpenSurr</title>
-<link rel="icon" href="/logo.png" type="image/png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23f09268'/%3E%3Cstop offset='1' stop-color='%23b3502c'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='32' cy='32' r='29' fill='url(%23g)'/%3E%3Cpath d='M18 43 V23 L32 37 L46 23 V43' fill='none' stroke='%23fff' stroke-width='6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/remixicon@4.9.0/fonts/remixicon.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
+<base target="_blank">
 </head>
 <body>
 
+<!-- Ambient animated background -->
+<div class="bg-glow" aria-hidden="true">
+  <span class="glow g1"></span>
+  <span class="glow g2"></span>
+  <span class="glow g3"></span>
+</div>
+
+<!-- ══════════ LOADING SCREEN ══════════ -->
 <div id="loadingScreen" class="loading-screen">
+  <div class="loading-logo">
+    <svg class="logo-svg logo-anim" viewBox="0 0 64 64" aria-hidden="true">
+      <defs>
+        <linearGradient id="miroxGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#f09268"/>
+          <stop offset="100%" stop-color="#b3502c"/>
+        </linearGradient>
+      </defs>
+      <circle class="logo-orb" cx="32" cy="32" r="29" fill="url(#miroxGrad)"/>
+      <circle cx="23" cy="21" r="6" fill="#ffffff" opacity=".22"/>
+      <path class="logo-m" d="M18 43 V23 L32 37 L46 23 V43" fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </div>
   <div class="loading-brand">Mirox</div>
   <div class="loading-line"><div class="loading-line-fill"></div></div>
+  <div class="loading-tip" id="loadingTip">Waking up Luna…</div>
 </div>
 
 <script>
 (function () {
+  var tips = ['Waking up Luna…', 'Polishing the pixels…', 'Charging the mascot…', 'Ready.'];
+  var ti = 0;
+  var tipEl = document.getElementById('loadingTip');
+  var tipTimer = setInterval(function () {
+    ti++;
+    if (tipEl && tips[ti]) tipEl.textContent = tips[ti];
+    if (ti >= tips.length - 1) clearInterval(tipTimer);
+  }, 650);
   function kill() {
     var el = document.getElementById('loadingScreen');
     if (!el) return;
     el.classList.add('hidden');
-    setTimeout(function () { el.style.display = 'none'; }, 700);
+    setTimeout(function () { el.style.display = 'none'; }, 750);
   }
   window.__miroxKillLoader = kill;
-  setTimeout(kill, 1000);
-  setTimeout(kill, 2500);
+  setTimeout(kill, 1400);
+  setTimeout(kill, 3000);
   window.addEventListener('error', function () { kill(); });
 })();
 </script>
 
 <div id="sidebarScrim" class="sidebar-scrim"></div>
 
+<!-- ══════════ SIDEBAR ══════════ -->
 <aside id="sidebar" class="sidebar">
   <div class="sidebar-header">
     <a href="#" id="brandLogo" class="brand">
-      <img src="/logo.png" alt="MiroxAI" class="brand-logo theme-aware-logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';">
-      <div class="logo-fallback logo-fallback-sm" style="display:none;">M</div>
+      <svg class="logo-svg brand-logo-svg" viewBox="0 0 64 64" aria-hidden="true">
+        <circle cx="32" cy="32" r="29" fill="url(#miroxGrad)"/>
+        <circle cx="23" cy="21" r="6" fill="#ffffff" opacity=".22"/>
+        <path d="M18 43 V23 L32 37 L46 23 V43" fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
       <span class="brand-text">MiroxAI</span>
     </a>
     <button id="sidebarCloseBtn" class="icon-btn sidebar-close" type="button"><i class="ri-close-line"></i></button>
@@ -96,6 +132,7 @@
   </div>
 </aside>
 
+<!-- ══════════ MAIN ══════════ -->
 <main class="main">
   <header class="chat-header">
     <button id="hamburgerBtn" class="icon-btn hamburger" type="button"><i class="ri-menu-line"></i></button>
@@ -119,8 +156,13 @@
 
   <div id="chatMessages" class="chat-messages">
     <div class="welcome-screen">
-      <img src="/logo.png" alt="MiroxAI" class="welcome-logo theme-aware-logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';">
-      <div class="logo-fallback logo-fallback-lg" style="display:none;">M</div>
+      <div class="welcome-mascot">
+        <div class="mascot mascot-lg wave" id="welcomeMascot">
+          <span class="eye left"></span><span class="eye right"></span><span class="mouth"></span>
+        </div>
+        <div class="mascot-ring"></div>
+        <div class="mascot-ring r2"></div>
+      </div>
       <h1 class="welcome-title">Hi, I'm Mirox</h1>
       <p class="welcome-sub">Luna and Gen are unlimited and free. Try asking me to search the web, generate an image, or build a project with Bridge.</p>
       <div class="suggestion-grid">
@@ -148,20 +190,24 @@
 
     <div class="composer">
       <button type="button" id="attachBtn" class="icon-btn" title="Attach files"><i class="ri-attachment-2"></i></button>
-      <input type="file" id="fileInput" multiple hidden accept="image/*,.txt,.md,.json,.csv,.log,.py,.js,.ts,.html,.css,.yml,.yaml,.xml,.sh,.sql,.java,.c,.cpp,.go,.rs,.rb,.php">
-      <textarea id="messageInput" class="message-input" placeholder="How can I help you today?" rows="1"></textarea>
+      <input type="file" id="fileInput" multiple hidden accept="image/*,.txt,.md,.json,.csv,.log,.py,.js,.ts,.html,.css,.yml,.yaml,.xml,.sh,.sql,.java,.c,.cpp,.go,.rs,.rb,.php,.lua">
+      <textarea id="messageInput" class="message-input" placeholder="How can I help you today? (paste big text → becomes an attachment)" rows="1"></textarea>
       <button type="button" id="stopBtn" class="icon-btn stop-btn" style="display:none;"><i class="ri-stop-circle-line"></i></button>
       <button type="button" id="sendBtn" class="send-btn is-disabled" aria-disabled="true"><i class="ri-arrow-up-line"></i></button>
     </div>
+    <div class="composer-note">Mirox can make mistakes — double-check important info.</div>
   </div>
 </main>
 
-<!-- BRIDGE WORKSPACE -->
+<!-- ══════════ BRIDGE WORKSPACE ══════════ -->
 <div id="bridgeWorkspace" class="bridge-workspace-overlay">
-  <div class="bridge-workspace-panel">
+  <div class="bridge-workspace-panel" id="bwPanel">
     <header class="bridge-workspace-top">
       <div class="bridge-workspace-title">
-        <i class="ri-terminal-box-line"></i>
+        <svg class="logo-svg bridge-logo-svg" viewBox="0 0 64 64" aria-hidden="true">
+          <circle cx="32" cy="32" r="29" fill="url(#miroxGrad)"/>
+          <path d="M18 43 V23 L32 37 L46 23 V43" fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
         <span>Bridge</span>
       </div>
       <div class="bridge-workspace-status" id="bwStatusPill">
@@ -170,6 +216,9 @@
       </div>
 
       <div class="bridge-workspace-toggles" id="bwToggles">
+        <button id="bwSideToggle" class="bridge-toggle only-mobile" type="button" title="Connection panel">
+          <i class="ri-layout-column-line"></i><span>Panel</span>
+        </button>
         <button id="bwToggleAutoRun" class="bridge-toggle active" type="button" title="Auto-continue until the task is done">
           <i class="ri-play-circle-line"></i><span>Auto-Run</span>
         </button>
@@ -205,7 +254,9 @@
       <div class="bridge-workspace-main">
         <div class="bridge-messages" id="bridgeMessages">
           <div class="bridge-empty" id="bridgeEmpty">
-            <i class="ri-terminal-box-line"></i>
+            <div class="mascot mascot-md wave">
+              <span class="eye left"></span><span class="eye right"></span><span class="mouth"></span>
+            </div>
             <h3>Bridge Workspace</h3>
             <p>Tell Mirox what to build. It writes the files silently into <code>~/&lt;project&gt;/</code>, verifies them, and shows you a live preview.</p>
             <ol class="bridge-empty-steps">
@@ -223,7 +274,7 @@
 
       <aside class="bridge-workspace-side">
         <div class="bridge-side-section">
-          <h4>Connection</h4>
+          <h4><i class="ri-plug-line"></i> Connection</h4>
           <div id="bwStatusBox" class="bw-status-box">
             <div class="bridge-status-dot offline"></div>
             <span>Disconnected</span>
@@ -244,7 +295,7 @@
         </div>
 
         <div class="bridge-side-section">
-          <h4>Phone &amp; Devices</h4>
+          <h4><i class="ri-smartphone-line"></i> Phone &amp; Devices</h4>
           <div class="bw-status-box" id="bwKdeBox">
             <i class="ri-smartphone-line"></i>
             <span id="bwKdeStatus">KDE Connect: checking…</span>
@@ -254,7 +305,7 @@
         </div>
 
         <div class="bridge-side-section">
-          <h4>Build</h4>
+          <h4><i class="ri-hammer-line"></i> Build</h4>
           <div class="bw-status-box" id="bwBuildBox">
             <i class="ri-folder-3-line"></i>
             <span id="bwBuildStatus">No project yet</span>
@@ -264,7 +315,7 @@
         </div>
 
         <div class="bridge-side-section">
-          <h4>Sudo</h4>
+          <h4><i class="ri-shield-keyhole-line"></i> Sudo</h4>
           <div class="bw-status-box" id="bwSudoBox">
             <i class="ri-shield-keyhole-line"></i>
             <span id="bwSudoStatus">No password saved</span>
@@ -273,21 +324,23 @@
         </div>
 
         <div class="bridge-side-section">
-          <h4>Quick actions</h4>
-          <button class="bw-quick" data-q="Build a calculator in my home folder">Calculator</button>
-          <button class="bw-quick" data-q="Build a modern landing page for a coffee shop in my home folder">Landing page</button>
-          <button class="bw-quick" data-q="Build a snake game in my home folder">Snake game</button>
-          <button class="bw-quick" data-q="Build a todo app in my home folder">Todo app</button>
-          <button class="bw-quick" data-q="Build a personal portfolio in my home folder">Portfolio site</button>
-          <button class="bw-quick" data-q="Scan my devices and show me what's available.">Scan devices</button>
-          <button class="bw-quick" data-q="Build a small todo app for my phone, then send it to my phone.">Build + send to phone</button>
+          <h4><i class="ri-rocket-line"></i> Quick actions</h4>
+          <div class="bw-quick-grid">
+            <button class="bw-quick" data-q="Build a calculator in my home folder">Calculator</button>
+            <button class="bw-quick" data-q="Build a modern landing page for a coffee shop in my home folder">Landing page</button>
+            <button class="bw-quick" data-q="Build a snake game in my home folder">Snake game</button>
+            <button class="bw-quick" data-q="Build a todo app in my home folder">Todo app</button>
+            <button class="bw-quick" data-q="Build a personal portfolio in my home folder">Portfolio</button>
+            <button class="bw-quick" data-q="Scan my devices and show me what's available.">Scan devices</button>
+            <button class="bw-quick" data-q="Build a small todo app for my phone, then send it to my phone.">Build + send to phone</button>
+          </div>
         </div>
       </aside>
     </div>
   </div>
 </div>
 
-<!-- LIVE PREVIEW -->
+<!-- ══════════ LIVE PREVIEW ══════════ -->
 <div id="bwPreviewModal" class="planner-overlay">
   <div class="planner-panel" style="max-width:1400px;">
     <header class="planner-top">
@@ -311,7 +364,7 @@
   </div>
 </div>
 
-<!-- KDE DEVICE PICKER -->
+<!-- ══════════ KDE DEVICE PICKER ══════════ -->
 <div id="kdeModal" class="planner-overlay">
   <div class="planner-panel" style="max-width: 760px;">
     <header class="planner-top">
@@ -335,7 +388,7 @@
   </div>
 </div>
 
-<!-- MIROX PLANNER -->
+<!-- ══════════ MIROX PLANNER ══════════ -->
 <div id="plannerModal" class="planner-overlay">
   <div class="planner-panel">
     <header class="planner-top">
@@ -358,7 +411,7 @@
   </div>
 </div>
 
-<!-- SUDO -->
+<!-- ══════════ SUDO ══════════ -->
 <div id="sudoModal" class="question-overlay">
   <div class="question-panel sudo-panel">
     <div class="question-top">
@@ -386,7 +439,7 @@
   </div>
 </div>
 
-<!-- QUESTION MODAL -->
+<!-- ══════════ QUESTION MODAL ══════════ -->
 <div id="bridgeQuestionModal" class="question-overlay">
   <div class="question-panel">
     <div class="question-top">
@@ -412,10 +465,13 @@
   </div>
 </div>
 
-<!-- LOGIN -->
+<!-- ══════════ LOGIN ══════════ -->
 <div id="loginModal" class="modal-overlay">
   <div class="modal">
     <button class="icon-btn modal-close" type="button" data-close="loginModal"><i class="ri-close-line"></i></button>
+    <div class="modal-mascot">
+      <div class="mascot mascot-md wave"><span class="eye left"></span><span class="eye right"></span><span class="mouth"></span></div>
+    </div>
     <h2 class="modal-title">Sign in</h2>
     <p class="modal-sub">Sign in with Google, Apple, or email — powered by Loginment.</p>
     <button id="loginmentBtn" class="modal-btn primary" type="button" style="width:100%;margin-bottom:14px;">
@@ -430,7 +486,7 @@
   </div>
 </div>
 
-<!-- SETTINGS -->
+<!-- ══════════ SETTINGS ══════════ -->
 <div id="settingsModal" class="modal-overlay">
   <div class="modal modal-wide">
     <button class="icon-btn modal-close" type="button" data-close="settingsModal"><i class="ri-close-line"></i></button>
@@ -474,7 +530,7 @@
   </div>
 </div>
 
-<!-- PLANS -->
+<!-- ══════════ PLANS ══════════ -->
 <div id="plansModal" class="modal-overlay">
   <div class="modal modal-wide">
     <button class="icon-btn modal-close" type="button" data-close="plansModal"><i class="ri-close-line"></i></button>
@@ -484,7 +540,7 @@
   </div>
 </div>
 
-<!-- IMAGE STUDIO -->
+<!-- ══════════ IMAGE STUDIO ══════════ -->
 <div id="imageModal" class="modal-overlay">
   <div class="modal">
     <button class="icon-btn modal-close" type="button" data-close="imageModal"><i class="ri-close-line"></i></button>
@@ -502,7 +558,7 @@
   </div>
 </div>
 
-<!-- SUPPORT -->
+<!-- ══════════ SUPPORT ══════════ -->
 <div id="supportModal" class="modal-overlay">
   <div class="modal">
     <button class="icon-btn modal-close" type="button" data-close="supportModal"><i class="ri-close-line"></i></button>
@@ -516,7 +572,7 @@
   </div>
 </div>
 
-<!-- IMAGE VIEWER -->
+<!-- ══════════ IMAGE VIEWER ══════════ -->
 <div id="imageViewer" class="image-viewer">
   <div class="image-viewer-backdrop" data-iv-close></div>
   <div class="image-viewer-panel" oncontextmenu="return false;">
@@ -534,6 +590,7 @@
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="/script.js" defer></script>
 </body>
 </html>
