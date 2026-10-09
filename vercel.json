@@ -1,33 +1,34 @@
 {
   "version": 2,
-  "cleanUrls": true,
-  "trailingSlash": false,
   "rewrites": [
-    { "source": "/v1/chat/completions", "destination": "/api/index" },
-    { "source": "/v1/images/generations", "destination": "/api/index" },
-    { "source": "/v1/models", "destination": "/api/index" },
-    { "source": "/v1/:path*", "destination": "/api/index" },
     { "source": "/api/:path*", "destination": "/api/index" },
+    { "source": "/v1/:path*", "destination": "/api/index" },
     { "source": "/health", "destination": "/api/index" },
-    { "source": "/admin/console", "destination": "/admin.html" },
+    { "source": "/ping", "destination": "/api/index" },
+    { "source": "/callback", "destination": "/api/index" },
+    { "source": "/config", "destination": "/api/index" },
+    { "source": "/me", "destination": "/api/index" },
+    { "source": "/keys", "destination": "/api/index" },
+    { "source": "/keys/:path*", "destination": "/api/index" },
+    { "source": "/logout", "destination": "/api/index" },
+    { "source": "/search", "destination": "/api/index" },
+    { "source": "/persona", "destination": "/api/index" },
     { "source": "/admin", "destination": "/admin.html" },
-    { "source": "/developers/", "destination": "/developers/index.html" },
+    { "source": "/admin/console", "destination": "/admin.html" },
     { "source": "/developers", "destination": "/developers/index.html" },
-    { "source": "/(.*)", "destination": "/api/index" }
+    { "source": "/developers/", "destination": "/developers/index.html" }
   ],
   "headers": [
     {
       "source": "/v1/(.*)",
-      "headers": [
-        { "key": "Access-Control-Allow-Origin", "value": "*" },
-        { "key": "Access-Control-Allow-Methods", "value": "GET, POST, OPTIONS" },
-        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization, Accept, X-Api-Key, X-API-Key, api-key, Api-Key, X-Auth-Token, Mirox-Key" },
-        { "key": "Cache-Control", "value": "no-store" },
-        { "key": "X-Accel-Buffering", "value": "no" }
-      ]
+      "headers": [{ "key": "Cache-Control", "value": "no-store" }]
     }
   ],
   "functions": {
-    "api/index.js": { "memory": 1024, "maxDuration": 60 }
+    "api/index.js": {
+      "memory": 1024,
+      "maxDuration": 60,
+      "includeFiles": "api/mirox_client_bridge/**"
+    }
   }
 }
