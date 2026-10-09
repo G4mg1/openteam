@@ -11,38 +11,38 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css">
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    :root{--bg:#fafafb;--bg-soft:#f4f4f7;--panel:#fff;--panel-2:#f7f7fa;--panel-3:#eeeef3;--border:#e8e8ef;--border-strong:#d5d5dd;--text:#0a0a0c;--text-muted:#64646f;--text-faint:#9494a0;--accent:#c4694b;--accent-hover:#a8503a;--accent-soft:rgba(196,105,75,.10);--code-bg:#f6f8fa;--code-border:#e4e7ec;--code-header:#eef0f4;--code-text:#24292f;--radius:10px;--radius-lg:14px;--radius-xl:20px;--font:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;--mono:'JetBrains Mono','SF Mono','Fira Code',Consolas,monospace;--shadow-sm:0 1px 2px rgba(20,20,40,.04),0 2px 6px rgba(20,20,40,.03);--shadow-lg:0 8px 28px rgba(20,20,40,.09);--sidebar-w:260px}
-    :root[data-mode="dark"]{--bg:#0a0a0d;--bg-soft:#0f0f14;--panel:#15151b;--panel-2:#1d1d24;--panel-3:#26262f;--border:#26262f;--border-strong:#3a3a47;--text:#f4f4f8;--text-muted:#a0a0ab;--text-faint:#6a6a75;--code-bg:#1a1a22;--code-border:#26262f;--code-header:#13131a;--code-text:#e4e4ec}
+    :root{--bg:#fafafb;--panel:#fff;--panel-2:#f7f7fa;--panel-3:#eeeef3;--border:#e8e8ef;--text:#0a0a0c;--text-muted:#64646f;--text-faint:#9494a0;--accent:#c4694b;--accent-hover:#a8503a;--accent-soft:rgba(196,105,75,.10);--code-bg:#f6f8fa;--code-border:#e4e7ec;--code-header:#eef0f4;--code-text:#24292f;--radius:10px;--radius-lg:14px;--radius-xl:20px;--font:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;--mono:'JetBrains Mono','SF Mono','Fira Code',Consolas,monospace;--shadow-sm:0 1px 2px rgba(20,20,40,.04),0 2px 6px rgba(20,20,40,.03);--sidebar-w:260px;--ok:#2f8a1f;--err:#dc2626}
+    :root[data-mode="dark"]{--bg:#0a0a0d;--panel:#15151b;--panel-2:#1d1d24;--panel-3:#26262f;--border:#26262f;--text:#f4f4f8;--text-muted:#a0a0ab;--text-faint:#6a6a75;--code-bg:#1a1a22;--code-border:#26262f;--code-header:#13131a;--code-text:#e4e4ec;--accent-soft:rgba(224,123,92,.14);--accent:#e07b5c;--accent-hover:#c96442}
     html{scroll-behavior:smooth;scroll-padding-top:24px}
     body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased;min-height:100vh}
     a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
     button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
     input,textarea,select{font:inherit;color:inherit}
-    img{max-width:100%;display:block}
-    :root[data-mode="dark"] .theme-aware-logo{filter:invert(1) brightness(1.15)}
+
     .dev-layout{display:flex;min-height:100vh}
     .dev-sidebar{width:var(--sidebar-w);flex-shrink:0;background:var(--panel);border-right:1px solid var(--border);padding:24px 16px;position:sticky;top:0;height:100vh;overflow-y:auto;display:flex;flex-direction:column}
     .dev-logo{display:flex;align-items:center;gap:10px;margin-bottom:6px;padding:0 8px}
-    .dev-logo img{width:32px;height:32px;border-radius:8px}
+    .dev-logo img{width:32px;height:32px;border-radius:8px;object-fit:contain}
     .dev-logo-text{display:flex;flex-direction:column;line-height:1.2}
     .dev-logo-text strong{font-size:15px;font-weight:700}
     .dev-logo-text span{font-size:11px;color:var(--text-faint);font-weight:500}
     .dev-nav-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-faint);padding:20px 12px 6px}
     .dev-nav{display:flex;flex-direction:column;gap:1px}
     .dev-nav a{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:var(--radius);font-size:13.5px;font-weight:500;color:var(--text-muted);text-decoration:none;transition:background .15s,color .15s}
-    .dev-nav a:hover{background:var(--panel-2);color:var(--text);text-decoration:none}
+    .dev-nav a:hover{background:var(--panel-2);color:var(--text)}
     .dev-nav a.active{background:var(--accent-soft);color:var(--accent)}
     .dev-nav a i{font-size:16px;flex-shrink:0}
     .dev-sidebar-footer{margin-top:auto;padding-top:20px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px}
     .dev-sidebar-footer a{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:var(--radius);font-size:13px;color:var(--text-muted);text-decoration:none}
-    .dev-sidebar-footer a:hover{background:var(--panel-2);color:var(--text);text-decoration:none}
+    .dev-sidebar-footer a:hover{background:var(--panel-2);color:var(--text)}
+
     .dev-main{flex:1;min-width:0;padding:48px 56px 80px;max-width:1000px}
     .dev-topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:32px;padding-bottom:20px;border-bottom:1px solid var(--border)}
-    .dev-topbar-title{font-size:13px;color:var(--text-faint);font-weight:500}
+    .dev-topbar-title{font-size:13px;color:var(--text-faint);font-weight:500;display:flex;align-items:center;gap:6px}
     .dev-topbar-actions{display:flex;gap:8px}
-    .icon-btn{width:36px;height:36px;display:grid;place-items:center;border-radius:var(--radius);color:var(--text-muted);font-size:17px;border:1px solid var(--border);background:var(--panel);transition:background .15s,color .15s;text-decoration:none}
+    .icon-btn{width:36px;height:36px;display:grid;place-items:center;border-radius:var(--radius);color:var(--text-muted);font-size:17px;border:1px solid var(--border);background:var(--panel);text-decoration:none}
     .icon-btn:hover{background:var(--panel-2);color:var(--text);text-decoration:none}
-    section{margin-bottom:56px}
+    section{margin-bottom:56px;scroll-margin-top:24px}
     h1{font-size:34px;font-weight:700;letter-spacing:-.025em;margin-bottom:12px;line-height:1.15}
     h2{font-size:22px;font-weight:700;letter-spacing:-.02em;margin-bottom:14px;padding-top:8px}
     h3{font-size:16px;font-weight:600;margin:22px 0 10px}
@@ -51,7 +51,7 @@
     li{line-height:1.7;margin-bottom:4px}
     .lead{font-size:16px;color:var(--text-muted);margin-bottom:20px;line-height:1.7}
     code{background:var(--code-bg);color:var(--text);padding:2px 6px;border-radius:4px;font-family:var(--mono);font-size:.88em;border:1px solid var(--code-border)}
-    pre{background:var(--code-bg);border:1px solid var(--code-border);border-radius:var(--radius-lg);padding:16px 18px;overflow-x:auto;margin:12px 0 20px;font-family:var(--mono);font-size:13px;line-height:1.65;color:var(--code-text);position:relative}
+    pre{position:relative;background:var(--code-bg);border:1px solid var(--code-border);border-radius:var(--radius-lg);padding:16px 18px;overflow-x:auto;margin:12px 0 20px;font-family:var(--mono);font-size:13px;line-height:1.65;color:var(--code-text)}
     pre code{background:none;border:none;padding:0;font-size:13px;color:inherit}
     .code-copy-btn{position:absolute;top:10px;right:10px;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:500;color:var(--text-faint);background:var(--panel);border:1px solid var(--border);display:flex;align-items:center;gap:4px;opacity:0;transition:opacity .15s;font-family:var(--font)}
     pre:hover .code-copy-btn{opacity:1}
@@ -59,7 +59,7 @@
     .code-copy-btn.copied{color:var(--accent)}
     .badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:99px;font-size:11.5px;font-weight:600;background:var(--accent-soft);color:var(--accent)}
     .badge.neutral{background:var(--panel-3);color:var(--text-muted)}
-    .badge.green{background:rgba(78,168,46,.12);color:#4ea82e}
+    .badge.green{background:rgba(47,138,31,.12);color:var(--ok)}
     .badge-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px}
     .endpoint{display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:var(--radius);background:var(--panel-2);border:1px solid var(--border);font-family:var(--mono);font-size:13.5px;margin:12px 0 16px;flex-wrap:wrap}
     .method{font-weight:700;font-size:11px;padding:3px 8px;border-radius:5px;letter-spacing:.03em}
@@ -70,6 +70,38 @@
     .card-icon{width:36px;height:36px;border-radius:9px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-size:18px;margin-bottom:12px}
     .card h4{font-size:14.5px;font-weight:600;margin-bottom:4px}
     .card p{font-size:13px;margin:0;line-height:1.55}
+    table{width:100%;border-collapse:collapse;font-size:13.5px;margin:12px 0 20px;border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden}
+    th{text-align:left;padding:10px 14px;font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint);background:var(--panel-2);border-bottom:1px solid var(--border)}
+    td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--text-muted);vertical-align:top}
+    tr:last-child td{border-bottom:none}
+    .note{padding:12px 14px;border-radius:var(--radius);background:var(--accent-soft);border:1px solid var(--border);font-size:13.5px;color:var(--text-muted);margin:12px 0 16px}
+
+    .key-msg{font-size:13px;color:var(--text-muted);margin-bottom:10px;min-height:18px}
+    .key-msg.err{color:var(--err)}
+    .key-msg.ok{color:var(--ok)}
+    .key-list{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
+    .key-item{display:flex;align-items:center;gap:10px;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--panel);flex-wrap:wrap}
+    .key-item.revoked{opacity:.55}
+    .key-item-name{font-weight:600;font-size:13.5px;flex-shrink:0;min-width:120px;display:flex;align-items:center;gap:6px}
+    .key-item-value{font-family:var(--mono);font-size:12px;color:var(--text-muted);background:var(--panel-2);padding:5px 10px;border-radius:6px;border:1px solid var(--border);flex:1;min-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .key-item-actions{display:flex;gap:6px;flex-shrink:0}
+    .key-item-meta{font-size:11px;color:var(--text-faint);width:100%;display:flex;gap:12px;flex-wrap:wrap}
+    .key-empty{padding:20px;text-align:center;color:var(--text-faint);font-size:13px;border:1px dashed var(--border);border-radius:var(--radius-lg)}
+    .key-create{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+    .key-create input{flex:1;min-width:180px;padding:10px 12px;border-radius:var(--radius);border:1px solid var(--border);background:var(--panel-2);font-size:14px;outline:none}
+    .key-create input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+    .key-limit-info{font-size:12.5px;color:var(--text-muted);margin-bottom:12px;padding:10px 14px;border-radius:var(--radius);background:var(--panel-2);border:1px solid var(--border)}
+
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 18px;border-radius:var(--radius);font-size:13.5px;font-weight:500;transition:background .15s,opacity .15s;border:1px solid transparent}
+    .btn-primary{background:var(--accent);color:#fff}
+    .btn-primary:hover{background:var(--accent-hover)}
+    .btn-primary:disabled{opacity:.5;cursor:not-allowed}
+    .btn-secondary{background:var(--panel-2);color:var(--text);border-color:var(--border)}
+    .btn-secondary:hover{background:var(--panel-3)}
+    .btn-danger{background:transparent;color:var(--err);border-color:rgba(220,38,38,.3)}
+    .btn-danger:hover{background:rgba(220,38,38,.08)}
+    .btn.small{padding:5px 12px;font-size:12.5px}
+
     .playground{border:1px solid var(--border);border-radius:var(--radius-xl);background:var(--panel);overflow:hidden;margin:20px 0}
     .playground-header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);background:var(--panel-2);gap:10px;flex-wrap:wrap}
     .playground-header h3{margin:0;font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
@@ -77,102 +109,78 @@
     .playground-body{padding:20px}
     .field{margin-bottom:14px}
     .field label{display:block;font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px}
-    .field input,.field select,.field textarea{width:100%;padding:10px 12px;border-radius:var(--radius);border:1px solid var(--border);background:var(--panel-2);font-size:14px;outline:none;transition:border-color .15s,box-shadow .15s;font-family:var(--font)}
+    .field input[type="text"],.field input[type="password"],.field input[type="number"],.field select,.field textarea{width:100%;padding:10px 12px;border-radius:var(--radius);border:1px solid var(--border);background:var(--panel-2);font-size:14px;outline:none;transition:border-color .15s,box-shadow .15s;font-family:var(--font)}
     .field textarea{resize:vertical;min-height:80px;font-family:var(--mono);font-size:13px;line-height:1.6}
     .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
     .field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
     .field-hint{font-size:11.5px;color:var(--text-faint);margin-top:4px}
-    .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 18px;border-radius:var(--radius);font-size:13.5px;font-weight:500;transition:background .15s,opacity .15s;border:1px solid transparent;font-family:var(--font)}
-    .btn-primary{background:var(--accent);color:#fff}
-    .btn-primary:hover{background:var(--accent-hover)}
-    .btn-primary:disabled{opacity:.5;cursor:not-allowed}
-    .btn-secondary{background:var(--panel-2);color:var(--text);border-color:var(--border)}
-    .btn-secondary:hover{background:var(--panel-3)}
-    .btn-danger{background:transparent;color:#dc2626;border-color:rgba(220,38,38,.3)}
-    .btn-danger:hover{background:rgba(220,38,38,.08)}
-    .btn.small{padding:5px 12px;font-size:12.5px}
-    .playground-result{margin-top:18px;border-radius:var(--radius-lg);border:1px solid var(--code-border);background:var(--code-bg);overflow:hidden}
-    .playground-result-header{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-bottom:1px solid var(--code-border);background:var(--code-header);font-size:11.5px;font-weight:600;color:var(--text-muted);letter-spacing:.02em;text-transform:uppercase}
+    .check{display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-muted)}
+    .check input{width:auto;accent-color:var(--accent)}
+
+    .result{margin-top:18px;border-radius:var(--radius-lg);border:1px solid var(--code-border);background:var(--code-bg);overflow:hidden}
+    .result-header{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-bottom:1px solid var(--code-border);background:var(--code-header);font-size:11.5px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.02em}
     .status-pill{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600;text-transform:none}
-    .status-pill.ok{background:rgba(78,168,46,.14);color:#4ea82e}
-    .status-pill.err{background:rgba(220,38,38,.12);color:#dc2626}
+    .status-pill.ok{background:rgba(47,138,31,.14);color:var(--ok)}
+    .status-pill.err{background:rgba(220,38,38,.12);color:var(--err)}
     .status-pill.pending{background:var(--panel-3);color:var(--text-muted)}
-    .playground-output{padding:14px 16px;font-family:var(--mono);font-size:12.5px;line-height:1.65;color:var(--code-text);white-space:pre-wrap;word-break:break-word;max-height:380px;overflow-y:auto;margin:0;background:transparent;border:none;border-radius:0}
+    .result-output{padding:14px 16px;font-family:var(--mono);font-size:12.5px;line-height:1.65;color:var(--code-text);white-space:pre-wrap;word-break:break-word;max-height:380px;overflow-y:auto;margin:0}
+
     .dots{display:inline-flex;gap:3px;align-items:center}
     .dots span{width:5px;height:5px;border-radius:50%;background:currentColor;animation:bounce 1.4s ease-in-out infinite}
     .dots span:nth-child(2){animation-delay:.15s}
     .dots span:nth-child(3){animation-delay:.3s}
     @keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-4px);opacity:1}}
-    table{width:100%;border-collapse:collapse;font-size:13.5px;margin:12px 0 20px;border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden}
-    th{text-align:left;padding:10px 14px;font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint);background:var(--panel-2);border-bottom:1px solid var(--border)}
-    td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--text-muted)}
-    tr:last-child td{border-bottom:none}
-    .mobile-nav-toggle{display:none}
 
-    .key-msg{font-size:13px;color:var(--text-muted);margin-bottom:10px}
-    .key-msg.err{color:#dc2626}
-    .key-msg.ok{color:#4ea82e}
-    .key-list{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
-    .key-item{display:flex;align-items:center;gap:10px;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--panel);flex-wrap:wrap}
-    .key-item.revoked{opacity:.55}
-    .key-item-name{font-weight:600;font-size:13.5px;flex-shrink:0;min-width:120px}
-    .key-item-value{font-family:var(--mono);font-size:12px;color:var(--text-muted);background:var(--panel-2);padding:5px 10px;border-radius:6px;border:1px solid var(--border);flex:1;min-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .key-item-actions{display:flex;gap:6px;flex-shrink:0}
-    .key-item-meta{font-size:11px;color:var(--text-faint);width:100%;display:flex;gap:12px;flex-wrap:wrap}
-    .key-empty{padding:20px;text-align:center;color:var(--text-faint);font-size:13px;border:1px dashed var(--border);border-radius:var(--radius-lg)}
-    .key-create{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
-    .key-create input{flex:1;min-width:180px;padding:10px 12px;border-radius:var(--radius);border:1px solid var(--border);background:var(--panel-2);font-size:14px;outline:none}
-    .key-create input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
-    .key-limit-info{font-size:12.5px;color:var(--text-muted);margin-bottom:12px;padding:10px 14px;border-radius:var(--radius);background:var(--panel-2);border:1px solid var(--border)}
+    .mobile-nav-toggle{display:none}
+    .scrim{display:none;position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.35)}
+    .scrim.open{display:block}
+    pre code.hljs{display:block;overflow-x:auto;padding:0;background:transparent}
+    pre .hljs{background:transparent}
 
     @media (max-width:900px){
-      .dev-sidebar{position:fixed;z-index:100;transform:translateX(-100%);transition:transform .25s cubic-bezier(.4,0,.2,1);box-shadow:var(--shadow-lg)}
+      .dev-sidebar{position:fixed;z-index:100;transform:translateX(-100%);transition:transform .25s cubic-bezier(.4,0,.2,1);box-shadow:var(--shadow-sm)}
       .dev-sidebar.open{transform:translateX(0)}
       .dev-main{padding:24px 20px 60px}
       h1{font-size:26px}h2{font-size:19px}
       .mobile-nav-toggle{display:grid;position:fixed;top:14px;left:14px;z-index:200;width:40px;height:40px;border-radius:10px;background:var(--panel);border:1px solid var(--border);place-items:center;font-size:19px;color:var(--text);box-shadow:var(--shadow-sm)}
       .dev-topbar{padding-left:48px}
       .field-row{grid-template-columns:1fr}
+      .key-item-value{min-width:100%}
     }
     @media (min-width:1920px){:root{--sidebar-w:300px}.dev-main{max-width:1200px;padding:56px 72px 96px}}
-    .scrim{display:none;position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.35)}
-    .scrim.open{display:block}
-    pre code.hljs{display:block;overflow-x:auto;padding:0;background:transparent}
-    pre .hljs{background:transparent}
-    .code-language{position:absolute;top:10px;left:12px;padding:3px 7px;border:1px solid var(--border);border-radius:5px;background:var(--panel);color:var(--text-faint);font:500 10px var(--font);text-transform:uppercase;letter-spacing:.04em;pointer-events:none}
   </style>
 </head>
 <body>
-  <button class="mobile-nav-toggle" id="mobileNavToggle" aria-label="Open nav"><i class="ri-menu-line"></i></button>
+  <button class="mobile-nav-toggle" id="mobileNavToggle" aria-label="Open navigation"><i class="ri-menu-line"></i></button>
   <div class="scrim" id="scrim"></div>
 
   <div class="dev-layout">
     <aside class="dev-sidebar" id="devSidebar">
       <div class="dev-logo">
-        <img src="/logo.png" alt="MiroxAI" class="theme-aware-logo" onerror="this.style.display='none'">
+        <img src="/logo.png" alt="MiroxAI" onerror="this.style.display='none'">
         <div class="dev-logo-text"><strong>MiroxAI</strong><span>Developer Platform</span></div>
       </div>
 
-      <div class="dev-nav-label">Getting Started</div>
+      <div class="dev-nav-label">Getting started</div>
       <nav class="dev-nav">
         <a href="#intro" class="active"><i class="ri-book-open-line"></i> Introduction</a>
-        <a href="#quickstart"><i class="ri-rocket-line"></i> Quick Start</a>
+        <a href="#quickstart"><i class="ri-rocket-line"></i> Quick start</a>
         <a href="#auth"><i class="ri-key-2-line"></i> Authentication</a>
       </nav>
 
-      <div class="dev-nav-label">API Reference</div>
+      <div class="dev-nav-label">API reference</div>
       <nav class="dev-nav">
-        <a href="#chat"><i class="ri-chat-3-line"></i> Chat Completions</a>
+        <a href="#chat"><i class="ri-chat-3-line"></i> Chat completions</a>
         <a href="#models"><i class="ri-cpu-line"></i> Models</a>
-        <a href="#images"><i class="ri-image-line"></i> Image Generation</a>
+        <a href="#images"><i class="ri-image-line"></i> Image generation</a>
         <a href="#errors"><i class="ri-error-warning-line"></i> Errors</a>
       </nav>
 
       <div class="dev-nav-label">Tools</div>
       <nav class="dev-nav">
-        <a href="#keys"><i class="ri-key-line"></i> API Keys</a>
+        <a href="#keys"><i class="ri-key-line"></i> API keys</a>
         <a href="#playground"><i class="ri-terminal-box-line"></i> Playground</a>
-        <a href="#limits"><i class="ri-speed-up-line"></i> Rate Limits</a>
+        <a href="#limits"><i class="ri-speed-up-line"></i> Limits</a>
       </nav>
 
       <div class="dev-sidebar-footer">
@@ -184,102 +192,127 @@
       <div class="dev-topbar">
         <div class="dev-topbar-title"><i class="ri-book-2-line"></i> Documentation</div>
         <div class="dev-topbar-actions">
-          <button class="icon-btn" id="themeToggle" title="Toggle theme"><i class="ri-moon-line"></i></button>
-          <a href="/" class="icon-btn" title="Back to app"><i class="ri-home-line"></i></a>
+          <button class="icon-btn" id="themeToggle" title="Toggle theme" aria-label="Toggle theme"><i class="ri-moon-line"></i></button>
+          <a href="/" class="icon-btn" title="Back to app" aria-label="Back to app"><i class="ri-home-line"></i></a>
         </div>
       </div>
 
       <section id="intro">
         <h1>MiroxAI API</h1>
-        <p class="lead">Build intelligent apps with <strong>Luna</strong> and <strong>Gen</strong> — our fast, free AI models. OpenAI-compatible endpoints. Streaming, vision, and image generation included.</p>
+        <p class="lead">Build apps with <strong>Luna</strong> and <strong>Gen</strong>, our fast models, plus image generation. Chat supports streaming and returns one reply per request. Authenticate with an API key from this page.</p>
         <div class="badge-row">
           <span class="badge"><i class="ri-checkbox-circle-line"></i> v1</span>
-          <span class="badge neutral">OpenAI-compatible</span>
+          <span class="badge neutral">Bearer keys</span>
           <span class="badge green"><i class="ri-flashlight-line"></i> Free tier</span>
           <span class="badge neutral">by OpenSurr</span>
         </div>
         <div class="card-grid">
-          <div class="card"><div class="card-icon"><i class="ri-chat-3-line"></i></div><h4>Chat Completions</h4><p>Streaming text generation with Luna and Gen.</p></div>
-          <div class="card"><div class="card-icon"><i class="ri-image-line"></i></div><h4>Image Generation</h4><p>FLUX.1-schnell via Hugging Face.</p></div>
-          <div class="card"><div class="card-icon"><i class="ri-eye-line"></i></div><h4>Vision</h4><p>Send images alongside text prompts.</p></div>
-          <div class="card"><div class="card-icon"><i class="ri-shield-check-line"></i></div><h4>Secure</h4><p>SHA-256 hashed API keys.</p></div>
+          <div class="card"><div class="card-icon"><i class="ri-chat-3-line"></i></div><h4>Chat</h4><p>Non-streaming replies or streamed tokens over SSE.</p></div>
+          <div class="card"><div class="card-icon"><i class="ri-image-line"></i></div><h4>Images</h4><p>Generate images from a text prompt.</p></div>
+          <div class="card"><div class="card-icon"><i class="ri-search-line"></i></div><h4>Web search</h4><p>Ask a question that needs current facts and the reply cites sources.</p></div>
+          <div class="card"><div class="card-icon"><i class="ri-shield-check-line"></i></div><h4>Revocable keys</h4><p>Create, rename, revoke or delete keys at any time.</p></div>
         </div>
       </section>
 
       <section id="quickstart">
-        <h2>Quick Start</h2>
-        <p>Make your first API call in under a minute:</p>
+        <h2>Quick start</h2>
+        <p>Create a key in <a href="#keys">API keys</a> below, then send a chat request:</p>
         <pre><code class="language-bash">curl -X POST https://miroxai.org/v1/chat/completions \
-  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Authorization: Bearer mxk_live_YOUR_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "mirox-luna-1.2",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
+    "message": "Hello! What can you do?"
+  }'</code><button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></pre>
       </section>
 
       <section id="auth">
         <h2>Authentication</h2>
-        <p>Every request must include your API key in the <code>Authorization</code> header. Generate keys from the <a href="#keys">API Keys</a> section below.</p>
-        <pre><code>Authorization: Bearer mxk_live_xxxxxxxxxxxxxxxxxxxxxxxx<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
+        <p>Send your key in the <code>Authorization</code> header on every request:</p>
+        <pre><code>Authorization: Bearer mxk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxx</code><button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></pre>
         <h3>Key rules</h3>
         <ul>
-          <li>Keys are prefixed with <code>mxk_live_</code>.</li>
-          <li>Free plan: up to 2 active keys. Pro &amp; Ultimate: up to 10.</li>
-          <li>Revoked keys stop working immediately.</li>
+          <li>Keys start with <code>mxk_live_</code>. A key shows its full value in this page, so keep a copy somewhere safe.</li>
+          <li>Free accounts can hold 2 active keys. Pro and Ultimate accounts can hold 10.</li>
+          <li>A revoked key stops working right away. Deleting a key removes it from your list.</li>
+          <li>Keep keys server-side. Anyone with a key can use your daily allowance.</li>
         </ul>
       </section>
 
       <section id="chat">
-        <h2>Chat Completions</h2>
+        <h2>Chat completions</h2>
         <div class="endpoint"><span class="method post">POST</span><span>/v1/chat/completions</span></div>
+
         <h3>Request body</h3>
         <table>
           <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
           <tbody>
-            <tr><td><code>model</code></td><td>string</td><td><code>mirox-luna-1.2</code> or <code>mirox-gen-1</code></td></tr>
-            <tr><td><code>messages</code></td><td>array</td><td>Array of <code>{role, content}</code></td></tr>
-            <tr><td><code>stream</code></td><td>boolean</td><td>Enable SSE streaming (default <code>false</code>)</td></tr>
-            <tr><td><code>temperature</code></td><td>number</td><td>0–2, default <code>0.7</code></td></tr>
+            <tr><td><code>message</code></td><td>string</td><td>The user's message. Required unless you send attachments.</td></tr>
+            <tr><td><code>model</code></td><td>string</td><td><code>mirox-luna-1.2</code> (default) or <code>mirox-gen-1</code>.</td></tr>
+            <tr><td><code>history</code></td><td>array</td><td>Optional earlier turns, each <code>{"role": "user" | "assistant", "content": "..."}</code>. Only the last 14 are used.</td></tr>
+            <tr><td><code>stream</code></td><td>boolean</td><td>Set <code>true</code> to receive server-sent events. Default <code>false</code>.</td></tr>
+            <tr><td><code>search</code></td><td>boolean</td><td>Force a web search for this message. Searches also run automatically for phrases like "search for …".</td></tr>
           </tbody>
         </table>
-        <h3>Example request</h3>
+
+        <h3>Response (stream: false)</h3>
         <pre><code class="language-json">{
-  "model": "mirox-luna-1.2",
-  "messages": [
-    {"role": "system", "content": "You are helpful."},
-    {"role": "user", "content": "What is 2+2?"}
-  ],
-  "stream": false
-}<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
-        <h3>Streaming</h3>
-        <p>Set <code>stream: true</code> to receive Server-Sent Events:</p>
-        <pre><code class="language-plaintext">data: {"d":"Hello"}
+  "reply": "Hello! I can answer questions, write and explain code, and search the web.",
+  "_ms": 812,
+  "provider": "pl",
+  "search": null
+}</code><button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></pre>
+        <p>When a search ran, <code>search</code> contains <code>query</code>, <code>results</code> (title, url, snippet) and <code>overview</code>.</p>
+
+        <h3>Streaming (stream: true)</h3>
+        <p>Each event is a line starting with <code>data:</code> followed by JSON. Read these fields:</p>
+        <table>
+          <thead><tr><th>Event</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>{"search": {"query": "…"}}</code></td><td>A web search started.</td></tr>
+            <tr><td><code>{"source": {"title": "…", "url": "…"}}</code></td><td>One search source found.</td></tr>
+            <tr><td><code>{"search_done": true, "count": 5}</code></td><td>Search finished.</td></tr>
+            <tr><td><code>{"p": "pl"}</code></td><td>The provider answering.</td></tr>
+            <tr><td><code>{"d": "Hel"}</code></td><td>A piece of the reply. Append these in order.</td></tr>
+            <tr><td><code>{"img": "data:image/…"}</code></td><td>A generated image, when the message asked for one.</td></tr>
+            <tr><td><code>{"done": true}</code></td><td>The reply is complete.</td></tr>
+            <tr><td><code>{"error": {"message": "…"}}</code></td><td>The request failed. Stop reading.</td></tr>
+          </tbody>
+        </table>
+        <pre><code class="language-plaintext">data: {"p":"pl"}
+data: {"d":"Hello"}
 data: {"d":" there"}
 data: {"d":"!"}
-data: {"done":true,"model":"Luna"}<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
+data: {"done":true}</code><button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></pre>
+        <div class="note">Set <code>stream</code> to <code>true</code> and read the response body with <code>fetch</code> or any SSE client. Ignore the <code>data: [DONE]</code> line if you see it.</div>
       </section>
 
       <section id="models">
         <h2>Models</h2>
-        <p>Only two models are available via the public API.</p>
+        <p>The API serves two models. Pro, Ultra and Eclipse are only available in the web app.</p>
         <table>
           <thead><tr><th>Model ID</th><th>Label</th><th>Best for</th></tr></thead>
           <tbody>
-            <tr><td><code>mirox-luna-1.2</code></td><td>Luna</td><td>Friendly conversation, general tasks</td></tr>
-            <tr><td><code>mirox-gen-1</code></td><td>Gen</td><td>Code-only output, ultra-concise</td></tr>
+            <tr><td><code>mirox-luna-1.2</code></td><td>Luna</td><td>General conversation, explanations, everyday tasks.</td></tr>
+            <tr><td><code>mirox-gen-1</code></td><td>Gen</td><td>Short, direct answers and quick code snippets.</td></tr>
           </tbody>
         </table>
+        <p>Requesting any other model with an API key returns <code>403</code>.</p>
       </section>
 
       <section id="images">
-        <h2>Image Generation</h2>
+        <h2>Image generation</h2>
         <div class="endpoint"><span class="method post">POST</span><span>/v1/images/generations</span></div>
-        <p>Powered by <strong>FLUX.1-schnell</strong> on Hugging Face.</p>
+        <p>Send a prompt and get back an image as a data URL. The image is also saved to your image history.</p>
         <pre><code class="language-json">{
-  "prompt": "A serene mountain landscape at sunset",
-  "aspect_ratio": "16:9"
-}<button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></code></pre>
+  "prompt": "A calm mountain lake at sunrise, soft colors"
+}</code><button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></pre>
+        <h3>Response</h3>
+        <pre><code class="language-json">{
+  "ok": true,
+  "image": "data:image/png;base64,..."
+}</code><button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></pre>
+        <p>Free accounts get 10 image generations per day. Paid plans get 200 (Pro) or 2000 (Ultimate). The daily count resets at midnight UTC.</p>
       </section>
 
       <section id="errors">
@@ -287,41 +320,42 @@ data: {"done":true,"model":"Luna"}<button class="code-copy-btn" data-copy><i cla
         <table>
           <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
           <tbody>
-            <tr><td><code>400</code></td><td>Invalid request body</td></tr>
-            <tr><td><code>401</code></td><td>Missing or invalid API key</td></tr>
-            <tr><td><code>403</code></td><td>Model not allowed via API</td></tr>
-            <tr><td><code>429</code></td><td>Daily limit reached</td></tr>
-            <tr><td><code>502</code></td><td>Upstream error</td></tr>
+            <tr><td><code>400</code></td><td>Missing or empty <code>message</code> or <code>prompt</code>.</td></tr>
+            <tr><td><code>401</code></td><td>Missing, malformed, unknown or revoked API key.</td></tr>
+            <tr><td><code>403</code></td><td>Model not available through the API.</td></tr>
+            <tr><td><code>404</code></td><td>Unknown model ID.</td></tr>
+            <tr><td><code>429</code></td><td>Daily limit reached for your plan.</td></tr>
+            <tr><td><code>502</code></td><td>The upstream model failed. Retry in a moment.</td></tr>
           </tbody>
         </table>
+        <p>Error bodies look like <code>{"error": {"message": "…"}}</code>.</p>
       </section>
 
       <section id="keys">
-        <h2>API Keys</h2>
-        <p>Create and manage your API keys. Sign in to the main app first so we know who you are.</p>
+        <h2>API keys</h2>
+        <p>Create and manage keys here. You need to be signed in to the main app, because keys belong to your account.</p>
         <div class="key-limit-info" id="keyLimitInfo">Loading…</div>
         <div class="key-create">
-          <input type="text" id="newKeyName" placeholder="Key name (e.g. Production)" maxlength="60">
-          <button class="btn btn-primary" id="createKeyBtn"><i class="ri-add-line"></i> Generate key</button>
-          <button class="btn btn-secondary" id="refreshKeysBtn"><i class="ri-refresh-line"></i> Refresh</button>
+          <input type="text" id="newKeyName" placeholder="Key name, for example Production" maxlength="60">
+          <button class="btn btn-primary" id="createKeyBtn" type="button"><i class="ri-add-line"></i> Generate key</button>
+          <button class="btn btn-secondary" id="refreshKeysBtn" type="button"><i class="ri-refresh-line"></i> Refresh</button>
         </div>
-        <div class="key-msg" id="keyMsg"></div>
+        <div class="key-msg" id="keyMsg" role="status"></div>
         <div class="key-list" id="keyList"></div>
       </section>
 
       <section id="playground">
-        <h2>API Playground</h2>
-        <p>Test the chat completions endpoint directly. Paste your API key (starts with <code>mxk_live_</code>) or leave it blank to use your session.</p>
+        <h2>Playground</h2>
+        <p>Send a test request. Paste an API key, or leave the field blank to use your signed-in session. The key is sent only with this request and is never stored.</p>
         <div class="playground">
           <div class="playground-header">
             <h3><i class="ri-terminal-box-line"></i> POST /v1/chat/completions</h3>
-            <button class="btn btn-secondary" id="pgResetBtn"><i class="ri-refresh-line"></i> Reset</button>
+            <button class="btn btn-secondary small" id="pgResetBtn" type="button"><i class="ri-refresh-line"></i> Reset</button>
           </div>
           <div class="playground-body">
             <div class="field">
-              <label for="pgApiKey">API Key <span style="color:var(--text-faint);font-weight:400;">(optional)</span></label>
-              <input type="password" id="pgApiKey" placeholder="mxk_live_...">
-              <div class="field-hint">Your key is only used for this request. It's never stored.</div>
+              <label for="pgApiKey">API key <span style="color:var(--text-faint);font-weight:400;">(optional)</span></label>
+              <input type="password" id="pgApiKey" placeholder="mxk_live_…" autocomplete="off" spellcheck="false">
             </div>
             <div class="field-row">
               <div class="field">
@@ -332,43 +366,39 @@ data: {"done":true,"model":"Luna"}<button class="code-copy-btn" data-copy><i cla
                 </select>
               </div>
               <div class="field">
-                <label for="pgTemp">Temperature</label>
-                <input type="number" id="pgTemp" value="0.7" min="0" max="2" step="0.1">
+                <label for="pgSearch">Options</label>
+                <label class="check"><input type="checkbox" id="pgSearch"> Force a web search</label>
+                <label class="check" style="margin-top:6px;"><input type="checkbox" id="pgStream"> Stream response</label>
               </div>
             </div>
             <div class="field">
-              <label for="pgSystem">System prompt <span style="color:var(--text-faint);font-weight:400;">(optional)</span></label>
-              <input type="text" id="pgSystem" placeholder="You are a helpful assistant.">
-            </div>
-            <div class="field">
-              <label for="pgMessage">User message</label>
+              <label for="pgMessage">Message</label>
               <textarea id="pgMessage" placeholder="Ask anything…">Hello! What can you do?</textarea>
             </div>
-            <div class="field">
-              <label><input type="checkbox" id="pgStream" style="width:auto;margin-right:6px;vertical-align:middle;"> Stream response (SSE)</label>
-            </div>
-            <button class="btn btn-primary" id="pgSendBtn"><i class="ri-send-plane-fill"></i> Send Request</button>
-            <div class="playground-result" id="pgResult" style="display:none;">
-              <div class="playground-result-header">
+            <button class="btn btn-primary" id="pgSendBtn" type="button"><i class="ri-send-plane-fill"></i> Send request</button>
+            <div class="result" id="pgResult" style="display:none;">
+              <div class="result-header">
                 <span>Response</span>
                 <span class="status-pill pending" id="pgStatus"><span class="dots"><span></span><span></span><span></span></span></span>
               </div>
-              <pre class="playground-output" id="pgOutput"></pre>
+              <pre class="result-output" id="pgOutput"></pre>
             </div>
           </div>
         </div>
       </section>
 
       <section id="limits">
-        <h2>Rate Limits</h2>
+        <h2>Limits</h2>
+        <p>Limits reset daily at midnight UTC. The API accepts Luna and Gen only, and every chat counts toward your daily usage.</p>
         <table>
-          <thead><tr><th>Plan</th><th>Daily messages</th><th>API keys</th></tr></thead>
+          <thead><tr><th>Plan</th><th>Image generations / day</th><th>API keys</th><th>Models via API</th></tr></thead>
           <tbody>
-            <tr><td>Free</td><td>50</td><td>2</td></tr>
-            <tr><td>Pro</td><td>500</td><td>10</td></tr>
-            <tr><td>Ultimate</td><td>5000</td><td>10</td></tr>
+            <tr><td>Free</td><td>10</td><td>2</td><td>Luna, Gen</td></tr>
+            <tr><td>Pro</td><td>200</td><td>10</td><td>Luna, Gen</td></tr>
+            <tr><td>Ultimate</td><td>2000</td><td>10</td><td>Luna, Gen</td></tr>
           </tbody>
         </table>
+        <div class="note">Plans are changed by an administrator. If your plan changes, the new limits apply to your existing keys straight away.</div>
       </section>
 
       <footer style="margin-top:60px;padding-top:20px;border-top:1px solid var(--border);color:var(--text-faint);font-size:12.5px;text-align:center;">
@@ -379,275 +409,303 @@ data: {"done":true,"model":"Luna"}<button class="code-copy-btn" data-copy><i cla
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
   <script>
-    function highlightAllCode() {
-      if (!window.hljs) return;
-      document.querySelectorAll('pre code').forEach(code => {
-        if (!code.classList.contains('language-plaintext')) {
-          try { window.hljs.highlightElement(code); } catch {}
-        }
-        const pre = code.closest('pre');
-        if (pre && !pre.querySelector('.code-language')) {
-          const match = Array.from(code.classList).find(c => c.startsWith('language-'));
-          if (match && match !== 'language-plaintext') {
-            const label = document.createElement('span');
-            label.className = 'code-language';
-            label.textContent = match.slice(9);
-            pre.appendChild(label);
+    (function () {
+      'use strict';
+      const $ = (s) => document.querySelector(s);
+      const $$ = (s) => document.querySelectorAll(s);
+
+      /* ───── Syntax highlight + language labels ───── */
+      function highlightAll() {
+        if (!window.hljs) return;
+        $$('pre code').forEach((code) => {
+          if (!code.classList.contains('language-plaintext')) {
+            try { window.hljs.highlightElement(code); } catch {}
           }
-        }
+          const pre = code.closest('pre');
+          if (pre && !pre.querySelector('.code-language')) {
+            const lang = Array.from(code.classList).find((c) => c.startsWith('language-'));
+            if (lang && lang !== 'language-plaintext') {
+              const label = document.createElement('span');
+              label.className = 'code-language';
+              label.textContent = lang.slice(9);
+              pre.appendChild(label);
+            }
+          }
+        });
+      }
+      window.addEventListener('load', highlightAll);
+
+      /* ───── Section nav ───── */
+      const navLinks = $$('.dev-nav a');
+      const sections = Array.from(navLinks).map((a) => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+      const sidebar = $('#devSidebar');
+      const scrim = $('#scrim');
+      function closeMobileNav() { sidebar.classList.remove('open'); scrim.classList.remove('open'); }
+
+      navLinks.forEach((a) => {
+        a.addEventListener('click', (e) => {
+          e.preventDefault();
+          const target = document.querySelector(a.getAttribute('href'));
+          if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          closeMobileNav();
+        });
       });
-    }
-    window.addEventListener('load', highlightAllCode);
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            navLinks.forEach((a) => a.classList.toggle('active', a.getAttribute('href') === '#' + entry.target.id));
+          }
+        });
+      }, { rootMargin: '-30% 0px -60% 0px' });
+      sections.forEach((s) => observer.observe(s));
 
-    const $ = s => document.querySelector(s);
-    const $$ = s => document.querySelectorAll(s);
+      $('#mobileNavToggle')?.addEventListener('click', () => { sidebar.classList.toggle('open'); scrim.classList.toggle('open'); });
+      scrim?.addEventListener('click', closeMobileNav);
 
-    const navLinks = $$('.dev-nav a');
-    const sections = Array.from(navLinks).map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
-
-    navLinks.forEach(a => {
-      a.addEventListener('click', e => {
-        e.preventDefault();
-        navLinks.forEach(x => x.classList.remove('active'));
-        a.classList.add('active');
-        const target = document.querySelector(a.getAttribute('href'));
-        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        closeMobileNav();
-      });
-    });
-
-    const observer = new IntersectionObserver(entries => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          navLinks.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + entry.target.id));
-        }
-      });
-    }, { rootMargin: '-30% 0px -60% 0px' });
-    sections.forEach(s => observer.observe(s));
-
-    const sidebar = $('#devSidebar');
-    const scrim = $('#scrim');
-    function closeMobileNav() { sidebar.classList.remove('open'); scrim.classList.remove('open'); }
-    $('#mobileNavToggle')?.addEventListener('click', () => { sidebar.classList.toggle('open'); scrim.classList.toggle('open'); });
-    scrim?.addEventListener('click', closeMobileNav);
-
-    const root = document.documentElement;
-    function applyTheme(mode) {
-      root.setAttribute('data-mode', mode);
-      const btn = $('#themeToggle');
-      if (btn) btn.innerHTML = mode === 'dark' ? '<i class="ri-sun-line"></i>' : '<i class="ri-moon-line"></i>';
-      try { localStorage.setItem('mirox_dev_theme', mode); } catch {}
-    }
-    (function loadTheme(){
-      let mode = 'light';
-      try {
-        const saved = localStorage.getItem('mirox_dev_theme');
-        if (saved) mode = saved;
-        else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) mode = 'dark';
-      } catch {}
-      applyTheme(mode);
-    })();
-    $('#themeToggle')?.addEventListener('click', () => {
-      applyTheme(root.getAttribute('data-mode') === 'dark' ? 'light' : 'dark');
-    });
-
-    document.querySelectorAll('[data-copy]').forEach(btn => {
-      btn.addEventListener('click', async e => {
-        e.preventDefault(); e.stopPropagation();
-        const pre = btn.closest('pre');
-        const codeEl = pre?.querySelector('code');
-        if (!codeEl) return;
-        const text = codeEl.textContent;
+      /* ───── Theme ───── */
+      const root = document.documentElement;
+      function applyTheme(mode) {
+        root.setAttribute('data-mode', mode);
+        const btn = $('#themeToggle');
+        if (btn) btn.innerHTML = mode === 'dark' ? '<i class="ri-sun-line"></i>' : '<i class="ri-moon-line"></i>';
+        try { localStorage.setItem('mirox_dev_theme', mode); } catch {}
+      }
+      (function loadTheme() {
+        let mode = 'light';
         try {
-          if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(text);
-          else { const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.top = '-1000px'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); }
-          btn.classList.add('copied');
-          btn.innerHTML = '<i class="ri-check-line"></i> Copied';
-          setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = '<i class="ri-file-copy-line"></i> Copy'; }, 1400);
+          const saved = localStorage.getItem('mirox_dev_theme');
+          if (saved) mode = saved;
+          else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) mode = 'dark';
         } catch {}
+        applyTheme(mode);
+      })();
+      $('#themeToggle')?.addEventListener('click', () => {
+        applyTheme(root.getAttribute('data-mode') === 'dark' ? 'light' : 'dark');
       });
-    });
 
-    /* API KEY MANAGER */
-    const keyList = $('#keyList');
-    const keyMsg = $('#keyMsg');
-    const keyLimitInfo = $('#keyLimitInfo');
+      /* ───── Copy buttons ───── */
+      document.querySelectorAll('[data-copy]').forEach((btn) => {
+        btn.addEventListener('click', async (e) => {
+          e.preventDefault(); e.stopPropagation();
+          const codeEl = btn.closest('pre')?.querySelector('code');
+          if (!codeEl) return;
+          const text = codeEl.textContent;
+          try {
+            if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(text);
+            else {
+              const ta = document.createElement('textarea');
+              ta.value = text; ta.style.position = 'fixed'; ta.style.top = '-1000px';
+              document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+            }
+            btn.classList.add('copied');
+            btn.innerHTML = '<i class="ri-check-line"></i> Copied';
+            setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = '<i class="ri-file-copy-line"></i> Copy'; }, 1400);
+          } catch {}
+        });
+      });
 
-    function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
-    function setKeyMsg(text, cls) { keyMsg.textContent = text || ''; keyMsg.className = 'key-msg' + (cls ? ' ' + cls : ''); }
+      /* ───── API key manager (uses the signed-in session cookie) ───── */
+      const keyList = $('#keyList');
+      const keyMsg = $('#keyMsg');
+      const keyLimitInfo = $('#keyLimitInfo');
 
-    async function loadKeys() {
-      setKeyMsg('');
-      keyList.innerHTML = '<div class="key-empty">Loading…</div>';
-      try {
-        const r = await fetch('/api/keys', { credentials: 'same-origin', cache: 'no-store' });
-        if (r.status === 401) {
-          keyLimitInfo.textContent = 'Sign in to the main app first to manage API keys.';
-          keyList.innerHTML = '<div class="key-empty">Not signed in.</div>';
-          return;
-        }
-        const d = await r.json();
-        if (!d.ok) throw new Error(d.error || 'Failed');
-        keyLimitInfo.innerHTML = `<strong>${d.active}/${d.limit}</strong> active keys · ${escapeHtml(d.tier)} plan`;
-        if (!d.keys.length) {
-          keyList.innerHTML = '<div class="key-empty">No keys yet. Generate one above.</div>';
-          return;
-        }
-        keyList.innerHTML = d.keys.map(k => `
-          <div class="key-item ${k.revoked ? 'revoked' : ''}" data-id="${escapeHtml(k.id)}">
-            <div class="key-item-name">${escapeHtml(k.name)}${k.revoked ? ' <span class="badge neutral">revoked</span>' : ''}</div>
-            <div class="key-item-value" title="${escapeHtml(k.key)}">${escapeHtml(k.key)}</div>
-            <div class="key-item-actions">
-              <button class="btn btn-secondary small" data-act="copy"><i class="ri-file-copy-line"></i></button>
-              <button class="btn btn-secondary small" data-act="rename"><i class="ri-edit-line"></i></button>
-              ${k.revoked ? '' : '<button class="btn btn-danger small" data-act="revoke">Revoke</button>'}
-              <button class="btn btn-danger small" data-act="delete"><i class="ri-delete-bin-line"></i></button>
-            </div>
-            <div class="key-item-meta">
-              <span>Created: ${new Date(k.created * 1000).toLocaleString()}</span>
-              ${k.last_used ? `<span>Last used: ${new Date(k.last_used * 1000).toLocaleString()}</span>` : '<span>Never used</span>'}
-            </div>
-          </div>
-        `).join('');
+      function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+      function setKeyMsg(text, cls) { keyMsg.textContent = text || ''; keyMsg.className = 'key-msg' + (cls ? ' ' + cls : ''); }
 
-        keyList.querySelectorAll('.key-item').forEach(item => {
-          const id = item.dataset.id;
-          const key = d.keys.find(x => x.id === id);
-          item.querySelectorAll('[data-act]').forEach(btn => {
-            btn.addEventListener('click', async () => {
-              const act = btn.dataset.act;
-              if (act === 'copy') {
-                try { await navigator.clipboard.writeText(key.key); setKeyMsg('Key copied to clipboard.', 'ok'); }
-                catch { setKeyMsg('Could not copy.', 'err'); }
-                setTimeout(() => setKeyMsg(''), 2000);
-              } else if (act === 'rename') {
-                const n = prompt('Rename key:', key.name);
-                if (!n) return;
-                const rr = await fetch('/api/keys/rename', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, name: n }) });
-                const dd = await rr.json().catch(() => ({}));
-                if (dd.ok) { setKeyMsg('Renamed.', 'ok'); loadKeys(); }
-                else setKeyMsg(dd.error || 'Failed', 'err');
-              } else if (act === 'revoke') {
-                if (!confirm('Revoke "' + key.name + '"? This cannot be undone.')) return;
-                const rr = await fetch('/api/keys/revoke', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
-                const dd = await rr.json().catch(() => ({}));
-                if (dd.ok) { setKeyMsg('Revoked.', 'ok'); loadKeys(); }
-                else setKeyMsg(dd.error || 'Failed', 'err');
-              } else if (act === 'delete') {
-                if (!confirm('Delete "' + key.name + '" permanently?')) return;
-                const rr = await fetch('/api/keys/delete', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
-                const dd = await rr.json().catch(() => ({}));
-                if (dd.ok) { setKeyMsg('Deleted.', 'ok'); loadKeys(); }
-                else setKeyMsg(dd.error || 'Failed', 'err');
-              }
+      async function postJson(url, body) {
+        const r = await fetch(url, {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body || {}),
+        });
+        const d = await r.json().catch(() => ({}));
+        return { ok: r.ok && d.ok !== false, status: r.status, data: d };
+      }
+
+      async function loadKeys() {
+        setKeyMsg('');
+        keyList.innerHTML = '<div class="key-empty">Loading…</div>';
+        try {
+          const r = await fetch('/api/keys', { credentials: 'same-origin', cache: 'no-store' });
+          if (r.status === 401) {
+            keyLimitInfo.textContent = 'Sign in to the main app first to manage API keys.';
+            keyList.innerHTML = '<div class="key-empty">Not signed in.</div>';
+            return;
+          }
+          const d = await r.json();
+          if (!d.ok) throw new Error(d.error || 'Failed');
+          keyLimitInfo.innerHTML = `<strong>${d.active}/${d.limit}</strong> active keys · ${escapeHtml(d.tier)} plan`;
+          if (!d.keys.length) {
+            keyList.innerHTML = '<div class="key-empty">No keys yet. Generate one above.</div>';
+            return;
+          }
+          keyList.innerHTML = d.keys.map((k) => `
+            <div class="key-item ${k.revoked ? 'revoked' : ''}" data-id="${escapeHtml(k.id)}">
+              <div class="key-item-name">${escapeHtml(k.name)}${k.revoked ? ' <span class="badge neutral">revoked</span>' : ''}</div>
+              <div class="key-item-value" title="${escapeHtml(k.key)}">${escapeHtml(k.key)}</div>
+              <div class="key-item-actions">
+                <button class="btn btn-secondary small" data-act="copy" type="button" aria-label="Copy key"><i class="ri-file-copy-line"></i></button>
+                <button class="btn btn-secondary small" data-act="rename" type="button" aria-label="Rename key"><i class="ri-edit-line"></i></button>
+                ${k.revoked ? '' : '<button class="btn btn-danger small" data-act="revoke" type="button">Revoke</button>'}
+                <button class="btn btn-danger small" data-act="delete" type="button" aria-label="Delete key"><i class="ri-delete-bin-line"></i></button>
+              </div>
+              <div class="key-item-meta">
+                <span>Created: ${new Date(k.created * 1000).toLocaleString()}</span>
+                ${k.last_used ? `<span>Last used: ${new Date(k.last_used * 1000).toLocaleString()}</span>` : '<span>Never used</span>'}
+              </div>
+            </div>`).join('');
+
+          keyList.querySelectorAll('.key-item').forEach((item) => {
+            const id = item.dataset.id;
+            const key = d.keys.find((x) => x.id === id);
+            item.querySelectorAll('[data-act]').forEach((btn) => {
+              btn.addEventListener('click', async () => {
+                const act = btn.dataset.act;
+                if (act === 'copy') {
+                  try { await navigator.clipboard.writeText(key.key); setKeyMsg('Key copied to clipboard.', 'ok'); }
+                  catch { setKeyMsg('Could not copy.', 'err'); }
+                  setTimeout(() => setKeyMsg(''), 2000);
+                } else if (act === 'rename') {
+                  const n = prompt('Rename key:', key.name);
+                  if (!n || !n.trim()) return;
+                  const res = await postJson('/api/keys/rename', { id, name: n.trim() });
+                  if (res.ok) { setKeyMsg('Renamed.', 'ok'); loadKeys(); }
+                  else setKeyMsg(res.data.error || 'Failed', 'err');
+                } else if (act === 'revoke') {
+                  if (!confirm(`Revoke "${key.name}"? It will stop working immediately.`)) return;
+                  const res = await postJson('/api/keys/revoke', { id });
+                  if (res.ok) { setKeyMsg('Revoked.', 'ok'); loadKeys(); }
+                  else setKeyMsg(res.data.error || 'Failed', 'err');
+                } else if (act === 'delete') {
+                  if (!confirm(`Delete "${key.name}" permanently?`)) return;
+                  const res = await postJson('/api/keys/delete', { id });
+                  if (res.ok) { setKeyMsg('Deleted.', 'ok'); loadKeys(); }
+                  else setKeyMsg(res.data.error || 'Failed', 'err');
+                }
+              });
             });
           });
-        });
-      } catch (e) {
-        keyList.innerHTML = '<div class="key-empty">Failed to load keys.</div>';
+        } catch {
+          keyList.innerHTML = '<div class="key-empty">Failed to load keys.</div>';
+        }
       }
-    }
 
-    $('#createKeyBtn')?.addEventListener('click', async () => {
-      const name = $('#newKeyName').value.trim();
-      setKeyMsg('Generating…');
-      const r = await fetch('/api/keys', {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name })
+      $('#createKeyBtn')?.addEventListener('click', async () => {
+        const name = $('#newKeyName').value.trim();
+        setKeyMsg('Generating…');
+        const res = await postJson('/api/keys', { name });
+        if (res.ok) {
+          $('#newKeyName').value = '';
+          setKeyMsg('Key created. Copy it now, you can also copy it again from the list.', 'ok');
+          loadKeys();
+        } else {
+          setKeyMsg(res.data.error || 'Failed to create key', 'err');
+        }
       });
-      const d = await r.json().catch(() => ({}));
-      if (d.ok) {
-        $('#newKeyName').value = '';
-        setKeyMsg('Key created. Copy it now — you can always re-copy it from the list.', 'ok');
-        loadKeys();
-      } else {
-        setKeyMsg(d.error || 'Failed to create key', 'err');
+      $('#refreshKeysBtn')?.addEventListener('click', loadKeys);
+      loadKeys();
+
+      /* ───── Playground ───── */
+      const pgApiKey = $('#pgApiKey'), pgModel = $('#pgModel'), pgMessage = $('#pgMessage');
+      const pgStream = $('#pgStream'), pgSearch = $('#pgSearch');
+      const pgSendBtn = $('#pgSendBtn'), pgResult = $('#pgResult');
+      const pgOutput = $('#pgOutput'), pgStatus = $('#pgStatus');
+
+      function setStatus(kind, text) {
+        if (kind === 'pending') {
+          pgStatus.className = 'status-pill pending';
+          pgStatus.innerHTML = '<span class="dots"><span></span><span></span><span></span></span> ' + (text || 'Waiting');
+        } else if (kind === 'ok') {
+          pgStatus.className = 'status-pill ok';
+          pgStatus.innerHTML = '<i class="ri-check-line"></i> ' + (text || 'OK');
+        } else {
+          pgStatus.className = 'status-pill err';
+          pgStatus.innerHTML = '<i class="ri-close-line"></i> ' + (text || 'Error');
+        }
       }
-    });
-    $('#refreshKeysBtn')?.addEventListener('click', loadKeys);
-    loadKeys();
 
-    /* PLAYGROUND */
-    const pgApiKey = $('#pgApiKey'), pgModel = $('#pgModel'), pgTemp = $('#pgTemp');
-    const pgSystem = $('#pgSystem'), pgMessage = $('#pgMessage'), pgStream = $('#pgStream');
-    const pgSendBtn = $('#pgSendBtn'), pgResetBtn = $('#pgResetBtn');
-    const pgResult = $('#pgResult'), pgOutput = $('#pgOutput'), pgStatus = $('#pgStatus');
+      $('#pgResetBtn')?.addEventListener('click', () => {
+        pgApiKey.value = ''; pgModel.value = 'mirox-luna-1.2';
+        pgSearch.checked = false; pgStream.checked = false;
+        pgMessage.value = 'Hello! What can you do?';
+        pgResult.style.display = 'none'; pgOutput.textContent = '';
+      });
 
-    function setStatus(kind, text) {
-      if (kind === 'pending') pgStatus.className = 'status-pill pending', pgStatus.innerHTML = '<span class="dots"><span></span><span></span><span></span></span> ' + (text || 'Streaming');
-      else if (kind === 'ok') pgStatus.className = 'status-pill ok', pgStatus.innerHTML = '<i class="ri-check-line"></i> ' + (text || 'OK');
-      else if (kind === 'err') pgStatus.className = 'status-pill err', pgStatus.innerHTML = '<i class="ri-close-line"></i> ' + (text || 'Error');
-    }
+      pgSendBtn?.addEventListener('click', async () => {
+        const message = pgMessage.value.trim();
+        if (!message) { pgResult.style.display = 'block'; pgOutput.textContent = 'Enter a message first.'; setStatus('err', 'Empty'); return; }
+        const headers = { 'Content-Type': 'application/json' };
+        const key = pgApiKey.value.trim();
+        if (key) headers.Authorization = 'Bearer ' + key;
+        const body = { message, model: pgModel.value, search: pgSearch.checked, stream: pgStream.checked };
 
-    $('#pgResetBtn')?.addEventListener('click', () => {
-      pgApiKey.value = ''; pgModel.value = 'mirox-luna-1.2'; pgTemp.value = '0.7';
-      pgSystem.value = ''; pgMessage.value = 'Hello! What can you do?'; pgStream.checked = false;
-      pgResult.style.display = 'none'; pgOutput.textContent = '';
-    });
+        pgResult.style.display = 'block';
+        pgOutput.textContent = '';
+        pgSendBtn.disabled = true;
+        setStatus('pending', pgStream.checked ? 'Streaming' : 'Waiting');
+        const t0 = performance.now();
 
-    $('#pgSendBtn')?.addEventListener('click', async () => {
-      const message = pgMessage.value.trim();
-      if (!message) return alert('Please enter a message.');
-      const model = pgModel.value;
-      const temperature = parseFloat(pgTemp.value) || 0.7;
-      const system = pgSystem.value.trim();
-      const stream = pgStream.checked;
-      const apiKey = pgApiKey.value.trim();
-      const messages = [];
-      if (system) messages.push({ role: 'system', content: system });
-      messages.push({ role: 'user', content: message });
-      const headers = { 'Content-Type': 'application/json' };
-      if (apiKey) headers.Authorization = 'Bearer ' + apiKey;
-      pgResult.style.display = 'block';
-      pgOutput.textContent = '';
-      pgSendBtn.disabled = true;
-      setStatus('pending', stream ? 'Streaming' : 'Waiting');
-      const t0 = performance.now();
-      try {
-        if (stream) {
-          const res = await fetch('/v1/chat/completions', { method: 'POST', headers, body: JSON.stringify({ model, messages, stream: true, temperature }) });
-          if (!res.ok || !res.body) { const e = await res.json().catch(()=>({})); throw new Error(e.error || ('HTTP ' + res.status)); }
-          const reader = res.body.getReader(), dec = new TextDecoder();
-          let buf = '', full = '';
+        try {
+          const res = await fetch('/v1/chat/completions', {
+            method: 'POST', headers, body: JSON.stringify(body), credentials: 'same-origin',
+          });
+
+          if (!pgStream.checked) {
+            const data = await res.json().catch(() => ({}));
+            const ms = Math.round(performance.now() - t0);
+            if (res.ok && data.reply !== undefined) {
+              pgOutput.textContent = data.reply + '\n\n— ' + ms + ' ms · ' + (data.provider || 'provider') + ' —';
+              setStatus('ok', 'OK');
+            } else {
+              pgOutput.textContent = JSON.stringify(data, null, 2);
+              setStatus('err', 'HTTP ' + res.status);
+            }
+            return;
+          }
+
+          if (!res.ok || !res.body) {
+            const e = await res.json().catch(() => ({}));
+            pgOutput.textContent = JSON.stringify(e, null, 2);
+            setStatus('err', 'HTTP ' + res.status);
+            return;
+          }
+
+          const reader = res.body.getReader();
+          const dec = new TextDecoder();
+          let buf = '', full = '', failed = false;
           while (true) {
             const { value, done } = await reader.read();
             if (done) break;
             buf += dec.decode(value, { stream: true });
             let idx;
             while ((idx = buf.indexOf('\n')) !== -1) {
-              const line = buf.slice(0, idx).trim(); buf = buf.slice(idx + 1);
+              const line = buf.slice(0, idx).trim();
+              buf = buf.slice(idx + 1);
               if (!line.startsWith('data:')) continue;
-              const pl = line.slice(5).trim();
-              if (!pl || pl === '[DONE]') continue;
-              try {
-                const o = JSON.parse(pl);
-                if (o.d) { full += o.d; pgOutput.textContent = full; pgOutput.scrollTop = pgOutput.scrollHeight; }
-                if (o.error) throw new Error(o.error);
-                if (o.done) { pgOutput.textContent += '\n\n— done in ' + Math.round(performance.now()-t0) + 'ms'; setStatus('ok', 'OK'); }
-              } catch {}
+              const payload = line.slice(5).trim();
+              if (!payload || payload === '[DONE]') continue;
+              let o;
+              try { o = JSON.parse(payload); } catch { continue; }
+              if (o.d) { full += o.d; pgOutput.textContent = full; pgOutput.scrollTop = pgOutput.scrollHeight; }
+              if (o.error) { failed = true; pgOutput.textContent = full + '\n\nError: ' + (o.error.message || 'failed'); }
+              if (o.done && !failed) {
+                pgOutput.textContent = full + '\n\n— ' + Math.round(performance.now() - t0) + ' ms —';
+              }
             }
           }
-        } else {
-          const res = await fetch('/v1/chat/completions', { method: 'POST', headers, body: JSON.stringify({ model, messages, stream: false, temperature }) });
-          const data = await res.json();
-          const ms = Math.round(performance.now() - t0);
-          if (res.ok && data.ok !== false) {
-            pgOutput.textContent = (data.reply || '(empty)') + '\n\n— metadata —\n' + JSON.stringify({ ms }, null, 2);
-            setStatus('ok', 'OK');
-          } else { pgOutput.textContent = JSON.stringify(data, null, 2); setStatus('err', data.error || ('HTTP ' + res.status)); }
+          setStatus(failed ? 'err' : 'ok', failed ? 'Error' : 'OK');
+        } catch (e) {
+          pgOutput.textContent = 'Error: ' + (e.message || String(e));
+          setStatus('err', 'Network');
+        } finally {
+          pgSendBtn.disabled = false;
         }
-      } catch (e) {
-        pgOutput.textContent = 'Error: ' + (e.message || String(e));
-        setStatus('err', 'Error');
-      } finally {
-        pgSendBtn.disabled = false;
-      }
-    });
+      });
 
-    pgMessage?.addEventListener('keydown', e => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); pgSendBtn.click(); }
-    });
+      pgMessage?.addEventListener('keydown', (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); pgSendBtn.click(); }
+      });
+    })();
   </script>
 </body>
 </html>
