@@ -83,7 +83,7 @@ code { font-family: 'SF Mono', 'Cascadia Code', Consolas, monospace; }
 .mascot .blob-sparkles{opacity:.55;transform-origin:center;animation:blobSparkle 3s ease-in-out infinite;pointer-events:none}
 .mascot .blob-orbit{transform-origin:center;animation:blobOrbit 16s linear infinite;opacity:.22}
 .mascot .prop{position:absolute;z-index:2;right:-7%;top:-10%;display:grid;place-items:center;min-width:18px;height:18px;padding:0 3px;border-radius:99px;background:var(--panel);border:1px solid var(--border);color:var(--accent);font-size:11px;font-weight:800;box-shadow:0 3px 9px rgba(0,0,0,.1);opacity:0;transform:scale(.6) rotate(-12deg);transition:opacity .2s,transform .25s;pointer-events:none}
-.mascot .prop:not(:empty){opacity:1;transform:scale(1) rotate(0)}
+.mascot .prop:not(:empty){opacity:0;transform:scale(.6) rotate(-12deg)}
 .mascot-lg{--ms:132px}.mascot-md{--ms:64px}.mascot-sm{--ms:34px}
 @keyframes blobBreath{0%,100%{transform:translateY(0) rotate(-1deg) scale(1)}35%{transform:translateY(-2px) rotate(1deg) scale(1.018,.99)}70%{transform:translateY(1px) rotate(-.5deg) scale(.99,1.015)}}
 @keyframes blobBlink{0%,45%,48%,100%{transform:scaleY(1)}46.5%{transform:scaleY(.12)}}
@@ -114,7 +114,7 @@ code { font-family: 'SF Mono', 'Cascadia Code', Consolas, monospace; }
 .mascot.m-cool .blob-glasses{opacity:1}.mascot.m-cool .blob-mouth{d:path("M-9 31 Q0 34 11 25")}
 .mascot.m-confused .eye.left{transform:translateY(-3px)}.mascot.m-confused .eye.right{transform:translateY(3px)}.mascot.m-confused .blob-mouth{d:path("M-10 31 Q-3 24 2 32 T13 30")}.mascot.m-confused .blob-wobble{animation:blobReason 2s ease-in-out infinite}
 .mascot.m-focus .eye{transform:scaleY(.72)}.mascot.m-focus .blob-mouth{d:path("M-9 31 L9 31")}.mascot.m-focus .blob-wobble{animation:blobBreath 5s ease-in-out infinite}
-.welcome-mascot{position:relative;display:grid;place-items:center;margin-bottom:26px;isolation:isolate}.welcome-mascot .mascot{z-index:1}.mascot-ring{position:absolute;width:142px;height:142px;border-radius:50%;border:1px solid var(--accent);opacity:0;animation:ringPulse 3s ease-out infinite;pointer-events:none}.mascot-ring.r2{animation-delay:1.5s}@keyframes ringPulse{0%{transform:scale(.72);opacity:.5}100%{transform:scale(1.4);opacity:0}}
+.welcome-mascot{position:relative;display:grid;place-items:center;margin-bottom:26px;isolation:isolate}.welcome-mascot .mascot{z-index:1}.mascot-ring{display:none}
 @media(prefers-reduced-motion:reduce){.mascot,.mascot *,.mascot-ring{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
 
 /* ═══════════ LOADING SCREEN ═══════════ */
