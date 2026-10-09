@@ -1,41 +1,27 @@
 #!/usr/bin/env python3
 """
 MiroxAI Bridge Client v5
-
-Changes from v4:
-- Every path is normalised to a REAL absolute path. "." and "~" resolve to the
-  home folder, and every response returns the absolute path (path / cwd / home),
-  so the AI never has to echo "." or "~" back.
-- New /resolve endpoint: ask the bridge what a path really is.
-- Security: requests from a foreign Origin are rejected, so a random website can
-  no longer run shell commands on this machine through the browser. An optional
-  token can be set in config.json ("token") and sent as X-Mirox-Token.
-- sudo runs `sudo -S sh -c "<cmd>"`. The old code passed one string as the
-  program name, so sudo always failed.
-- git commit messages are passed as argv, not spliced into a shell string.
-- Commands run through bash when available, so cd, ~ and pipes work.
-- Larger request bodies (client_max_size) so big files can be written.
-- Screenshot paths are quoted and Linux screenshot tools are supported.
-- HTTP errors return the status code and body.
-- The home folder and allowed roots cannot be deleted.
+- Reports the REAL home folder (no "." or "~" paths anywhere)
+- Every path the AI sends is resolved to an absolute path under home
+- Sudo (password kept in memory only), SMTP email, git, clipboard, screenshots
+- KDE Connect endpoints via kdeconnect-cli (list, ping, ring, share, sms, lock, ...)
 """
 
-import getpass
-import json
 import os
-import platform
 import re
+import sys
+import json
+import time
+import platform
+import tempfile
+import subprocess
 import shutil
 import smtplib
 import ssl
-import subprocess
-import sys
-import tempfile
-import time
-import urllib.error
 import urllib.request
-from email.message import EmailMessage
 from pathlib import Path
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 try:
     from aiohttp import web
@@ -49,77 +35,55 @@ except ImportError:
 
 # ---------------- Config ----------------
 CONFIG_FILE = Path(__file__).resolve().parent / "config.json"
-
-
-def _load_config():
-    if not CONFIG_FILE.exists():
-        return {}
+CONFIG = {}
+if CONFIG_FILE.exists():
     try:
-        return json.loads(CONFIG_FILE.read_text(encoding="utf-8")) or {}
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            CONFIG = json.load(f)
     except Exception as e:
         print(f"[Bridge] config.json unreadable ({e}), using defaults.")
-        return {}
+        CONFIG = {}
 
-
-CONFIG = _load_config()
 CONFIG.setdefault("bridge_name", "My Laptop")
 CONFIG.setdefault("port", 8765)
 CONFIG.setdefault("allowed_dirs", ["~"])
 CONFIG.setdefault("max_output_bytes", 200000)
-CONFIG.setdefault("max_body_mb", 60)
-CONFIG.setdefault("allowed_origins", [])
-CONFIG.setdefault("token", "")
 CONFIG.setdefault("smtp", {})
 
 PORT = int(CONFIG["port"])
-NAME = str(CONFIG["bridge_name"])
+NAME = CONFIG["bridge_name"]
 MAX_OUTPUT = int(CONFIG["max_output_bytes"])
-MAX_BODY = int(CONFIG["max_body_mb"]) * 1024 * 1024
 SMTP = CONFIG.get("smtp") or {}
-TOKEN = str(CONFIG.get("token") or "").strip()
 
 IS_WINDOWS = platform.system() == "Windows"
 IS_MAC = platform.system() == "Darwin"
-
-# Relative paths, "." and "~" all resolve against the home folder.
 HOME = Path.home().resolve()
 
 
-def _current_user():
-    try:
-        return getpass.getuser()
-    except Exception:
-        return os.environ.get("USER") or os.environ.get("USERNAME") or "user"
-
-
-USER = _current_user()
-
-# Browser origins allowed to talk to the bridge. Localhost is always allowed.
-DEFAULT_ORIGINS = ["https://miroxai.org", "https://www.miroxai.org"]
-ALLOWED_ORIGINS = set(DEFAULT_ORIGINS + [str(o).rstrip("/") for o in CONFIG["allowed_origins"]])
-LOCAL_ORIGIN_RE = re.compile(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$")
-
-
 # ---------------- Allowed dirs ----------------
-def _resolve_dir(p):
+def _resolve(p):
     try:
-        return Path(str(p)).expanduser().resolve()
+        return Path(os.path.expanduser(str(p))).resolve()
     except Exception:
         return None
 
 
 ALLOWED_DIRS = []
-for raw in CONFIG.get("allowed_dirs") or ["~"]:
-    raw = str(raw).strip()
-    base = HOME if raw in ("", ".", "./") else _resolve_dir(raw)
-    if base and base not in ALLOWED_DIRS:
-        ALLOWED_DIRS.append(base)
-for extra in (HOME, _resolve_dir(tempfile.gettempdir())):
+for d in (CONFIG.get("allowed_dirs") or ["~"]):
+    r = _resolve(d)
+    if r and r not in ALLOWED_DIRS:
+        ALLOWED_DIRS.append(r)
+# Home is always allowed, temp is allowed for scratch work. The runner's own folder is NOT.
+for extra in (HOME, _resolve(tempfile.gettempdir())):
     if extra and extra not in ALLOWED_DIRS:
         ALLOWED_DIRS.append(extra)
 
 
 def is_path_allowed(p: Path) -> bool:
+    try:
+        p = p.resolve()
+    except Exception:
+        return False
     for base in ALLOWED_DIRS:
         try:
             p.relative_to(base)
@@ -129,61 +93,57 @@ def is_path_allowed(p: Path) -> bool:
     return False
 
 
-def expand(raw) -> Path:
-    """Turn any AI or user supplied path into an absolute Path.
-
-    ""  or "."     -> HOME
-    "~", "~/x"     -> HOME, HOME/x
-    "x/y"          -> HOME/x/y
-    "/abs", "C:\\" -> unchanged
-    """
-    s = str(raw or "").strip()
-    if s in ("", ".", "./", "~", "~/"):
-        return HOME
-    p = Path(s).expanduser()
-    if not p.is_absolute():
-        p = HOME / p
-    return p
+def to_abs(raw: str) -> str:
+    """Turn '.', '~', './x', '~/x', or 'x' into an absolute path under HOME."""
+    s = str(raw or "").strip().replace("\\", "/")
+    if s in ("", "~", ".", "./"):
+        return str(HOME)
+    if s.startswith("~/"):
+        return str(HOME / s[2:])
+    if s.startswith("./"):
+        return str(HOME / s[2:])
+    if not s.startswith("/") and not re.match(r"^[A-Za-z]:/", s):
+        return str(HOME / s)
+    return s
 
 
-def safe_path(raw):
-    """Resolved absolute path if it sits inside an allowed root, otherwise None."""
+def safe_path(raw: str):
+    if not raw:
+        return None
+    p = Path(to_abs(raw))
     try:
-        p = expand(raw).resolve()
+        p = p.resolve()
     except Exception:
         return None
     return p if is_path_allowed(p) else None
 
 
-def workdir(data) -> Path:
-    """Working directory for a command: the requested cwd, or HOME."""
-    return safe_path(data.get("cwd")) or HOME
+def home_cwd(raw=None):
+    p = safe_path(raw) if raw else None
+    return p if (p and p.is_dir()) else HOME
 
 
-# ---------------- Helpers ----------------
-def _shell_kwargs():
-    if IS_WINDOWS:
-        return {}
-    return {"executable": shutil.which("bash") or "/bin/sh"}
+# ---------------- CORS middleware ----------------
+@web.middleware
+async def cors_mw(request, handler):
+    if request.method == "OPTIONS":
+        resp = web.Response()
+    else:
+        try:
+            resp = await handler(request)
+        except web.HTTPException as e:
+            resp = e
+        except Exception as e:
+            resp = web.json_response({"ok": False, "error": str(e)}, status=500)
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    resp.headers["Access-Control-Allow-Private-Network"] = "true"
+    resp.headers["Access-Control-Max-Age"] = "86400"
+    return resp
 
 
-def _trim(text):
-    text = text or ""
-    if len(text) > MAX_OUTPUT:
-        return text[:MAX_OUTPUT], True
-    return text, False
-
-
-def _ok(**kw):
-    return web.json_response({"ok": True, **kw})
-
-
-def _err(msg, **kw):
-    return web.json_response({"ok": False, "error": msg, **kw})
-
-
-async def _json(req):
-    """Parsed JSON object body, {} when empty, None when the body is not valid JSON."""
+async def body_json(req):
     try:
         data = await req.json()
         return data if isinstance(data, dict) else {}
@@ -191,362 +151,286 @@ async def _json(req):
         return None
 
 
-def _run_argv(argv, cwd=None, timeout=60, input_text=None):
-    """Run an argv list without a shell. Returns (returncode, stdout, stderr)."""
-    proc = subprocess.run(
-        argv,
-        cwd=str(cwd) if cwd else None,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        input=input_text,
-    )
-    return proc.returncode, proc.stdout or "", proc.stderr or ""
+def _which(name):
+    return shutil.which(name)
 
 
-# ---------------- Security middleware ----------------
-def _origin_allowed(origin: str) -> bool:
-    if not origin:  # no Origin header: a local tool or the bridge itself
-        return True
-    origin = origin.rstrip("/")
-    return origin in ALLOWED_ORIGINS or bool(LOCAL_ORIGIN_RE.match(origin))
+def _sudo_available():
+    return bool(_which("sudo")) or IS_WINDOWS
 
 
-def _add_cors(resp, origin):
-    if origin and _origin_allowed(origin):
-        resp.headers["Access-Control-Allow-Origin"] = origin
-        resp.headers["Vary"] = "Origin"
-    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Mirox-Token"
-    resp.headers["Access-Control-Allow-Private-Network"] = "true"
-    resp.headers["Access-Control-Max-Age"] = "86400"
-    resp.headers["Cache-Control"] = "no-store"
-    return resp
-
-
-@web.middleware
-async def guard_mw(request, handler):
-    origin = request.headers.get("Origin", "")
-    if not _origin_allowed(origin):
-        return web.json_response({"ok": False, "error": "Origin not allowed"}, status=403)
-
-    if request.method == "OPTIONS":
-        return _add_cors(web.Response(status=204), origin)
-
-    # /ping only reveals the bridge name, so it stays open for discovery.
-    if TOKEN and request.path != "/ping":
-        if request.headers.get("X-Mirox-Token", "") != TOKEN:
-            return web.json_response({"ok": False, "error": "Bad or missing bridge token"}, status=401)
-
-    try:
-        resp = await handler(request)
-    except web.HTTPException as e:
-        resp = e
-    except Exception as e:
-        resp = web.json_response({"ok": False, "error": str(e)}, status=500)
-    return _add_cors(resp, origin)
-
-
-# ---------------- Endpoints ----------------
+# ---------------- Basic endpoints ----------------
 async def ping(req):
-    return _ok(
-        name=NAME, cwd=str(HOME), home=str(HOME), user=USER,
-        platform=platform.system(),
-        sudo_available=bool(shutil.which("sudo")) and not IS_WINDOWS,
-        time=time.time(),
-    )
-
-
-async def env_info(req):
-    return _ok(
-        name=NAME,
-        user=USER,
-        home=str(HOME),
-        cwd=str(HOME),
-        default_cwd=str(HOME),
-        platform=platform.system(),
-        platform_release=platform.release(),
-        python=platform.python_version(),
-        allowed_dirs=[str(d) for d in ALLOWED_DIRS],
-        separator=os.sep,
-        smtp_configured=bool(SMTP.get("host")),
-        sudo_available=bool(shutil.which("sudo")) and not IS_WINDOWS,
-        kde_connect_available=bool(shutil.which("kdeconnect-cli")),
-        time=time.time(),
-    )
-
-
-async def resolve_path(req):
-    """Tell the caller what a path really is. Use this instead of guessing."""
-    data = await _json(req)
-    if data is None:
-        return _err("Invalid JSON")
-    raw = data.get("path", "")
-    try:
-        p = expand(raw).resolve()
-    except Exception as e:
-        return _err(str(e), input=str(raw))
-    return _ok(
-        input=str(raw),
-        path=str(p),
-        exists=p.exists(),
-        is_dir=p.is_dir(),
-        is_file=p.is_file(),
-        allowed=is_path_allowed(p),
-        home=str(HOME),
-        separator=os.sep,
-    )
-
-
-# -- commands --
-# Matches "sudo" only at the start of a command or after ; & | ( (not inside echo text).
-_SUDO_RE = re.compile(r"((?:^|[;&|(])\s*)sudo\s+", re.IGNORECASE)
-
-
-def _needs_sudo(cmd: str) -> bool:
-    return bool(_SUDO_RE.search(cmd))
-
-
-def _strip_sudo(cmd: str) -> str:
-    return _SUDO_RE.sub(r"\1", cmd).strip()
-
-
-async def exec_cmd(req):
-    data = await _json(req)
-    if data is None:
-        return _err("Invalid JSON")
-    cmd = str(data.get("command", "")).strip()
-    if not cmd:
-        return _err("No command provided")
-
-    if _needs_sudo(cmd):
-        return web.json_response({
-            "ok": False,
-            "needs_sudo": True,
-            "command": _strip_sudo(cmd),
-            "error": "This command needs sudo. Provide a password via /sudo-exec.",
-        })
-
-    cwd = workdir(data)
-    timeout = max(1, min(int(data.get("timeout", 120)), 600))
-    try:
-        proc = subprocess.run(
-            cmd, shell=True, cwd=str(cwd), capture_output=True, text=True,
-            timeout=timeout, **_shell_kwargs(),
-        )
-    except subprocess.TimeoutExpired:
-        return _err(f"Command timed out after {timeout}s", cwd=str(cwd))
-    except Exception as e:
-        return _err(str(e), cwd=str(cwd))
-
-    out, t1 = _trim(proc.stdout)
-    err, t2 = _trim(proc.stderr)
-    return _ok(exit_code=proc.returncode, stdout=out, stderr=err,
-               truncated=t1 or t2, cwd=str(cwd))
-
-
-async def sudo_exec(req):
-    """Run a command as root. The password is used once and never stored."""
-    data = await _json(req)
-    if data is None:
-        return _err("Invalid JSON")
-    raw_cmd = str(data.get("command", "")).strip()
-    password = str(data.get("password", ""))
-    if not raw_cmd:
-        return _err("No command provided")
-    if not password:
-        return _err("No password provided")
-    if IS_WINDOWS or not shutil.which("sudo"):
-        return _err("sudo is not available here. Run the bridge from an elevated terminal instead.")
-
-    inner = _strip_sudo(raw_cmd)
-    cwd = workdir(data)
-    timeout = max(1, min(int(data.get("timeout", 120)), 600))
-
-    # -k ignores cached credentials, -S reads the password from stdin,
-    # and sh -c runs the whole command line as one unit under root.
-    argv = ["sudo", "-k", "-S", "-p", "", "--", "sh", "-c", inner]
-    try:
-        proc = subprocess.run(
-            argv, cwd=str(cwd), capture_output=True, text=True,
-            timeout=timeout, input=password + "\n",
-        )
-    except subprocess.TimeoutExpired:
-        return _err(f"Command timed out after {timeout}s", cwd=str(cwd))
-    except Exception as e:
-        return _err(str(e), cwd=str(cwd))
-
-    err_text = proc.stderr or ""
-    wrong = any(s in err_text.lower() for s in (
-        "incorrect password", "sorry, try again", "authentication failure"))
-    out, t1 = _trim(proc.stdout)
-    err, t2 = _trim(err_text)
-    ok = proc.returncode == 0 and not wrong
     return web.json_response({
-        "ok": ok,
-        "exit_code": proc.returncode,
-        "stdout": out,
-        "stderr": err,
-        "truncated": t1 or t2,
-        "cwd": str(cwd),
-        "wrong_password": wrong,
-        "error": "Wrong sudo password" if wrong else (None if ok else "sudo command failed"),
+        "ok": True,
+        "name": NAME,
+        "cwd": str(HOME),
+        "platform": platform.system(),
+        "sudo_available": _sudo_available(),
+        "time": time.time(),
     })
 
 
-# -- files --
-async def write_file(req):
-    data = await _json(req)
+async def env_info(req):
+    home = str(HOME)
+    return web.json_response({
+        "ok": True,
+        "name": NAME,
+        "user": HOME.name,
+        "home": home,
+        "cwd": home,
+        "platform": platform.system(),
+        "platform_release": platform.release(),
+        "python": platform.python_version(),
+        "allowed_dirs": [str(d) for d in ALLOWED_DIRS],
+        "smtp_configured": bool(SMTP.get("host")),
+        "sudo_available": _sudo_available(),
+        "kde_connect_available": bool(_which("kdeconnect-cli")),
+        "separator": os.sep,
+        "time": time.time(),
+    })
+
+
+# ---------------- Command execution ----------------
+def _run_command(cmd, cwd, timeout=120, stdin=None):
+    try:
+        proc = subprocess.run(
+            cmd, shell=True, cwd=str(cwd),
+            capture_output=True, text=True, timeout=timeout,
+            input=stdin,
+        )
+        return True, proc.returncode, proc.stdout or "", proc.stderr or "", None
+    except subprocess.TimeoutExpired:
+        return False, -1, "", "", "Command timed out"
+    except Exception as e:
+        return False, -1, "", "", str(e)
+
+
+def _looks_like_sudo(cmd):
+    return bool(cmd) and bool(re.search(r"(?:^|[\s&|;])sudo(?:\s|$)", cmd))
+
+
+def _strip_sudo(cmd):
+    return re.sub(r"(?:^|[\s&|;])sudo\s+", lambda m: (m.group(0)[0] if m.group(0)[0] in "&|;" else ""), cmd, count=1).strip()
+
+
+async def exec_cmd(req):
+    data = await body_json(req)
     if data is None:
-        return _err("Invalid JSON")
+        return web.json_response({"ok": False, "error": "Invalid JSON"})
+    cmd = str(data.get("command", "")).strip()
+    if not cmd:
+        return web.json_response({"ok": False, "error": "No command provided"})
+    if _looks_like_sudo(cmd):
+        return web.json_response({
+            "ok": False, "needs_sudo": True,
+            "command": _strip_sudo(cmd),
+            "error": "This command needs sudo. Provide a password via /sudo-exec.",
+        })
+    cwd = home_cwd(data.get("cwd"))
+    timeout = int(data.get("timeout", 120))
+    ok, code, out, err, err2 = _run_command(cmd, cwd, timeout=timeout)
+    if not ok:
+        return web.json_response({"ok": False, "error": err2 or "failed"})
+    return web.json_response({
+        "ok": True, "exit_code": code,
+        "stdout": out[:MAX_OUTPUT], "stderr": err[:MAX_OUTPUT],
+        "cwd": str(cwd),
+    })
+
+
+async def sudo_exec(req):
+    data = await body_json(req)
+    if data is None:
+        return web.json_response({"ok": False, "error": "Invalid JSON"})
+    raw_cmd = str(data.get("command", "")).strip()
+    password = str(data.get("password", ""))
+    if not raw_cmd:
+        return web.json_response({"ok": False, "error": "No command provided"})
+    if not password:
+        return web.json_response({"ok": False, "error": "No password provided"})
+    if IS_WINDOWS:
+        return web.json_response({
+            "ok": False,
+            "error": "sudo is not available on Windows. Run the bridge in an elevated terminal if you need admin.",
+        })
+
+    inner = _strip_sudo(raw_cmd) if _looks_like_sudo(raw_cmd) else raw_cmd
+    cwd = home_cwd(data.get("cwd"))
+    timeout = int(data.get("timeout", 120))
+    try:
+        proc = subprocess.run(
+            ["sudo", "-S", "-p", "", "--", "sh", "-c", inner],
+            cwd=str(cwd), capture_output=True, text=True,
+            timeout=timeout, input=password + "\n",
+        )
+        out = proc.stdout or ""
+        err = proc.stderr or ""
+        low = err.lower()
+        wrong = ("incorrect password" in low or "sorry, try again" in low or "authentication failure" in low)
+        ok = proc.returncode == 0
+        return web.json_response({
+            "ok": ok,
+            "exit_code": proc.returncode,
+            "stdout": out[:MAX_OUTPUT],
+            "stderr": err[:MAX_OUTPUT],
+            "cwd": str(cwd),
+            "wrong_password": wrong,
+            "error": ("Wrong sudo password" if wrong and not ok else (None if ok else "sudo failed")),
+        })
+    except subprocess.TimeoutExpired:
+        return web.json_response({"ok": False, "error": "Command timed out"})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
+
+
+# ---------------- File operations ----------------
+async def write_file(req):
+    data = await body_json(req)
+    if data is None:
+        return web.json_response({"ok": False, "error": "Invalid JSON"})
     p = safe_path(data.get("path", ""))
     if not p:
-        return _err("Path not allowed", allowed_dirs=[str(d) for d in ALLOWED_DIRS])
-    if p.is_dir():
-        return _err("Path is a directory", path=str(p))
+        return web.json_response({"ok": False, "error": "Path not allowed", "allowed_dirs": [str(d) for d in ALLOWED_DIRS]})
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
         content = str(data.get("content", ""))
         p.write_text(content, encoding="utf-8")
-        return _ok(path=str(p), bytes=len(content.encode("utf-8")))
+        return web.json_response({"ok": True, "path": str(p), "bytes": len(content.encode("utf-8"))})
     except Exception as e:
-        return _err(str(e), path=str(p))
+        return web.json_response({"ok": False, "error": str(e)})
 
 
 async def append_file(req):
-    data = await _json(req)
+    data = await body_json(req)
     if data is None:
-        return _err("Invalid JSON")
+        return web.json_response({"ok": False, "error": "Invalid JSON"})
     p = safe_path(data.get("path", ""))
     if not p:
-        return _err("Path not allowed")
+        return web.json_response({"ok": False, "error": "Path not allowed"})
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
-        content = str(data.get("content", ""))
         with p.open("a", encoding="utf-8") as f:
-            f.write(content)
-        return _ok(path=str(p), bytes=len(content.encode("utf-8")))
+            f.write(str(data.get("content", "")))
+        return web.json_response({"ok": True, "path": str(p)})
     except Exception as e:
-        return _err(str(e), path=str(p))
+        return web.json_response({"ok": False, "error": str(e)})
 
 
 async def read_file(req):
-    data = await _json(req)
+    data = await body_json(req)
     if data is None:
-        return _err("Invalid JSON")
+        return web.json_response({"ok": False, "error": "Invalid JSON"})
     p = safe_path(data.get("path", ""))
     if not p or not p.exists():
-        return _err("File not found", path=str(expand(data.get("path", ""))))
-    if not p.is_file():
-        return _err("Not a file", path=str(p))
+        return web.json_response({"ok": False, "error": "File not found", "path": to_abs(data.get("path", ""))})
+    if p.is_dir():
+        return web.json_response({"ok": False, "error": "Is a directory", "path": str(p)})
     try:
-        size = p.stat().st_size
-        out, truncated = _trim(p.read_text(encoding="utf-8", errors="replace"))
-        return _ok(path=str(p), content=out, size=size, truncated=truncated)
+        return web.json_response({
+            "ok": True, "path": str(p),
+            "content": p.read_text(encoding="utf-8", errors="replace")[:MAX_OUTPUT],
+        })
     except Exception as e:
-        return _err(str(e), path=str(p))
+        return web.json_response({"ok": False, "error": str(e)})
 
 
 async def list_dir(req):
-    data = await _json(req) or {}
-    p = safe_path(data.get("path", "")) or HOME
-    if not p.is_dir():
-        return _err("Not a directory", path=str(p))
+    data = await body_json(req) or {}
+    p = safe_path(data.get("path", str(HOME)))
+    if not p or not p.is_dir():
+        return web.json_response({"ok": False, "error": "Not a directory"})
     try:
-        entries = sorted(p.iterdir(), key=lambda c: (not c.is_dir(), c.name.lower()))
-        items = []
-        for c in entries[:500]:
-            try:
-                size = c.stat().st_size if c.is_file() else 0
-            except OSError:
-                size = 0
-            items.append({"name": c.name, "is_dir": c.is_dir(), "size": size, "path": str(c)})
-        return _ok(path=str(p), total=len(entries), items=items)
+        items = [{
+            "name": c.name,
+            "is_dir": c.is_dir(),
+            "size": c.stat().st_size if c.is_file() else 0,
+        } for c in sorted(p.iterdir())]
+        return web.json_response({"ok": True, "path": str(p), "items": items[:500]})
     except Exception as e:
-        return _err(str(e), path=str(p))
+        return web.json_response({"ok": False, "error": str(e)})
 
 
 async def delete_path(req):
-    data = await _json(req)
+    data = await body_json(req)
     if data is None:
-        return _err("Invalid JSON")
+        return web.json_response({"ok": False, "error": "Invalid JSON"})
     p = safe_path(data.get("path", ""))
     if not p or not p.exists():
-        return _err("Not found")
-    if p == HOME or p in ALLOWED_DIRS:
-        return _err("Refusing to delete a protected root folder", path=str(p))
+        return web.json_response({"ok": False, "error": "Not found"})
+    if p == HOME:
+        return web.json_response({"ok": False, "error": "Refusing to delete the home folder"})
     try:
         if p.is_dir():
             shutil.rmtree(p)
         else:
             p.unlink()
-        return _ok(path=str(p))
+        return web.json_response({"ok": True, "path": str(p)})
     except Exception as e:
-        return _err(str(e), path=str(p))
+        return web.json_response({"ok": False, "error": str(e)})
 
 
 async def move_path(req):
-    data = await _json(req)
+    data = await body_json(req)
     if data is None:
-        return _err("Invalid JSON")
+        return web.json_response({"ok": False, "error": "Invalid JSON"})
     a = safe_path(data.get("from", ""))
     b = safe_path(data.get("to", ""))
     if not a or not b:
-        return _err("Path not allowed")
-    if not a.exists():
-        return _err("Source not found", path=str(a))
+        return web.json_response({"ok": False, "error": "Path not allowed"})
     try:
         b.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(a), str(b))
-        return _ok(**{"from": str(a), "to": str(b)})
+        return web.json_response({"ok": True, "from": str(a), "to": str(b)})
     except Exception as e:
-        return _err(str(e))
+        return web.json_response({"ok": False, "error": str(e)})
 
 
 async def copy_path(req):
-    data = await _json(req)
+    data = await body_json(req)
     if data is None:
-        return _err("Invalid JSON")
+        return web.json_response({"ok": False, "error": "Invalid JSON"})
     a = safe_path(data.get("from", ""))
     b = safe_path(data.get("to", ""))
     if not a or not b:
-        return _err("Path not allowed")
-    if not a.exists():
-        return _err("Source not found", path=str(a))
+        return web.json_response({"ok": False, "error": "Path not allowed"})
     try:
         b.parent.mkdir(parents=True, exist_ok=True)
         if a.is_dir():
             shutil.copytree(str(a), str(b), dirs_exist_ok=True)
         else:
             shutil.copy2(str(a), str(b))
-        return _ok(**{"from": str(a), "to": str(b)})
+        return web.json_response({"ok": True, "from": str(a), "to": str(b)})
     except Exception as e:
-        return _err(str(e))
+        return web.json_response({"ok": False, "error": str(e)})
 
 
-# -- system --
-def _node_version():
-    try:
-        p = subprocess.run(["node", "--version"], capture_output=True, text=True, timeout=5)
-        return p.stdout.strip() if p.returncode == 0 else ""
-    except Exception:
-        return ""
-
-
+# ---------------- System info ----------------
 async def sysinfo(req):
-    info = {
-        "platform": platform.system(), "release": platform.release(),
-        "version": platform.version(), "machine": platform.machine(),
-        "python": platform.python_version(), "cpu_count": os.cpu_count(),
-        "home": str(HOME), "user": USER, "node": _node_version(),
-    }
     try:
-        total, used, free = shutil.disk_usage(str(HOME))
-        info["disk"] = {"total_gb": round(total / 1e9, 2), "used_gb": round(used / 1e9, 2),
-                        "free_gb": round(free / 1e9, 2)}
-    except Exception:
-        pass
-    return _ok(**info)
+        info = {
+            "platform": platform.system(), "release": platform.release(),
+            "version": platform.version(), "machine": platform.machine(),
+            "python": platform.python_version(),
+            "cpu_count": os.cpu_count(), "home": str(HOME),
+        }
+        try:
+            total, used, free = shutil.disk_usage(str(HOME))
+            info["disk"] = {
+                "total_gb": round(total / 1e9, 2),
+                "used_gb": round(used / 1e9, 2),
+                "free_gb": round(free / 1e9, 2),
+            }
+        except Exception:
+            pass
+        try:
+            p = subprocess.run("node --version", shell=True, capture_output=True, text=True, timeout=5)
+            info["node"] = p.stdout.strip()
+        except Exception:
+            pass
+        return web.json_response({"ok": True, **info})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
 
 
 async def syscheck(req):
@@ -566,284 +450,399 @@ async def syscheck(req):
         checks["home_writable"] = {"ok": True}
     except Exception as e:
         checks["home_writable"] = {"ok": False, "error": str(e)}
-    node = _node_version()
-    checks["node"] = {"ok": bool(node), "version": node}
-    healthy = all(c.get("ok") for c in checks.values())
-    return _ok(check=checks, healthy=healthy)
+    try:
+        p = subprocess.run("node --version", shell=True, capture_output=True, text=True, timeout=5)
+        checks["node"] = {"ok": p.returncode == 0, "version": p.stdout.strip()}
+    except Exception:
+        checks["node"] = {"ok": False, "version": ""}
+    overall = all(c.get("ok") for c in checks.values() if isinstance(c, dict))
+    return web.json_response({"ok": True, "check": checks, "healthy": overall})
 
 
 async def processes(req):
     try:
-        if IS_WINDOWS:
-            _code, out, _err_text = _run_argv(["tasklist"], timeout=8)
-            return _ok(raw=out[:MAX_OUTPUT])
-        _code, out, err_text = _run_argv(["ps", "aux"], timeout=8)
-        lines = out.splitlines()
-        if not lines:
-            return _err(err_text or "ps returned nothing")
-        header, rows = lines[0], lines[1:]
-
-        def cpu(row):
-            try:
-                return float(row.split(None, 3)[2])
-            except (ValueError, IndexError):
-                return 0.0
-
-        rows.sort(key=cpu, reverse=True)
-        return _ok(raw="\n".join([header] + rows[:15])[:MAX_OUTPUT])
+        cmd = "ps aux --sort=-%cpu | head -n 16" if not IS_WINDOWS else "tasklist"
+        p = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=8)
+        return web.json_response({"ok": True, "raw": p.stdout[:MAX_OUTPUT]})
     except Exception as e:
-        return _err(str(e))
+        return web.json_response({"ok": False, "error": str(e)})
 
 
+# ---------------- Email / HTTP ----------------
 async def send_email(req):
-    data = await _json(req)
+    data = await body_json(req)
     if data is None:
-        return _err("Invalid JSON")
+        return web.json_response({"ok": False, "error": "Invalid JSON"})
     if not SMTP.get("host"):
-        return _err("SMTP not configured. Run smtp_setup.py.")
+        return web.json_response({"ok": False, "error": "SMTP not configured in config.json"})
     to = str(data.get("to", "")).strip()
     subject = str(data.get("subject", "")).strip() or "(no subject)"
     body = str(data.get("body", ""))
     if not to or "@" not in to:
-        return _err("Invalid recipient")
+        return web.json_response({"ok": False, "error": "Invalid recipient"})
     try:
-        msg = EmailMessage()
-        msg["From"] = SMTP.get("from") or SMTP.get("user") or ""
+        msg = MIMEMultipart()
+        msg["From"] = SMTP.get("from") or SMTP.get("user")
         msg["To"] = to
         msg["Subject"] = subject
-        msg.set_content(body)
+        msg.attach(MIMEText(body, "plain", "utf-8"))
         ctx = ssl.create_default_context()
         port = int(SMTP.get("port", 587))
         if SMTP.get("use_tls", True):
             with smtplib.SMTP(SMTP["host"], port, timeout=20) as s:
                 s.starttls(context=ctx)
-                if SMTP.get("user"):
-                    s.login(SMTP["user"], SMTP.get("pass", ""))
+                s.login(SMTP.get("user"), SMTP.get("pass"))
                 s.send_message(msg)
         else:
             with smtplib.SMTP_SSL(SMTP["host"], port, timeout=20, context=ctx) as s:
-                if SMTP.get("user"):
-                    s.login(SMTP["user"], SMTP.get("pass", ""))
+                s.login(SMTP.get("user"), SMTP.get("pass"))
                 s.send_message(msg)
-        return _ok(sent_to=to, subject=subject)
+        return web.json_response({"ok": True, "sent_to": to, "subject": subject})
     except Exception as e:
-        return _err(str(e))
+        return web.json_response({"ok": False, "error": str(e)})
 
 
 async def http_call(req):
-    data = await _json(req)
+    data = await body_json(req)
     if data is None:
-        return _err("Invalid JSON")
+        return web.json_response({"ok": False, "error": "Invalid JSON"})
     url = str(data.get("url", "")).strip()
     method = str(data.get("method", "GET")).upper()
     body = data.get("body") or None
-    headers = data.get("headers") or {}
     if not url:
-        return _err("No url")
-    if not url.startswith(("http://", "https://")):
-        return _err("Only http(s) allowed")
-    if method not in ("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"):
-        return _err("Method not allowed")
-    payload = None
-    if body is not None:
-        payload = body.encode("utf-8") if isinstance(body, str) else json.dumps(body).encode("utf-8")
-    r = urllib.request.Request(url, method=method, data=payload)
-    r.add_header("User-Agent", "MiroxBridge/5.0")
-    if payload is not None:
-        r.add_header("Content-Type", "application/json")
-    if isinstance(headers, dict):
-        for k, v in headers.items():
-            r.add_header(str(k), str(v))
+        return web.json_response({"ok": False, "error": "No url"})
+    if not (url.startswith("http://") or url.startswith("https://")):
+        return web.json_response({"ok": False, "error": "Only http(s) allowed"})
     try:
-        with urllib.request.urlopen(r, timeout=20) as resp:
-            text = resp.read(MAX_OUTPUT).decode("utf-8", errors="replace")
-            return _ok(status=resp.status, body=text)
-    except urllib.error.HTTPError as e:
-        text = e.read(MAX_OUTPUT).decode("utf-8", errors="replace") if e.fp else ""
-        return web.json_response({"ok": False, "status": e.code, "error": str(e.reason), "body": text})
+        r2 = urllib.request.Request(url, method=method, data=(str(body).encode() if body else None))
+        r2.add_header("User-Agent", "MiroxBridge/5.0")
+        if body:
+            r2.add_header("Content-Type", "application/json")
+        with urllib.request.urlopen(r2, timeout=20) as r:
+            raw = r.read()[:MAX_OUTPUT]
+            return web.json_response({"ok": True, "status": r.status, "body": raw.decode("utf-8", errors="replace")})
     except Exception as e:
-        return _err(str(e))
+        return web.json_response({"ok": False, "error": str(e)})
 
 
-# -- clipboard / screenshot --
+# ---------------- Clipboard / screenshot ----------------
 async def clipboard(req):
-    data = await _json(req)
+    data = await body_json(req)
     if data is None:
-        return _err("Invalid JSON")
+        return web.json_response({"ok": False, "error": "Invalid JSON"})
     action = data.get("action", "get")
     content = str(data.get("content", ""))
     try:
-        import pyperclip  # optional
+        import pyperclip
         if action == "set":
             pyperclip.copy(content)
-            return _ok()
-        return _ok(content=pyperclip.paste())
+            return web.json_response({"ok": True})
+        return web.json_response({"ok": True, "content": pyperclip.paste()})
     except ImportError:
         pass
-    except Exception as e:
-        return _err("clipboard unavailable: " + str(e))
     try:
         if IS_MAC:
-            argv_set, argv_get = ["pbcopy"], ["pbpaste"]
-        elif IS_WINDOWS:
-            argv_set, argv_get = ["clip"], ["powershell", "-command", "Get-Clipboard"]
-        else:
-            argv_set = ["xclip", "-selection", "clipboard"]
-            argv_get = ["xclip", "-selection", "clipboard", "-o"]
+            if action == "set":
+                subprocess.run("pbcopy", input=content, text=True)
+                return web.json_response({"ok": True})
+            p = subprocess.run("pbpaste", capture_output=True, text=True)
+            return web.json_response({"ok": True, "content": p.stdout})
+        if IS_WINDOWS:
+            if action == "set":
+                subprocess.run("clip", input=content, text=True)
+                return web.json_response({"ok": True})
+            p = subprocess.run(["powershell", "-command", "Get-Clipboard"], capture_output=True, text=True)
+            return web.json_response({"ok": True, "content": p.stdout})
         if action == "set":
-            subprocess.run(argv_set, input=content, text=True, check=True, timeout=10)
-            return _ok()
-        _code, out, _e = _run_argv(argv_get, timeout=10)
-        return _ok(content=out)
+            subprocess.run(["xclip", "-selection", "clipboard"], input=content, text=True)
+            return web.json_response({"ok": True})
+        p = subprocess.run(["xclip", "-selection", "clipboard", "-o"], capture_output=True, text=True)
+        return web.json_response({"ok": True, "content": p.stdout})
     except Exception as e:
-        return _err("clipboard unavailable (install pyperclip or xclip): " + str(e))
+        return web.json_response({"ok": False, "error": "clipboard unavailable: " + str(e)})
 
 
 async def screenshot(req):
-    data = await _json(req) or {}
+    data = await body_json(req) or {}
     p = safe_path(data.get("path", "")) or (HOME / "mirox_screenshot.png")
+    p.parent.mkdir(parents=True, exist_ok=True)
     try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-    except Exception as e:
-        return _err(str(e))
-
-    # 1) Pillow works on Windows, macOS and most Linux desktops.
-    try:
-        from PIL import ImageGrab  # optional
+        from PIL import ImageGrab
         ImageGrab.grab().save(str(p))
-        return _ok(path=str(p))
+        return web.json_response({"ok": True, "path": str(p)})
     except ImportError:
-        pass
-    except Exception:
-        pass
-
-    # 2) Platform tools, called with argv (no shell, so paths are safe).
-    if IS_WINDOWS:
-        return _err("Install Pillow for screenshots: pip install pillow")
-    if IS_MAC:
-        candidates = [["screencapture", "-x", str(p)]]
-    else:
-        candidates = [
-            ["gnome-screenshot", "-f", str(p)],
-            ["scrot", str(p)],
-            ["import", "-window", "root", str(p)],
-        ]
-    for argv in candidates:
-        if not shutil.which(argv[0]):
-            continue
-        try:
-            code, _out, _e = _run_argv(argv, timeout=15)
-            if code == 0 and p.exists():
-                return _ok(path=str(p))
-        except Exception:
-            continue
-    return _err("No screenshot tool found. Run: pip install pillow")
+        if IS_MAC:
+            r = subprocess.run(["screencapture", "-x", str(p)], capture_output=True, text=True, timeout=15)
+            if r.returncode == 0:
+                return web.json_response({"ok": True, "path": str(p)})
+            return web.json_response({"ok": False, "error": r.stderr})
+        return web.json_response({"ok": False, "error": "pip install pillow for screenshots"})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
 
 
-# -- git / packages --
-GIT_ARGS = {
-    "status": ["git", "status"],
-    "log": ["git", "log", "--oneline", "-n", "20"],
-    "branch": ["git", "branch", "-a"],
-    "diff": ["git", "diff"],
-    "add-all": ["git", "add", "-A"],
-    "pull": ["git", "pull"],
-    "push": ["git", "push"],
-    "remote": ["git", "remote", "-v"],
+# ---------------- Git / packages ----------------
+GIT_COMMANDS = {
+    "status": "git status",
+    "log": "git log --oneline -n 20",
+    "branch": "git branch -a",
+    "diff": "git diff",
+    "add-all": "git add -A",
+    "pull": "git pull",
+    "push": "git push",
+    "remote": "git remote -v",
 }
 
 
 async def git_op(req):
-    data = await _json(req)
+    data = await body_json(req)
     if data is None:
-        return _err("Invalid JSON")
+        return web.json_response({"ok": False, "error": "Invalid JSON"})
     action = str(data.get("action", "status"))
-    cwd = workdir(data)
+    cwd = home_cwd(data.get("cwd"))
+    msg = str(data.get("message", ""))
     if action == "commit":
-        msg = str(data.get("message", "")).strip()
         if not msg:
-            return _err("message required")
-        argv = ["git", "commit", "-m", msg]  # argv: no shell, no quoting bugs
-    elif action in GIT_ARGS:
-        argv = GIT_ARGS[action]
+            return web.json_response({"ok": False, "error": "message required"})
+        args = ["git", "commit", "-m", msg]
+    elif action in GIT_COMMANDS:
+        args = GIT_COMMANDS[action].split()
     else:
-        return _err("unknown action")
+        return web.json_response({"ok": False, "error": "unknown action"})
     try:
-        code, out, err_text = _run_argv(argv, cwd=cwd, timeout=60)
-        out, _ = _trim(out)
-        err_text, _ = _trim(err_text)
-        return web.json_response({"ok": code == 0, "stdout": out, "stderr": err_text, "cwd": str(cwd)})
-    except FileNotFoundError:
-        return _err("git is not installed")
+        p = subprocess.run(args, cwd=str(cwd), capture_output=True, text=True, timeout=60)
+        return web.json_response({
+            "ok": p.returncode == 0,
+            "stdout": p.stdout[:MAX_OUTPUT],
+            "stderr": p.stderr[:MAX_OUTPUT],
+        })
     except Exception as e:
-        return _err(str(e))
+        return web.json_response({"ok": False, "error": str(e)})
 
 
-PKG_ARGS = {
-    "pip": [sys.executable, "-m", "pip", "list"],
-    "pip-freeze": [sys.executable, "-m", "pip", "freeze"],
+PKG_COMMANDS = {
+    "pip": ["pip", "list"],
     "npm": ["npm", "list", "--depth=0"],
+    "pip-freeze": ["pip", "freeze"],
 }
 
 
 async def pkgs(req):
-    data = await _json(req) or {}
+    data = await body_json(req) or {}
     t = str(data.get("type", "pip"))
-    if t not in PKG_ARGS:
-        return _err("unknown type")
+    if t not in PKG_COMMANDS:
+        return web.json_response({"ok": False, "error": "unknown type"})
+    cwd = home_cwd(data.get("cwd"))
     try:
-        code, out, err_text = _run_argv(PKG_ARGS[t], cwd=workdir(data), timeout=30)
-        return web.json_response({"ok": code == 0, "raw": (out or err_text)[:MAX_OUTPUT]})
+        p = subprocess.run(PKG_COMMANDS[t], cwd=str(cwd), capture_output=True, text=True, timeout=30)
+        return web.json_response({"ok": p.returncode == 0, "raw": p.stdout[:MAX_OUTPUT]})
     except Exception as e:
-        return _err(str(e))
+        return web.json_response({"ok": False, "error": str(e)})
+
+
+# ---------------- KDE Connect ----------------
+def _kde(args, timeout=20):
+    """Run kdeconnect-cli with a list of args. Returns (ok, stdout, stderr)."""
+    if not _which("kdeconnect-cli"):
+        return False, "", "kdeconnect-cli not installed"
+    try:
+        p = subprocess.run(["kdeconnect-cli"] + args, capture_output=True, text=True, timeout=timeout)
+        return p.returncode == 0, p.stdout or "", p.stderr or ""
+    except subprocess.TimeoutExpired:
+        return False, "", "kdeconnect-cli timed out"
+    except Exception as e:
+        return False, "", str(e)
+
+
+_DEVICE_RE = re.compile(r"^-\s*(.+?):\s*(.+?)\s*\(([^)]*)\)(.*)$")
+
+
+def _parse_devices(stdout):
+    """Parse `kdeconnect-cli -a` / `-l` output into [{id, name, reachable, paired}]."""
+    devices = []
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line.startswith("-"):
+            continue
+        m = _DEVICE_RE.match(line)
+        if not m:
+            continue
+        dev_id, name, state, rest = m.group(1).strip(), m.group(2).strip(), m.group(3).strip(), m.group(4)
+        devices.append({
+            "id": dev_id,
+            "name": name,
+            "reachable": "reachable" in state.lower() and "unreachable" not in state.lower(),
+            "paired": "paired" in rest.lower() or "paired" in state.lower(),
+        })
+    return devices
+
+
+async def kde_refresh(req):
+    ok, _, err = _kde(["--refresh"])
+    return web.json_response({"ok": ok, "error": None if ok else err})
+
+
+async def kde_list(req):
+    data = await body_json(req) or {}
+    if not _which("kdeconnect-cli"):
+        return web.json_response({"ok": False, "installed": False, "devices": [], "error": "kdeconnect-cli not installed"})
+    args = ["-a", "--id-name-only"] if data.get("available") else ["-l", "--id-name-only"]
+    ok, out, err = _kde(args)
+    devices = []
+    for line in out.splitlines():
+        parts = line.strip().split(" ", 1)
+        if len(parts) == 2 and parts[0]:
+            devices.append({"id": parts[0], "name": parts[1], "reachable": bool(data.get("available")), "paired": True})
+    if not devices and ok:
+        ok2, out2, _ = _kde(["-a"])
+        devices = _parse_devices(out2)
+    return web.json_response({"ok": ok, "installed": True, "devices": devices, "error": None if ok else err})
+
+
+async def kde_my_id(req):
+    ok, out, err = _kde(["-i"])
+    return web.json_response({"ok": ok, "id": out.strip(), "error": None if ok else err})
+
+
+async def kde_ping(req):
+    data = await body_json(req) or {}
+    dev = str(data.get("device", ""))
+    msg = str(data.get("message", "")).strip()
+    if not dev:
+        return web.json_response({"ok": False, "error": "device required"})
+    args = ["-d", dev, "--ping-msg", msg] if msg else ["-d", dev, "--ping"]
+    ok, _, err = _kde(args)
+    return web.json_response({"ok": ok, "online": ok, "device": {"id": dev}, "error": None if ok else err})
+
+
+async def kde_ring(req):
+    data = await body_json(req) or {}
+    dev = str(data.get("device", ""))
+    ok, _, err = _kde(["-d", dev, "--ring"])
+    return web.json_response({"ok": ok, "error": None if ok else err})
+
+
+async def kde_share(req):
+    data = await body_json(req) or {}
+    dev = str(data.get("device", ""))
+    p = safe_path(str(data.get("path", "")))
+    if not dev or not p or not p.exists():
+        return web.json_response({"ok": False, "error": "device and an existing allowed path are required"})
+    send = p
+    was_dir = False
+    if p.is_dir():
+        was_dir = True
+        archive_base = str(tempfile.mkdtemp(prefix="mirox_"))
+        send = Path(shutil.make_archive(os.path.join(archive_base, p.name), "zip", root_dir=str(p.parent), base_dir=p.name))
+    ok, _, err = _kde(["-d", dev, "--share", str(send)], timeout=120)
+    return web.json_response({"ok": ok, "device": {"id": dev}, "was_dir": was_dir, "error": None if ok else err})
+
+
+async def kde_share_text(req):
+    data = await body_json(req) or {}
+    dev = str(data.get("device", ""))
+    text = str(data.get("text", ""))
+    if not dev:
+        return web.json_response({"ok": False, "error": "device required"})
+    ok, _, err = _kde(["-d", dev, "--share-text", text])
+    return web.json_response({"ok": ok, "error": None if ok else err})
+
+
+async def kde_sms(req):
+    data = await body_json(req) or {}
+    dev = str(data.get("device", ""))
+    number = str(data.get("number", ""))
+    message = str(data.get("message", ""))
+    if not dev or not number:
+        return web.json_response({"ok": False, "error": "device and number required"})
+    ok, _, err = _kde(["-d", dev, "--send-sms", message, "--destination", number])
+    return web.json_response({"ok": ok, "error": None if ok else err})
+
+
+async def kde_lock(req):
+    data = await body_json(req) or {}
+    dev = str(data.get("device", ""))
+    ok, _, err = _kde(["-d", dev, "--lock"])
+    return web.json_response({"ok": ok, "error": None if ok else err})
+
+
+async def kde_notifications(req):
+    data = await body_json(req) or {}
+    dev = str(data.get("device", ""))
+    ok, out, err = _kde(["-d", dev, "--list-notifications"])
+    return web.json_response({"ok": ok, "raw": out[:MAX_OUTPUT], "error": None if ok else err})
+
+
+async def kde_plugins(req):
+    data = await body_json(req) or {}
+    dev = str(data.get("device", ""))
+    ok, out, err = _kde(["-d", dev, "--list-available"])
+    return web.json_response({"ok": ok, "raw": out[:MAX_OUTPUT], "error": None if ok else err})
+
+
+async def kde_photo(req):
+    data = await body_json(req) or {}
+    dev = str(data.get("device", ""))
+    dest = safe_path(str(data.get("path", ""))) or (HOME / "mirox_photo.jpg")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    ok, _, err = _kde(["-d", dev, "--get-photo", str(dest)], timeout=60)
+    return web.json_response({"ok": ok, "path": str(dest), "error": None if ok else err})
 
 
 # ---------------- App ----------------
 def build_app():
-    app = web.Application(middlewares=[guard_mw], client_max_size=MAX_BODY)
+    app = web.Application(middlewares=[cors_mw])
 
     routes = [
-        ("GET", "/ping", ping),
-        ("GET", "/env", env_info),
-        ("POST", "/env", env_info),
-        ("POST", "/resolve", resolve_path),
-        ("POST", "/exec", exec_cmd),
-        ("POST", "/sudo-exec", sudo_exec),
-        ("POST", "/write", write_file),
-        ("POST", "/append", append_file),
-        ("POST", "/read", read_file),
-        ("POST", "/list", list_dir),
-        ("POST", "/delete", delete_path),
-        ("POST", "/move", move_path),
-        ("POST", "/copy", copy_path),
-        ("POST", "/sysinfo", sysinfo),
-        ("POST", "/syscheck", syscheck),
-        ("POST", "/processes", processes),
-        ("POST", "/email", send_email),
-        ("POST", "/http", http_call),
-        ("POST", "/clipboard", clipboard),
-        ("POST", "/screenshot", screenshot),
-        ("POST", "/git", git_op),
-        ("POST", "/pkgs", pkgs),
+        ("/ping", "GET", ping),
+        ("/env", "GET", env_info),
+        ("/exec", "POST", exec_cmd),
+        ("/sudo-exec", "POST", sudo_exec),
+        ("/write", "POST", write_file),
+        ("/append", "POST", append_file),
+        ("/read", "POST", read_file),
+        ("/list", "POST", list_dir),
+        ("/delete", "POST", delete_path),
+        ("/move", "POST", move_path),
+        ("/copy", "POST", copy_path),
+        ("/sysinfo", "POST", sysinfo),
+        ("/syscheck", "POST", syscheck),
+        ("/processes", "POST", processes),
+        ("/email", "POST", send_email),
+        ("/http", "POST", http_call),
+        ("/clipboard", "POST", clipboard),
+        ("/screenshot", "POST", screenshot),
+        ("/git", "POST", git_op),
+        ("/pkgs", "POST", pkgs),
+        ("/kde/refresh", "POST", kde_refresh),
+        ("/kde/list", "POST", kde_list),
+        ("/kde/my-id", "POST", kde_my_id),
+        ("/kde/ping", "POST", kde_ping),
+        ("/kde/ring", "POST", kde_ring),
+        ("/kde/share", "POST", kde_share),
+        ("/kde/share-text", "POST", kde_share_text),
+        ("/kde/sms", "POST", kde_sms),
+        ("/kde/lock", "POST", kde_lock),
+        ("/kde/notifications", "POST", kde_notifications),
+        ("/kde/plugins", "POST", kde_plugins),
+        ("/kde/photo", "POST", kde_photo),
     ]
-    for method, path, handler in routes:
-        app.router.add_route(method, path, handler)
-
-    # Catch-all for CORS preflight. guard_mw answers it with the right headers.
-    app.router.add_route("OPTIONS", "/{tail:.*}", lambda r: web.Response(status=204))
+    for route, method, handler in routes:
+        app.router.add_route(method, route, handler)
+        app.router.add_route("OPTIONS", route, lambda r: web.Response())
     return app
 
 
 if __name__ == "__main__":
     print("=" * 60)
-    print(f"[Bridge] {NAME} v5 on http://127.0.0.1:{PORT}")
-    print(f"[Bridge] User: {USER}   Home: {HOME}")
+    print(f"[Bridge] {NAME} on http://127.0.0.1:{PORT}")
+    print(f"[Bridge] Home: {HOME}")
     print(f"[Bridge] Platform: {platform.system()} {platform.release()}")
     for d in ALLOWED_DIRS:
         print(f"[Bridge]   allowed: {d}")
-    print(f"[Bridge] Origins: {', '.join(sorted(ALLOWED_ORIGINS))} + localhost")
-    print(f"[Bridge] Token required: {'yes' if TOKEN else 'no (set \"token\" in config.json)'}")
     print(f"[Bridge] SMTP configured: {bool(SMTP.get('host'))}")
+    print(f"[Bridge] Sudo available: {_sudo_available()}")
+    print(f"[Bridge] KDE Connect: {bool(_which('kdeconnect-cli'))}")
     print("=" * 60)
     try:
         web.run_app(build_app(), host="127.0.0.1", port=PORT, print=None, access_log=None)
