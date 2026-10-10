@@ -285,12 +285,13 @@
     <button class="icon-btn modal-close" type="button" data-close="loginModal" data-i18n-title="close"><i class="ri-close-line"></i></button>
     <div class="modal-mascot"><div class="mascot mascot-md" data-mood="idle"></div></div>
     <h2 class="modal-title" data-i18n="signIn">Sign in</h2>
-    <p class="modal-sub" data-i18n="signInSub">Sign in with Google, Apple, or email.</p>
+    <p class="modal-sub" data-i18n="signInSub">Enter your name and email to continue.</p>
     <div id="emailLoginWrap">
-      <form id="simpleLoginForm" class="modal-form">
-        <input type="text" id="loginName" class="modal-input" data-i18n-placeholder="name" required maxlength="60">
-        <input type="email" id="loginEmail" class="modal-input" data-i18n-placeholder="email" required>
-        <button type="submit" class="modal-btn" data-i18n="continue">Continue</button>
+      <form id="simpleLoginForm" class="modal-form" autocomplete="on">
+        <input type="text" id="loginName" class="modal-input" data-i18n-placeholder="name" placeholder="Your name" required maxlength="60" autocomplete="name">
+        <input type="email" id="loginEmail" class="modal-input" data-i18n-placeholder="email" placeholder="you@example.com" required autocomplete="email">
+        <div id="loginError" class="modal-error" role="alert" style="display:none;"></div>
+        <button type="submit" class="modal-btn primary" id="loginSubmitBtn" data-i18n="continue">Continue</button>
       </form>
     </div>
   </div>
@@ -487,10 +488,24 @@
   <div class="modal">
     <button class="icon-btn modal-close" type="button" data-close="supportModal" data-i18n-title="close"><i class="ri-close-line"></i></button>
     <h2 class="modal-title" data-i18n="supportTitle">Contact Support</h2>
+    <p class="modal-sub" data-i18n="supportSub">Send us a message. We usually reply within 24 hours.</p>
     <div class="support-form">
-      <input type="text" id="supportSubject" class="modal-input" data-i18n-placeholder="subject">
-      <textarea id="supportMessage" class="modal-textarea" rows="4" data-i18n-placeholder="message"></textarea>
+      <label class="support-label" data-i18n="supportCategory">Category</label>
+      <select id="supportCategory" class="modal-select">
+        <option value="bug" data-i18n="catBug">Bug report</option>
+        <option value="feedback" data-i18n="catFeedback">Feedback</option>
+        <option value="billing" data-i18n="catBilling">Billing</option>
+        <option value="abuse" data-i18n="catAbuse">Report abuse</option>
+        <option value="other" data-i18n="catOther">Other</option>
+      </select>
+      <input type="text" id="supportSubject" class="modal-input" data-i18n-placeholder="subject" placeholder="Subject" maxlength="120">
+      <input type="email" id="supportEmail" class="modal-input" data-i18n-placeholder="email" placeholder="Your email (optional)" maxlength="120">
+      <textarea id="supportMessage" class="modal-textarea" rows="5" data-i18n-placeholder="message" placeholder="Describe your issue…" maxlength="4000"></textarea>
+      <div id="supportError" class="modal-error" role="alert" style="display:none;"></div>
       <button id="submitReportBtn" class="modal-btn primary" type="button" data-i18n="submit">Submit</button>
+      <div class="support-hint" data-i18n="supportHint">
+        Prefer email? Write to <a href="mailto:support@miroxai.org">support@miroxai.org</a>
+      </div>
     </div>
   </div>
 </div>
