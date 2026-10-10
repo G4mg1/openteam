@@ -1,21 +1,15 @@
 (function () {
   'use strict';
 
-  /* ═══════════════════════════════════════════════════════════
-     i18n — MyMemory with strict whitelist + silent fallback
-     ═══════════════════════════════════════════════════════════ */
-  const I18N_CACHE_KEY = 'miroxai_i18n_cache_v4';
+  /* ═══════════ i18n — strict whitelist ═══════════ */
+  const I18N_CACHE_KEY = 'miroxai_i18n_cache_v5';
   const RTL_LANGS = ['fa','ar','he','ur'];
   const TRANSLATE_CONCURRENCY = 2;
-
-  // Only these language codes are known-good with MyMemory's free endpoint.
-  // Anything not in this set is silently skipped (falls back to English).
   const MYMEMORY_OK = new Set([
     'es','fr','de','it','pt','ru','ja','ko','ar','hi','fa',
     'tr','vi','th','id','nl','pl','sv','el','cs','ro','uk',
     'he','zh-CN','es-MX'
   ]);
-
   function isTranslatable(code) {
     if (!code || typeof code !== 'string') return false;
     return MYMEMORY_OK.has(code.trim());
@@ -26,156 +20,104 @@
   let __translating = false;
   let __translationStatusEl = null;
 
-  function loadI18nCache() {
-    try { __i18nCache = JSON.parse(localStorage.getItem(I18N_CACHE_KEY) || '{}') || {}; } catch { __i18nCache = {}; }
-  }
-  function saveI18nCache() {
-    try { localStorage.setItem(I18N_CACHE_KEY, JSON.stringify(__i18nCache)); } catch {}
-  }
+  function loadI18nCache() { try { __i18nCache = JSON.parse(localStorage.getItem(I18N_CACHE_KEY) || '{}') || {}; } catch { __i18nCache = {}; } }
+  function saveI18nCache() { try { localStorage.setItem(I18N_CACHE_KEY, JSON.stringify(__i18nCache)); } catch {} }
   function setTranslateStatus(text) {
     if (!__translationStatusEl) __translationStatusEl = document.getElementById('translateStatus');
     if (!__translationStatusEl) return;
     __translationStatusEl.textContent = text || '';
   }
-
   async function translateString(text, targetLang) {
-    // Hard skip: English, invalid, or unknown langs → return the source text.
     if (!text || !isTranslatable(targetLang)) return text;
     const key = targetLang + ':' + text;
     if (__i18nCache[key]) return __i18nCache[key];
-
-    // Keep the query short (MyMemory limits length).
     const chunk = text.length > 350 ? text.slice(0, 350) : text;
-    const url = 'https://api.mymemory.translated.net/get'
-      + '?q=' + encodeURIComponent(chunk)
-      + '&langpair=' + encodeURIComponent('en|' + targetLang)
-      + '&mt=1';  // force machine translation — avoids "no translation found" responses
-
+    const url = 'https://api.mymemory.translated.net/get?q=' + encodeURIComponent(chunk) + '&langpair=' + encodeURIComponent('en|' + targetLang) + '&mt=1';
     try {
       const r = await fetch(url, { method: 'GET', mode: 'cors' });
       if (!r.ok) throw new Error('http_' + r.status);
       const d = await r.json();
       const status = Number(d && d.responseStatus) || 0;
       const raw = (d && d.responseData && d.responseData.translatedText) || '';
-      // MyMemory tells you when it's not happy:
-      //   responseStatus 200 = OK
-      //   anything else      = bad lang pair / quota / etc.
       if (status && status !== 200) throw new Error('mm_' + status);
       let clean = String(raw).trim();
       if (!clean) throw new Error('empty');
       if (clean.startsWith('"') && clean.endsWith('"')) clean = clean.slice(1, -1);
-      // Sometimes it echoes back the query — treat as failure.
       if (clean === chunk) throw new Error('echo');
-      __i18nCache[key] = clean;
-      saveI18nCache();
-      return clean;
-    } catch (e) {
-      // Cache the English fallback so we never hit MyMemory for this string again.
-      __i18nCache[key] = text;
-      saveI18nCache();
-      return text;
+      __i18nCache[key] = clean; saveI18nCache(); return clean;
+    } catch {
+      __i18nCache[key] = text; saveI18nCache(); return text;
     }
   }
-
-  function enqueueTranslation(element, sourceText, targetLang, mode) {
-    if (!isTranslatable(targetLang)) return;
-    __translationQueue.push({ element, sourceText, targetLang, mode });
-    processQueue();
-  }
-
+  function enqueueTranslation(el, src, lang, mode) { if (!isTranslatable(lang)) return; __translationQueue.push({ element: el, sourceText: src, targetLang: lang, mode }); processQueue(); }
   async function processQueue() {
     if (__translating) return;
     if (!__translationQueue.length) { setTranslateStatus(''); return; }
     __translating = true;
-    const total = __translationQueue.length;
-    let done = 0;
+    const total = __translationQueue.length; let done = 0;
     setTranslateStatus('Translating… (0/' + total + ')');
     while (__translationQueue.length) {
       const batch = __translationQueue.splice(0, TRANSLATE_CONCURRENCY);
-      const results = await Promise.all(batch.map((job) => translateString(job.sourceText, job.targetLang)));
-      results.forEach((translated, i) => {
+      const results = await Promise.all(batch.map((j) => translateString(j.sourceText, j.targetLang)));
+      results.forEach((tr, i) => {
         const job = batch[i];
         if (!job.element || !job.element.isConnected) return;
-        if (typeof translated !== 'string' || !translated) return;
+        if (typeof tr !== 'string' || !tr) return;
         if (job.mode === 'text') {
-          if (job.element.children.length === 0) job.element.textContent = translated;
-          else for (const node of job.element.childNodes) {
-            if (node.nodeType === 3 && node.textContent.trim()) { node.textContent = translated; break; }
-          }
-        } else if (job.mode === 'placeholder') job.element.placeholder = translated;
-        else if (job.mode === 'title') job.element.title = translated;
-        else if (job.mode === 'html') job.element.textContent = translated;
+          if (job.element.children.length === 0) job.element.textContent = tr;
+          else for (const n of job.element.childNodes) { if (n.nodeType === 3 && n.textContent.trim()) { n.textContent = tr; break; } }
+        } else if (job.mode === 'placeholder') job.element.placeholder = tr;
+        else if (job.mode === 'title') job.element.title = tr;
+        else if (job.mode === 'html') job.element.textContent = tr;
       });
       done += batch.length;
       setTranslateStatus('Translating… (' + Math.min(done, total) + '/' + total + ')');
     }
-    __translating = false;
-    setTranslateStatus('');
+    __translating = false; setTranslateStatus('');
   }
-
   function applyTranslations() {
     const lang = (__prefs && __prefs.uiLanguage) || 'en';
     const isRtl = RTL_LANGS.includes(lang);
     document.documentElement.lang = lang;
     document.documentElement.setAttribute('data-dir', isRtl ? 'rtl' : 'ltr');
-
-    const setSource = (el, src) => {
-      if (el.children.length === 0) el.textContent = src;
-      else for (const node of el.childNodes) {
-        if (node.nodeType === 3 && node.textContent.trim()) { node.textContent = src; break; }
-      }
+    const setSrc = (el, s) => {
+      if (el.children.length === 0) el.textContent = s;
+      else for (const n of el.childNodes) { if (n.nodeType === 3 && n.textContent.trim()) { n.textContent = s; break; } }
     };
-
     document.querySelectorAll('[data-i18n]').forEach((el) => {
       if (!el.dataset.i18nEn) {
-        let src = '';
-        if (el.children.length === 0) src = el.textContent;
-        else {
-          for (const node of el.childNodes) {
-            if (node.nodeType === 3 && node.textContent.trim()) { src = node.textContent.trim(); break; }
-          }
-          if (!src) src = el.textContent;
-        }
-        el.dataset.i18nEn = src;
+        let s = '';
+        if (el.children.length === 0) s = el.textContent;
+        else { for (const n of el.childNodes) { if (n.nodeType === 3 && n.textContent.trim()) { s = n.textContent.trim(); break; } } if (!s) s = el.textContent; }
+        el.dataset.i18nEn = s;
       }
-      const src = el.dataset.i18nEn;
-      if (!src) return;
-      if (!isTranslatable(lang)) { setSource(el, src); return; }
-      const cacheKey = lang + ':' + src;
-      if (__i18nCache[cacheKey]) setSource(el, __i18nCache[cacheKey]);
-      else enqueueTranslation(el, src, lang, 'text');
+      const src = el.dataset.i18nEn; if (!src) return;
+      if (!isTranslatable(lang)) { setSrc(el, src); return; }
+      const k = lang + ':' + src;
+      if (__i18nCache[k]) setSrc(el, __i18nCache[k]); else enqueueTranslation(el, src, lang, 'text');
     });
-
     document.querySelectorAll('[data-i18n-html]').forEach((el) => {
       if (!el.dataset.i18nHtmlEn) el.dataset.i18nHtmlEn = el.innerHTML;
-      const srcHtml = el.dataset.i18nHtmlEn;
-      if (!srcHtml) return;
+      const srcHtml = el.dataset.i18nHtmlEn; if (!srcHtml) return;
       const tmp = document.createElement('div'); tmp.innerHTML = srcHtml;
       const plain = tmp.textContent.trim();
       if (!isTranslatable(lang)) { el.innerHTML = srcHtml; return; }
-      const cacheKey = lang + ':html:' + plain;
-      if (__i18nCache[cacheKey]) el.textContent = __i18nCache[cacheKey];
-      else enqueueTranslation(el, plain, lang, 'html');
+      const k = lang + ':html:' + plain;
+      if (__i18nCache[k]) el.textContent = __i18nCache[k]; else enqueueTranslation(el, plain, lang, 'html');
     });
-
     document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
       if (!el.dataset.i18nPhEn) el.dataset.i18nPhEn = el.placeholder || '';
-      const src = el.dataset.i18nPhEn;
-      if (!src) return;
+      const src = el.dataset.i18nPhEn; if (!src) return;
       if (!isTranslatable(lang)) { el.placeholder = src; return; }
-      const cacheKey = lang + ':ph:' + src;
-      if (__i18nCache[cacheKey]) el.placeholder = __i18nCache[cacheKey];
-      else enqueueTranslation(el, src, lang, 'placeholder');
+      const k = lang + ':ph:' + src;
+      if (__i18nCache[k]) el.placeholder = __i18nCache[k]; else enqueueTranslation(el, src, lang, 'placeholder');
     });
-
     document.querySelectorAll('[data-i18n-title]').forEach((el) => {
       if (!el.dataset.i18nTitleEn) el.dataset.i18nTitleEn = el.title || '';
-      const src = el.dataset.i18nTitleEn;
-      if (!src) return;
+      const src = el.dataset.i18nTitleEn; if (!src) return;
       if (!isTranslatable(lang)) { el.title = src; return; }
-      const cacheKey = lang + ':title:' + src;
-      if (__i18nCache[cacheKey]) el.title = __i18nCache[cacheKey];
-      else enqueueTranslation(el, src, lang, 'title');
+      const k = lang + ':title:' + src;
+      if (__i18nCache[k]) el.title = __i18nCache[k]; else enqueueTranslation(el, src, lang, 'title');
     });
   }
 
@@ -214,14 +156,14 @@
     { id: 'mirox-ultra-10', label: 'Ultra', tier: 'pro', tagline: 'Long context', icon: 'ri-rocket-2-line' },
     { id: 'mirox-eclipse-2.0', label: 'Eclipse', tier: 'ultimate', tagline: 'Most powerful', icon: 'ri-sun-fill' },
   ];
-  const LS_KEY = 'miroxai_conversations_v46';
+  const LS_KEY = 'miroxai_conversations_v48';
   const TOKEN_KEY = 'mirox_token';
-  const LOCAL_USER_KEY = 'mirox_local_user_v1';   // NEW: local sign-in fallback
+  const LOCAL_USER_KEY = 'mirox_local_user_v2';
   const GUEST_KEY = 'miroxai_guest_id_v1';
-  const APPEARANCE_KEY = 'miroxai_appearance_v46';
-  const SHARE_KEY = 'miroxai_share_v14';
-  const BONUS_KEY = 'miroxai_bonus_v14';
-  const PREFS_KEY = 'miroxai_prefs_v9';
+  const APPEARANCE_KEY = 'miroxai_appearance_v48';
+  const SHARE_KEY = 'miroxai_share_v15';
+  const BONUS_KEY = 'miroxai_bonus_v15';
+  const PREFS_KEY = 'miroxai_prefs_v10';
   const BRIDGE_OPTS_KEY = 'miroxai_bridge_opts_v1';
   const PASTE_ATTACH_THRESHOLD = 1024;
   const NET_TIMEOUT_MS = 15000;
@@ -243,7 +185,6 @@
   let forceSearchNext = false, __historyQuery = '';
   let __ivDataUrl = '';
   let __shareState = { claimed: false, claimedAt: 0, dismissedAt: 0 };
-  let __lastBonusActive = false;
   let __prefs = {};
   let __bridge = { name: 'My Laptop', port: 8765, connected: false, baseUrl: null, env: null };
   let bridgeRunning = false, bridgeAbort = false, bridgeConversation = [], bridgeProgress = 0;
@@ -262,7 +203,6 @@
   function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
   function setToken(tk) { try { tk ? localStorage.setItem(TOKEN_KEY, tk) : localStorage.removeItem(TOKEN_KEY); } catch {} }
 
-  // ── LOCAL USER (new) — sign-in that never blocks
   function getLocalUser() {
     const u = safeGet(LOCAL_USER_KEY, null);
     if (u && u.email && u.name && u.signedIn) return u;
@@ -342,11 +282,7 @@
   }
 
   /* ═══════════ PREFS ═══════════ */
-  const DEFAULT_PREFS = {
-    autoScroll: true, enterSend: true, vision: true, compact: false, reduceMotion: false,
-    fontSize: 'md', mode: 'light', theme: 'default',
-    responseLanguage: 'auto', uiLanguage: 'en',
-  };
+  const DEFAULT_PREFS = { autoScroll: true, enterSend: true, vision: true, compact: false, reduceMotion: false, fontSize: 'md', mode: 'light', theme: 'default', responseLanguage: 'auto', uiLanguage: 'en' };
   function loadPrefs() {
     __prefs = Object.assign({}, DEFAULT_PREFS, safeGet(PREFS_KEY, {}));
     const app = safeGet(APPEARANCE_KEY, {});
@@ -384,7 +320,6 @@
 
   /* ═══════════ MASCOT ═══════════ */
   const MOODS = ['idle','happy','thinking','coding','celebrate','error','learning','wink','study','searching','reading'];
-
   function blobSvg() {
     return `<svg class="blob-svg" viewBox="0 0 200 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mirox avatar">
       <g class="blob-float">
@@ -408,10 +343,7 @@
   function upgradeStaticMascots(scope = document) {
     scope.querySelectorAll('.mascot:not([data-blob-ready])').forEach((el) => {
       const m = MOODS.includes(el.dataset.mood) ? el.dataset.mood : 'idle';
-      el.innerHTML = blobSvg();
-      el.dataset.mood = m;
-      el.classList.add('m-' + m);
-      el.dataset.blobReady = '1';
+      el.innerHTML = blobSvg(); el.dataset.mood = m; el.classList.add('m-' + m); el.dataset.blobReady = '1';
     });
   }
   function setMascotMood(mood, scope) {
@@ -420,8 +352,7 @@
     upgradeStaticMascots(root);
     root.querySelectorAll('.mascot').forEach((el) => {
       el.className = el.className.split(' ').filter((c) => !/^m-/.test(c)).join(' ');
-      el.classList.add('m-' + m);
-      el.dataset.mood = m;
+      el.classList.add('m-' + m); el.dataset.mood = m;
     });
   }
   upgradeStaticMascots();
@@ -454,7 +385,7 @@
     return 'Thinking';
   }
 
-  /* ═══════════ THINKING PANEL ═══════════ */
+  /* ═══════════ THINK PANEL ═══════════ */
   function createThinkPanel(label, steps, headline) {
     const el = document.createElement('div');
     el.className = 'think-wrap';
@@ -472,10 +403,7 @@
     const headIcon = el.querySelector('.think-head-icon i');
     const t0 = performance.now();
     let done = false;
-    const timer = setInterval(() => {
-      if (done) { clearInterval(timer); return; }
-      timerEl.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
-    }, 100);
+    const timer = setInterval(() => { if (done) { clearInterval(timer); return; } timerEl.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's'; }, 100);
     function addNarration(text) {
       if (!text) return;
       const p = document.createElement('div');
@@ -495,7 +423,7 @@
       setTimeout(() => el.classList.add('collapsed'), 1500);
     }
     return {
-      el, addStep(text) { addNarration(text); }, addNarration,
+      el, addStep(t) { addNarration(t); }, addNarration,
       addTool() { return { setStatus() {}, addResult() {}, addCode() {} }; },
       setMood(mood) { setMascotMood(mood, el); },
       markWriting() { addNarration('Writing the answer…'); },
@@ -523,13 +451,13 @@
   function welcomeHTML() {
     return `<div class="welcome-screen">
       <div class="welcome-mascot"><div class="mascot mascot-lg m-idle" id="welcomeMascot" data-mood="idle">${blobSvg()}</div></div>
-      <h1 class="welcome-title" data-i18n="welcomeTitle">Hi, I'm Mirox</h1>
-      <p class="welcome-sub" data-i18n-html="welcomeSub">Luna and Gen are unlimited and free. Share to unlock <strong>Pro, Ultra &amp; Eclipse</strong> free for 7 days.</p>
+      <h1 class="welcome-title">Hi, I'm Mirox</h1>
+      <p class="welcome-sub">Luna and Gen are unlimited and free. Share to unlock <strong>Pro, Ultra &amp; Eclipse</strong> free for 7 days.</p>
       <div class="suggestion-grid">
-        <button class="suggestion-card" type="button" data-prompt="Show me a simple Lua script that prints numbers 1 to 5"><i class="ri-code-box-line"></i><span data-i18n="suggestLua">Write a Lua script</span></button>
-        <button class="suggestion-card" type="button" data-prompt="Show me an HTML example with a table"><i class="ri-html5-line"></i><span data-i18n="suggestHtml">Show an HTML table</span></button>
-        <button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span data-i18n="suggestImage">Generate an image</span></button>
-        <button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span data-i18n="suggestExplain">Explain a concept</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Show me a simple Lua script that prints numbers 1 to 5"><i class="ri-code-box-line"></i><span>Write a Lua script</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Show me an HTML example with a table"><i class="ri-html5-line"></i><span>Show an HTML table</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span>Generate an image</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span>Explain a concept</span></button>
       </div>
     </div>`;
   }
@@ -538,7 +466,6 @@
     const ttl = $('#chatTitle'); if (ttl) ttl.textContent = 'New chat';
     const c = $('#chatMessages'); if (c) c.innerHTML = welcomeHTML();
     bindSuggestionClicks(); updateTokenUsage(); renderHistory();
-    applyTranslations();
   }
   function bindSuggestionClicks() {
     $$('.suggestion-card').forEach((card) => {
@@ -564,10 +491,7 @@
       </li>`).join('');
   }
   function estimateTokens(text) { return Math.ceil(String(text || '').length / 4); }
-  function conversationTokenUsage(convo = currentConvo()) {
-    if (!convo) return 0;
-    return (convo.messages || []).reduce((sum, m) => sum + estimateTokens(m.content || ''), 0);
-  }
+  function conversationTokenUsage(convo = currentConvo()) { if (!convo) return 0; return (convo.messages || []).reduce((s, m) => s + estimateTokens(m.content || ''), 0); }
   function formatK(n) { return n >= 1000 ? (n / 1000).toFixed(n % 1000 === 0 ? 0 : 1) + 'k' : String(n); }
   function updateTokenUsage() {
     const el = $('#tokenUsage'); if (!el) return;
@@ -708,14 +632,8 @@
     const el = document.createElement('div');
     el.className = 'message ' + (role === 'user' ? 'user' : 'ai');
     el.dataset.msgId = id; el.dataset.role = role;
-
     let avatar = '';
-    if (role === 'ai') {
-      avatar = `<div class="message-avatar" data-mood="idle">
-        <div class="mascot mascot-sm m-idle" data-mood="idle">${blobSvg()}</div>
-      </div>`;
-    }
-
+    if (role === 'ai') avatar = `<div class="message-avatar" data-mood="idle"><div class="mascot mascot-sm m-idle" data-mood="idle">${blobSvg()}</div></div>`;
     let inner = '';
     if (role === 'user' && files && files.length) {
       inner += '<div class="attach-row">';
@@ -730,7 +648,6 @@
     }
     if (role === 'ai' && image) inner += `<div class="gen-image"><img src="${image}" draggable="false" alt=""></div>`;
     inner += '<div class="bubble-text"></div>';
-
     el.innerHTML = `
       ${avatar}
       <div class="message-body">
@@ -741,9 +658,7 @@
         </div>
         <div class="message-time">${ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</div>
       </div>`;
-
     container.appendChild(el);
-
     const bt = el.querySelector('.bubble-text');
     if (role === 'user') { bt.textContent = content || ''; if (!content) bt.style.display = 'none'; }
     else if (content) { bt.innerHTML = renderMarkdown(content); wireCopyButtons(bt); }
@@ -842,7 +757,6 @@
     const model = __model || 'mirox-luna-1.2';
     const container = $('#chatMessages');
     container?.querySelector('.welcome-screen')?.remove();
-
     let msgEl, bubble, bubbleText, timeEl, panel, avatarMascot;
     const aiMsgId = isContinuation ? continuation.messageObj.id : uid();
     if (isContinuation) {
@@ -858,8 +772,7 @@
     } else {
       msgEl = document.createElement('div');
       msgEl.className = 'message ai';
-      msgEl.dataset.msgId = aiMsgId;
-      msgEl.dataset.role = 'ai';
+      msgEl.dataset.msgId = aiMsgId; msgEl.dataset.role = 'ai';
       panel = createThinkPanel(pickStatusLabel(text), [], text);
       panel.setMood(pickMoodFor(text));
       const avatar = document.createElement('div');
@@ -878,12 +791,10 @@
       bubble = null; bubbleText = null; var full = '';
       scrollToBottom(true);
     }
-
     const visionFiles = files.filter((f) => f.type === 'image' && f.dataUrl);
     const contentParts = [];
     if (text) contentParts.push({ type: 'text', text });
     for (const f of visionFiles) contentParts.push({ type: 'image_url', image_url: { url: f.pngDataUrl || f.dataUrl, detail: 'auto' } });
-
     activeStreamController = new AbortController();
     let generatedImage = null, gotToken = !!isContinuation, limitHit = false;
     let streamComplete = false;
@@ -891,7 +802,6 @@
     const renderStreamText = () => { renderTimer = null; if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); wireCopyButtons(bubbleText); } scrollToBottom(); };
     const scheduleRender = () => { const now = performance.now(); if (renderTimer) return; renderTimer = setTimeout(renderStreamText, Math.max(50, 120 - (now - streamRenderAt))); streamRenderAt = now; };
     const streamTimeout = setTimeout(() => { try { activeStreamController?.abort(); } catch {} }, STREAM_TIMEOUT_MS);
-
     try {
       const reqBody = { message: text, history, model, stream: true, search: !!forceSearch, files: files.map((f) => ({ name: f.name, size: f.size, type: f.type, mime: f.mime, width: f.width, height: f.height, dataUrl: f.dataUrl, base64: f.base64 || null, svgText: f.svgText || null, vision: !!f.vision })), content_parts: contentParts.length ? contentParts : null, guest_id: getGuestId(), bonus_active: isBonusActive(), language: __prefs.responseLanguage || 'auto' };
       const res = await fetch('/v1/chat/completions', { method: 'POST', headers: authHeaders(), credentials: 'same-origin', body: JSON.stringify(reqBody), signal: activeStreamController.signal });
@@ -904,9 +814,7 @@
       const dec = new TextDecoder();
       let buf = '';
       const bodyEl = msgEl.querySelector('.message-body');
-      const ensureBubble = () => {
-        if (!bubble) { bubble = document.createElement('div'); bubble.className = 'bubble'; bodyEl.insertBefore(bubble, timeEl); }
-      };
+      const ensureBubble = () => { if (!bubble) { bubble = document.createElement('div'); bubble.className = 'bubble'; bodyEl.insertBefore(bubble, timeEl); } };
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
@@ -940,8 +848,7 @@
               break;
             }
             if (!gotToken) {
-              gotToken = true;
-              panel.markWriting();
+              gotToken = true; panel.markWriting();
               if (avatarMascot) setMascotMood('coding', avatarMascot.parentElement.parentElement);
               ensureBubble();
               bubble.innerHTML = '<div class="bubble-text"></div>';
@@ -1010,53 +917,38 @@
     setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 350); }, ms || 2200);
   }
 
-  /* ═══════════ VOICE INPUT ═══════════ */
+  /* ═══════════ VOICE ═══════════ */
   function setupVoice() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     const btn = document.getElementById('voiceBtn');
-    if (!SR || !btn) {
-      if (btn) { btn.disabled = true; btn.title = 'Voice input is not supported in this browser'; btn.style.opacity = '0.4'; }
-      return;
-    }
+    if (!SR || !btn) { if (btn) { btn.disabled = true; btn.title = 'Voice input is not supported'; btn.style.opacity = '0.4'; } return; }
     const recog = new SR();
-    recog.continuous = false;
-    recog.interimResults = true;
-    recog.lang = (navigator.language || 'en-US');
+    recog.continuous = false; recog.interimResults = true; recog.lang = (navigator.language || 'en-US');
     recog.onstart = () => { __voiceListening = true; btn.classList.add('listening'); btn.innerHTML = '<i class="ri-mic-fill"></i>'; };
     recog.onend = () => { __voiceListening = false; btn.classList.remove('listening'); btn.innerHTML = '<i class="ri-mic-line"></i>'; };
     recog.onerror = (e) => {
-      __voiceListening = false;
-      btn.classList.remove('listening');
-      btn.innerHTML = '<i class="ri-mic-line"></i>';
+      __voiceListening = false; btn.classList.remove('listening'); btn.innerHTML = '<i class="ri-mic-line"></i>';
       if (e.error === 'not-allowed') toast('Microphone permission denied.', 3000, 'err');
       else if (e.error === 'no-speech') { /* silent */ }
       else toast('Voice error: ' + e.error, 3000, 'err');
     };
     recog.onresult = (event) => {
-      const inp = document.getElementById('messageInput');
-      if (!inp) return;
-      let interim = '';
-      let final = '';
+      const inp = document.getElementById('messageInput'); if (!inp) return;
+      let interim = '', final = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const r = event.results[i];
         if (r.isFinal) final += r[0].transcript;
         else interim += r[0].transcript;
       }
       const base = inp.dataset.voiceBase || inp.value || '';
-      if (final) {
-        inp.value = (inp.dataset.voiceBase || '').trim() ? (inp.dataset.voiceBase + ' ' + final).trim() : final.trim();
-        inp.dataset.voiceBase = inp.value;
-      } else {
-        inp.value = base ? (base + ' ' + interim).trim() : interim;
-      }
-      inp.style.height = 'auto';
-      inp.style.height = Math.min(inp.scrollHeight, 180) + 'px';
+      if (final) { inp.value = (inp.dataset.voiceBase || '').trim() ? (inp.dataset.voiceBase + ' ' + final).trim() : final.trim(); inp.dataset.voiceBase = inp.value; }
+      else inp.value = base ? (base + ' ' + interim).trim() : interim;
+      inp.style.height = 'auto'; inp.style.height = Math.min(inp.scrollHeight, 180) + 'px';
       updateSendButtonState();
     };
     __voiceRecognition = recog;
     btn.addEventListener('click', () => {
-      const inp = document.getElementById('messageInput');
-      if (!inp) return;
+      const inp = document.getElementById('messageInput'); if (!inp) return;
       if (__voiceListening) { try { recog.stop(); } catch {} return; }
       inp.dataset.voiceBase = inp.value || '';
       try { recog.start(); } catch (e) { toast('Could not start voice: ' + e.message, 3000, 'err'); }
@@ -1153,21 +1045,21 @@
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = () => {
-        const rawDataUrl = reader.result;
+        const raw = reader.result;
         const img = new Image();
         img.onload = () => {
           let w = img.naturalWidth, h = img.naturalHeight;
-          if (w > MAX_IMAGE_DIM || h > MAX_IMAGE_DIM) { const ratio = Math.min(MAX_IMAGE_DIM / w, MAX_IMAGE_DIM / h); w = Math.round(w * ratio); h = Math.round(h * ratio); }
+          if (w > MAX_IMAGE_DIM || h > MAX_IMAGE_DIM) { const r = Math.min(MAX_IMAGE_DIM / w, MAX_IMAGE_DIM / h); w = Math.round(w * r); h = Math.round(h * r); }
           const c = document.createElement('canvas'); c.width = w; c.height = h;
           c.getContext('2d').drawImage(img, 0, 0, w, h);
-          let outUrl;
-          try { const srcMime = (file.type || 'image/jpeg').toLowerCase(); outUrl = (srcMime === 'image/png' || srcMime === 'image/webp') ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', 0.88); } catch { outUrl = rawDataUrl; }
-          const base64 = String(outUrl).split(',')[1] || '';
-          const mime = (String(outUrl).split(';')[0].split(':')[1]) || file.type || 'image/jpeg';
-          resolve({ type: 'image', name: file.name, size: file.size, mime, dataUrl: outUrl, base64, width: w, height: h, vision: true });
+          let out;
+          try { const m = (file.type || 'image/jpeg').toLowerCase(); out = (m === 'image/png' || m === 'image/webp') ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', 0.88); } catch { out = raw; }
+          const b64 = String(out).split(',')[1] || '';
+          const mime = (String(out).split(';')[0].split(':')[1]) || file.type || 'image/jpeg';
+          resolve({ type: 'image', name: file.name, size: file.size, mime, dataUrl: out, base64: b64, width: w, height: h, vision: true });
         };
         img.onerror = () => resolve(null);
-        img.src = rawDataUrl;
+        img.src = raw;
       };
       reader.onerror = () => resolve(null);
       reader.readAsDataURL(file);
@@ -1186,11 +1078,11 @@
         const img = new Image();
         img.onload = () => {
           let w = img.naturalWidth || 512, h = img.naturalHeight || 512;
-          if (w > MAX_IMAGE_DIM || h > MAX_IMAGE_DIM) { const ratio = Math.min(MAX_IMAGE_DIM / w, MAX_IMAGE_DIM / h); w = Math.round(w * ratio); h = Math.round(h * ratio); }
-          let pngDataUrl = null;
-          try { const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(img, 0, 0, w, h); pngDataUrl = c.toDataURL('image/png'); } catch {}
+          if (w > MAX_IMAGE_DIM || h > MAX_IMAGE_DIM) { const r = Math.min(MAX_IMAGE_DIM / w, MAX_IMAGE_DIM / h); w = Math.round(w * r); h = Math.round(h * r); }
+          let png = null;
+          try { const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(img, 0, 0, w, h); png = c.toDataURL('image/png'); } catch {}
           URL.revokeObjectURL(objUrl);
-          resolve({ type: 'image', name: file.name, size: file.size, mime: 'image/svg+xml', dataUrl, base64, svgText, pngDataUrl, pngBase64: pngDataUrl ? pngDataUrl.split(',')[1] : '', width: w, height: h, vision: true, isSvg: true });
+          resolve({ type: 'image', name: file.name, size: file.size, mime: 'image/svg+xml', dataUrl, base64, svgText, pngDataUrl: png, pngBase64: png ? png.split(',')[1] : '', width: w, height: h, vision: true, isSvg: true });
         };
         img.onerror = () => { URL.revokeObjectURL(objUrl); resolve({ type: 'image', name: file.name, size: file.size, mime: 'image/svg+xml', dataUrl, base64, svgText, vision: true, isSvg: true }); };
         img.src = objUrl;
@@ -1202,8 +1094,7 @@
   function hasAttachment(name, size) { return pendingFiles.some((f) => f.name === name && f.size === size); }
   function handleFiles(fileList) {
     if (!fileList || !fileList.length) return;
-    const arr = [];
-    for (const f of Array.from(fileList)) { if (hasAttachment(f.name, f.size)) continue; arr.push(f); }
+    const arr = []; for (const f of Array.from(fileList)) { if (hasAttachment(f.name, f.size)) continue; arr.push(f); }
     if (!arr.length) return;
     let done = 0; const newFiles = [];
     const finish = () => { newFiles.sort((a, b) => (a.order || 0) - (b.order || 0)); for (const nf of newFiles) if (!hasAttachment(nf.name, nf.size)) pendingFiles.push(nf); updatePreview(); updateSendButtonState(); };
@@ -1222,7 +1113,7 @@
     if (!pendingFiles.length) { p.style.display = 'none'; list.innerHTML = ''; return; }
     p.style.display = 'flex';
     list.innerHTML = pendingFiles.map((f) => {
-      if (f.type === 'image' && f.dataUrl) { const dims = f.width && f.height ? `<span class="attach-size">${f.width}×${f.height}</span>` : ''; const vision = f.vision ? '<span class="attach-vision"><i class="ri-eye-line"></i> vision</span>' : ''; return `<div class="attach-chip attach-chip-image"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name)}${dims}${vision}</div>`; }
+      if (f.type === 'image' && f.dataUrl) { const d = f.width && f.height ? `<span class="attach-size">${f.width}×${f.height}</span>` : ''; const v = f.vision ? '<span class="attach-vision"><i class="ri-eye-line"></i> vision</span>' : ''; return `<div class="attach-chip attach-chip-image"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name)}${d}${v}</div>`; }
       return `<div class="attach-chip">${fileIconHTML()}${escapeHtml(f.name)}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`;
     }).join('');
   }
@@ -1234,7 +1125,6 @@
     updatePreview(); updateSendButtonState();
   }
 
-  /* ═══════════ IMAGE VIEWER ═══════════ */
   function openImageViewer(url) {
     if (!url) return; __ivDataUrl = url;
     const iv = $('#imageViewer'); if (!iv) return;
@@ -1261,8 +1151,8 @@
       const reasonClass = usable ? (reason === 'bonus' ? 'via-bonus' : 'via-tier') : 'locked';
       const lockIcon = usable ? '' : '<i class="ri-lock-2-line model-option-lock"></i>';
       const bonusCrown = reason === 'bonus' ? '<i class="ri-vip-crown-fill model-option-crown"></i>' : '';
-      const modelIcon = m.icon || 'ri-sparkling-2-line';
-      return `<div class="model-option${isActive ? ' active' : ''}${usable ? '' : ' locked'} ${reasonClass}" data-model-id="${m.id}" data-usable="${usable}" data-tier="${m.tier}"><span class="model-option-icon"><i class="${modelIcon}"></i></span><span class="model-option-body"><span class="model-option-top"><span class="model-option-name">${escapeHtml(m.label)}</span><span class="model-tier-badge tier-${m.tier}">${tierLabel(m.tier)}</span>${bonusCrown}${lockIcon}</span><span class="model-option-tagline">${escapeHtml(m.tagline || '')}</span></span></div>`;
+      const icon = m.icon || 'ri-sparkling-2-line';
+      return `<div class="model-option${isActive ? ' active' : ''}${usable ? '' : ' locked'} ${reasonClass}" data-model-id="${m.id}" data-usable="${usable}" data-tier="${m.tier}"><span class="model-option-icon"><i class="${icon}"></i></span><span class="model-option-body"><span class="model-option-top"><span class="model-option-name">${escapeHtml(m.label)}</span><span class="model-tier-badge tier-${m.tier}">${tierLabel(m.tier)}</span>${bonusCrown}${lockIcon}</span><span class="model-option-tagline">${escapeHtml(m.tagline || '')}</span></span></div>`;
     }).join('');
     if (!bonusActive && __tier === 'free') html += `<div class="model-picker-cta" id="modelPickerShareCta"><i class="ri-gift-2-line"></i><span>Share to unlock <strong>Pro, Ultra &amp; Eclipse</strong> free for 7 days</span></div>`;
     menu.innerHTML = html;
@@ -1281,42 +1171,71 @@
   function closeModelPicker() { $('#modelPicker')?.classList.remove('open'); $('#modelPickerMenu')?.classList.remove('open'); }
 
   /* ═══════════════════════════════════════════════════════════
-     USAGE — merges server state + local user
+     ACCOUNT UI — the fix
      ═══════════════════════════════════════════════════════════ */
-  async function refreshUsage() {
-    const local = getLocalUser();
-    const res = await jsonOr('/api/me', {}, null, 7000);
+  function updateAccountUI() {
+    const signedIn = !!__user;
 
-    if (res && res.user) {
-      // Server knows who this is.
-      __user = res.user;
-      __tier = res.user.tier || 'free';
-    } else if (local) {
-      // Server doesn't know — but the user signed in locally. Show them as signed in.
-      __user = { name: local.name, email: local.email, tier: 'free', local: true };
-      __tier = 'free';
-    } else {
-      __user = null; __tier = 'free';
-    }
+    const chip = document.getElementById('userChip');
+    const avatar = document.getElementById('userAvatar');
+    const label = document.getElementById('accountLabel');
+    const sub = document.getElementById('accountSub');
 
-    const label = $('#accountLabel');
-    const sub = $('#accountSub');
-    const signInBtn = $('#signInFromSettingsBtn');
-    const logoutBtn = $('#logoutBtn');
+    const sLabel = document.getElementById('settingsAccountLabel');
+    const sSub = document.getElementById('settingsAccountSub');
+    const signInBtn = document.getElementById('signInFromSettingsBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
 
-    if (__user) {
-      if (label) label.textContent = __user.name || __user.email;
-      if (sub) sub.textContent = __user.email + (__user.local ? ' · local' : '');
+    if (signedIn) {
+      const name = __user.name || __user.email || 'User';
+      const email = __user.email || '';
+      const initial = (name.trim().charAt(0) || '?').toUpperCase();
+
+      if (label) label.textContent = name;
+      if (sub) sub.textContent = email || 'Signed in';
+      if (sLabel) sLabel.textContent = name;
+      if (sSub) sSub.textContent = email || 'Signed in';
+      if (avatar) {
+        avatar.innerHTML = `<span>${escapeHtml(initial)}</span>`;
+        avatar.style.fontSize = '15px';
+        avatar.style.fontWeight = '600';
+      }
+      if (chip) chip.classList.add('signed-in');
       if (signInBtn) signInBtn.style.display = 'none';
       if (logoutBtn) logoutBtn.style.display = '';
     } else {
       if (label) label.textContent = 'Guest mode';
-      if (sub) sub.textContent = 'Chats saved locally in this browser';
+      if (sub) sub.textContent = 'Sign in to save chats';
+      if (sLabel) sLabel.textContent = 'Guest mode';
+      if (sSub) sSub.textContent = 'Chats saved locally in this browser';
+      if (avatar) {
+        avatar.innerHTML = '<i class="ri-user-line"></i>';
+        avatar.style.fontSize = '';
+        avatar.style.fontWeight = '';
+      }
+      if (chip) chip.classList.remove('signed-in');
       if (signInBtn) signInBtn.style.display = '';
       if (logoutBtn) logoutBtn.style.display = 'none';
     }
-    renderModelPicker(); updateTokenUsage();
   }
+
+  /* ═══════════ USAGE ═══════════ */
+  async function refreshUsage() {
+    const local = getLocalUser();
+    const res = await jsonOr('/api/me', {}, null, 7000);
+
+    let user = null;
+    if (res && res.user) user = { ...res.user, local: false };
+    else if (local) user = { name: local.name, email: local.email, tier: 'free', local: true };
+
+    __user = user;
+    __tier = user ? (user.tier || 'free') : 'free';
+
+    updateAccountUI();
+    renderModelPicker();
+    updateTokenUsage();
+  }
+
   async function loadConfig() {
     const data = await jsonOr('/api/config', {}, null, 7000);
     if (data && Array.isArray(data.models) && data.models.length) __config = data;
@@ -1325,7 +1244,7 @@
   }
 
   /* ═══════════════════════════════════════════════════════════
-     LOGIN — local-first. Never blocks the user.
+     LOGIN — local-first, UI updates immediately
      ═══════════════════════════════════════════════════════════ */
   function setLoginError(msg, kind) {
     const el = $('#loginError');
@@ -1348,10 +1267,13 @@
 
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line spin"></i> Signing in…'; }
 
-    // ── Step 1: local sign-in (always succeeds)
+    // Step 1: local sign-in (always succeeds, updates UI immediately)
     setLocalUser({ name, email, signedIn: true, ts: Date.now() });
+    __user = { name, email, tier: 'free', local: true };
+    __tier = 'free';
+    updateAccountUI();
 
-    // ── Step 2: try server quietly (best-effort, never blocks)
+    // Step 2: try server quietly (best-effort, never blocks)
     try {
       const r = await netFetch('/api/auth/simple-login', {
         method: 'POST',
@@ -1362,10 +1284,9 @@
         const data = await r.json().catch(() => null);
         if (data && data.ok && data.token) setToken(data.token);
       }
-      // Any non-OK response is silently ignored — the user is signed in locally anyway.
-    } catch { /* ignore network errors */ }
+    } catch { /* ignore */ }
 
-    // ── Step 3: done. Close modal, refresh UI.
+    // Step 3: done
     setLoginError('Signed in!', 'ok');
     if (btn) btn.innerHTML = '<i class="ri-check-line"></i> Welcome';
     setTimeout(async () => {
@@ -1378,14 +1299,15 @@
   }
 
   async function doLogout() {
-    // Clear server session (best-effort)
     try { await jsonOr('/api/logout', { method: 'POST' }, null, 4000); } catch {}
-    // Clear local user too
     setToken('');
     setLocalUser(null);
-    await refreshUsage();
+    __user = null;
+    __tier = 'free';
+    updateAccountUI();
     closeModal('settingsModal');
     toast('Signed out', 1800, 'ok');
+    refreshUsage().catch(() => {});
   }
 
   async function loadPlans() {
@@ -1415,9 +1337,7 @@
     const el = $('#supportError');
     if (!el) return;
     if (!msg) { el.style.display = 'none'; el.textContent = ''; el.classList.remove('ok'); return; }
-    el.style.display = 'block';
-    el.textContent = msg;
-    el.classList.toggle('ok', kind === 'ok');
+    el.style.display = 'block'; el.textContent = msg; el.classList.toggle('ok', kind === 'ok');
   }
   async function submitSupport() {
     setSupportError('');
@@ -1433,9 +1353,7 @@
     if (!message || message.length < 5) { setSupportError('Please describe your issue (at least 5 characters).'); $('#supportMessage')?.focus(); return; }
 
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line spin"></i> Sending…'; }
-
     const payload = { category, subject, message, email, guest_id: getGuestId(), url: location.href, ua: navigator.userAgent, ts: Date.now() };
-
     let ok = false;
     try {
       const r = await netFetch('/api/support', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, 15000);
@@ -1447,28 +1365,24 @@
     } catch (e) { /* fall through */ }
 
     if (!ok && !($('#supportError')?.textContent)) {
-      const mailSubject = encodeURIComponent(`[MiroxAI ${category}] ${subject}`);
-      const mailBody = encodeURIComponent(`${message}\n\n— — —\nCategory: ${category}\nFrom: ${email || '(not provided)'}\nURL: ${location.href}\nGuest: ${getGuestId()}\nUA: ${navigator.userAgent}`);
-      window.location.href = `mailto:support@miroxai.org?subject=${mailSubject}&body=${mailBody}`;
+      const ms = encodeURIComponent(`[MiroxAI ${category}] ${subject}`);
+      const mb = encodeURIComponent(`${message}\n\n— — —\nCategory: ${category}\nFrom: ${email || '(not provided)'}\nURL: ${location.href}\nGuest: ${getGuestId()}\nUA: ${navigator.userAgent}`);
+      window.location.href = `mailto:support@miroxai.org?subject=${ms}&body=${mb}`;
       setSupportError('Opening your email client…', 'ok');
       if (btn) { btn.disabled = false; btn.innerHTML = 'Submit'; }
       return;
     }
-
     if (ok) {
       setSupportError('Thanks! Your message was sent.', 'ok');
       if (btn) btn.innerHTML = '✓ Sent';
       setTimeout(() => {
         closeModal('supportModal');
-        $('#supportSubject').value = '';
-        $('#supportMessage').value = '';
+        $('#supportSubject').value = ''; $('#supportMessage').value = '';
         setSupportError('');
         if (btn) { btn.disabled = false; btn.innerHTML = 'Submit'; }
       }, 1500);
-      toast('Message sent. We will reply soon.', 2600, 'ok');
-    } else {
-      if (btn) { btn.disabled = false; btn.innerHTML = 'Submit'; }
-    }
+      toast('Message sent.', 2600, 'ok');
+    } else if (btn) { btn.disabled = false; btn.innerHTML = 'Submit'; }
   }
 
   /* ═══════════ BRIDGE ═══════════ */
@@ -1562,7 +1476,7 @@
     return { icon: 'ri-terminal-line', iconClass: '', label: 'Working' };
   }
   function setProgressText(text) { const el = $('#bwProgressText'); if (el && text) el.textContent = text; }
-  function updateBridgeProgress(pct, text) { const newPct = Math.max(0, Math.min(100, Math.round(pct))); if (newPct > bridgeProgress) bridgeProgress = newPct; const bar = $('#bwProgress'), fill = $('#bwProgressFill'), pctEl = $('#bwProgressPct'); if (bar) bar.style.display = 'block'; if (fill) { fill.style.width = bridgeProgress + '%'; fill.classList.toggle('done', bridgeProgress >= 100); } if (pctEl) pctEl.textContent = bridgeProgress + '%'; if (text) setProgressText(text); }
+  function updateBridgeProgress(pct, text) { const np = Math.max(0, Math.min(100, Math.round(pct))); if (np > bridgeProgress) bridgeProgress = np; const bar = $('#bwProgress'), fill = $('#bwProgressFill'), pctEl = $('#bwProgressPct'); if (bar) bar.style.display = 'block'; if (fill) { fill.style.width = bridgeProgress + '%'; fill.classList.toggle('done', bridgeProgress >= 100); } if (pctEl) pctEl.textContent = bridgeProgress + '%'; if (text) setProgressText(text); }
   function extractBridgeCommands(text) {
     const cmds = []; const add = (type, mm, extra) => cmds.push(Object.assign({ type, index: mm.index }, extra));
     const rules = [
@@ -1612,14 +1526,7 @@
   function newTurnState() { return { runs: 0, plannedFiles: new Set(), writtenFiles: new Set(), commandLog: new Map(), failedSignatures: new Set(), lastReplyFingerprint: '', lastReplyCount: 0 }; }
   function cmdSignature(cmd) { const t2 = cmd.type; if (t2 === 'exec' || t2 === 'sudo') return t2 + ':' + (cmd.command || '').trim(); if (t2 === 'write' || t2 === 'append') return t2 + ':' + cmd.path + ':' + (cmd.content || '').length; return t2 + ':' + (cmd.path || ''); }
   function shouldBlockSignature(sig) { if (!bridgeTurn) return false; if (bridgeTurn.failedSignatures.has(sig)) return true; return (bridgeTurn.commandLog.get(sig) || 0) >= MAX_DUP_COMMANDS; }
-  function fingerprintReply(text) {
-    return String(text || '')
-      .replace(/<bridge-[^>]+>[\s\S]*?<\/bridge-[^>]+>/g, '')
-      .replace(/<bridge-[^>]+\s+[^>]*\/>/g, '')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, 400);
-  }
+  function fingerprintReply(text) { return String(text || '').replace(/<bridge-[^>]+>[\s\S]*?<\/bridge-[^>]+>/g, '').replace(/<bridge-[^>]+\s+[^>]*\/>/g, '').replace(/\s+/g, ' ').trim().slice(0, 400); }
   async function fetchBridgeReply(history) {
     const envBlock = buildEnvBlockString();
     const lastMsg = history[history.length - 1];
@@ -1658,13 +1565,8 @@
         const fp = fingerprintReply(reply);
         if (fp && fp === bridgeTurn.lastReplyFingerprint) {
           bridgeTurn.lastReplyCount++;
-          if (bridgeTurn.lastReplyCount >= MAX_DUP_REPLIES) {
-            addBridgeSystemMsg('Stopping — the AI repeated itself.');
-            bridgeTaskComplete = true;
-            break;
-          }
+          if (bridgeTurn.lastReplyCount >= MAX_DUP_REPLIES) { addBridgeSystemMsg('Stopping — the AI repeated itself.'); bridgeTaskComplete = true; break; }
         } else { bridgeTurn.lastReplyFingerprint = fp; bridgeTurn.lastReplyCount = 1; }
-
         const cmdsInReply = extractBridgeCommands(reply);
         const saidDone = /\bDONE\b/i.test(reply);
         const truncatedWrite = hasUnclosedWriteOrAppend(reply);
@@ -1750,7 +1652,6 @@
   }
   function closePreview() { $('#bwPreviewModal')?.classList.remove('open'); }
 
-  /* ═══════════ MODALS ═══════════ */
   function openModal(id) { const el = document.getElementById(id); if (el) el.classList.add('open'); }
   function closeModal(id) { const el = document.getElementById(id); if (el) el.classList.remove('open'); }
   function openSidebar() { $('#sidebar')?.classList.add('open'); $('#sidebarScrim')?.classList.add('open'); }
@@ -1781,7 +1682,7 @@
     const inp = $('#messageInput');
     if (inp) {
       inp.addEventListener('input', () => { inp.style.height = 'auto'; inp.style.height = Math.min(inp.scrollHeight, 180) + 'px'; updateSendButtonState(); });
-      inp.addEventListener('keydown', (e) => { const enterSend = __prefs.enterSend !== false; if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && enterSend) { e.preventDefault(); handleSend(); } });
+      inp.addEventListener('keydown', (e) => { const es = __prefs.enterSend !== false; if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && es) { e.preventDefault(); handleSend(); } });
       inp.addEventListener('paste', (e) => { const text = e.clipboardData?.getData('text/plain') || ''; if (text.length > PASTE_ATTACH_THRESHOLD) { e.preventDefault(); addTextAttachment(text); } });
     }
     on('#sendBtn', 'click', handleSend);
@@ -1826,12 +1727,7 @@
     bindToggle('compactToggle', 'compact');
     bindToggle('reduceMotionToggle', 'reduceMotion');
 
-    on('#uiLanguageSelect', 'change', (e) => {
-      __prefs.uiLanguage = e.target.value;
-      savePrefs();
-      if (isTranslatable(__prefs.uiLanguage)) toast('Translating interface… this may take a moment');
-      applyTranslations();
-    });
+    on('#uiLanguageSelect', 'change', (e) => { __prefs.uiLanguage = e.target.value; savePrefs(); if (isTranslatable(__prefs.uiLanguage)) toast('Translating…'); applyTranslations(); });
     on('#languageSelect', 'change', (e) => { __prefs.responseLanguage = e.target.value; savePrefs(); });
 
     on('#exportChatsBtn', 'click', () => {
@@ -1840,7 +1736,7 @@
       document.body.appendChild(a); a.click(); document.body.removeChild(a); toast('Exported');
     });
     on('#clearChatsBtn', 'click', () => { if (!confirm('Clear all chats?')) return; __conversations = []; saveChats(); startNewChat(); toast('Cleared'); });
-    on('#clearI18nCacheBtn', 'click', () => { __i18nCache = {}; saveI18nCache(); toast('Translation cache cleared'); });
+    on('#clearI18nCacheBtn', 'click', () => { __i18nCache = {}; saveI18nCache(); toast('Cache cleared'); });
 
     on('#bwCloseBtn', 'click', closeBridgeWorkspace);
     on('#bwNewBtn', 'click', clearBridgeChat);
@@ -1896,7 +1792,7 @@
     }
   }
 
-  function openSettingsModal() { applyPrefs(); openModal('settingsModal'); }
+  function openSettingsModal() { applyPrefs(); updateAccountUI(); openModal('settingsModal'); }
 
   async function openConversation(id) {
     const convo = __conversations.find((c) => c.id === id);
@@ -1940,7 +1836,10 @@
       loadBridgeOpts();
       wireAll();
       setupVoice();
-      __lastBonusActive = isBonusActive();
+      // Show signed-in user IMMEDIATELY (before any network call)
+      const local = getLocalUser();
+      if (local) { __user = { name: local.name, email: local.email, tier: 'free', local: true }; __tier = 'free'; }
+      updateAccountUI();
       renderHistory();
       renderModelPicker();
       renderBridgeStatus();
