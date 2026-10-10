@@ -10,7 +10,6 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/remixicon@4.9.0/fonts/remixicon.css" rel="stylesheet">
-<link href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -150,7 +149,7 @@
     <div class="composer">
       <button type="button" id="attachBtn" class="icon-btn attach-btn" title="Attach files" aria-label="Attach files"><i class="ri-attachment-2"></i></button>
       <input type="file" id="fileInput" multiple hidden accept="image/*,.txt,.md,.json,.csv,.log,.py,.js,.ts,.html,.css,.yml,.yaml,.xml,.sh,.sql,.java,.c,.cpp,.go,.rs,.rb,.php,.lua,.zip">
-      <textarea id="messageInput" class="message-input" placeholder="How can I help you today? (paste big text → becomes an attachment)" rows="1"></textarea>
+      <textarea id="messageInput" class="message-input" placeholder="How can I help you today?" rows="1"></textarea>
       <button type="button" id="stopBtn" class="icon-btn stop-btn" style="display:none;" aria-label="Stop"><i class="ri-stop-circle-line"></i></button>
       <button type="button" id="sendBtn" class="send-btn is-disabled" aria-disabled="true" aria-label="Send"><i class="ri-arrow-up-line"></i></button>
     </div>
@@ -171,10 +170,10 @@
       </div>
       <div class="bridge-workspace-toggles" id="bwToggles">
         <button id="bwSideToggle" class="bridge-toggle only-mobile" type="button" title="Connection panel"><i class="ri-layout-column-line"></i><span>Panel</span></button>
-        <button id="bwToggleAutoRun" class="bridge-toggle active" type="button" title="Auto-continue until the task is done"><i class="ri-play-circle-line"></i><span>Auto-Run</span></button>
-        <button id="bwToggleShowCode" class="bridge-toggle" type="button" title="Show file content in chat (usually off)"><i class="ri-code-line"></i><span>Show Code</span></button>
-        <button id="bwPreviewBtn" class="bridge-toggle" type="button" title="Live preview of the last built project"><i class="ri-eye-line"></i><span>Preview</span></button>
-        <button id="bwStopBtn" class="bridge-toggle danger" type="button" title="Stop the running turn" style="display:none;"><i class="ri-stop-circle-line"></i><span>Stop</span></button>
+        <button id="bwToggleAutoRun" class="bridge-toggle active" type="button"><i class="ri-play-circle-line"></i><span>Auto-Run</span></button>
+        <button id="bwToggleShowCode" class="bridge-toggle" type="button"><i class="ri-code-line"></i><span>Show Code</span></button>
+        <button id="bwPreviewBtn" class="bridge-toggle" type="button"><i class="ri-eye-line"></i><span>Preview</span></button>
+        <button id="bwStopBtn" class="bridge-toggle danger" type="button" style="display:none;"><i class="ri-stop-circle-line"></i><span>Stop</span></button>
       </div>
       <div class="bridge-workspace-actions">
         <button id="bwDownloadBtn" class="icon-btn" type="button" title="Download client"><i class="ri-download-2-line"></i></button>
@@ -194,7 +193,7 @@
           <div class="bridge-empty" id="bridgeEmpty">
             <div class="mascot mascot-md" data-mood="idle"></div>
             <h3>Bridge Workspace</h3>
-            <p>Tell Mirox what to build. It writes the files into <code>~/&lt;project&gt;/</code>, verifies them, and shows you a live preview.</p>
+            <p>Tell Mirox what to build. It writes files into <code>~/&lt;project&gt;/</code>, verifies them, and shows you a live preview.</p>
             <ol class="bridge-empty-steps">
               <li>Download the client → extract → <code>pip install aiohttp</code> → <code>python runner.py</code>.</li>
               <li>Optional: <code>sudo apt install kdeconnect</code> for phone control.</li>
@@ -211,10 +210,7 @@
       <aside class="bridge-workspace-side">
         <div class="bridge-side-section">
           <h4><i class="ri-plug-line"></i> Connection</h4>
-          <div id="bwStatusBox" class="bw-status-box">
-            <div class="bridge-status-dot offline"></div>
-            <span>Disconnected</span>
-          </div>
+          <div id="bwStatusBox" class="bw-status-box"><div class="bridge-status-dot offline"></div><span>Disconnected</span></div>
           <label class="bw-label" for="bwNameInput">Name</label>
           <input id="bwNameInput" class="modal-input" type="text" placeholder="My Laptop" maxlength="60">
           <label class="bw-label" for="bwModelSelect">Model</label>
@@ -232,30 +228,21 @@
 
         <div class="bridge-side-section">
           <h4><i class="ri-smartphone-line"></i> Phone &amp; Devices</h4>
-          <div class="bw-status-box" id="bwKdeBox">
-            <i class="ri-smartphone-line"></i>
-            <span id="bwKdeStatus">KDE Connect: checking…</span>
-          </div>
+          <div class="bw-status-box" id="bwKdeBox"><i class="ri-smartphone-line"></i><span id="bwKdeStatus">KDE Connect: checking…</span></div>
           <button id="bwScanDevicesBtn" class="modal-btn" type="button"><i class="ri-radar-line"></i> Scan for devices</button>
           <div id="bwDeviceList" class="bw-device-list"></div>
         </div>
 
         <div class="bridge-side-section">
           <h4><i class="ri-hammer-line"></i> Build</h4>
-          <div class="bw-status-box" id="bwBuildBox">
-            <i class="ri-folder-3-line"></i>
-            <span id="bwBuildStatus">No project yet</span>
-          </div>
+          <div class="bw-status-box" id="bwBuildBox"><i class="ri-folder-3-line"></i><span id="bwBuildStatus">No project yet</span></div>
           <button id="bwBuildOpenBtn" class="modal-btn" type="button"><i class="ri-eye-line"></i> Open live preview</button>
           <button id="bwBuildFolderBtn" class="modal-btn" type="button"><i class="ri-folder-open-line"></i> Copy folder path</button>
         </div>
 
         <div class="bridge-side-section">
           <h4><i class="ri-shield-keyhole-line"></i> Sudo</h4>
-          <div class="bw-status-box" id="bwSudoBox">
-            <i class="ri-shield-keyhole-line"></i>
-            <span id="bwSudoStatus">No password saved</span>
-          </div>
+          <div class="bw-status-box" id="bwSudoBox"><i class="ri-shield-keyhole-line"></i><span id="bwSudoStatus">No password saved</span></div>
           <button id="bwSudoForgetBtn" class="modal-btn" type="button"><i class="ri-forbid-2-line"></i> Forget password</button>
         </div>
 
@@ -281,10 +268,7 @@
     <header class="planner-top">
       <div class="planner-title">
         <i class="ri-eye-line"></i>
-        <div>
-          <div class="planner-title-main">Live Preview</div>
-          <div class="planner-title-sub" id="bwPreviewSubtitle">No project yet</div>
-        </div>
+        <div><div class="planner-title-main">Live Preview</div><div class="planner-title-sub" id="bwPreviewSubtitle">No project yet</div></div>
       </div>
       <div class="preview-tools">
         <input id="bwPreviewPath" class="modal-input" placeholder="~/project/index.html" spellcheck="false">
@@ -293,9 +277,7 @@
         <button class="icon-btn" id="bwPreviewCloseBtn" title="Close"><i class="ri-close-line"></i></button>
       </div>
     </header>
-    <div class="planner-body preview-body">
-      <iframe id="bwPreviewFrame" sandbox="allow-scripts allow-same-origin allow-forms allow-modals"></iframe>
-    </div>
+    <div class="planner-body preview-body"><iframe id="bwPreviewFrame" sandbox="allow-scripts allow-same-origin allow-forms allow-modals"></iframe></div>
   </div>
 </div>
 
@@ -304,10 +286,7 @@
     <header class="planner-top">
       <div class="planner-title">
         <i class="ri-smartphone-line"></i>
-        <div>
-          <div class="planner-title-main">KDE Connect · Devices</div>
-          <div class="planner-title-sub" id="kdeSubtitle">Pick a device for Mirox to work with</div>
-        </div>
+        <div><div class="planner-title-main">KDE Connect · Devices</div><div class="planner-title-sub" id="kdeSubtitle">Pick a device for Mirox to work with</div></div>
       </div>
       <button class="icon-btn" id="kdeCloseBtn" type="button"><i class="ri-close-line"></i></button>
     </header>
@@ -325,10 +304,7 @@
     <header class="planner-top">
       <div class="planner-title">
         <i class="ri-layout-masonry-line"></i>
-        <div>
-          <div class="planner-title-main">Mirox Planner</div>
-          <div class="planner-title-sub" id="plannerSubtitle">Pick a design — Mirox will build it for you</div>
-        </div>
+        <div><div class="planner-title-main">Mirox Planner</div><div class="planner-title-sub" id="plannerSubtitle">Pick a design — Mirox will build it for you</div></div>
       </div>
       <button class="icon-btn" id="plannerCloseBtn" type="button"><i class="ri-close-line"></i></button>
     </header>
@@ -427,7 +403,7 @@
       </div>
       <div class="setting-group"><h4>Accent</h4>
         <div class="swatch-grid">
-          <button class="swatch" type="button" data-theme="default" style="--sw:#111111" aria-label="Ink"></button>
+          <button class="swatch" type="button" data-theme="default" style="--sw:#4d6bfe" aria-label="Blue"></button>
           <button class="swatch" type="button" data-theme="sage" style="--sw:#7a8c6b" aria-label="Sage"></button>
           <button class="swatch" type="button" data-theme="sky" style="--sw:#5b7ca8" aria-label="Sky"></button>
           <button class="swatch" type="button" data-theme="plum" style="--sw:#8b5a83" aria-label="Plum"></button>
