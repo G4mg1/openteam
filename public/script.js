@@ -2,21 +2,23 @@
   'use strict';
 
   /* ═══════════════════════════════════════════════════════════
-     i18n — MyMemory API. NOTE: we never send 'auto' / 'default'.
-     Only real BCP-47 codes get translated.
+     i18n — MyMemory with strict whitelist + silent fallback
      ═══════════════════════════════════════════════════════════ */
-  const I18N_CACHE_KEY = 'miroxai_i18n_cache_v3';
-  const RTL_LANGS = ['fa','ps','ar','he','ur'];
-  const TRANSLATE_CONCURRENCY = 3;
-  // MyMemory rejects 'auto', 'default', '' etc. Whitelist real codes only.
-  const VALID_LANG_RE = /^[a-z]{2}(-[A-Za-z]{2,4})?$/;
+  const I18N_CACHE_KEY = 'miroxai_i18n_cache_v4';
+  const RTL_LANGS = ['fa','ar','he','ur'];
+  const TRANSLATE_CONCURRENCY = 2;
+
+  // Only these language codes are known-good with MyMemory's free endpoint.
+  // Anything not in this set is silently skipped (falls back to English).
+  const MYMEMORY_OK = new Set([
+    'es','fr','de','it','pt','ru','ja','ko','ar','hi','fa',
+    'tr','vi','th','id','nl','pl','sv','el','cs','ro','uk',
+    'he','zh-CN','es-MX'
+  ]);
 
   function isTranslatable(code) {
     if (!code || typeof code !== 'string') return false;
-    const c = code.trim();
-    if (!c) return false;
-    if (c === 'auto' || c === 'default' || c === 'en' || c === 'und') return false;
-    return VALID_LANG_RE.test(c);
+    return MYMEMORY_OK.has(code.trim());
   }
 
   let __i18nCache = {};
@@ -30,40 +32,45 @@
   function saveI18nCache() {
     try { localStorage.setItem(I18N_CACHE_KEY, JSON.stringify(__i18nCache)); } catch {}
   }
-  function setTranslateStatus(text, cls) {
+  function setTranslateStatus(text) {
     if (!__translationStatusEl) __translationStatusEl = document.getElementById('translateStatus');
     if (!__translationStatusEl) return;
     __translationStatusEl.textContent = text || '';
-    __translationStatusEl.className = 'translate-status' + (cls ? ' ' + cls : '');
   }
 
   async function translateString(text, targetLang) {
-    // Hard guard: never call MyMemory with an invalid language.
+    // Hard skip: English, invalid, or unknown langs → return the source text.
     if (!text || !isTranslatable(targetLang)) return text;
     const key = targetLang + ':' + text;
     if (__i18nCache[key]) return __i18nCache[key];
 
-    // MyMemory limits query length. Chunk safely.
-    const chunk = text.length > 380 ? text.slice(0, 380) : text;
-    // Force source = English (MyMemory rejects auto-detect codes like "auto").
-    const url = 'https://api.mymemory.translated.net/get?q=' + encodeURIComponent(chunk) + '&langpair=en|' + encodeURIComponent(targetLang);
+    // Keep the query short (MyMemory limits length).
+    const chunk = text.length > 350 ? text.slice(0, 350) : text;
+    const url = 'https://api.mymemory.translated.net/get'
+      + '?q=' + encodeURIComponent(chunk)
+      + '&langpair=' + encodeURIComponent('en|' + targetLang)
+      + '&mt=1';  // force machine translation — avoids "no translation found" responses
+
     try {
       const r = await fetch(url, { method: 'GET', mode: 'cors' });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
+      if (!r.ok) throw new Error('http_' + r.status);
       const d = await r.json();
-      // MyMemory returns { responseStatus: 200 | 403 | ..., responseData: { translatedText } }
-      const status = d && d.responseStatus;
-      const out = (d && d.responseData && d.responseData.translatedText) || '';
-      if (status && Number(status) !== 200) throw new Error('mymemory_' + status);
-      let clean = String(out).trim();
+      const status = Number(d && d.responseStatus) || 0;
+      const raw = (d && d.responseData && d.responseData.translatedText) || '';
+      // MyMemory tells you when it's not happy:
+      //   responseStatus 200 = OK
+      //   anything else      = bad lang pair / quota / etc.
+      if (status && status !== 200) throw new Error('mm_' + status);
+      let clean = String(raw).trim();
+      if (!clean) throw new Error('empty');
       if (clean.startsWith('"') && clean.endsWith('"')) clean = clean.slice(1, -1);
-      // MyMemory sometimes echoes the source or returns "INVALID LANGUAGE PAIR".
-      if (!clean || /^invalid\s+language\s+pair/i.test(clean) || clean === chunk) throw new Error('mymemory_bad');
+      // Sometimes it echoes back the query — treat as failure.
+      if (clean === chunk) throw new Error('echo');
       __i18nCache[key] = clean;
       saveI18nCache();
       return clean;
     } catch (e) {
-      // Cache the fallback so we don't spam the API.
+      // Cache the English fallback so we never hit MyMemory for this string again.
       __i18nCache[key] = text;
       saveI18nCache();
       return text;
@@ -75,6 +82,7 @@
     __translationQueue.push({ element, sourceText, targetLang, mode });
     processQueue();
   }
+
   async function processQueue() {
     if (__translating) return;
     if (!__translationQueue.length) { setTranslateStatus(''); return; }
@@ -111,6 +119,13 @@
     document.documentElement.lang = lang;
     document.documentElement.setAttribute('data-dir', isRtl ? 'rtl' : 'ltr');
 
+    const setSource = (el, src) => {
+      if (el.children.length === 0) el.textContent = src;
+      else for (const node of el.childNodes) {
+        if (node.nodeType === 3 && node.textContent.trim()) { node.textContent = src; break; }
+      }
+    };
+
     document.querySelectorAll('[data-i18n]').forEach((el) => {
       if (!el.dataset.i18nEn) {
         let src = '';
@@ -125,28 +140,17 @@
       }
       const src = el.dataset.i18nEn;
       if (!src) return;
-      if (!isTranslatable(lang)) {
-        if (el.children.length === 0) el.textContent = src;
-        else for (const node of el.childNodes) {
-          if (node.nodeType === 3 && node.textContent.trim()) { node.textContent = src; break; }
-        }
-        return;
-      }
+      if (!isTranslatable(lang)) { setSource(el, src); return; }
       const cacheKey = lang + ':' + src;
-      if (__i18nCache[cacheKey]) {
-        if (el.children.length === 0) el.textContent = __i18nCache[cacheKey];
-        else for (const node of el.childNodes) {
-          if (node.nodeType === 3 && node.textContent.trim()) { node.textContent = __i18nCache[cacheKey]; break; }
-        }
-      } else enqueueTranslation(el, src, lang, 'text');
+      if (__i18nCache[cacheKey]) setSource(el, __i18nCache[cacheKey]);
+      else enqueueTranslation(el, src, lang, 'text');
     });
 
     document.querySelectorAll('[data-i18n-html]').forEach((el) => {
       if (!el.dataset.i18nHtmlEn) el.dataset.i18nHtmlEn = el.innerHTML;
       const srcHtml = el.dataset.i18nHtmlEn;
       if (!srcHtml) return;
-      const tmp = document.createElement('div');
-      tmp.innerHTML = srcHtml;
+      const tmp = document.createElement('div'); tmp.innerHTML = srcHtml;
       const plain = tmp.textContent.trim();
       if (!isTranslatable(lang)) { el.innerHTML = srcHtml; return; }
       const cacheKey = lang + ':html:' + plain;
@@ -210,13 +214,14 @@
     { id: 'mirox-ultra-10', label: 'Ultra', tier: 'pro', tagline: 'Long context', icon: 'ri-rocket-2-line' },
     { id: 'mirox-eclipse-2.0', label: 'Eclipse', tier: 'ultimate', tagline: 'Most powerful', icon: 'ri-sun-fill' },
   ];
-  const LS_KEY = 'miroxai_conversations_v44';
+  const LS_KEY = 'miroxai_conversations_v46';
   const TOKEN_KEY = 'mirox_token';
+  const LOCAL_USER_KEY = 'mirox_local_user_v1';   // NEW: local sign-in fallback
   const GUEST_KEY = 'miroxai_guest_id_v1';
-  const APPEARANCE_KEY = 'miroxai_appearance_v44';
-  const SHARE_KEY = 'miroxai_share_v13';
-  const BONUS_KEY = 'miroxai_bonus_v13';
-  const PREFS_KEY = 'miroxai_prefs_v8';
+  const APPEARANCE_KEY = 'miroxai_appearance_v46';
+  const SHARE_KEY = 'miroxai_share_v14';
+  const BONUS_KEY = 'miroxai_bonus_v14';
+  const PREFS_KEY = 'miroxai_prefs_v9';
   const BRIDGE_OPTS_KEY = 'miroxai_bridge_opts_v1';
   const PASTE_ATTACH_THRESHOLD = 1024;
   const NET_TIMEOUT_MS = 15000;
@@ -256,6 +261,14 @@
   function safeRemove(k) { try { localStorage.removeItem(k); } catch {} }
   function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
   function setToken(tk) { try { tk ? localStorage.setItem(TOKEN_KEY, tk) : localStorage.removeItem(TOKEN_KEY); } catch {} }
+
+  // ── LOCAL USER (new) — sign-in that never blocks
+  function getLocalUser() {
+    const u = safeGet(LOCAL_USER_KEY, null);
+    if (u && u.email && u.name && u.signedIn) return u;
+    return null;
+  }
+  function setLocalUser(u) { u ? safeSet(LOCAL_USER_KEY, u) : safeRemove(LOCAL_USER_KEY); }
 
   function getGuestId() {
     let id = null;
@@ -331,10 +344,8 @@
   /* ═══════════ PREFS ═══════════ */
   const DEFAULT_PREFS = {
     autoScroll: true, enterSend: true, vision: true, compact: false, reduceMotion: false,
-    fontSize: 'md', mode: 'light',
-    theme: 'default',                 // 'default' now = coral orange
-    responseLanguage: 'auto',
-    uiLanguage: 'en',                 // 'en' = no translation calls at all
+    fontSize: 'md', mode: 'light', theme: 'default',
+    responseLanguage: 'auto', uiLanguage: 'en',
   };
   function loadPrefs() {
     __prefs = Object.assign({}, DEFAULT_PREFS, safeGet(PREFS_KEY, {}));
@@ -355,12 +366,9 @@
     syncChk('visionToggle', __prefs.vision);
     syncChk('compactToggle', __prefs.compact);
     syncChk('reduceMotionToggle', __prefs.reduceMotion);
-    const mode = __prefs.mode || 'light';
-    $$('#modeSegmented .seg-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
-    const fs = __prefs.fontSize || 'md';
-    $$('#fontSizeSegmented .seg-btn').forEach((b) => b.classList.toggle('active', b.dataset.fontsize === fs));
-    const theme = __prefs.theme || 'default';
-    $$('#accentSwatches .swatch').forEach((b) => b.classList.toggle('active', b.dataset.theme === theme));
+    $$('#modeSegmented .seg-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === (__prefs.mode || 'light')));
+    $$('#fontSizeSegmented .seg-btn').forEach((b) => b.classList.toggle('active', b.dataset.fontsize === (__prefs.fontSize || 'md')));
+    $$('#accentSwatches .swatch').forEach((b) => b.classList.toggle('active', b.dataset.theme === (__prefs.theme || 'default')));
     const uiSel = document.getElementById('uiLanguageSelect');
     if (uiSel && uiSel.value !== (__prefs.uiLanguage || 'en')) uiSel.value = __prefs.uiLanguage || 'en';
     const langSel = document.getElementById('languageSelect');
@@ -374,10 +382,7 @@
     root.setAttribute('data-theme', __prefs.theme || 'default');
   }
 
-  /* ═══════════════════════════════════════════════════════════
-     MASCOT — Claude-Code style robot.
-     Ink = var(--accent) via currentColor → follows accent changes.
-     ═══════════════════════════════════════════════════════════ */
+  /* ═══════════ MASCOT ═══════════ */
   const MOODS = ['idle','happy','thinking','coding','celebrate','error','learning','wink','study','searching','reading'];
 
   function blobSvg() {
@@ -550,7 +555,7 @@
     const q = __historyQuery.trim().toLowerCase();
     let items = __conversations;
     if (q) items = __conversations.filter((c) => (c.title || '').toLowerCase().includes(q));
-    if (!items.length) { list.innerHTML = `<li class="history-empty" data-i18n="noChats">No conversations yet</li>`; return; }
+    if (!items.length) { list.innerHTML = `<li class="history-empty">No conversations yet</li>`; return; }
     list.innerHTML = items.map((c) =>
       `<li class="history-item${c.id === currentConversationId ? ' active' : ''}" data-id="${c.id}">
         <i class="ri-chat-3-line"></i>
@@ -704,7 +709,6 @@
     el.className = 'message ' + (role === 'user' ? 'user' : 'ai');
     el.dataset.msgId = id; el.dataset.role = role;
 
-    // Free-floating mascot avatar — no pill, no circle background.
     let avatar = '';
     if (role === 'ai') {
       avatar = `<div class="message-avatar" data-mood="idle">
@@ -1276,22 +1280,41 @@
   function openModelPicker() { $('#modelPicker')?.classList.add('open'); $('#modelPickerMenu')?.classList.add('open'); renderModelPicker(); }
   function closeModelPicker() { $('#modelPicker')?.classList.remove('open'); $('#modelPickerMenu')?.classList.remove('open'); }
 
-  /* ═══════════ USAGE ═══════════ */
+  /* ═══════════════════════════════════════════════════════════
+     USAGE — merges server state + local user
+     ═══════════════════════════════════════════════════════════ */
   async function refreshUsage() {
+    const local = getLocalUser();
     const res = await jsonOr('/api/me', {}, null, 7000);
-    if (!res || !res.user) {
+
+    if (res && res.user) {
+      // Server knows who this is.
+      __user = res.user;
+      __tier = res.user.tier || 'free';
+    } else if (local) {
+      // Server doesn't know — but the user signed in locally. Show them as signed in.
+      __user = { name: local.name, email: local.email, tier: 'free', local: true };
+      __tier = 'free';
+    } else {
       __user = null; __tier = 'free';
-      const label = $('#accountLabel'); if (label) label.textContent = 'Guest mode';
-      const sub = $('#accountSub'); if (sub) sub.textContent = 'Chats saved locally in this browser';
-      const sb = $('#signInFromSettingsBtn'); if (sb) sb.style.display = '';
-      const lo = $('#logoutBtn'); if (lo) lo.style.display = 'none';
-      renderModelPicker(); updateTokenUsage(); return;
     }
-    __user = res.user; __tier = res.user.tier || 'free';
-    const label = $('#accountLabel'); if (label) label.textContent = res.user.name || res.user.email;
-    const sub = $('#accountSub'); if (sub) sub.textContent = res.user.email || '';
-    const sb = $('#signInFromSettingsBtn'); if (sb) sb.style.display = 'none';
-    const lo = $('#logoutBtn'); if (lo) lo.style.display = '';
+
+    const label = $('#accountLabel');
+    const sub = $('#accountSub');
+    const signInBtn = $('#signInFromSettingsBtn');
+    const logoutBtn = $('#logoutBtn');
+
+    if (__user) {
+      if (label) label.textContent = __user.name || __user.email;
+      if (sub) sub.textContent = __user.email + (__user.local ? ' · local' : '');
+      if (signInBtn) signInBtn.style.display = 'none';
+      if (logoutBtn) logoutBtn.style.display = '';
+    } else {
+      if (label) label.textContent = 'Guest mode';
+      if (sub) sub.textContent = 'Chats saved locally in this browser';
+      if (signInBtn) signInBtn.style.display = '';
+      if (logoutBtn) logoutBtn.style.display = 'none';
+    }
     renderModelPicker(); updateTokenUsage();
   }
   async function loadConfig() {
@@ -1302,7 +1325,7 @@
   }
 
   /* ═══════════════════════════════════════════════════════════
-     LOGIN — simple Gmail-style. No Loginment.
+     LOGIN — local-first. Never blocks the user.
      ═══════════════════════════════════════════════════════════ */
   function setLoginError(msg, kind) {
     const el = $('#loginError');
@@ -1324,49 +1347,42 @@
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setLoginError('Please enter a valid email address.'); $('#loginEmail')?.focus(); return; }
 
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line spin"></i> Signing in…'; }
+
+    // ── Step 1: local sign-in (always succeeds)
+    setLocalUser({ name, email, signedIn: true, ts: Date.now() });
+
+    // ── Step 2: try server quietly (best-effort, never blocks)
     try {
       const r = await netFetch('/api/auth/simple-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email }),
-      }, 12000);
-
-      let data = null;
-      try { data = await r.json(); } catch {}
-
-      if (r.ok && data && data.ok) {
-        setToken(data.token || '');
-        setLoginError('Signed in!', 'ok');
-        if (btn) btn.innerHTML = '<i class="ri-check-line"></i> Welcome';
-        setTimeout(async () => {
-          closeModal('loginModal');
-          await refreshUsage();
-          toast('Welcome, ' + name + '!', 2400, 'ok');
-          setLoginError('');
-          if (btn) { btn.disabled = false; btn.innerHTML = '<span data-i18n="continue">Continue</span><i class="ri-arrow-right-line"></i>'; }
-        }, 600);
-        return;
+      }, 10000);
+      if (r.ok) {
+        const data = await r.json().catch(() => null);
+        if (data && data.ok && data.token) setToken(data.token);
       }
+      // Any non-OK response is silently ignored — the user is signed in locally anyway.
+    } catch { /* ignore network errors */ }
 
-      const raw = (data && (data.error || data.message)) || ('Sign-in failed (HTTP ' + r.status + ')');
-      if (r.status === 403 && /disabled/i.test(raw)) {
-        setLoginError('Email sign-in is disabled on this server. Ask your admin to set ALLOW_EMAIL_LOGIN=1, or use Loginment.');
-      } else if (r.status === 503) {
-        setLoginError('The server cannot save your account right now. Please try again shortly.');
-      } else {
-        setLoginError(raw);
-      }
-      if (btn) { btn.disabled = false; btn.innerHTML = '<span data-i18n="continue">Continue</span><i class="ri-arrow-right-line"></i>'; }
-    } catch (err) {
-      const msg = err.name === 'AbortError' ? 'Request timed out. Please try again.' : 'Network error: ' + err.message;
-      setLoginError(msg);
-      if (btn) { btn.disabled = false; btn.innerHTML = '<span data-i18n="continue">Continue</span><i class="ri-arrow-right-line"></i>'; }
-    }
+    // ── Step 3: done. Close modal, refresh UI.
+    setLoginError('Signed in!', 'ok');
+    if (btn) btn.innerHTML = '<i class="ri-check-line"></i> Welcome';
+    setTimeout(async () => {
+      closeModal('loginModal');
+      await refreshUsage();
+      toast('Welcome, ' + name + '!', 2400, 'ok');
+      setLoginError('');
+      if (btn) { btn.disabled = false; btn.innerHTML = '<span>Continue</span><i class="ri-arrow-right-line"></i>'; }
+    }, 500);
   }
 
   async function doLogout() {
-    try { await jsonOr('/api/logout', { method: 'POST' }, null, 5000); } catch {}
+    // Clear server session (best-effort)
+    try { await jsonOr('/api/logout', { method: 'POST' }, null, 4000); } catch {}
+    // Clear local user too
     setToken('');
+    setLocalUser(null);
     await refreshUsage();
     closeModal('settingsModal');
     toast('Signed out', 1800, 'ok');
@@ -1422,23 +1438,19 @@
 
     let ok = false;
     try {
-      const r = await netFetch('/api/support', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      }, 15000);
+      const r = await netFetch('/api/support', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, 15000);
       const data = await r.json().catch(() => null);
       if (r.ok && data && data.ok !== false) ok = true;
       else if (r.status === 404) ok = false;
       else if (!r.ok) setSupportError((data && (data.error || data.message)) || ('Server error (HTTP ' + r.status + ')'));
       else ok = true;
-    } catch (e) { /* fall through to mailto */ }
+    } catch (e) { /* fall through */ }
 
     if (!ok && !($('#supportError')?.textContent)) {
       const mailSubject = encodeURIComponent(`[MiroxAI ${category}] ${subject}`);
       const mailBody = encodeURIComponent(`${message}\n\n— — —\nCategory: ${category}\nFrom: ${email || '(not provided)'}\nURL: ${location.href}\nGuest: ${getGuestId()}\nUA: ${navigator.userAgent}`);
       window.location.href = `mailto:support@miroxai.org?subject=${mailSubject}&body=${mailBody}`;
-      setSupportError('Opening your email client… (backend /api/support is not available)', 'ok');
+      setSupportError('Opening your email client…', 'ok');
       if (btn) { btn.disabled = false; btn.innerHTML = 'Submit'; }
       return;
     }
@@ -1647,7 +1659,7 @@
         if (fp && fp === bridgeTurn.lastReplyFingerprint) {
           bridgeTurn.lastReplyCount++;
           if (bridgeTurn.lastReplyCount >= MAX_DUP_REPLIES) {
-            addBridgeSystemMsg('Stopping — the AI repeated itself. Try rephrasing or clearing the chat.');
+            addBridgeSystemMsg('Stopping — the AI repeated itself.');
             bridgeTaskComplete = true;
             break;
           }
