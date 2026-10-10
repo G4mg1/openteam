@@ -1,344 +1,187 @@
 (function () {
   'use strict';
 
-  /* ═══════════ TRANSLATIONS ═══════════ */
-  const TRANSLATIONS = {
-    en: {
-      brand:'MiroxAI', newChat:'New chat', newChatTitle:'New chat',
-      tab:{chats:'Chats',bridge:'Bridge',images:'Images'},
-      searchChats:'Search chats…', noChats:'No conversations yet', noImages:'No images yet.',
-      guestMode:'Guest mode', signInHint:'Sign in to save chats',
-      settings:'Settings', support:'Support', developers:'Developers', madeBy:'Made by OpenSurr',
-      welcomeTitle:"Hi, I'm Mirox",
-      welcomeSub:'Luna and Gen are unlimited and free. Share to unlock <strong>Pro, Ultra &amp; Eclipse</strong> free for 7 days.',
-      suggest:{lua:'Write a Lua script',html:'Show an HTML table',image:'Generate an image',explain:'Explain a concept'},
-      tools:{search:'Search',lumenal:'Lumenal',bridge:'Bridge',plans:'Plans',help:'Help'},
-      composerPlaceholder:'How can I help you today?',
-      composerNote:'Mirox can make mistakes — double-check important info.',
-      latest:'Latest', send:'Send', stop:'Stop', close:'Close', skip:'Skip',
-      openMenu:'Open menu', plans:'Plans', tokenBudget:'Token budget', scrollLatest:'Scroll to latest',
-      attachFiles:'Attach files', removeAttach:'Remove attachments',
-      loading:{waking:'Waking up Luna…'},
-      share:{title:'Share our site, get 50k tokens',sub:'Get <strong>50k tokens for 1 week</strong> and unlock <strong>Pro, Ultra &amp; Eclipse</strong> models free.',perk1:'50,000 bonus tokens',perk2:'Valid for 7 days',perk3:'Pro · Ultra · Eclipse unlocked',now:'Share now',ignore:'Ignore',hint:"We verify shares through your device's native share sheet."},
-      login:{title:'Sign in',sub:'Sign in with Google, Apple, or email — powered by Loginment.',loginment:'Continue with Loginment',orDemo:'or use a quick demo login',name:'Name',email:'Email',continue:'Continue'},
-      bridge:{title:'Bridge',disconnected:'Disconnected',connected:'Connected',sideHint:'Give Mirox direct control of your laptop.',openWorkspace:'Open Bridge Workspace',download:'Download client',panel:'Panel',autoRun:'Auto-Run',showCode:'Show Code',preview:'Preview',stop:'Stop',clearChat:'Clear chat',starting:'Starting…',emptyTitle:'Bridge Workspace',emptyBody:'Tell Mirox what to build. It writes files into <code>~/&lt;project&gt;/</code>, verifies them, and shows you a live preview.',inputPlaceholder:'e.g. Build a calculator in my home folder',connection:'Connection',name:'Name',namePlaceholder:'My Laptop',port:'Port',connect:'Connect',disconnect:'Disconnect',phoneDevices:'Phone & Devices',kdeChecking:'KDE Connect: checking…',scanDevices:'Scan for devices',build:'Build',noProject:'No project yet',openPreview:'Open live preview',copyPath:'Copy folder path',sudo:'Sudo',noPassword:'No password saved',forgetPassword:'Forget password',quickActions:'Quick actions',quick:{calc:'Calculator',landing:'Landing page',snake:'Snake game',todo:'Todo app',portfolio:'Portfolio',scan:'Scan devices'},livePreview:'Live Preview',loadPath:'Load path',reload:'Reload'},
-      kde:{title:'KDE Connect · Devices',subtitle:'Pick a device for Mirox to work with',hint:'Devices marked reachable are on the same Wi-Fi and paired.',rescan:'Rescan',skip:'Skip'},
-      planner:{title:'Mirox Planner',subtitle:'Pick a design — Mirox will build it for you',hint:'Live demos — pick your favorite.',auto:'Let Mirox decide',choose:'Choose'},
-      sudo:{title:'Password required',sub:'Mirox needs root access to continue.',password:'Your sudo password',showHide:'Show / hide',remember:'Remember for this session',run:'Run with sudo'},
-      bq:{title:'Mirox needs your input',customPlaceholder:'Or type your own answer…',custom:'Custom',submit:'Submit & continue'},
-      plans:{title:'Plans',sub:'Luna and Gen are free and unlimited. Share to unlock Pro, Ultra and Eclipse for 7 days.'},
-      lumenal:{title:'Lumenal 1.0',sub:'Strong image generation, powered by Mirox.',prompt:'Describe the image you want…',generate:'Generate'},
-      support:{title:'Contact Support',subject:'Subject',message:'Message',submit:'Submit'},
-      iv:{title:'Generated image',download:'Download'},
-      settingsT:{tab:{general:'General',appearance:'Appearance',persona:'Persona',mcp:'MCP',language:'Language',alerts:'Alerts',data:'Data',dev:'Dev'},
-        title:'Settings',account:'Account',accountSub:'Chats saved locally in this browser',signIn:'Sign in',signOut:'Sign out',
-        rewards:'Rewards',shareEarn:'Share & earn',shareSub:'Get 50k tokens + Pro/Ultra/Eclipse free for 7 days',shareBtn:'Share',
-        behavior:'Behavior',autoScroll:'Auto-scroll',autoScrollSub:'Follow new messages as they arrive',enterSend:'Send with Enter',enterSendSub:'Use Shift+Enter for a new line',showThinking:'Show thinking trace',showThinkingSub:'Display reasoning panel above replies',vision:'Vision for images',visionSub:'Send attached images to the AI (base64)',compact:'Compact mode',compactSub:'Tighter spacing for dense chats',
-        mode:'Mode',mode2:{light:'Light',dark:'Dark',auto:'Auto'},accent:'Accent color',fontSize:'Font size',font2:{sm:'Small',md:'Medium',lg:'Large'},animations:'Animations',reduceMotion:'Reduce motion',reduceMotionSub:'Minimize animation across the app',
-        persona:'Custom character',personaHelp:'Describe how Mirox should behave.',personaPlaceholder:'e.g. You are a patient teacher…',personaSave:'Save persona',personaClear:'Clear',personaPresets:'Preset personalities',preset:{casual:'Casual',engineer:'Engineer',teacher:'Teacher',writer:'Writer',philosopher:'Philosopher'},
-        mcp:{title:'Model Context Protocol',help:'Connect MCP servers so Mirox can use external tools.',enable:'Enable MCP',enableSub:'Allow Mirox to call connected servers',add:'Add server',name:'Server name',url:'Server URL',key:'API key (optional)',addBtn:'Add server',connected:'Connected servers',empty:'No MCP servers configured.'},
-        lang:{response:'Preferred response language',responseHelp:'Mirox will reply in this language.',auto:'Auto-detect',ui:'Interface language',uiHelp:'Language of buttons, menus and labels — applies immediately.',comments:'Code comments',translateComments:'Translate code comments',translateCommentsSub:'Write code comments in preferred language'},
-        alerts:{title:'Notifications',desktop:'Desktop notifications',desktopSub:'Notify when a reply finishes in background',sound:'Sound',soundSub:'Play a soft chime when a reply arrives',bonus:'Bonus reminders',bonusSub:'Remind me before my 50k bonus expires',test:'Test notification',testSub:'Fire a sample chime + notification',testBtn:'Test'},
-        data:{chats:'Chats',export:'Export all chats (JSON)',import:'Import chats from file',clearChats:'Clear all chats',local:'Local data',reset:'Reset everything'},
-        dev:{console:'Developer console',open:'Open Developer Console',diag:'Diagnostics',verbose:'Verbose logging',verboseSub:'Log API requests to console',copyDiag:'Copy diagnostic info',guest:'Guest identity',guestSub:'Device-scoped ID for bonus verification',reset:'Reset'},
-      },
-      toast:{bonusAdded:'bonus tokens + Pro/Ultra/Eclipse unlocked for',days:'days!',shared:'Share detected! Adding reward…',sharedOk:'Share confirmed! Adding reward…',cancelled:'Share cancelled. Try again when you are ready.',noShare:'No share detected. Try again?',bonusActive:'Bonus active — Pro, Ultra & Eclipse unlocked!',bonusExpired:'Bonus expired — switched back to Luna. Share again to renew!',signedIn:'Welcome',signedOut:'Signed out',langChanged:'Interface language updated',respLangChanged:'Response language',personaSaved:'Persona saved',personaCleared:'Persona cleared',presetApplied:'Preset applied — click Save to persist',serverAdded:'Added server',serverRemoved:'Server removed',chatsExported:'Chats exported',chatsImported:'Imported',chatsCleared:'All chats cleared',resetAll:'All local data cleared — reloading…',guestReset:'Guest ID reset',copied:'Diagnostics copied',testSent:'Test notification sent',shareUnlock:'Share to unlock this model free for 7 days',upgrade:'Upgrade to use this model',noToken:'Max tokens reached — share for more or upgrade.',bridgeConnected:'Bridge connected',bridgeNotReachable:'Bridge not reachable'},
-    },
-    fa: {
-      brand:'MiroxAI', newChat:'گفتگوی جدید', newChatTitle:'گفتگوی جدید',
-      tab:{chats:'گفتگوها',bridge:'پل',images:'تصاویر'},
-      searchChats:'جستجو…', noChats:'هنوز گفتگویی نیست', noImages:'هنوز تصویری نیست.',
-      guestMode:'حالت مهمان', signInHint:'برای ذخیره وارد شوید',
-      settings:'تنظیمات', support:'پشتیبانی', developers:'توسعه‌دهندگان', madeBy:'ساخته‌شده توسط OpenSurr',
-      welcomeTitle:'سلام، من Mirox هستم',
-      welcomeSub:'Luna و Gen نامحدود و رایگان هستند. اشتراک‌گذاری کنید تا <strong>Pro، Ultra و Eclipse</strong> را ۷ روز رایگان باز کنید.',
-      suggest:{lua:'نوشتن اسکریپت Lua',html:'نمایش جدول HTML',image:'تولید تصویر',explain:'توضیح یک مفهوم'},
-      tools:{search:'جستجو',lumenal:'Lumenal',bridge:'پل',plans:'طرح‌ها',help:'راهنما'},
-      composerPlaceholder:'چطور می‌توانم کمکتان کنم؟',
-      composerNote:'Mirox اشتباه می‌کند — اطلاعات مهم را بررسی کنید.',
-      latest:'آخرین', send:'ارسال', stop:'توقف', close:'بستن', skip:'رد کردن',
-      openMenu:'باز کردن منو', plans:'طرح‌ها', tokenBudget:'بودجه توکن', scrollLatest:'پیمایش به آخرین',
-      attachFiles:'پیوست فایل', removeAttach:'حذف پیوست',
-      loading:{waking:'بیدار کردن Luna…'},
-      share:{title:'سایت ما را به اشتراک بگذارید، ۵۰ هزار توکن بگیرید',sub:'<strong>۵۰ هزار توکن برای یک هفته</strong> بگیرید و مدل‌های <strong>Pro، Ultra و Eclipse</strong> را رایگان باز کنید.',perk1:'۵۰,۰۰۰ توکن پاداش',perk2:'برای ۷ روز معتبر',perk3:'Pro · Ultra · Eclipse باز شده',now:'همین حالا به اشتراک بگذارید',ignore:'نادیده بگیرید',hint:'ما اشتراک‌گذاری را از طریق صفحه بومی دستگاه تأیید می‌کنیم.'},
-      login:{title:'ورود',sub:'با Google، Apple یا ایمیل وارد شوید.',loginment:'ادامه با Loginment',orDemo:'یا ورود سریع',name:'نام',email:'ایمیل',continue:'ادامه'},
-      bridge:{title:'پل',disconnected:'قطع',connected:'متصل',sideHint:'به Mirox کنترل مستقیم لپ‌تاپ خود را بدهید.',openWorkspace:'باز کردن فضای کاری پل',download:'دانلود کلاینت',panel:'پنل',autoRun:'اجرای خودکار',showCode:'نمایش کد',preview:'پیش‌نمایش',stop:'توقف',clearChat:'پاک کردن گفتگو',starting:'شروع…',emptyTitle:'فضای کاری پل',emptyBody:'به Mirox بگویید چه بسازد. فایل‌ها را در <code>~/&lt;project&gt;/</code> می‌نویسد و پیش‌نمایش نشان می‌دهد.',inputPlaceholder:'مثلاً یک ماشین‌حساب بساز',connection:'اتصال',name:'نام',namePlaceholder:'لپ‌تاپ من',port:'پورت',connect:'اتصال',disconnect:'قطع',phoneDevices:'تلفن و دستگاه‌ها',kdeChecking:'KDE Connect: بررسی…',scanDevices:'جستجوی دستگاه‌ها',build:'ساخت',noProject:'هنوز پروژه‌ای نیست',openPreview:'باز کردن پیش‌نمایش',copyPath:'کپی مسیر',sudo:'Sudo',noPassword:'رمز ذخیره نشده',forgetPassword:'فراموش کردن رمز',quickActions:'اقدامات سریع',quick:{calc:'ماشین‌حساب',landing:'صفحه فرود',snake:'بازی مار',todo:'اپ کارها',portfolio:'نمونه کار',scan:'جستجوی دستگاه‌ها'},livePreview:'پیش‌نمایش زنده',loadPath:'بارگذاری مسیر',reload:'بارگذاری مجدد'},
-      kde:{title:'KDE Connect · دستگاه‌ها',subtitle:'دستگاهی را انتخاب کنید',hint:'دستگاه‌های علامت‌گذاری‌شده روی همان Wi-Fi هستند.',rescan:'اسکن مجدد',skip:'رد کردن'},
-      planner:{title:'Mirox Planner',subtitle:'یک طرح انتخاب کنید',hint:'دموی زنده — مورد علاقه‌تان را انتخاب کنید.',auto:'بگذارید Mirox تصمیم بگیرد',choose:'انتخاب'},
-      sudo:{title:'رمز عبور لازم است',sub:'Mirox به دسترسی root نیاز دارد.',password:'رمز sudo شما',showHide:'نمایش / مخفی',remember:'برای این جلسه به خاطر بسپار',run:'اجرا با sudo'},
-      bq:{title:'Mirox به ورودی شما نیاز دارد',customPlaceholder:'یا پاسخ خود را بنویسید…',custom:'سفارشی',submit:'ارسال و ادامه'},
-      plans:{title:'طرح‌ها',sub:'Luna و Gen رایگان و نامحدود هستند.'},
-      lumenal:{title:'Lumenal 1.0',sub:'تولید تصویر قوی، با قدرت Mirox.',prompt:'تصویر دلخواه را توصیف کنید…',generate:'تولید'},
-      support:{title:'تماس با پشتیبانی',subject:'موضوع',message:'پیام',submit:'ارسال'},
-      iv:{title:'تصویر تولید شده',download:'دانلود'},
-      settingsT:{tab:{general:'عمومی',appearance:'ظاهر',persona:'شخصیت',mcp:'MCP',language:'زبان',alerts:'هشدارها',data:'داده',dev:'توسعه'},
-        title:'تنظیمات',account:'حساب',accountSub:'گفتگوها به صورت محلی ذخیره می‌شوند',signIn:'ورود',signOut:'خروج',
-        rewards:'پاداش‌ها',shareEarn:'اشتراک و کسب',shareSub:'۵۰ هزار توکن + Pro/Ultra/Eclipse رایگان برای ۷ روز',shareBtn:'اشتراک',
-        behavior:'رفتار',autoScroll:'پیمایش خودکار',autoScrollSub:'دنبال کردن پیام‌های جدید',enterSend:'ارسال با Enter',enterSendSub:'Shift+Enter برای خط جدید',showThinking:'نمایش مسیر تفکر',showThinkingSub:'نمایش پنل استدلال',vision:'بینایی تصاویر',visionSub:'ارسال تصاویر به AI (base64)',compact:'حالت فشرده',compactSub:'فاصله تنگ‌تر',
-        mode:'حالت',mode2:{light:'روشن',dark:'تیره',auto:'خودکار'},accent:'رنگ تأکید',fontSize:'اندازه فونت',font2:{sm:'کوچک',md:'متوسط',lg:'بزرگ'},animations:'انیمیشن‌ها',reduceMotion:'کاهش حرکت',reduceMotionSub:'کمینه کردن انیمیشن',
-        persona:'شخصیت سفارشی',personaHelp:'توصیف رفتار Mirox.',personaPlaceholder:'مثلاً معلم صبور…',personaSave:'ذخیره',personaClear:'پاک کردن',personaPresets:'شخصیت‌های پیش‌فرض',preset:{casual:'غیررسمی',engineer:'مهندس',teacher:'معلم',writer:'نویسنده',philosopher:'فیلسوف'},
-        mcp:{title:'Model Context Protocol',help:'اتصال سرورهای MCP.',enable:'فعال‌سازی MCP',enableSub:'اجازه به Mirox برای فراخوانی',add:'افزودن سرور',name:'نام سرور',url:'آدرس سرور',key:'کلید API',addBtn:'افزودن',connected:'سرورهای متصل',empty:'هیچ سروری تنظیم نشده.'},
-        lang:{response:'زبان پاسخ',responseHelp:'Mirox به این زبان پاسخ می‌دهد.',auto:'تشخیص خودکار',ui:'زبان رابط',uiHelp:'زبان دکمه‌ها — بلافاصله اعمال می‌شود.',comments:'کامنت‌های کد',translateComments:'ترجمه کامنت‌ها',translateCommentsSub:'نوشتن کامنت‌ها به زبان ترجیحی'},
-        alerts:{title:'اعلان‌ها',desktop:'اعلان دسکتاپ',desktopSub:'اعلان هنگام اتمام پاسخ',sound:'صدا',soundSub:'پخش صدای ملایم',bonus:'یادآور پاداش',bonusSub:'یادآوری قبل از انقضا',test:'اعلان آزمایشی',testSub:'پخش اعلان نمونه',testBtn:'آزمایش'},
-        data:{chats:'گفتگوها',export:'خروجی (JSON)',import:'وارد کردن',clearChats:'پاک کردن همه',local:'داده محلی',reset:'بازنشانی همه'},
-        dev:{console:'کنسول توسعه',open:'باز کردن کنسول',diag:'تشخیص',verbose:'لاگ دقیق',verboseSub:'ثبت درخواست‌ها',copyDiag:'کپی تشخیص',guest:'هویت مهمان',guestSub:'شناسه دستگاه',reset:'بازنشانی'},
-      },
-      toast:{bonusAdded:'توکن پاداش + Pro/Ultra/Eclipse برای',days:'روز!',shared:'اشتراک کشف شد!',sharedOk:'اشتراک تأیید شد!',cancelled:'اشتراک لغو شد.',noShare:'اشتراکی کشف نشد.',bonusActive:'پاداش فعال — Pro، Ultra و Eclipse باز!',bonusExpired:'پاداش منقضی — Luna. دوباره اشتراک کنید!',signedIn:'خوش آمدید',signedOut:'خارج شدید',langChanged:'زبان رابط به‌روز شد',respLangChanged:'زبان پاسخ',personaSaved:'ذخیره شد',personaCleared:'پاک شد',presetApplied:'پیش‌فرض اعمال شد',serverAdded:'سرور اضافه شد',serverRemoved:'سرور حذف شد',chatsExported:'گفتگوها صادر شد',chatsImported:'وارد شد',chatsCleared:'همه پاک شد',resetAll:'همه داده پاک شد…',guestReset:'شناسه بازنشانی شد',copied:'کپی شد',testSent:'ارسال شد',shareUnlock:'برای باز کردن این مدل اشتراک کنید',upgrade:'ارتقا برای استفاده',noToken:'حداکثر توکن.',bridgeConnected:'پل متصل شد',bridgeNotReachable:'پل قابل دسترسی نیست'},
-    },
-    ps: {
-      brand:'MiroxAI', newChat:'نوی خبرې', newChatTitle:'نوی خبرې',
-      tab:{chats:'خبرې',bridge:'پل',images:'انځورونه'},
-      searchChats:'پلټنه…', noChats:'لا خبرې نشته', noImages:'لا انځورونه نشته.',
-      guestMode:'میلمه حالت', signInHint:'د خوندي کولو لپاره ننوځئ',
-      settings:'ترتیبات', support:'ملاتړ', developers:'پراختیا کوونکي', madeBy:'د OpenSurr لخوا',
-      welcomeTitle:'سلام، زه Mirox یم',
-      welcomeSub:'Luna او Gen بې حد او وړیا دي. شریک کړئ چې <strong>Pro، Ultra او Eclipse</strong> ۷ ورځې وړیا خلاص کړئ.',
-      suggest:{lua:'د Lua سکریپټ',html:'د HTML میز',image:'انځور جوړول',explain:'تشریح'},
-      tools:{search:'پلټنه',lumenal:'Lumenal',bridge:'پل',plans:'پلانونه',help:'مرسته'},
-      composerPlaceholder:'څنګه مرسته وکړم؟',
-      composerNote:'Mirox غلطي کوي — مهم معلومات وګورئ.',
-      latest:'وروستی', send:'لېږل', stop:'ودرول', close:'بندول', skip:'پرېښودل',
-      openMenu:'مینو پرانیستل', plans:'پلانونه', tokenBudget:'د ټوکن بودیجه', scrollLatest:'وروستي ته',
-      attachFiles:'دوتنه ضمیمه', removeAttach:'ضمیمې لرې کړئ',
-      loading:{waking:'Luna ویښول…'},
-      share:{title:'زموږ سایټ شریک کړئ، ۵۰ زره ټوکن',sub:'د <strong>یوې اونۍ لپاره ۵۰ زره ټوکن</strong> او <strong>Pro، Ultra او Eclipse</strong> وړیا.',perk1:'۵۰،۰۰۰ بونس ټوکن',perk2:'۷ ورځې',perk3:'Pro · Ultra · Eclipse خلاص',now:'همدا اوس شریک کړئ',ignore:'پام مه کوئ',hint:'موږ د وسیلې د اصلي شریک شیټ له لارې تأییدوو.'},
-      login:{title:'ننوتل',sub:'د Google، Apple یا ایمیل سره.',loginment:'د Loginment سره',orDemo:'یا چټک ننوتل',name:'نوم',email:'ایمیل',continue:'دوام'},
-      bridge:{title:'پل',disconnected:'قطع',connected:'وصل',sideHint:'Mirox ته کنټرول ورکړئ.',openWorkspace:'د پل کاري ځای',download:'کلاینټ ډاونلوډ',panel:'پینل',autoRun:'اتومات',showCode:'کوډ ښودل',preview:'مخکتنه',stop:'ودرول',clearChat:'پاکې کړئ',starting:'پیل…',emptyTitle:'د پل کاري ځای',emptyBody:'Mirox ته ووایاست چې څه جوړ کړي.',inputPlaceholder:'لکه یو کیلکولیټر جوړ کړه',connection:'اړیکه',name:'نوم',namePlaceholder:'زما لیپ ټاپ',port:'پورټ',connect:'وصل',disconnect:'قطع',phoneDevices:'تلیفون او وسیلې',kdeChecking:'KDE Connect: ګوري…',scanDevices:'د وسیلو سکن',build:'جوړول',noProject:'لا پروژه نشته',openPreview:'ژوندې مخکتنه',copyPath:'لاره کاپي',sudo:'Sudo',noPassword:'پټ نوم نه دی',forgetPassword:'هېر کړئ',quickActions:'چټک عملونه',quick:{calc:'کیلکولیټر',landing:'د ځمکې پاڼه',snake:'د مار لوبه',todo:'د کارونو اپ',portfolio:'پورټفولیو',scan:'سکن'},livePreview:'ژوندې مخکتنه',loadPath:'لاره پورته',reload:'بیا پورته'},
-      kde:{title:'KDE Connect · وسیلې',subtitle:'یوه وسیله غوره کړئ',hint:'نښه شوي وسیلې ورته Wi-Fi دي.',rescan:'بیا سکن',skip:'پرېښودل'},
-      planner:{title:'Mirox پلانر',subtitle:'یو ډیزاین غوره کړئ',hint:'ژوندي ډیمو.',auto:'Mirox پریکړه وکړي',choose:'غوره کړئ'},
-      sudo:{title:'پټ نوم اړین',sub:'Mirox ته root ته اړتیا ده.',password:'ستاسو sudo پټ نوم',showHide:'ښودل / پټول',remember:'یاد کړه',run:'د sudo سره'},
-      bq:{title:'Mirox ننوتلو ته اړتیا لري',customPlaceholder:'یا ځواب ولیکئ…',custom:'دودیز',submit:'سپارل او دوام'},
-      plans:{title:'پلانونه',sub:'Luna او Gen وړیا او بې حده.'},
-      lumenal:{title:'Lumenal 1.0',sub:'د انځور قوي تولید.',prompt:'انځور تشریح کړئ…',generate:'جوړول'},
-      support:{title:'د ملاتړ سره',subject:'موضوع',message:'پیغام',submit:'سپارل'},
-      iv:{title:'جوړ شوی انځور',download:'ډاونلوډ'},
-      settingsT:{tab:{general:'عمومي',appearance:'ښکاریدل',persona:'شخصیت',mcp:'MCP',language:'ژبه',alerts:'خبرتیاوې',data:'ډاټا',dev:'پراختیا'},
-        title:'ترتیبات',account:'حساب',accountSub:'محلي ذخیره',signIn:'ننوتل',signOut:'وتل',
-        rewards:'انعامونه',shareEarn:'شریک کړه',shareSub:'۵۰ زره ټوکن + Pro/Ultra/Eclipse ۷ ورځې',shareBtn:'شریک',
-        behavior:'چلند',autoScroll:'اتومات سکرول',autoScrollSub:'د پیغامونو تعقیب',enterSend:'Enter سره لېږل',enterSendSub:'Shift+Enter نوی کرښه',showThinking:'فکر ښودل',showThinkingSub:'د استدلال پینل',vision:'لید',visionSub:'انځورونه AI ته',compact:'کمپیکټ',compactSub:'تنګ فاصله',
-        mode:'حالت',mode2:{light:'روښانه',dark:'تیاره',auto:'اتومات'},accent:'تینګار رنګ',fontSize:'فونټ',font2:{sm:'کوچنی',md:'منځنی',lg:'لوی'},animations:'انیمیشن',reduceMotion:'کمول',reduceMotionSub:'انیمیشن کمول',
-        persona:'شخصیت',personaHelp:'تشریح کړئ.',personaPlaceholder:'لکه صابر ښوونکی…',personaSave:'خوندي',personaClear:'پاک',personaPresets:'پیش‌فرض',preset:{casual:'نارسمي',engineer:'انجینر',teacher:'ښوونکی',writer:'لیکوال',philosopher:'فیلسوف'},
-        mcp:{title:'MCP',help:'MCP سرورونه وصل کړئ.',enable:'MCP فعال',enableSub:'اجازه ورکړه',add:'سرور اضافه',name:'نوم',url:'URL',key:'API کیلي',addBtn:'اضافه',connected:'وصل شوي',empty:'هیڅ نه.'},
-        lang:{response:'د ځواب ژبه',responseHelp:'Mirox به پدې ژبه ځواب ووایي.',auto:'اتومات',ui:'د انٹرفیس ژبه',uiHelp:'د تڼیو ژبه.',comments:'تبصرې',translateComments:'ژباړه',translateCommentsSub:'په غوره ژبه'},
-        alerts:{title:'خبرتیاوې',desktop:'ډیسکټاپ',desktopSub:'خبرتیا',sound:'غږ',soundSub:'زنګ',bonus:'انعام یادونه',bonusSub:'یادونه',test:'ازموینه',testSub:'خبرتیا ولېږه',testBtn:'ازموینه'},
-        data:{chats:'خبرې',export:'صادرې',import:'وارد',clearChats:'پاک',local:'ډاټا',reset:'بیا تنظیم'},
-        dev:{console:'کنسول',open:'پرانیستل',diag:'تشخیص',verbose:'لاګ',verboseSub:'غوښتنې',copyDiag:'کاپي',guest:'میلمه',guestSub:'ID',reset:'بیا'},
-      },
-      toast:{bonusAdded:'بونس ټوکن + Pro/Ultra/Eclipse د',days:'ورځو!',shared:'شریک کشف!',sharedOk:'تأیید شو!',cancelled:'لغو شو.',noShare:'نه کشف شو.',bonusActive:'انعام فعال!',bonusExpired:'انعام پای — Luna!',signedIn:'ښه راغلاست',signedOut:'وتل',langChanged:'ژبه تازه',respLangChanged:'ځواب ژبه',personaSaved:'خوندي',personaCleared:'پاک',presetApplied:'تطبیق',serverAdded:'اضافه',serverRemoved:'لرې',chatsExported:'صادرې',chatsImported:'وارد',chatsCleared:'پاک',resetAll:'ټول پاک…',guestReset:'ID بیا',copied:'کاپي',testSent:'ولېږل',shareUnlock:'شریک کړئ',upgrade:'ارتقا',noToken:'حد.',bridgeConnected:'وصل',bridgeNotReachable:'نه رسیږي'},
-    },
-    de: {
-      brand:'MiroxAI', newChat:'Neuer Chat', newChatTitle:'Neuer Chat',
-      tab:{chats:'Chats',bridge:'Bridge',images:'Bilder'},
-      searchChats:'Chats durchsuchen…', noChats:'Noch keine Unterhaltungen', noImages:'Noch keine Bilder.',
-      guestMode:'Gastmodus', signInHint:'Anmelden, um Chats zu speichern',
-      settings:'Einstellungen', support:'Support', developers:'Entwickler', madeBy:'Von OpenSurr',
-      welcomeTitle:'Hallo, ich bin Mirox',
-      welcomeSub:'Luna und Gen sind unbegrenzt und kostenlos. Teilen Sie, um <strong>Pro, Ultra &amp; Eclipse</strong> 7 Tage kostenlos freizuschalten.',
-      suggest:{lua:'Lua-Skript schreiben',html:'HTML-Tabelle zeigen',image:'Bild generieren',explain:'Konzept erklären'},
-      tools:{search:'Suche',lumenal:'Lumenal',bridge:'Bridge',plans:'Pläne',help:'Hilfe'},
-      composerPlaceholder:'Wie kann ich heute helfen?',
-      composerNote:'Mirox macht Fehler — prüfen Sie wichtige Infos.',
-      latest:'Neueste', send:'Senden', stop:'Stopp', close:'Schließen', skip:'Überspringen',
-      openMenu:'Menü öffnen', plans:'Pläne', tokenBudget:'Token-Budget', scrollLatest:'Zum letzten',
-      attachFiles:'Dateien anhängen', removeAttach:'Anhänge entfernen',
-      loading:{waking:'Luna wird geweckt…'},
-      share:{title:'Seite teilen, 50k Token erhalten',sub:'<strong>50k Token für 1 Woche</strong> und <strong>Pro, Ultra &amp; Eclipse</strong> kostenlos.',perk1:'50.000 Bonus-Token',perk2:'7 Tage gültig',perk3:'Pro · Ultra · Eclipse freigeschaltet',now:'Jetzt teilen',ignore:'Ignorieren',hint:'Wir überprüfen Shares über das native Share-Sheet.'},
-      login:{title:'Anmelden',sub:'Mit Google, Apple oder E-Mail anmelden.',loginment:'Weiter mit Loginment',orDemo:'oder Demo-Login',name:'Name',email:'E-Mail',continue:'Weiter'},
-      bridge:{title:'Bridge',disconnected:'Nicht verbunden',connected:'Verbunden',sideHint:'Geben Sie Mirox direkte Kontrolle über Ihren Laptop.',openWorkspace:'Bridge-Workspace öffnen',download:'Client herunterladen',panel:'Panel',autoRun:'Auto-Run',showCode:'Code zeigen',preview:'Vorschau',stop:'Stopp',clearChat:'Chat leeren',starting:'Starte…',emptyTitle:'Bridge-Workspace',emptyBody:'Sagen Sie Mirox, was zu bauen ist.',inputPlaceholder:'z.B. Baue einen Taschenrechner',connection:'Verbindung',name:'Name',namePlaceholder:'Mein Laptop',port:'Port',connect:'Verbinden',disconnect:'Trennen',phoneDevices:'Telefon & Geräte',kdeChecking:'KDE Connect: prüfe…',scanDevices:'Geräte suchen',build:'Build',noProject:'Noch kein Projekt',openPreview:'Live-Vorschau öffnen',copyPath:'Ordnerpfad kopieren',sudo:'Sudo',noPassword:'Kein Passwort gespeichert',forgetPassword:'Passwort vergessen',quickActions:'Schnellaktionen',quick:{calc:'Taschenrechner',landing:'Landingpage',snake:'Snake-Spiel',todo:'Todo-App',portfolio:'Portfolio',scan:'Geräte suchen'},livePreview:'Live-Vorschau',loadPath:'Pfad laden',reload:'Neu laden'},
-      kde:{title:'KDE Connect · Geräte',subtitle:'Wählen Sie ein Gerät für Mirox',hint:'Erreichbare Geräte sind im selben WLAN.',rescan:'Neu scannen',skip:'Überspringen'},
-      planner:{title:'Mirox Planner',subtitle:'Wählen Sie ein Design',hint:'Live-Demos.',auto:'Mirox entscheiden lassen',choose:'Wählen'},
-      sudo:{title:'Passwort erforderlich',sub:'Mirox braucht Root-Zugriff.',password:'Ihr sudo-Passwort',showHide:'Zeigen / verbergen',remember:'Für diese Sitzung merken',run:'Mit sudo ausführen'},
-      bq:{title:'Mirox braucht Ihre Eingabe',customPlaceholder:'Oder eigene Antwort eingeben…',custom:'Benutzerdefiniert',submit:'Absenden & weiter'},
-      plans:{title:'Pläne',sub:'Luna und Gen sind kostenlos und unbegrenzt.'},
-      lumenal:{title:'Lumenal 1.0',sub:'Starke Bildgenerierung.',prompt:'Beschreiben Sie das Bild…',generate:'Generieren'},
-      support:{title:'Support kontaktieren',subject:'Betreff',message:'Nachricht',submit:'Absenden'},
-      iv:{title:'Generiertes Bild',download:'Herunterladen'},
-      settingsT:{tab:{general:'Allgemein',appearance:'Aussehen',persona:'Persona',mcp:'MCP',language:'Sprache',alerts:'Hinweise',data:'Daten',dev:'Dev'},
-        title:'Einstellungen',account:'Konto',accountSub:'Chats lokal gespeichert',signIn:'Anmelden',signOut:'Abmelden',
-        rewards:'Belohnungen',shareEarn:'Teilen & verdienen',shareSub:'50k Token + Pro/Ultra/Eclipse 7 Tage',shareBtn:'Teilen',
-        behavior:'Verhalten',autoScroll:'Auto-Scroll',autoScrollSub:'Neuen Nachrichten folgen',enterSend:'Mit Enter senden',enterSendSub:'Shift+Enter für neue Zeile',showThinking:'Denkspur zeigen',showThinkingSub:'Argumentations-Panel',vision:'Vision für Bilder',visionSub:'Bilder an KI senden',compact:'Kompaktmodus',compactSub:'Engere Abstände',
-        mode:'Modus',mode2:{light:'Hell',dark:'Dunkel',auto:'Auto'},accent:'Akzentfarbe',fontSize:'Schriftgröße',font2:{sm:'Klein',md:'Mittel',lg:'Groß'},animations:'Animationen',reduceMotion:'Bewegung reduzieren',reduceMotionSub:'Animationen minimieren',
-        persona:'Eigene Figur',personaHelp:'Beschreiben Sie Mirox Verhalten.',personaPlaceholder:'z.B. geduldiger Lehrer…',personaSave:'Speichern',personaClear:'Löschen',personaPresets:'Voreinstellungen',preset:{casual:'Locker',engineer:'Ingenieur',teacher:'Lehrer',writer:'Autor',philosopher:'Philosoph'},
-        mcp:{title:'Model Context Protocol',help:'MCP-Server verbinden.',enable:'MCP aktivieren',enableSub:'Mirox darf Server aufrufen',add:'Server hinzufügen',name:'Server-Name',url:'Server-URL',key:'API-Schlüssel',addBtn:'Hinzufügen',connected:'Verbundene Server',empty:'Keine MCP-Server.'},
-        lang:{response:'Bevorzugte Antwortsprache',responseHelp:'Mirox antwortet in dieser Sprache.',auto:'Automatisch',ui:'Oberflächensprache',uiHelp:'Sprache von Knöpfen — sofort wirksam.',comments:'Code-Kommentare',translateComments:'Kommentare übersetzen',translateCommentsSub:'In bevorzugter Sprache'},
-        alerts:{title:'Benachrichtigungen',desktop:'Desktop',desktopSub:'Benachrichtigung bei Antwort',sound:'Ton',soundSub:'Sanfter Ton',bonus:'Bonus-Erinnerungen',bonusSub:'Erinnern vor Ablauf',test:'Test',testSub:'Test senden',testBtn:'Test'},
-        data:{chats:'Chats',export:'Exportieren',import:'Importieren',clearChats:'Alle löschen',local:'Lokale Daten',reset:'Zurücksetzen'},
-        dev:{console:'Entwicklerkonsole',open:'Konsole öffnen',diag:'Diagnose',verbose:'Logging',verboseSub:'API-Anfragen loggen',copyDiag:'Kopieren',guest:'Gast-ID',guestSub:'Geräte-ID',reset:'Zurücksetzen'},
-      },
-      toast:{bonusAdded:'Bonus-Token + Pro/Ultra/Eclipse für',days:'Tage!',shared:'Share erkannt!',sharedOk:'Share bestätigt!',cancelled:'Abgebrochen.',noShare:'Kein Share.',bonusActive:'Bonus aktiv!',bonusExpired:'Abgelaufen — Luna!',signedIn:'Willkommen',signedOut:'Abgemeldet',langChanged:'Sprache aktualisiert',respLangChanged:'Antwortsprache',personaSaved:'Gespeichert',personaCleared:'Gelöscht',presetApplied:'Angewendet',serverAdded:'Hinzugefügt',serverRemoved:'Entfernt',chatsExported:'Exportiert',chatsImported:'Importiert',chatsCleared:'Gelöscht',resetAll:'Alles gelöscht…',guestReset:'Zurückgesetzt',copied:'Kopiert',testSent:'Test gesendet',shareUnlock:'Teilen zum Freischalten',upgrade:'Upgrade nötig',noToken:'Token-Limit.',bridgeConnected:'Verbunden',bridgeNotReachable:'Nicht erreichbar'},
-    },
-    es: {
-      brand:'MiroxAI', newChat:'Nuevo chat', newChatTitle:'Nuevo chat',
-      tab:{chats:'Chats',bridge:'Bridge',images:'Imágenes'},
-      searchChats:'Buscar…', noChats:'Sin conversaciones', noImages:'Sin imágenes.',
-      guestMode:'Modo invitado', signInHint:'Inicia sesión para guardar',
-      settings:'Ajustes', support:'Soporte', developers:'Desarrolladores', madeBy:'Hecho por OpenSurr',
-      welcomeTitle:'Hola, soy Mirox',
-      welcomeSub:'Luna y Gen son ilimitados y gratuitos. Comparte para desbloquear <strong>Pro, Ultra y Eclipse</strong> gratis 7 días.',
-      suggest:{lua:'Escribe un script Lua',html:'Muestra una tabla HTML',image:'Genera una imagen',explain:'Explica un concepto'},
-      tools:{search:'Buscar',lumenal:'Lumenal',bridge:'Bridge',plans:'Planes',help:'Ayuda'},
-      composerPlaceholder:'¿Cómo puedo ayudarte hoy?',
-      composerNote:'Mirox comete errores — verifica información importante.',
-      latest:'Recientes', send:'Enviar', stop:'Detener', close:'Cerrar', skip:'Saltar',
-      openMenu:'Abrir menú', plans:'Planes', tokenBudget:'Presupuesto', scrollLatest:'Ir al último',
-      attachFiles:'Adjuntar archivos', removeAttach:'Quitar adjuntos',
-      loading:{waking:'Despertando a Luna…'},
-      share:{title:'Comparte nuestra web, obtén 50k tokens',sub:'Obtén <strong>50k tokens por 1 semana</strong> y desbloquea <strong>Pro, Ultra y Eclipse</strong> gratis.',perk1:'50,000 tokens',perk2:'Válido por 7 días',perk3:'Pro · Ultra · Eclipse desbloqueados',now:'Compartir ahora',ignore:'Ignorar',hint:'Verificamos los compartidos con la hoja nativa.'},
-      login:{title:'Iniciar sesión',sub:'Inicia con Google, Apple o email.',loginment:'Continuar con Loginment',orDemo:'o inicio rápido',name:'Nombre',email:'Email',continue:'Continuar'},
-      bridge:{title:'Bridge',disconnected:'Desconectado',connected:'Conectado',sideHint:'Da a Mirox control directo de tu portátil.',openWorkspace:'Abrir espacio Bridge',download:'Descargar cliente',panel:'Panel',autoRun:'Auto-Run',showCode:'Mostrar código',preview:'Vista previa',stop:'Detener',clearChat:'Limpiar chat',starting:'Iniciando…',emptyTitle:'Espacio Bridge',emptyBody:'Dile a Mirox qué construir.',inputPlaceholder:'ej. Crea una calculadora',connection:'Conexión',name:'Nombre',namePlaceholder:'Mi portátil',port:'Puerto',connect:'Conectar',disconnect:'Desconectar',phoneDevices:'Teléfono y dispositivos',kdeChecking:'KDE Connect: comprobando…',scanDevices:'Escanear dispositivos',build:'Construir',noProject:'Sin proyecto',openPreview:'Abrir vista previa',copyPath:'Copiar ruta',sudo:'Sudo',noPassword:'Sin contraseña',forgetPassword:'Olvidar contraseña',quickActions:'Acciones rápidas',quick:{calc:'Calculadora',landing:'Landing',snake:'Snake',todo:'Todo app',portfolio:'Portafolio',scan:'Escanear'},livePreview:'Vista previa',loadPath:'Cargar ruta',reload:'Recargar'},
-      kde:{title:'KDE Connect · Dispositivos',subtitle:'Elige un dispositivo',hint:'Los dispositivos están en la misma Wi-Fi.',rescan:'Reescanear',skip:'Saltar'},
-      planner:{title:'Mirox Planner',subtitle:'Elige un diseño',hint:'Demos en vivo.',auto:'Que Mirox decida',choose:'Elegir'},
-      sudo:{title:'Contraseña requerida',sub:'Mirox necesita acceso root.',password:'Tu contraseña sudo',showHide:'Mostrar / ocultar',remember:'Recordar en esta sesión',run:'Ejecutar con sudo'},
-      bq:{title:'Mirox necesita tu aporte',customPlaceholder:'O escribe tu respuesta…',custom:'Personalizado',submit:'Enviar y continuar'},
-      plans:{title:'Planes',sub:'Luna y Gen son gratis e ilimitados.'},
-      lumenal:{title:'Lumenal 1.0',sub:'Generación fuerte de imágenes.',prompt:'Describe la imagen que quieres…',generate:'Generar'},
-      support:{title:'Contactar soporte',subject:'Asunto',message:'Mensaje',submit:'Enviar'},
-      iv:{title:'Imagen generada',download:'Descargar'},
-      settingsT:{tab:{general:'General',appearance:'Apariencia',persona:'Persona',mcp:'MCP',language:'Idioma',alerts:'Alertas',data:'Datos',dev:'Dev'},
-        title:'Ajustes',account:'Cuenta',accountSub:'Chats guardados localmente',signIn:'Iniciar sesión',signOut:'Salir',
-        rewards:'Recompensas',shareEarn:'Comparte y gana',shareSub:'50k tokens + Pro/Ultra/Eclipse 7 días',shareBtn:'Compartir',
-        behavior:'Comportamiento',autoScroll:'Desplazamiento auto',autoScrollSub:'Seguir mensajes nuevos',enterSend:'Enviar con Enter',enterSendSub:'Shift+Enter para nueva línea',showThinking:'Mostrar razonamiento',showThinkingSub:'Panel de razonamiento',vision:'Visión para imágenes',visionSub:'Enviar imágenes a la IA',compact:'Modo compacto',compactSub:'Espaciado más ajustado',
-        mode:'Modo',mode2:{light:'Claro',dark:'Oscuro',auto:'Auto'},accent:'Color de acento',fontSize:'Tamaño de fuente',font2:{sm:'Pequeño',md:'Medio',lg:'Grande'},animations:'Animaciones',reduceMotion:'Reducir movimiento',reduceMotionSub:'Minimizar animaciones',
-        persona:'Carácter personalizado',personaHelp:'Describe cómo comportarse.',personaPlaceholder:'ej. profesor paciente…',personaSave:'Guardar',personaClear:'Limpiar',personaPresets:'Personalidades',preset:{casual:'Casual',engineer:'Ingeniero',teacher:'Profesor',writer:'Escritor',philosopher:'Filósofo'},
-        mcp:{title:'MCP',help:'Conecta servidores MCP.',enable:'Activar MCP',enableSub:'Permitir llamadas',add:'Añadir servidor',name:'Nombre',url:'URL',key:'Clave API',addBtn:'Añadir',connected:'Conectados',empty:'Sin servidores.'},
-        lang:{response:'Idioma de respuesta',responseHelp:'Mirox responderá en este idioma.',auto:'Detectar',ui:'Idioma de interfaz',uiHelp:'Idioma de botones.',comments:'Comentarios',translateComments:'Traducir comentarios',translateCommentsSub:'En idioma preferido'},
-        alerts:{title:'Notificaciones',desktop:'Notificaciones',desktopSub:'Notificar al acabar',sound:'Sonido',soundSub:'Timbre suave',bonus:'Recordatorios',bonusSub:'Aviso antes de expirar',test:'Test',testSub:'Enviar test',testBtn:'Probar'},
-        data:{chats:'Chats',export:'Exportar',import:'Importar',clearChats:'Borrar',local:'Datos locales',reset:'Restablecer'},
-        dev:{console:'Consola dev',open:'Abrir consola',diag:'Diagnóstico',verbose:'Registro',verboseSub:'Registrar API',copyDiag:'Copiar',guest:'Invitado',guestSub:'ID del dispositivo',reset:'Restablecer'},
-      },
-      toast:{bonusAdded:'tokens + Pro/Ultra/Eclipse por',days:'días!',shared:'¡Compartido!',sharedOk:'¡Confirmado!',cancelled:'Cancelado.',noShare:'No detectado.',bonusActive:'¡Bono activo!',bonusExpired:'Expirado — Luna!',signedIn:'Bienvenido',signedOut:'Sesión cerrada',langChanged:'Idioma actualizado',respLangChanged:'Idioma respuesta',personaSaved:'Guardado',personaCleared:'Limpiado',presetApplied:'Aplicado',serverAdded:'Añadido',serverRemoved:'Eliminado',chatsExported:'Exportado',chatsImported:'Importado',chatsCleared:'Borrado',resetAll:'Todo borrado…',guestReset:'Restablecido',copied:'Copiado',testSent:'Enviado',shareUnlock:'Comparte para desbloquear',upgrade:'Actualiza',noToken:'Límite.',bridgeConnected:'Conectado',bridgeNotReachable:'Inalcanzable'},
-    },
-    'es-MX': {
-      brand:'MiroxAI', newChat:'Nuevo chat', newChatTitle:'Nuevo chat',
-      tab:{chats:'Chats',bridge:'Bridge',images:'Imágenes'},
-      searchChats:'Buscar…', noChats:'Sin conversaciones', noImages:'Sin imágenes.',
-      guestMode:'Modo invitado', signInHint:'Inicia sesión para guardar',
-      settings:'Ajustes', support:'Soporte', developers:'Desarrolladores', madeBy:'Hecho por OpenSurr',
-      welcomeTitle:'¡Hola, soy Mirox!',
-      welcomeSub:'Luna y Gen son ilimitados y gratis. Comparte para desbloquear <strong>Pro, Ultra y Eclipse</strong> gratis 7 días.',
-      suggest:{lua:'Escribe un script Lua',html:'Muestra una tabla HTML',image:'Genera una imagen',explain:'Explica un concepto'},
-      tools:{search:'Buscar',lumenal:'Lumenal',bridge:'Bridge',plans:'Planes',help:'Ayuda'},
-      composerPlaceholder:'¿Cómo te ayudo hoy?',
-      composerNote:'Mirox comete errores — verifica la info.',
-      latest:'Recientes', send:'Enviar', stop:'Parar', close:'Cerrar', skip:'Saltar',
-      openMenu:'Abrir menú', plans:'Planes', tokenBudget:'Presupuesto', scrollLatest:'Ir al último',
-      attachFiles:'Adjuntar', removeAttach:'Quitar',
-      loading:{waking:'Despertando a Luna…'},
-    },
-    fr: {
-      brand:'MiroxAI', newChat:'Nouveau chat', newChatTitle:'Nouveau chat',
-      tab:{chats:'Chats',bridge:'Bridge',images:'Images'},
-      searchChats:'Rechercher…', noChats:'Aucune conversation', noImages:'Aucune image.',
-      guestMode:'Mode invité', signInHint:'Connectez-vous pour enregistrer',
-      settings:'Paramètres', support:'Support', developers:'Développeurs', madeBy:'Par OpenSurr',
-      welcomeTitle:'Salut, je suis Mirox',
-      welcomeSub:'Luna et Gen sont illimités et gratuits. Partagez pour débloquer <strong>Pro, Ultra &amp; Eclipse</strong> 7 jours gratuitement.',
-      suggest:{lua:'Écrire un script Lua',html:'Montrer un tableau HTML',image:'Générer une image',explain:'Expliquer un concept'},
-      tools:{search:'Recherche',lumenal:'Lumenal',bridge:'Bridge',plans:'Forfaits',help:'Aide'},
-      composerPlaceholder:'Comment puis-je vous aider ?',
-      composerNote:'Mirox peut se tromper — vérifiez les infos.',
-      latest:'Récent', send:'Envoyer', stop:'Arrêter', close:'Fermer', skip:'Passer',
-      openMenu:'Ouvrir le menu', plans:'Forfaits', tokenBudget:'Budget tokens', scrollLatest:'Aller au dernier',
-      attachFiles:'Joindre', removeAttach:'Retirer',
-      loading:{waking:'Réveil de Luna…'},
-    },
-    ar: { welcomeTitle:'مرحباً، أنا Mirox', newChat:'محادثة جديدة', settings:'الإعدادات', support:'الدعم', developers:'المطورون', guestMode:'وضع الضيف', signInHint:'سجّل الدخول', composerPlaceholder:'كيف أساعدك اليوم؟', send:'إرسال', close:'إغلاق', plans:'الخطط', madeBy:'صنع بواسطة OpenSurr', tab:{chats:'الدردشات',bridge:'Bridge',images:'الصور'}, noChats:'لا توجد محادثات', noImages:'لا توجد صور.', welcomeSub:'Luna و Gen غير محدودين ومجانيان. شارك لفتح <strong>Pro و Ultra و Eclipse</strong> مجاناً لمدة 7 أيام.' },
-    'zh-CN': { welcomeTitle:'你好，我是 Mirox', newChat:'新对话', settings:'设置', support:'支持', developers:'开发者', guestMode:'访客模式', signInHint:'登录以保存对话', composerPlaceholder:'今天我能帮您什么？', send:'发送', close:'关闭', plans:'方案', madeBy:'由 OpenSurr 制作', tab:{chats:'对话',bridge:'Bridge',images:'图片'}, noChats:'尚无对话', noImages:'尚无图片。', welcomeSub:'Luna 和 Gen 无限且免费。分享即可免费解锁 <strong>Pro、Ultra 和 Eclipse</strong> 7 天。' },
-    ja: { welcomeTitle:'こんにちは、Miroxです', newChat:'新しいチャット', settings:'設定', support:'サポート', developers:'開発者', guestMode:'ゲストモード', signInHint:'サインインして保存', composerPlaceholder:'今日は何をお手伝いしましょうか？', send:'送信', close:'閉じる', plans:'プラン', madeBy:'OpenSurr 製', tab:{chats:'チャット',bridge:'Bridge',images:'画像'}, noChats:'まだ会話がありません', noImages:'まだ画像がありません。', welcomeSub:'Luna と Gen は無制限で無料です。シェアして <strong>Pro、Ultra、Eclipse</strong> を 7 日間無料で解除。' },
-    ru: { welcomeTitle:'Привет, я Mirox', newChat:'Новый чат', settings:'Настройки', support:'Поддержка', developers:'Разработчикам', guestMode:'Гостевой режим', signInHint:'Войдите для сохранения', composerPlaceholder:'Чем помочь сегодня?', send:'Отправить', close:'Закрыть', plans:'Тарифы', madeBy:'Сделано OpenSurr', tab:{chats:'Чаты',bridge:'Bridge',images:'Изображения'}, noChats:'Пока нет чатов', noImages:'Пока нет изображений.', welcomeSub:'Luna и Gen безлимитные и бесплатные. Поделитесь, чтобы разблокировать <strong>Pro, Ultra и Eclipse</strong> на 7 дней.' },
-    tr: { welcomeTitle:'Merhaba, ben Mirox', newChat:'Yeni sohbet', settings:'Ayarlar', support:'Destek', developers:'Geliştiriciler', guestMode:'Misafir modu', signInHint:'Kaydetmek için giriş yapın', composerPlaceholder:'Bugün nasıl yardımcı olabilirim?', send:'Gönder', close:'Kapat', plans:'Planlar', madeBy:'OpenSurr yapımı', tab:{chats:'Sohbetler',bridge:'Bridge',images:'Görseller'}, noChats:'Henüz sohbet yok', noImages:'Henüz görsel yok.', welcomeSub:'Luna ve Gen sınırsız ve ücretsiz. <strong>Pro, Ultra ve Eclipse</strong> için 7 gün ücretsiz paylaşın.' },
-    hi: { welcomeTitle:'नमस्ते, मैं Mirox हूँ', newChat:'नया चैट', settings:'सेटिंग्स', support:'समर्थन', developers:'डेवलपर्स', guestMode:'अतिथि मोड', signInHint:'साइन इन करें', composerPlaceholder:'आज कैसे मदद करूँ?', send:'भेजें', close:'बंद करें', plans:'योजनाएँ', madeBy:'OpenSurr द्वारा', tab:{chats:'चैट',bridge:'Bridge',images:'छवियाँ'}, noChats:'अभी कोई चैट नहीं', noImages:'अभी कोई छवि नहीं।', welcomeSub:'Luna और Gen असीमित और मुफ्त हैं। <strong>Pro, Ultra और Eclipse</strong> के लिए 7 दिनों के लिए मुफ्त साझा करें।' },
-    ur: { welcomeTitle:'ہیلو، میں Mirox ہوں', newChat:'نئی چیٹ', settings:'ترتیبات', support:'معاونت', developers:'ڈویلپرز', guestMode:'مہمان موڈ', signInHint:'سائن ان کریں', composerPlaceholder:'آج کیسے مدد کر سکتا ہوں؟', send:'بھیجیں', close:'بند کریں', plans:'پلانز', madeBy:'OpenSurr کی طرف سے', tab:{chats:'چیٹس',bridge:'Bridge',images:'تصاویر'}, noChats:'ابھی کوئی چیٹ نہیں', noImages:'ابھی کوئی تصویر نہیں۔', welcomeSub:'Luna اور Gen لامحدود اور مفت ہیں۔ <strong>Pro، Ultra اور Eclipse</strong> کے لیے 7 دن کے لیے مفت شیئر کریں۔' },
-  };
+  /* ═══════════════════════════════════════════════════════════
+     i18n — uses MyMemory API (free, no key) with localStorage cache
+     English strings live in the HTML. On language switch we translate
+     each English source text and cache the result forever.
+     ═══════════════════════════════════════════════════════════ */
 
-  // Deep-merge es-MX on top of es so any missing key falls back
-  function deepMerge(base, override) {
-    const out = Object.assign({}, base);
-    for (const k of Object.keys(override || {})) {
-      const bv = base ? base[k] : undefined;
-      const ov = override[k];
-      if (bv && typeof bv === 'object' && !Array.isArray(bv) && ov && typeof ov === 'object' && !Array.isArray(ov)) {
-        out[k] = deepMerge(bv, ov);
-      } else {
-        out[k] = ov;
-      }
-    }
-    return out;
-  }
-  TRANSLATIONS['es-MX'] = deepMerge(TRANSLATIONS.es, TRANSLATIONS['es-MX'] || {});
-
+  const I18N_CACHE_KEY = 'miroxai_i18n_cache_v1';
   const RTL_LANGS = ['fa','ps','ar','he','ur'];
+  const TRANSLATE_CONCURRENCY = 3; // max parallel API calls
 
-  // SAFE t(): always returns a string, never an object
-  function t(key, fallback) {
-    if (!key) return fallback != null ? String(fallback) : '';
-    const lang = (__prefs && __prefs.uiLanguage) || 'en';
-    const parts = String(key).split('.');
-    const fromLang = (TRANSLATIONS[lang] || TRANSLATIONS.en);
-    const fromEn = TRANSLATIONS.en;
-    const dig = (obj) => {
-      let v = obj;
-      for (const p of parts) {
-        if (v == null || typeof v !== 'object') return undefined;
-        v = v[p];
-      }
-      return v;
-    };
-    let val = dig(fromLang);
-    if (val === undefined || val === null) val = dig(fromEn);
-    if (val === undefined || val === null) val = fallback;
-    // Guard: never return objects/arrays as "[object Object]"
-    if (val == null) return '';
-    if (typeof val === 'object') {
-      // If we accidentally resolved a nested object, return the fallback
-      return fallback != null ? String(fallback) : '';
-    }
-    return String(val);
+  let __i18nCache = {};
+  let __translationQueue = [];
+  let __translating = false;
+  let __translationStatusEl = null;
+
+  function loadI18nCache() {
+    try { __i18nCache = JSON.parse(localStorage.getItem(I18N_CACHE_KEY) || '{}') || {}; } catch { __i18nCache = {}; }
   }
-  window.__t = t;
+  function saveI18nCache() {
+    try { localStorage.setItem(I18N_CACHE_KEY, JSON.stringify(__i18nCache)); } catch {}
+  }
+  function setTranslateStatus(text, cls) {
+    if (!__translationStatusEl) __translationStatusEl = document.getElementById('translateStatus');
+    if (!__translationStatusEl) return;
+    __translationStatusEl.textContent = text || '';
+    __translationStatusEl.className = 'translate-status' + (cls ? ' ' + cls : '');
+  }
 
+  // Fetch translation for a single string from cache or API
+  async function translateString(text, targetLang) {
+    if (!text || !targetLang || targetLang === 'en') return text;
+    const key = targetLang + ':' + text;
+    if (__i18nCache[key]) return __i18nCache[key];
+    // MyMemory doesn't like very long strings — split at 400 chars
+    const chunk = text.length > 400 ? text.slice(0, 400) : text;
+    try {
+      const url = 'https://api.mymemory.translated.net/get?q=' + encodeURIComponent(chunk) + '&langpair=en|' + encodeURIComponent(targetLang);
+      const r = await fetch(url, { method: 'GET' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      const out = (d && d.responseData && d.responseData.translatedText) || chunk;
+      // MyMemory sometimes returns the query echo or quotes — clean up
+      let clean = String(out).trim();
+      if (clean.startsWith('"') && clean.endsWith('"')) clean = clean.slice(1, -1);
+      __i18nCache[key] = clean;
+      saveI18nCache();
+      return clean;
+    } catch (e) {
+      // On failure, fall back to English and don't cache (so we retry next time)
+      return text;
+    }
+  }
+
+  // Queue system: 3 parallel workers pull from the queue
+  function enqueueTranslation(element, sourceText, targetLang, mode) {
+    __translationQueue.push({ element, sourceText, targetLang, mode });
+    processQueue();
+  }
+  async function processQueue() {
+    if (__translating) return;
+    if (!__translationQueue.length) { setTranslateStatus(''); return; }
+    __translating = true;
+    const total = __translationQueue.length;
+    let done = 0;
+    setTranslateStatus('Translating… (0/' + total + ')');
+    while (__translationQueue.length) {
+      const batch = __translationQueue.splice(0, TRANSLATE_CONCURRENCY);
+      const results = await Promise.all(batch.map((job) => translateString(job.sourceText, job.targetLang)));
+      results.forEach((translated, i) => {
+        const job = batch[i];
+        if (!job.element || !job.element.isConnected) return;
+        if (typeof translated !== 'string' || !translated) return;
+        if (job.mode === 'text') {
+          // Preserve any nested icon children: only replace if the element has no child elements
+          if (job.element.children.length === 0) job.element.textContent = translated;
+          else {
+            // Find first text node and replace
+            for (const node of job.element.childNodes) {
+              if (node.nodeType === 3 && node.textContent.trim()) { node.textContent = translated; break; }
+            }
+          }
+        } else if (job.mode === 'placeholder') {
+          job.element.placeholder = translated;
+        } else if (job.mode === 'title') {
+          job.element.title = translated;
+        } else if (job.mode === 'html') {
+          job.element.innerHTML = translated;
+        }
+      });
+      done += batch.length;
+      setTranslateStatus('Translating… (' + Math.min(done, total) + '/' + total + ')');
+    }
+    __translating = false;
+    setTranslateStatus(''); // done
+  }
+
+  // Apply translations: iterate all data-i18n elements
   function applyTranslations() {
     const lang = (__prefs && __prefs.uiLanguage) || 'en';
     const isRtl = RTL_LANGS.includes(lang);
-    // Set the language attribute only — DO NOT set dir=rtl on the whole document
     document.documentElement.lang = lang;
-    // Store RTL hint as a data attribute so we can style only text content, not the whole layout
     document.documentElement.setAttribute('data-dir', isRtl ? 'rtl' : 'ltr');
 
-    // TEXT
+    // For each translatable element, first capture the English source ONCE
     document.querySelectorAll('[data-i18n]').forEach((el) => {
-      const key = el.dataset.i18n;
-      if (!key) return;
-      const fallback = el.textContent;
-      const txt = t(key, fallback);
-      if (typeof txt === 'string' && txt !== '') el.textContent = txt;
+      if (!el.dataset.i18nEn) {
+        // Store the source English only the first time
+        let src = '';
+        if (el.children.length === 0) src = el.textContent;
+        else {
+          for (const node of el.childNodes) {
+            if (node.nodeType === 3 && node.textContent.trim()) { src = node.textContent.trim(); break; }
+          }
+          if (!src) src = el.textContent;
+        }
+        el.dataset.i18nEn = src;
+      }
+      const src = el.dataset.i18nEn;
+      if (!src) return;
+      if (lang === 'en') {
+        // Restore English
+        if (el.children.length === 0) el.textContent = src;
+        else {
+          for (const node of el.childNodes) {
+            if (node.nodeType === 3 && node.textContent.trim()) { node.textContent = src; break; }
+          }
+        }
+        return;
+      }
+      // Look up cache first for instant update
+      const cacheKey = lang + ':' + src;
+      if (__i18nCache[cacheKey]) {
+        if (el.children.length === 0) el.textContent = __i18nCache[cacheKey];
+        else {
+          for (const node of el.childNodes) {
+            if (node.nodeType === 3 && node.textContent.trim()) { node.textContent = __i18nCache[cacheKey]; break; }
+          }
+        }
+      } else {
+        enqueueTranslation(el, src, lang, 'text');
+      }
     });
-    // HTML
+
     document.querySelectorAll('[data-i18n-html]').forEach((el) => {
-      const key = el.dataset.i18nHtml;
-      if (!key) return;
-      const txt = t(key, null);
-      if (typeof txt === 'string' && txt) el.innerHTML = txt;
+      if (!el.dataset.i18nHtmlEn) el.dataset.i18nHtmlEn = el.innerHTML;
+      const srcHtml = el.dataset.i18nHtmlEn;
+      if (!srcHtml) return;
+      // For HTML strings, translate the plain-text portion only
+      const tmp = document.createElement('div');
+      tmp.innerHTML = srcHtml;
+      const plain = tmp.textContent.trim();
+      if (lang === 'en') { el.innerHTML = srcHtml; return; }
+      const cacheKey = lang + ':html:' + plain;
+      if (__i18nCache[cacheKey]) {
+        // Rebuild with translated plain text but keep any <strong>/<code> highlights as-is
+        // Simplest: replace whole HTML with translated text
+        el.textContent = __i18nCache[cacheKey];
+      } else {
+        enqueueTranslation(el, plain, lang, 'html');
+      }
     });
-    // PLACEHOLDER
+
     document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
-      const key = el.dataset.i18nPlaceholder;
-      if (!key) return;
-      const txt = t(key, el.placeholder);
-      if (typeof txt === 'string' && txt) el.placeholder = txt;
+      if (!el.dataset.i18nPhEn) el.dataset.i18nPhEn = el.placeholder || '';
+      const src = el.dataset.i18nPhEn;
+      if (!src) return;
+      if (lang === 'en') { el.placeholder = src; return; }
+      const cacheKey = lang + ':ph:' + src;
+      if (__i18nCache[cacheKey]) el.placeholder = __i18nCache[cacheKey];
+      else enqueueTranslation(el, src, lang, 'placeholder');
     });
-    // TITLE
+
     document.querySelectorAll('[data-i18n-title]').forEach((el) => {
-      const key = el.dataset.i18nTitle;
-      if (!key) return;
-      const txt = t(key, el.title);
-      if (typeof txt === 'string' && txt) el.title = txt;
+      if (!el.dataset.i18nTitleEn) el.dataset.i18nTitleEn = el.title || '';
+      const src = el.dataset.i18nTitleEn;
+      if (!src) return;
+      if (lang === 'en') { el.title = src; return; }
+      const cacheKey = lang + ':title:' + src;
+      if (__i18nCache[cacheKey]) el.title = __i18nCache[cacheKey];
+      else enqueueTranslation(el, src, lang, 'title');
     });
-    // Update dynamic pieces
-    try { updateTokenUsage(); } catch {}
-    try { renderModelPicker(); } catch {}
-    try { renderHistory(); } catch {}
-    try { if (typeof renderMcpList === 'function') renderMcpList(); } catch {}
   }
 
   /* ═══════════ Loader ═══════════ */
@@ -370,17 +213,15 @@
     { id: 'mirox-eclipse-2.0', label: 'Eclipse', tier: 'ultimate', tagline: 'Most powerful', icon: 'ri-sun-fill' },
   ];
   const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
-  const LS_KEY = 'miroxai_conversations_v37';
+  const LS_KEY = 'miroxai_conversations_v38';
   const TOKEN_KEY = 'mirox_token';
   const GUEST_KEY = 'miroxai_guest_id_v1';
-  const APPEARANCE_KEY = 'miroxai_appearance_v37';
-  const SHARE_KEY = 'miroxai_share_v8';
-  const BONUS_KEY = 'miroxai_bonus_v8';
-  const PREFS_KEY = 'miroxai_prefs_v4';
-  const MCP_KEY = 'miroxai_mcp_v4';
+  const APPEARANCE_KEY = 'miroxai_appearance_v38';
+  const SHARE_KEY = 'miroxai_share_v9';
+  const BONUS_KEY = 'miroxai_bonus_v9';
+  const PREFS_KEY = 'miroxai_prefs_v5';
   const BRIDGE_KEY = 'miroxai_bridge_v1';
   const BRIDGE_OPTS_KEY = 'miroxai_bridge_opts_v1';
-  const KDE_DEVICE_KEY = 'miroxai_kde_device_v1';
   const PASTE_ATTACH_THRESHOLD = 1024;
   const NET_TIMEOUT_MS = 15000;
   const STREAM_TIMEOUT_MS = 120000;
@@ -392,7 +233,6 @@
   const MAX_BRIDGE_ITER = 200;
   const MAX_AUTO_CONTINUES = 100;
   const MAX_DUP_COMMANDS = 40;
-  const AUTO_CONTINUE_DELAY_MS = 900;
 
   let __config = null, __user = null, __tier = 'free', __model = 'mirox-luna-1.2';
   let currentConversationId = null, isReplying = false;
@@ -405,15 +245,11 @@
   let __bonusTimer = null;
   let __lastBonusActive = false;
   let __prefs = {};
-  let __mcpServers = [];
   let __bridge = { name: 'My Laptop', port: 8765, connected: false, baseUrl: null, env: null };
   let bridgeRunning = false, bridgeAbort = false, bridgeConversation = [], bridgeProgress = 0;
   let bridgeTurn = null, bridgeTaskComplete = true, bridgeWaitingForUser = false;
-  let __lastBuildFolder = null, __lastBuildWasMobile = false, __lastPreviewFile = null;
+  let __lastBuildFolder = null, __lastPreviewFile = null;
   let __sudoPassword = '', __sudoRemember = false, __sudoResolver = null;
-  let __kdeDevices = [], __kdeCurrentDevice = null, __kdeResolver = null, __kdeAvailable = false;
-  let __bqResolver = null, __bqSelected = null;
-  let __plannerResolver = null;
   let __bridgeAutoRun = true, __bridgeShowCode = false;
 
   const uid = () => 'c_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
@@ -433,24 +269,16 @@
     }
     return id;
   }
-  function resetGuestId() {
-    const id = 'g_' + Math.random().toString(36).slice(2, 14) + Date.now().toString(36).slice(-6);
-    try { localStorage.setItem(GUEST_KEY, id); } catch {}
-    return id;
-  }
   function bonusProofHeaders() {
     const b = loadBonusRaw();
     if (!b || !isBonusValid(b)) return {};
-    return { 'X-Mirox-Guest': getGuestId(), 'X-Mirox-Bonus-Tokens': String(b.tokens), 'X-Mirox-Bonus-Expires': String(b.expiresAt), 'X-Mirox-Bonus-Granted': String(b.grantedAt || 0) };
+    return { 'X-Mirox-Guest': getGuestId(), 'X-Mirox-Bonus-Tokens': String(b.tokens), 'X-Mirox-Bonus-Expires': String(b.expiresAt) };
   }
   function authHeaders(extra) {
     const h = { 'Content-Type': 'application/json', ...(extra || {}) };
-    const tk = getToken();
-    if (tk) h.Authorization = 'Bearer ' + tk;
+    const tk = getToken(); if (tk) h.Authorization = 'Bearer ' + tk;
     Object.assign(h, bonusProofHeaders());
     if (__prefs.responseLanguage && __prefs.responseLanguage !== 'auto') h['X-Mirox-Lang'] = __prefs.responseLanguage;
-    if (__prefs.translateComments) h['X-Mirox-Translate-Comments'] = '1';
-    if (__prefs.persona) h['X-Mirox-Persona'] = encodeURIComponent(__prefs.persona.slice(0, 500));
     return h;
   }
   async function netFetch(url, opts = {}, ms = NET_TIMEOUT_MS) {
@@ -470,57 +298,41 @@
   }
 
   /* ═══════════ BONUS ═══════════ */
-  function loadBonusRaw() { const b = safeGet(BONUS_KEY, null); if (!b || typeof b !== 'object') return null; return b; }
+  function loadBonusRaw() { const b = safeGet(BONUS_KEY, null); return (b && typeof b === 'object') ? b : null; }
   function saveBonusRaw(b) { b ? safeSet(BONUS_KEY, b) : safeRemove(BONUS_KEY); }
   function isBonusValid(b) {
     if (!b) return false;
     const tokens = parseInt(b.tokens, 10) || 0;
     const expiresAt = parseInt(b.expiresAt, 10) || 0;
-    if (tokens <= 0 || expiresAt <= 0) return false;
-    return Date.now() < expiresAt;
+    return tokens > 0 && expiresAt > 0 && Date.now() < expiresAt;
   }
   function getActiveBonus() {
     const b = loadBonusRaw();
     if (!b) return 0;
-    if (!isBonusValid(b)) {
-      saveBonusRaw(null);
-      if (__shareState.claimed) { __shareState.claimed = false; saveShareState(); }
-      return 0;
-    }
+    if (!isBonusValid(b)) { saveBonusRaw(null); if (__shareState.claimed) { __shareState.claimed = false; saveShareState(); } return 0; }
     return b.tokens;
   }
-  function getBonusExpiryMs() { const b = loadBonusRaw(); if (!isBonusValid(b)) return 0; return b.expiresAt - Date.now(); }
+  function getBonusExpiryMs() { const b = loadBonusRaw(); return isBonusValid(b) ? b.expiresAt - Date.now() : 0; }
   function isBonusActive() { return getActiveBonus() > 0; }
   function grantLocalBonus(tokens) {
-    const prev = loadBonusRaw();
-    const now = Date.now();
+    const prev = loadBonusRaw(); const now = Date.now();
     let newTokens, newExpiry;
     if (isBonusValid(prev)) { newTokens = (prev.tokens || 0) + tokens; newExpiry = Math.max(prev.expiresAt, now + BONUS_MS); }
     else { newTokens = tokens; newExpiry = now + BONUS_MS; }
     const bonus = { tokens: newTokens, expiresAt: newExpiry, grantedAt: now, guest: getGuestId() };
-    saveBonusRaw(bonus);
-    return bonus;
+    saveBonusRaw(bonus); return bonus;
   }
   function getFreeLimit() { return BASE_FREE_LIMIT + getActiveBonus(); }
   function formatBonusRemaining() {
-    const ms = getBonusExpiryMs();
-    if (ms <= 0) return '';
-    const days = Math.floor(ms / 86400000);
-    const hours = Math.floor((ms % 86400000) / 3600000);
+    const ms = getBonusExpiryMs(); if (ms <= 0) return '';
+    const days = Math.floor(ms / 86400000), hours = Math.floor((ms % 86400000) / 3600000);
     if (days >= 1) return days + 'd';
     if (hours >= 1) return hours + 'h';
-    const mins = Math.max(1, Math.floor(ms / 60000));
-    return mins + 'm';
+    return Math.max(1, Math.floor(ms / 60000)) + 'm';
   }
 
   /* ═══════════ PREFS ═══════════ */
-  const DEFAULT_PREFS = {
-    autoScroll: true, enterSend: true, showThinking: true, vision: true, compact: false,
-    reduceMotion: false, fontSize: 'md', mode: 'light', theme: 'default',
-    responseLanguage: 'auto', uiLanguage: 'en', translateComments: false,
-    desktopNotify: false, sound: true, bonusReminder: true,
-    verboseLog: false, persona: '', mcpEnabled: false,
-  };
+  const DEFAULT_PREFS = { autoScroll: true, enterSend: true, vision: true, compact: false, reduceMotion: false, fontSize: 'md', mode: 'light', theme: 'default', responseLanguage: 'auto', uiLanguage: 'en' };
   function loadPrefs() {
     __prefs = Object.assign({}, DEFAULT_PREFS, safeGet(PREFS_KEY, {}));
     const app = safeGet(APPEARANCE_KEY, {});
@@ -537,28 +349,19 @@
     const syncChk = (id, val) => { const el = document.getElementById(id); if (el && el.checked !== !!val) el.checked = !!val; };
     syncChk('autoScrollToggle', __prefs.autoScroll);
     syncChk('enterSendToggle', __prefs.enterSend);
-    syncChk('showThinkingToggle', __prefs.showThinking);
     syncChk('visionToggle', __prefs.vision);
     syncChk('compactToggle', __prefs.compact);
     syncChk('reduceMotionToggle', __prefs.reduceMotion);
-    syncChk('desktopNotifyToggle', __prefs.desktopNotify);
-    syncChk('soundToggle', __prefs.sound);
-    syncChk('bonusReminderToggle', __prefs.bonusReminder);
-    syncChk('verboseLogToggle', __prefs.verboseLog);
-    syncChk('translateCommentsToggle', __prefs.translateComments);
-    syncChk('mcpEnableToggle', __prefs.mcpEnabled);
-    const langSel = document.getElementById('languageSelect');
-    if (langSel && langSel.value !== (__prefs.responseLanguage || 'auto')) langSel.value = __prefs.responseLanguage || 'auto';
-    const uiSel = document.getElementById('uiLanguageSelect');
-    if (uiSel && uiSel.value !== (__prefs.uiLanguage || 'en')) uiSel.value = __prefs.uiLanguage || 'en';
     const mode = __prefs.mode || 'light';
     $$('#modeSegmented .seg-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
     const fs = __prefs.fontSize || 'md';
     $$('#fontSizeSegmented .seg-btn').forEach((b) => b.classList.toggle('active', b.dataset.fontsize === fs));
     const theme = __prefs.theme || 'default';
     $$('#accentSwatches .swatch').forEach((b) => b.classList.toggle('active', b.dataset.theme === theme));
-    const pInp = document.getElementById('personaInput');
-    if (pInp && pInp.value !== (__prefs.persona || '')) pInp.value = __prefs.persona || '';
+    const uiSel = document.getElementById('uiLanguageSelect');
+    if (uiSel && uiSel.value !== (__prefs.uiLanguage || 'en')) uiSel.value = __prefs.uiLanguage || 'en';
+    const langSel = document.getElementById('languageSelect');
+    if (langSel && langSel.value !== (__prefs.responseLanguage || 'auto')) langSel.value = __prefs.responseLanguage || 'auto';
   }
   function applyAppearanceFromPrefs() {
     const root = document.documentElement;
@@ -568,182 +371,36 @@
     root.setAttribute('data-theme', __prefs.theme || 'default');
   }
 
-  /* ═══════════ SOUND ═══════════ */
-  let __audioCtx = null;
-  function playChime() {
-    if (!__prefs.sound) return;
-    try {
-      if (!__audioCtx) __audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      const ctx = __audioCtx;
-      if (ctx.state === 'suspended') ctx.resume();
-      const now = ctx.currentTime;
-      const osc = ctx.createOscillator(); const gain = ctx.createGain();
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(880, now);
-      osc.frequency.exponentialRampToValueAtTime(660, now + 0.15);
-      gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(0.15, now + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
-      osc.start(now); osc.stop(now + 0.42);
-    } catch {}
-  }
+  /* ═══════════ BLOB MASCOT with new moods ═══════════ */
+  const MOODS = ['idle','happy','thinking','coding','celebrate','error','learning','wink','study','searching','reading'];
 
-  /* ═══════════ IMAGES ═══════════ */
-  function imageToBase64DataURL(file) {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const rawDataUrl = reader.result;
-        const img = new Image();
-        img.onload = () => {
-          let w = img.naturalWidth, h = img.naturalHeight;
-          if (w > MAX_IMAGE_DIM || h > MAX_IMAGE_DIM) { const ratio = Math.min(MAX_IMAGE_DIM / w, MAX_IMAGE_DIM / h); w = Math.round(w * ratio); h = Math.round(h * ratio); }
-          const c = document.createElement('canvas');
-          c.width = w; c.height = h;
-          c.getContext('2d').drawImage(img, 0, 0, w, h);
-          let outUrl;
-          try {
-            const srcMime = (file.type || 'image/jpeg').toLowerCase();
-            if (srcMime === 'image/png' || srcMime === 'image/webp' || srcMime === 'image/gif') outUrl = c.toDataURL('image/png');
-            else outUrl = c.toDataURL('image/jpeg', 0.88);
-          } catch { outUrl = rawDataUrl; }
-          const base64 = String(outUrl).split(',')[1] || '';
-          const mime = (String(outUrl).split(';')[0].split(':')[1]) || file.type || 'image/jpeg';
-          resolve({ type: 'image', name: file.name, size: file.size, mime, dataUrl: outUrl, base64, width: w, height: h, originalWidth: img.naturalWidth, originalHeight: img.naturalHeight, vision: true });
-        };
-        img.onerror = () => resolve({ type: 'image', name: file.name, size: file.size, mime: file.type || 'image/jpeg', dataUrl: rawDataUrl, base64: String(rawDataUrl).split(',')[1] || '', vision: true });
-        img.src = rawDataUrl;
-      };
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(file);
-    });
-  }
-  function svgToVisionData(file) {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const svgText = String(reader.result);
-        let base64 = '';
-        try { base64 = btoa(unescape(encodeURIComponent(svgText))); } catch {}
-        const dataUrl = 'data:image/svg+xml;base64,' + base64;
-        const img = new Image();
-        const blob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
-        const objUrl = URL.createObjectURL(blob);
-        img.onload = () => {
-          let w = img.naturalWidth || 512, h = img.naturalHeight || 512;
-          if (w > MAX_IMAGE_DIM || h > MAX_IMAGE_DIM) { const ratio = Math.min(MAX_IMAGE_DIM / w, MAX_IMAGE_DIM / h); w = Math.round(w * ratio); h = Math.round(h * ratio); }
-          let pngDataUrl = null;
-          try { const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(img, 0, 0, w, h); pngDataUrl = c.toDataURL('image/png'); } catch {}
-          URL.revokeObjectURL(objUrl);
-          resolve({ type: 'image', name: file.name, size: file.size, mime: 'image/svg+xml', dataUrl, base64, svgText, pngDataUrl, pngBase64: pngDataUrl ? pngDataUrl.split(',')[1] : '', width: w, height: h, vision: true, isSvg: true });
-        };
-        img.onerror = () => { URL.revokeObjectURL(objUrl); resolve({ type: 'image', name: file.name, size: file.size, mime: 'image/svg+xml', dataUrl, base64, svgText, vision: true, isSvg: true }); };
-        img.src = objUrl;
-      };
-      reader.onerror = () => resolve(null);
-      reader.readAsText(file);
-    });
-  }
-  function hasAttachment(name, size) { return pendingFiles.some((f) => f.name === name && f.size === size); }
-  function handleFiles(fileList) {
-    if (!fileList || !fileList.length) return;
-    const arr = [];
-    for (const f of Array.from(fileList)) { if (hasAttachment(f.name, f.size)) continue; arr.push(f); }
-    if (!arr.length) return;
-    let done = 0; const newFiles = [];
-    const finish = () => {
-      newFiles.sort((a, b) => (a.order || 0) - (b.order || 0));
-      for (const nf of newFiles) if (!hasAttachment(nf.name, nf.size)) pendingFiles.push(nf);
-      updatePreview(); updateSendButtonState();
-    };
-    arr.forEach((f, idx) => {
-      const isSvg = f.type === 'image/svg+xml' || /\.svg$/i.test(f.name);
-      const isImg = !isSvg && ((f.type || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(f.name));
-      const one = () => { done++; if (done === arr.length) finish(); };
-      if (isSvg) svgToVisionData(f).then((d) => { if (d) newFiles.push({ ...d, order: idx }); one(); }).catch(one);
-      else if (isImg) imageToBase64DataURL(f).then((d) => { if (d) newFiles.push({ ...d, order: idx }); one(); }).catch(one);
-      else { const r = new FileReader(); r.onload = () => { newFiles.push({ name: f.name, size: f.size, type: 'text', mime: f.type || 'text/plain', content: String(r.result).slice(0, 80000), order: idx }); one(); }; r.onerror = one; r.readAsText(f); }
-    });
-  }
-  function updatePreview() {
-    const p = $('#attachmentPreview'), list = $('#attachmentList');
-    if (!p || !list) return;
-    if (!pendingFiles.length) { p.style.display = 'none'; list.innerHTML = ''; return; }
-    p.style.display = 'flex';
-    list.innerHTML = pendingFiles.map((f) => {
-      if (f.type === 'image' && f.dataUrl) {
-        const dims = f.width && f.height ? `<span class="attach-size">${f.width}×${f.height}</span>` : '';
-        const vision = f.vision ? '<span class="attach-vision"><i class="ri-eye-line"></i> vision</span>' : '';
-        return `<div class="attach-chip attach-chip-image"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name)}${dims}${vision}</div>`;
-      }
-      return `<div class="attach-chip">${fileIconHTML()}${escapeHtml(f.name)}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`;
-    }).join('');
-  }
-  function addTextAttachment(text, name) {
-    const body = String(text).slice(0, 80000);
-    const fname = name || ('pasted-' + new Date().toISOString().slice(11, 19).replace(/:/g, '-') + '.txt');
-    if (pendingFiles.some((f) => f.type === 'text' && f.content === body)) return;
-    pendingFiles.push({ name: fname, size: text.length, type: 'text', mime: 'text/plain', content: body });
-    updatePreview(); updateSendButtonState();
-  }
-
-  /* ═══════════ CONFETTI ═══════════ */
-  function launchConfetti(opts) {
-    if (__prefs.reduceMotion) return;
-    const o = opts || {};
-    const duration = o.duration || 4200;
-    const count = o.count || 200;
-    const canvas = document.createElement('canvas');
-    canvas.className = 'confetti-canvas';
-    document.body.appendChild(canvas);
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const W = window.innerWidth, H = window.innerHeight;
-    canvas.width = W * dpr; canvas.height = H * dpr;
-    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
-    const ctx = canvas.getContext('2d'); ctx.scale(dpr, dpr);
-    const colors = ['#4d6bfe','#7c8aff','#16a34a','#4ade80','#f59e0b','#fbbf24','#ec4899','#f472b6','#06b6d4','#22d3ee','#a855f7','#c084fc','#ef4444','#f87171','#facc15'];
-    const particles = [];
-    const origins = [{ x: W*0.15, y: H*0.25 }, { x: W*0.85, y: H*0.25 }, { x: W*0.5, y: H*0.2 }];
-    for (let i = 0; i < count; i++) {
-      const origin = origins[i % origins.length];
-      const angle = (Math.random() - 0.5) * Math.PI * 1.4 - Math.PI / 2;
-      const speed = 6 + Math.random() * 12;
-      particles.push({ x: origin.x + (Math.random() - 0.5) * 60, y: origin.y + (Math.random() - 0.5) * 40, vx: Math.cos(angle) * speed * (0.7 + Math.random() * 0.6), vy: Math.sin(angle) * speed - 4 - Math.random() * 3, gravity: 0.28 + Math.random() * 0.14, drag: 0.988, size: 6 + Math.random() * 8, color: colors[Math.floor(Math.random() * colors.length)], rotation: Math.random() * Math.PI * 2, rotationSpeed: (Math.random() - 0.5) * 0.34, shape: Math.random() < 0.55 ? 'rect' : (Math.random() < 0.5 ? 'circle' : 'ribbon'), swayAmp: 0.5 + Math.random() * 1.8, swayFreq: 0.02 + Math.random() * 0.03, swayPhase: Math.random() * Math.PI * 2 });
-    }
-    const start = performance.now(); let raf = null, stopped = false;
-    function frame(now) {
-      if (stopped) return;
-      const tt = (now - start) / duration;
-      ctx.clearRect(0, 0, W, H);
-      const fadeStart = 0.7;
-      ctx.globalAlpha = tt > fadeStart ? Math.max(0, 1 - (tt - fadeStart) / (1 - fadeStart)) : 1;
-      for (const p of particles) {
-        p.vy += p.gravity; p.vx *= p.drag; p.vy *= p.drag; p.swayPhase += p.swayFreq;
-        p.x += p.vx + Math.sin(p.swayPhase) * p.swayAmp * 0.4;
-        p.y += p.vy; p.rotation += p.rotationSpeed;
-        if (p.y > H + 40) continue;
-        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rotation); ctx.fillStyle = p.color;
-        if (p.shape === 'circle') { ctx.beginPath(); ctx.arc(0, 0, p.size / 2, 0, Math.PI * 2); ctx.fill(); }
-        else if (p.shape === 'ribbon') { const flip = Math.sin(p.rotation * 2); ctx.fillRect(-p.size/2, -p.size/8, p.size, Math.abs(flip) * p.size * 0.4 + 1.5); }
-        else { ctx.fillRect(-p.size/2, -p.size/3, p.size, p.size * 0.7); }
-        ctx.restore();
-      }
-      if (tt < 1) raf = requestAnimationFrame(frame);
-      else { stopped = true; ctx.clearRect(0, 0, W, H); canvas.remove(); }
-    }
-    raf = requestAnimationFrame(frame);
-    setTimeout(() => { stopped = true; if (raf) cancelAnimationFrame(raf); if (canvas.parentNode) canvas.remove(); }, duration + 2000);
-  }
-
-  /* ═══════════ MASCOT ═══════════ */
-  const MOODS = ['idle','happy','thinking','coding','celebrate','error','learning'];
+  // Blob path — organic 4-lobe shape
   const BLOB_PATH = 'M100 20 C126 20 144 32 154 54 C178 56 194 76 194 102 C194 128 178 148 154 152 C144 174 126 186 100 186 C74 186 56 174 46 152 C22 148 6 128 6 102 C6 76 22 56 46 54 C56 32 74 20 100 20 Z';
-  const BLOB_SVG = `<svg class="blob-svg" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mirox avatar"><g class="blob-float"><path class="blob-body" d="${BLOB_PATH}" fill="currentColor"/><g class="blob-eyes" fill="var(--bg)"><ellipse cx="88" cy="82" rx="4.5" ry="13" transform="rotate(18 88 82)"/><ellipse cx="110" cy="78" rx="4.5" ry="13" transform="rotate(18 110 78)"/></g></g></svg>`;
+
+  // Full mascot SVG with separate eye elements and optional glasses for study/reading moods
+  function blobSvg() {
+    return `<svg class="blob-svg" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mirox avatar">
+      <g class="blob-float">
+        <path class="blob-body" d="${BLOB_PATH}" fill="currentColor"/>
+        <g class="blob-eyes">
+          <ellipse class="eye eye-left" cx="78" cy="88" rx="6.5" ry="15" transform="rotate(14 78 88)" fill="var(--bg)"/>
+          <ellipse class="eye eye-right" cx="122" cy="85" rx="6.5" ry="15" transform="rotate(14 122 85)" fill="var(--bg)"/>
+        </g>
+        <g class="blob-glasses" fill="none" stroke="var(--bg)" stroke-width="4" stroke-linecap="round">
+          <rect x="58" y="66" width="40" height="36" rx="11"/>
+          <rect x="102" y="63" width="40" height="36" rx="11"/>
+          <path d="M98 82 Q100 76 102 80"/>
+        </g>
+      </g>
+    </svg>`;
+  }
   function upgradeStaticMascots(scope = document) {
     scope.querySelectorAll('.mascot:not([data-blob-ready])').forEach((el) => {
       const m = MOODS.includes(el.dataset.mood) ? el.dataset.mood : 'idle';
-      el.innerHTML = BLOB_SVG; el.dataset.mood = m; el.classList.add('m-' + m); el.dataset.blobReady = '1';
+      el.innerHTML = blobSvg();
+      el.dataset.mood = m;
+      el.classList.add('m-' + m);
+      el.dataset.blobReady = '1';
     });
   }
   function setMascotMood(mood, scope) {
@@ -752,26 +409,31 @@
     upgradeStaticMascots(root);
     root.querySelectorAll('.mascot').forEach((el) => {
       el.className = el.className.split(' ').filter((c) => !/^m-/.test(c)).join(' ');
-      el.classList.add('m-' + m); el.dataset.mood = m;
+      el.classList.add('m-' + m);
+      el.dataset.mood = m;
     });
   }
   upgradeStaticMascots();
   const lb = document.getElementById('loadingBlob');
-  if (lb) lb.innerHTML = BLOB_SVG;
+  if (lb) lb.innerHTML = `<div class="mascot mascot-lg m-idle" data-mood="idle">${blobSvg()}</div>`;
+
+  // Idle mascot: rotates through cute moods including wink, study, searching
+  function startIdleMascot() {
+    const cuteMoods = ['wink', 'study', 'searching', 'happy', 'thinking', 'learning', 'reading'];
+    setInterval(() => {
+      const w = document.getElementById('welcomeMascot');
+      if (!w || isReplying || !w.parentElement) return;
+      setMascotMood(cuteMoods[Math.floor(Math.random() * cuteMoods.length)], w.parentElement);
+    }, 6000);
+  }
+
   function pickMoodFor(text) {
     const t2 = String(text || '').toLowerCase();
     if (/\b(search|look up|google|latest|news|find)\b/.test(t2)) return 'searching';
     if (/\b(build|code|script|fix|bug|function|debug|lua|python|javascript|html|css)\b/.test(t2)) return 'coding';
-    if (/\b(explain|teach|learn|how does|why|what is)\b/.test(t2)) return 'learning';
+    if (/\b(explain|teach|learn|how does|why|what is|study)\b/.test(t2)) return 'study';
+    if (/\b(read|paper|article|document)\b/.test(t2)) return 'reading';
     return 'thinking';
-  }
-  function startIdleMascot() {
-    setInterval(() => {
-      const w = document.getElementById('welcomeMascot');
-      if (!w || isReplying || !w.parentElement) return;
-      const pool = ['happy', 'thinking', 'coding', 'learning'];
-      setMascotMood(pool[Math.floor(Math.random() * pool.length)], w.parentElement);
-    }, 8000);
   }
   function pickStatusLabel(text) {
     const t2 = String(text || '').toLowerCase();
@@ -782,7 +444,7 @@
     return 'Thinking';
   }
 
-  /* ═══════════ THINKING ═══════════ */
+  /* ═══════════ THINKING PANEL ═══════════ */
   function createThinkPanel(label, steps, headline) {
     const el = document.createElement('div');
     el.className = 'think-wrap';
@@ -806,7 +468,8 @@
     }, 100);
     function addNarration(text) {
       if (!text) return;
-      const p = document.createElement('div'); p.className = 'think-narration';
+      const p = document.createElement('div');
+      p.className = 'think-narration';
       p.innerHTML = `<span class="think-narration-dot"></span><span>${escapeHtml(text)}</span>`;
       body.appendChild(p);
     }
@@ -835,31 +498,38 @@
   /* ═══════════ CONVERSATIONS ═══════════ */
   function currentConvo() { return __conversations.find((c) => c.id === currentConversationId) || null; }
   function saveChats() {
-    const slim = __conversations.map((c) => ({ ...c, messages: (c.messages || []).map((m) => ({ id: m.id, role: m.role, content: m.content, ts: m.ts, imageKey: m.imageKey || null, files: (m.files || []).map((f) => ({ name: f.name, size: f.size, type: f.type, mime: f.mime, dataUrl: (f.type === 'image' && f.dataUrl && f.dataUrl.length < 200000) ? f.dataUrl : undefined, width: f.width, height: f.height })) })) }));
+    const slim = __conversations.map((c) => ({
+      ...c,
+      messages: (c.messages || []).map((m) => ({
+        id: m.id, role: m.role, content: m.content, ts: m.ts,
+        imageKey: m.imageKey || null,
+        files: (m.files || []).map((f) => ({ name: f.name, size: f.size, type: f.type, mime: f.mime, dataUrl: (f.type === 'image' && f.dataUrl && f.dataUrl.length < 200000) ? f.dataUrl : undefined, width: f.width, height: f.height })),
+      })),
+    }));
     safeSet(LS_KEY, slim);
   }
   function loadChats() { const v = safeGet(LS_KEY, []); __conversations = Array.isArray(v) ? v : []; }
 
   function welcomeHTML() {
     return `<div class="welcome-screen">
-      <div class="welcome-mascot"><div class="mascot mascot-lg m-idle" id="welcomeMascot" data-mood="idle"></div></div>
-      <h1 class="welcome-title">${escapeHtml(t('welcomeTitle'))}</h1>
-      <p class="welcome-sub">${t('welcomeSub')}</p>
+      <div class="welcome-mascot"><div class="mascot mascot-lg m-idle" id="welcomeMascot" data-mood="idle">${blobSvg()}</div></div>
+      <h1 class="welcome-title" data-i18n="welcomeTitle">Hi, I'm Mirox</h1>
+      <p class="welcome-sub" data-i18n-html="welcomeSub">Luna and Gen are unlimited and free. Share to unlock <strong>Pro, Ultra &amp; Eclipse</strong> free for 7 days.</p>
       <div class="suggestion-grid">
-        <button class="suggestion-card" type="button" data-prompt="Show me a simple Lua script that prints numbers 1 to 5"><i class="ri-code-box-line"></i><span>${escapeHtml(t('suggest.lua'))}</span></button>
-        <button class="suggestion-card" type="button" data-prompt="Show me an HTML example with a table"><i class="ri-html5-line"></i><span>${escapeHtml(t('suggest.html'))}</span></button>
-        <button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span>${escapeHtml(t('suggest.image'))}</span></button>
-        <button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span>${escapeHtml(t('suggest.explain'))}</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Show me a simple Lua script that prints numbers 1 to 5"><i class="ri-code-box-line"></i><span data-i18n="suggestLua">Write a Lua script</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Show me an HTML example with a table"><i class="ri-html5-line"></i><span data-i18n="suggestHtml">Show an HTML table</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span data-i18n="suggestImage">Generate an image</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span data-i18n="suggestExplain">Explain a concept</span></button>
       </div>
     </div>`;
   }
   function startNewChat() {
     currentConversationId = null;
-    const ttl = $('#chatTitle'); if (ttl) ttl.textContent = t('newChatTitle');
+    const ttl = $('#chatTitle'); if (ttl) ttl.textContent = 'New chat';
     const c = $('#chatMessages'); if (c) c.innerHTML = welcomeHTML();
-    upgradeStaticMascots($('#chatMessages'));
-    bindSuggestionClicks(); updateTokenUsage();
-    renderHistory();
+    bindSuggestionClicks(); updateTokenUsage(); renderHistory();
+    // Re-apply translations to newly created content
+    applyTranslations();
   }
   function bindSuggestionClicks() {
     $$('.suggestion-card').forEach((card) => {
@@ -875,8 +545,8 @@
     const list = $('#historyList'); if (!list) return;
     const q = __historyQuery.trim().toLowerCase();
     let items = __conversations;
-    if (q) items = __conversations.filter((c) => (c.title || '').toLowerCase().includes(q) || (c.messages || []).some((m) => (m.content || '').toLowerCase().includes(q)));
-    if (!items.length) { list.innerHTML = `<li class="history-empty">${escapeHtml(t('noChats'))}</li>`; return; }
+    if (q) items = __conversations.filter((c) => (c.title || '').toLowerCase().includes(q));
+    if (!items.length) { list.innerHTML = `<li class="history-empty" data-i18n="noChats">No conversations yet</li>`; return; }
     list.innerHTML = items.map((c) =>
       `<li class="history-item${c.id === currentConversationId ? ' active' : ''}" data-id="${c.id}">
         <i class="ri-chat-3-line"></i>
@@ -889,7 +559,7 @@
     if (!convo) return 0;
     return (convo.messages || []).reduce((sum, m) => sum + estimateTokens(m.content || ''), 0);
   }
-  function formatK(n) { if (n >= 1000) return (n / 1000).toFixed(n % 1000 === 0 ? 0 : 1) + 'k'; return String(n); }
+  function formatK(n) { return n >= 1000 ? (n / 1000).toFixed(n % 1000 === 0 ? 0 : 1) + 'k' : String(n); }
   function updateTokenUsage() {
     const el = $('#tokenUsage'); if (!el) return;
     const used = conversationTokenUsage();
@@ -909,11 +579,6 @@
       badge.innerHTML = `<i class="ri-vip-crown-fill"></i>+${formatK(bonus)} · ${formatBonusRemaining()}`;
       el.appendChild(badge);
     }
-    const sub = $('#shareRowSub');
-    if (sub) {
-      if (hasBonus) sub.textContent = `Bonus active — ${formatBonusRemaining()} left`;
-      else sub.textContent = t('settingsT.shareSub', 'Get 50k tokens + Pro/Ultra/Eclipse free for 7 days');
-    }
   }
   function atChatBottom(c = $('#chatMessages')) { return !c || c.scrollHeight - c.scrollTop - c.clientHeight < 100; }
   function scrollToBottom(force = false) {
@@ -925,10 +590,7 @@
     const c = $('#chatMessages'), b = $('#scrollBottomBtn'); if (!c || !b) return;
     b.classList.toggle('visible', !atChatBottom(c));
   }
-  function freeLimitReached(convo = currentConvo()) {
-    if (__tier !== 'free') return false;
-    return conversationTokenUsage(convo) >= getFreeLimit();
-  }
+  function freeLimitReached(convo = currentConvo()) { return __tier === 'free' && conversationTokenUsage(convo) >= getFreeLimit(); }
   function fmtSize(n) { if (n == null) return ''; if (n < 1024) return n + ' B'; if (n < 1048576) return (n / 1024).toFixed(1) + ' KB'; return (n / 1048576).toFixed(1) + ' MB'; }
   function fileIconHTML() { return '<span class="file-glyph" aria-hidden="true"><i class="ri-file-text-line"></i></span>'; }
 
@@ -953,7 +615,8 @@
     return escapeHtml(raw);
   }
   function renderCode(lang, code, closed) {
-    const meta = langMeta(lang); const raw = String(code || '').replace(/\n$/, '');
+    const meta = langMeta(lang);
+    const raw = String(code || '').replace(/\n$/, '');
     const btn = closed ? '<button class="code-action-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button>' : '<span class="writing-tag"><i class="ri-loader-4-line spin"></i> writing…</span>';
     return `<div class="code-block" data-lang="${escapeHtml(meta.hljs)}"><div class="code-block-header"><span class="code-lang-badge"><i class="${meta.icon}"></i><span>${escapeHtml(meta.label)}</span></span>${btn}</div><pre><code class="hljs language-${escapeHtml(meta.hljs)}">${highlightCode(lang, raw)}</code></pre></div>`;
   }
@@ -1021,7 +684,10 @@
   function wireCopyButtons(scope) {
     (scope || document).querySelectorAll('.code-action-btn[data-copy]').forEach((btn) => {
       if (btn.__wired) return; btn.__wired = true;
-      btn.onclick = async () => { const code = btn.closest('.code-block')?.querySelector('pre code')?.textContent || ''; try { await navigator.clipboard.writeText(code); btn.innerHTML = '<i class="ri-check-line"></i> Copied'; setTimeout(() => { btn.innerHTML = '<i class="ri-file-copy-line"></i> Copy'; }, 1200); } catch {} };
+      btn.onclick = async () => {
+        const code = btn.closest('.code-block')?.querySelector('pre code')?.textContent || '';
+        try { await navigator.clipboard.writeText(code); btn.innerHTML = '<i class="ri-check-line"></i> Copied'; setTimeout(() => { btn.innerHTML = '<i class="ri-file-copy-line"></i> Copy'; }, 1200); } catch {}
+      };
     });
   }
 
@@ -1038,9 +704,9 @@
       inner += '<div class="attach-row">';
       for (const f of files) {
         if (f.type === 'image' && f.dataUrl) {
-          const visionTag = f.vision ? '<span class="attach-vision"><i class="ri-eye-line"></i> vision</span>' : '';
           const dims = f.width && f.height ? `<span class="attach-size">${f.width}×${f.height}</span>` : '';
-          inner += `<div class="attach-chip attach-chip-image"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name || '')}${dims}${visionTag}</div>`;
+          const vision = f.vision ? '<span class="attach-vision"><i class="ri-eye-line"></i> vision</span>' : '';
+          inner += `<div class="attach-chip attach-chip-image"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name || '')}${dims}${vision}</div>`;
         } else inner += `<div class="attach-chip">${fileIconHTML()}${escapeHtml(f.name || 'file')}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`;
       }
       inner += '</div>';
@@ -1097,14 +763,13 @@
     const inp = $('#messageInput'); if (!inp) return;
     const text = inp.value.trim();
     if (!text && !pendingFiles.length) return;
-    if (freeLimitReached()) { toast(t('toast.noToken'), 5000); return; }
+    if (freeLimitReached()) { toast('Max tokens reached.'); return; }
     const files = pendingFiles.slice();
-    const searchFlag = forceSearchNext;
-    forceSearchNext = false;
+    const searchFlag = forceSearchNext; forceSearchNext = false;
     $('#searchModeBtn')?.classList.remove('active');
     if (!currentConversationId) {
       currentConversationId = uid();
-      __conversations.unshift({ id: currentConversationId, title: text.slice(0, 60) || t('newChat'), messages: [], created: Date.now() });
+      __conversations.unshift({ id: currentConversationId, title: text.slice(0, 60) || 'New chat', messages: [], created: Date.now() });
     }
     const msgId = uid();
     const convo = currentConvo();
@@ -1137,7 +802,7 @@
     if (isReplying || continuationBusy) return;
     continuationBusy = true;
     btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line spin"></i><span>Continuing…</span>';
-    try { await sendToAPI('Continue your previous response from exactly where it stopped. Do not repeat the completed text.', [], false, { existingMsgEl: msgEl, existingBubble: bubble, messageObj, continuation: true }); }
+    try { await sendToAPI('Continue your previous response from exactly where it stopped.', [], false, { existingMsgEl: msgEl, existingBubble: bubble, messageObj, continuation: true }); }
     finally { continuationBusy = false; if (btn.isConnected) btn.remove(); }
   }
 
@@ -1145,11 +810,9 @@
   async function sendToAPI(text, files, forceSearch, continuation = null) {
     const isContinuation = !!(continuation && continuation.continuation);
     const convoAtStart = currentConvo();
-    if (!isContinuation && freeLimitReached(convoAtStart)) { toast(t('toast.noToken'), 5000); return; }
-    isReplying = true;
-    updateSendButtonState();
-    const stopBtn = $('#stopBtn');
-    if (stopBtn) stopBtn.style.display = 'grid';
+    if (!isContinuation && freeLimitReached(convoAtStart)) { toast('Max tokens reached.'); return; }
+    isReplying = true; updateSendButtonState();
+    const stopBtn = $('#stopBtn'); if (stopBtn) stopBtn.style.display = 'grid';
     const convo = currentConvo();
     const history = convo ? convo.messages.slice(-14).map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })) : [];
     const model = __model || 'mirox-luna-1.2';
@@ -1183,12 +846,9 @@
     }
 
     const visionFiles = files.filter((f) => f.type === 'image' && f.dataUrl);
-    const imageParts = visionFiles.map((f) => { const url = f.pngDataUrl || f.dataUrl; return { type: 'image_url', image_url: { url, detail: 'auto' } }; });
     const contentParts = [];
     if (text) contentParts.push({ type: 'text', text });
-    for (const p of imageParts) contentParts.push(p);
-    for (const f of visionFiles) if (f.isSvg && f.svgText) contentParts.push({ type: 'text', text: `\n[Attached SVG source — "${f.name}"]:\n\`\`\`svg\n${f.svgText.slice(0, 30000)}\n\`\`\`` });
-    const visionNote = visionFiles.length && __prefs.vision ? `\n\n[The user attached ${visionFiles.length} image${visionFiles.length === 1 ? '' : 's'}: ${visionFiles.map((f) => `${f.name} (${f.width || '?'}×${f.height || '?'}, ${f.mime})`).join(', ')}. Analyze them.]` : '';
+    for (const f of visionFiles) contentParts.push({ type: 'image_url', image_url: { url: f.pngDataUrl || f.dataUrl, detail: 'auto' } });
 
     activeStreamController = new AbortController();
     let generatedImage = null, gotToken = !!isContinuation, limitHit = false;
@@ -1199,29 +859,11 @@
     const streamTimeout = setTimeout(() => { try { activeStreamController?.abort(); } catch {} }, STREAM_TIMEOUT_MS);
 
     try {
-      const reqBody = {
-        message: text + visionNote, history, model, stream: true, search: !!forceSearch,
-        files: files.map((f) => ({ name: f.name, size: f.size, type: f.type, mime: f.mime, width: f.width, height: f.height, dataUrl: f.dataUrl, base64: f.base64 || null, svgText: f.svgText || null, pngDataUrl: f.pngDataUrl || null, vision: !!f.vision })),
-        content_parts: contentParts.length ? contentParts : null,
-        guest_id: getGuestId(),
-        bonus_active: isBonusActive(),
-        bonus_tokens: getActiveBonus(),
-        bonus_expires: (loadBonusRaw() || {}).expiresAt || 0,
-        mcp_servers: __mcpServers,
-        mcp_enabled: !!__prefs.mcpEnabled,
-        persona: __prefs.persona || '',
-        language: __prefs.responseLanguage || 'auto',
-        ui_language: __prefs.uiLanguage || 'en',
-        vision_enabled: !!__prefs.vision && visionFiles.length > 0,
-      };
+      const reqBody = { message: text, history, model, stream: true, search: !!forceSearch, files: files.map((f) => ({ name: f.name, size: f.size, type: f.type, mime: f.mime, width: f.width, height: f.height, dataUrl: f.dataUrl, base64: f.base64 || null, svgText: f.svgText || null, vision: !!f.vision })), content_parts: contentParts.length ? contentParts : null, guest_id: getGuestId(), bonus_active: isBonusActive(), language: __prefs.responseLanguage || 'auto' };
       const res = await fetch('/v1/chat/completions', { method: 'POST', headers: authHeaders(), credentials: 'same-origin', body: JSON.stringify(reqBody), signal: activeStreamController.signal });
       if (!res.ok) {
         let detail = `HTTP ${res.status}`;
         try { const d = await res.json(); detail = d.error?.message || d.error || d.message || detail; } catch {}
-        if ((res.status === 401 || res.status === 403) && isBonusActive()) throw new Error('Bonus verified locally but server rejected guest access. Refresh or sign in — your bonus is saved.');
-        if (res.status === 401 || res.status === 403) throw new Error('Not signed in.');
-        if (res.status === 404) throw new Error('Endpoint not found.');
-        if (res.status >= 500) throw new Error(`Server error (${res.status}).`);
         throw new Error(detail);
       }
       const reader = res.body.getReader();
@@ -1236,30 +878,15 @@
         while ((idx = buf.indexOf('\n')) !== -1) {
           const line = buf.slice(0, idx).trim(); buf = buf.slice(idx + 1);
           if (!line.startsWith('data:')) continue;
-          const pl = line.slice(5).trim();
-          if (!pl) continue;
+          const pl = line.slice(5).trim(); if (!pl) continue;
           if (pl === '[DONE]') { streamComplete = true; continue; }
           let o; try { o = JSON.parse(pl); } catch { continue; }
           if (o.n) panel.addNarration(o.n);
-          if (o.img) {
-            generatedImage = o.img;
-            panel.markWriting(); panel.setMood('celebrate'); ensureBubble();
-            bubble.innerHTML = `<div class="gen-image"><img src="${o.img}" draggable="false" alt=""></div><div class="bubble-text"></div>`;
-            bubbleText = bubble.querySelector('.bubble-text');
-            const img = bubble.querySelector('img'); if (img) img.onclick = () => openImageViewer(o.img);
-            scrollToBottom(); continue;
-          }
+          if (o.img) { generatedImage = o.img; panel.markWriting(); panel.setMood('celebrate'); ensureBubble(); bubble.innerHTML = `<div class="gen-image"><img src="${o.img}" draggable="false" alt=""></div><div class="bubble-text"></div>`; bubbleText = bubble.querySelector('.bubble-text'); const img = bubble.querySelector('img'); if (img) img.onclick = () => openImageViewer(o.img); scrollToBottom(); continue; }
           if (o.d) {
             full += o.d;
             const limit = getFreeLimit();
-            if (__tier === 'free' && convo && conversationTokenUsage(convo) + estimateTokens(full) >= limit) {
-              full = full.slice(0, Math.max(0, (limit - conversationTokenUsage(convo)) * 4));
-              limitHit = true;
-              if (!gotToken) { gotToken = true; ensureBubble(); bubble.innerHTML = '<div class="bubble-text"></div>'; bubbleText = bubble.querySelector('.bubble-text'); }
-              if (bubbleText) bubbleText.innerHTML = renderMarkdown(full);
-              try { await reader.cancel(); } catch {}
-              break;
-            }
+            if (__tier === 'free' && convo && conversationTokenUsage(convo) + estimateTokens(full) >= limit) { full = full.slice(0, Math.max(0, (limit - conversationTokenUsage(convo)) * 4)); limitHit = true; if (!gotToken) { gotToken = true; ensureBubble(); bubble.innerHTML = '<div class="bubble-text"></div>'; bubbleText = bubble.querySelector('.bubble-text'); } if (bubbleText) bubbleText.innerHTML = renderMarkdown(full); try { await reader.cancel(); } catch {} break; }
             if (!gotToken) { gotToken = true; panel.markWriting(); panel.setMood('learning'); ensureBubble(); bubble.innerHTML = '<div class="bubble-text"></div>'; bubbleText = bubble.querySelector('.bubble-text'); }
             scheduleRender();
           }
@@ -1282,12 +909,10 @@
       saveChats(); updateTokenUsage();
       timeEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       if (savedMsg && shouldShowContinue(full, convo, streamComplete)) attachContinueButton(msgEl, bubble, savedMsg);
-      playChime();
-      if (__prefs.desktopNotify && document.hidden && 'Notification' in window && Notification.permission === 'granted') { try { new Notification('Mirox', { body: 'Replied', icon: '/logo.png' }); } catch {} }
     } catch (e) {
       clearTimeout(streamTimeout);
       const aborted = e.name === 'AbortError';
-      const msg = aborted ? 'Stopped (timed out or by you).' : (e.message || 'Something went wrong.');
+      const msg = aborted ? 'Stopped.' : (e.message || 'Something went wrong.');
       panel.fail(msg);
       if (!bubble) { bubble = document.createElement('div'); bubble.className = 'bubble'; msgEl.insertBefore(bubble, timeEl); }
       if (full) {
@@ -1298,16 +923,14 @@
         if (!savedMsg && convo) { savedMsg = { id: aiMsgId, role: 'assistant', content: full, ts: Date.now() }; convo.messages.push(savedMsg); }
         if (savedMsg) { savedMsg.content = full; saveChats(); attachContinueButton(msgEl, bubble, savedMsg); }
       } else bubble.textContent = aborted ? '(stopped)' : 'Error: ' + msg;
-      toast(msg, 5000);
-      updateTokenUsage();
+      toast(msg, 5000); updateTokenUsage();
     } finally {
       clearTimeout(streamTimeout);
       panel.destroy();
       isReplying = false;
       activeStreamController = null;
       if (stopBtn) stopBtn.style.display = 'none';
-      updateSendButtonState();
-      updateTokenUsage();
+      updateSendButtonState(); updateTokenUsage();
     }
   }
   function stopStreaming() {
@@ -1320,7 +943,7 @@
   function toast(msg, ms) {
     const el = document.createElement('div');
     el.className = 'mirox-toast';
-    el.textContent = typeof msg === 'string' ? msg : String(msg || '');
+    el.textContent = typeof msg === 'string' ? msg : '';
     document.body.appendChild(el);
     setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 350); }, ms || 1800);
   }
@@ -1328,17 +951,12 @@
   /* ═══════════ SHARE ═══════════ */
   function loadShareState() { __shareState = safeGet(SHARE_KEY, { claimed: false, claimedAt: 0, dismissedAt: 0 }); }
   function saveShareState() { safeSet(SHARE_KEY, __shareState); }
-  function shouldShowShareAd() {
-    if (__tier !== 'free') return false;
-    if (isBonusActive()) return false;
-    if (__shareState.dismissedAt && Date.now() - __shareState.dismissedAt < 6 * 3600 * 1000) return false;
-    return true;
-  }
+  function shouldShowShareAd() { if (__tier !== 'free') return false; if (isBonusActive()) return false; if (__shareState.dismissedAt && Date.now() - __shareState.dismissedAt < 6 * 3600 * 1000) return false; return true; }
   function openShareAd() { if (!shouldShowShareAd()) return; setTimeout(() => $('#shareAdModal')?.classList.add('open'), 1800); }
-  function closeShareAd(dismiss) { const modal = $('#shareAdModal'); if (modal) modal.classList.remove('open'); if (dismiss) { __shareState.dismissedAt = Date.now(); saveShareState(); } }
-  function setShareStatus(text, cls) { const el = $('#shareAdStatus'); if (!el) return; el.textContent = typeof text === 'string' ? text : ''; el.className = 'share-ad-status' + (cls ? ' ' + cls : ''); }
+  function closeShareAd(dismiss) { const m = $('#shareAdModal'); if (m) m.classList.remove('open'); if (dismiss) { __shareState.dismissedAt = Date.now(); saveShareState(); } }
+  function setShareStatus(text, cls) { const el = $('#shareAdStatus'); if (!el) return; el.textContent = String(text || ''); el.className = 'share-ad-status' + (cls ? ' ' + cls : ''); }
   function celebrateReward() {
-    launchConfetti({ duration: 4500, count: 240 });
+    launchConfetti();
     const chip = $('#tokenUsage'); if (chip) { chip.classList.add('pulse'); setTimeout(() => chip.classList.remove('pulse'), 1200); }
     const wm = document.getElementById('welcomeMascot');
     if (wm) { setMascotMood('celebrate', wm.parentElement); setTimeout(() => setMascotMood('happy', wm.parentElement), 2000); }
@@ -1348,34 +966,157 @@
     __shareState.claimed = true; __shareState.claimedAt = Date.now(); __shareState.dismissedAt = 0;
     saveShareState(); updateTokenUsage(); renderModelPicker(); celebrateReward();
     const days = Math.round((bonus.expiresAt - Date.now()) / 86400000);
-    toast(`🎉 ${BONUS_TOKENS.toLocaleString()} ${t('toast.bonusAdded')} ${days} ${t('toast.days')}`, 6500);
+    toast(`🎉 ${BONUS_TOKENS.toLocaleString()} bonus tokens for ${days} days!`, 6500);
   }
   async function grantShareReward() {
     grantShareRewardLocal();
-    try { await jsonOr('/api/share/reward', { method: 'POST', body: JSON.stringify({ bonus_tokens: BONUS_TOKENS, valid_days: 7, verified: true, verified_at: Date.now(), guest_id: getGuestId() }) }, null); } catch {}
+    try { await jsonOr('/api/share/reward', { method: 'POST', body: JSON.stringify({ bonus_tokens: BONUS_TOKENS, valid_days: 7, verified: true, guest_id: getGuestId() }) }, null); } catch {}
     try { if (__user) await refreshUsage(); } catch {}
   }
   async function attemptShare() {
     const btn = $('#shareAdShareBtn');
-    const shareData = { title: 'MiroxAI', text: 'Try MiroxAI — free unlimited AI chat. 50k tokens + Pro/Ultra/Eclipse free!', url: location.origin + '/?ref=share&g=' + getGuestId() };
+    const shareData = { title: 'MiroxAI', text: 'Try MiroxAI — free unlimited AI chat!', url: location.origin + '/?ref=share&g=' + getGuestId() };
     if (btn) btn.disabled = true;
     if (navigator.share) {
-      try { setShareStatus('…', ''); await navigator.share(shareData); setShareStatus(t('toast.sharedOk'), 'ok'); await grantShareReward(); setTimeout(() => closeShareAd(false), 2400); return; }
-      catch (e) { if (e && e.name === 'AbortError') { setShareStatus(t('toast.cancelled'), 'warn'); if (btn) btn.disabled = false; return; } }
+      try { setShareStatus('…'); await navigator.share(shareData); setShareStatus('Share confirmed!', 'ok'); await grantShareReward(); setTimeout(() => closeShareAd(false), 2400); return; }
+      catch (e) { if (e && e.name === 'AbortError') { setShareStatus('Cancelled.', 'warn'); if (btn) btn.disabled = false; return; } }
     }
     const shareText = encodeURIComponent(shareData.text + ' ' + shareData.url);
-    const url = `https://twitter.com/intent/tweet?text=${shareText}`;
-    window.open(url, '_blank', 'noopener,width=600,height=500');
-    setShareStatus('…', '');
+    window.open(`https://twitter.com/intent/tweet?text=${shareText}`, '_blank', 'noopener,width=600,height=500');
+    setShareStatus('…');
     let resolved = false;
-    const focusHandler = () => {
-      if (resolved) return;
-      resolved = true;
-      window.removeEventListener('focus', focusHandler);
-      setTimeout(async () => { setShareStatus(t('toast.shared'), 'ok'); await grantShareReward(); setTimeout(() => closeShareAd(false), 2400); }, 800);
-    };
+    const focusHandler = () => { if (resolved) return; resolved = true; window.removeEventListener('focus', focusHandler); setTimeout(async () => { setShareStatus('Share detected!', 'ok'); await grantShareReward(); setTimeout(() => closeShareAd(false), 2400); }, 800); };
     window.addEventListener('focus', focusHandler);
-    setTimeout(() => { if (!resolved) { resolved = true; window.removeEventListener('focus', focusHandler); setShareStatus(t('toast.noShare'), 'warn'); if (btn) btn.disabled = false; } }, 90000);
+    setTimeout(() => { if (!resolved) { resolved = true; window.removeEventListener('focus', focusHandler); setShareStatus('No share detected.', 'warn'); if (btn) btn.disabled = false; } }, 90000);
+  }
+
+  /* ═══════════ CONFETTI ═══════════ */
+  function launchConfetti() {
+    if (__prefs.reduceMotion) return;
+    const canvas = document.createElement('canvas');
+    canvas.className = 'confetti-canvas';
+    document.body.appendChild(canvas);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const W = window.innerWidth, H = window.innerHeight;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+    const ctx = canvas.getContext('2d'); ctx.scale(dpr, dpr);
+    const colors = ['#4d6bfe','#7c8aff','#16a34a','#4ade80','#f59e0b','#fbbf24','#ec4899','#f472b6','#06b6d4','#22d3ee','#a855f7','#c084fc'];
+    const particles = [];
+    const origins = [{ x: W*0.15, y: H*0.25 }, { x: W*0.85, y: H*0.25 }, { x: W*0.5, y: H*0.2 }];
+    for (let i = 0; i < 180; i++) {
+      const origin = origins[i % origins.length];
+      const angle = (Math.random() - 0.5) * Math.PI * 1.4 - Math.PI / 2;
+      const speed = 6 + Math.random() * 12;
+      particles.push({ x: origin.x + (Math.random() - 0.5) * 60, y: origin.y + (Math.random() - 0.5) * 40, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 4, gravity: 0.28 + Math.random() * 0.14, drag: 0.988, size: 6 + Math.random() * 8, color: colors[Math.floor(Math.random() * colors.length)], rotation: Math.random() * Math.PI * 2, rotationSpeed: (Math.random() - 0.5) * 0.34, shape: Math.random() < 0.55 ? 'rect' : 'circle' });
+    }
+    const start = performance.now();
+    let stopped = false;
+    function frame(now) {
+      if (stopped) return;
+      const tt = (now - start) / 4200;
+      ctx.clearRect(0, 0, W, H);
+      ctx.globalAlpha = tt > 0.7 ? Math.max(0, 1 - (tt - 0.7) / 0.3) : 1;
+      for (const p of particles) {
+        p.vy += p.gravity; p.vx *= p.drag; p.vy *= p.drag;
+        p.x += p.vx; p.y += p.vy; p.rotation += p.rotationSpeed;
+        if (p.y > H + 40) continue;
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rotation); ctx.fillStyle = p.color;
+        if (p.shape === 'circle') { ctx.beginPath(); ctx.arc(0, 0, p.size / 2, 0, Math.PI * 2); ctx.fill(); }
+        else ctx.fillRect(-p.size/2, -p.size/3, p.size, p.size * 0.7);
+        ctx.restore();
+      }
+      if (tt < 1) requestAnimationFrame(frame);
+      else { stopped = true; canvas.remove(); }
+    }
+    requestAnimationFrame(frame);
+    setTimeout(() => { stopped = true; if (canvas.parentNode) canvas.remove(); }, 6000);
+  }
+
+  /* ═══════════ IMAGES ═══════════ */
+  function imageToBase64DataURL(file) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const rawDataUrl = reader.result;
+        const img = new Image();
+        img.onload = () => {
+          let w = img.naturalWidth, h = img.naturalHeight;
+          if (w > MAX_IMAGE_DIM || h > MAX_IMAGE_DIM) { const ratio = Math.min(MAX_IMAGE_DIM / w, MAX_IMAGE_DIM / h); w = Math.round(w * ratio); h = Math.round(h * ratio); }
+          const c = document.createElement('canvas'); c.width = w; c.height = h;
+          c.getContext('2d').drawImage(img, 0, 0, w, h);
+          let outUrl;
+          try { const srcMime = (file.type || 'image/jpeg').toLowerCase(); outUrl = (srcMime === 'image/png' || srcMime === 'image/webp') ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', 0.88); } catch { outUrl = rawDataUrl; }
+          const base64 = String(outUrl).split(',')[1] || '';
+          const mime = (String(outUrl).split(';')[0].split(':')[1]) || file.type || 'image/jpeg';
+          resolve({ type: 'image', name: file.name, size: file.size, mime, dataUrl: outUrl, base64, width: w, height: h, vision: true });
+        };
+        img.onerror = () => resolve(null);
+        img.src = rawDataUrl;
+      };
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(file);
+    });
+  }
+  function svgToVisionData(file) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const svgText = String(reader.result);
+        let base64 = '';
+        try { base64 = btoa(unescape(encodeURIComponent(svgText))); } catch {}
+        const dataUrl = 'data:image/svg+xml;base64,' + base64;
+        const blob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
+        const objUrl = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => {
+          let w = img.naturalWidth || 512, h = img.naturalHeight || 512;
+          if (w > MAX_IMAGE_DIM || h > MAX_IMAGE_DIM) { const ratio = Math.min(MAX_IMAGE_DIM / w, MAX_IMAGE_DIM / h); w = Math.round(w * ratio); h = Math.round(h * ratio); }
+          let pngDataUrl = null;
+          try { const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(img, 0, 0, w, h); pngDataUrl = c.toDataURL('image/png'); } catch {}
+          URL.revokeObjectURL(objUrl);
+          resolve({ type: 'image', name: file.name, size: file.size, mime: 'image/svg+xml', dataUrl, base64, svgText, pngDataUrl, pngBase64: pngDataUrl ? pngDataUrl.split(',')[1] : '', width: w, height: h, vision: true, isSvg: true });
+        };
+        img.onerror = () => { URL.revokeObjectURL(objUrl); resolve({ type: 'image', name: file.name, size: file.size, mime: 'image/svg+xml', dataUrl, base64, svgText, vision: true, isSvg: true }); };
+        img.src = objUrl;
+      };
+      reader.onerror = () => resolve(null);
+      reader.readAsText(file);
+    });
+  }
+  function hasAttachment(name, size) { return pendingFiles.some((f) => f.name === name && f.size === size); }
+  function handleFiles(fileList) {
+    if (!fileList || !fileList.length) return;
+    const arr = [];
+    for (const f of Array.from(fileList)) { if (hasAttachment(f.name, f.size)) continue; arr.push(f); }
+    if (!arr.length) return;
+    let done = 0; const newFiles = [];
+    const finish = () => { newFiles.sort((a, b) => (a.order || 0) - (b.order || 0)); for (const nf of newFiles) if (!hasAttachment(nf.name, nf.size)) pendingFiles.push(nf); updatePreview(); updateSendButtonState(); };
+    arr.forEach((f, idx) => {
+      const isSvg = f.type === 'image/svg+xml' || /\.svg$/i.test(f.name);
+      const isImg = !isSvg && ((f.type || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(f.name));
+      const one = () => { done++; if (done === arr.length) finish(); };
+      if (isSvg) svgToVisionData(f).then((d) => { if (d) newFiles.push({ ...d, order: idx }); one(); }).catch(one);
+      else if (isImg) imageToBase64DataURL(f).then((d) => { if (d) newFiles.push({ ...d, order: idx }); one(); }).catch(one);
+      else { const r = new FileReader(); r.onload = () => { newFiles.push({ name: f.name, size: f.size, type: 'text', mime: f.type || 'text/plain', content: String(r.result).slice(0, 80000), order: idx }); one(); }; r.onerror = one; r.readAsText(f); }
+    });
+  }
+  function updatePreview() {
+    const p = $('#attachmentPreview'), list = $('#attachmentList');
+    if (!p || !list) return;
+    if (!pendingFiles.length) { p.style.display = 'none'; list.innerHTML = ''; return; }
+    p.style.display = 'flex';
+    list.innerHTML = pendingFiles.map((f) => {
+      if (f.type === 'image' && f.dataUrl) { const dims = f.width && f.height ? `<span class="attach-size">${f.width}×${f.height}</span>` : ''; const vision = f.vision ? '<span class="attach-vision"><i class="ri-eye-line"></i> vision</span>' : ''; return `<div class="attach-chip attach-chip-image"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name)}${dims}${vision}</div>`; }
+      return `<div class="attach-chip">${fileIconHTML()}${escapeHtml(f.name)}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`;
+    }).join('');
+  }
+  function addTextAttachment(text, name) {
+    const body = String(text).slice(0, 80000);
+    const fname = name || ('pasted-' + new Date().toISOString().slice(11, 19).replace(/:/g, '-') + '.txt');
+    if (pendingFiles.some((f) => f.type === 'text' && f.content === body)) return;
+    pendingFiles.push({ name: fname, size: text.length, type: 'text', mime: 'text/plain', content: body });
+    updatePreview(); updateSendButtonState();
   }
 
   /* ═══════════ IMAGE VIEWER ═══════════ */
@@ -1391,338 +1132,131 @@
 
   /* ═══════════ MODELS ═══════════ */
   function getModelsList() { return __config?.models?.length ? __config.models : FALLBACK_MODELS; }
-  function canUseModel(tier) {
-    if (__tier === 'free' && isBonusActive()) return true;
-    if (tier === 'free') return true;
-    if (__tier === 'ultimate') return true;
-    if (__tier === 'pro' && tier === 'pro') return true;
-    return false;
-  }
-  function modelAccessReason(tier) {
-    if (__tier === 'free' && isBonusActive() && tier !== 'free') return 'bonus';
-    if (tier === 'free') return 'free';
-    if (__tier === 'ultimate') return 'tier';
-    if (__tier === 'pro' && tier === 'pro') return 'tier';
-    return 'locked';
-  }
+  function canUseModel(tier) { if (__tier === 'free' && isBonusActive()) return true; if (tier === 'free') return true; if (__tier === 'ultimate') return true; if (__tier === 'pro' && tier === 'pro') return true; return false; }
+  function modelAccessReason(tier) { if (__tier === 'free' && isBonusActive() && tier !== 'free') return 'bonus'; if (tier === 'free') return 'free'; if (__tier === 'ultimate' || (__tier === 'pro' && tier === 'pro')) return 'tier'; return 'locked'; }
   function tierLabel(tier) { return tier === 'free' ? 'FREE' : (tier === 'pro' ? 'PRO' : (tier === 'ultimate' ? 'ULT' : tier.toUpperCase())); }
   function renderModelPicker() {
     const menu = $('#modelPickerMenu'); if (!menu) return;
-    const models = getModelsList();
-    const cur = __model || models[0].id;
+    const models = getModelsList(); const cur = __model || models[0].id;
     const bonusActive = __tier === 'free' && isBonusActive();
     let html = '';
     if (bonusActive) html += `<div class="model-picker-banner"><i class="ri-vip-crown-fill"></i><div class="model-picker-banner-text"><strong>All models unlocked</strong><span>Bonus active · ${formatBonusRemaining()} left</span></div></div>`;
     html += models.map((m) => {
-      const usable = canUseModel(m.tier);
-      const reason = modelAccessReason(m.tier);
-      const isActive = m.id === cur;
+      const usable = canUseModel(m.tier); const reason = modelAccessReason(m.tier); const isActive = m.id === cur;
       const reasonClass = usable ? (reason === 'bonus' ? 'via-bonus' : 'via-tier') : 'locked';
       const lockIcon = usable ? '' : '<i class="ri-lock-2-line model-option-lock"></i>';
       const bonusCrown = reason === 'bonus' ? '<i class="ri-vip-crown-fill model-option-crown"></i>' : '';
       const modelIcon = m.icon || 'ri-sparkling-2-line';
-      return `<div class="model-option${isActive ? ' active' : ''}${usable ? '' : ' locked'} ${reasonClass}" data-model-id="${m.id}" data-usable="${usable}" data-tier="${m.tier}">
-        <span class="model-option-icon"><i class="${modelIcon}"></i></span>
-        <span class="model-option-body"><span class="model-option-top"><span class="model-option-name">${escapeHtml(m.label)}</span><span class="model-tier-badge tier-${m.tier}">${tierLabel(m.tier)}</span>${bonusCrown}${lockIcon}</span><span class="model-option-tagline">${escapeHtml(m.tagline || '')}</span></span>
-      </div>`;
+      return `<div class="model-option${isActive ? ' active' : ''}${usable ? '' : ' locked'} ${reasonClass}" data-model-id="${m.id}" data-usable="${usable}" data-tier="${m.tier}"><span class="model-option-icon"><i class="${modelIcon}"></i></span><span class="model-option-body"><span class="model-option-top"><span class="model-option-name">${escapeHtml(m.label)}</span><span class="model-tier-badge tier-${m.tier}">${tierLabel(m.tier)}</span>${bonusCrown}${lockIcon}</span><span class="model-option-tagline">${escapeHtml(m.tagline || '')}</span></span></div>`;
     }).join('');
     if (!bonusActive && __tier === 'free') html += `<div class="model-picker-cta" id="modelPickerShareCta"><i class="ri-gift-2-line"></i><span>Share to unlock <strong>Pro, Ultra &amp; Eclipse</strong> free for 7 days</span></div>`;
     menu.innerHTML = html;
     menu.querySelectorAll('.model-option').forEach((opt) => {
-      opt.onclick = (e) => {
-        e.stopPropagation();
-        if (opt.dataset.usable === 'false') { if (__tier === 'free') { toast(t('toast.shareUnlock')); closeModelPicker(); setTimeout(() => openShareAd(), 400); } else toast(t('toast.upgrade')); return; }
-        selectModel(opt.dataset.modelId);
-      };
+      opt.onclick = (e) => { e.stopPropagation(); if (opt.dataset.usable === 'false') { toast('Share to unlock this model'); closeModelPicker(); setTimeout(() => openShareAd(), 400); return; } selectModel(opt.dataset.modelId); };
     });
     const cta = menu.querySelector('#modelPickerShareCta');
     if (cta) cta.onclick = (e) => { e.stopPropagation(); closeModelPicker(); setTimeout(() => openShareAd(), 200); };
     const c = models.find((m) => m.id === cur);
     if (c) { const lbl = $('#currentModelLabel'); if (lbl) lbl.textContent = c.label; }
     const btn = $('#modelPickerBtn');
-    if (btn) {
-      btn.classList.toggle('has-bonus', bonusActive);
-      btn.querySelector('.model-picker-crown')?.remove();
-      if (bonusActive) { const cr = document.createElement('i'); cr.className = 'ri-vip-crown-fill model-picker-crown'; btn.appendChild(cr); }
-    }
+    if (btn) { btn.classList.toggle('has-bonus', bonusActive); btn.querySelector('.model-picker-crown')?.remove(); if (bonusActive) { const cr = document.createElement('i'); cr.className = 'ri-vip-crown-fill model-picker-crown'; btn.appendChild(cr); } }
   }
-  function selectModel(id) {
-    if (!id) return;
-    const m = getModelsList().find((x) => x.id === id);
-    if (!m) return;
-    if (!canUseModel(m.tier)) { if (__tier === 'free') { toast(t('toast.shareUnlock')); closeModelPicker(); setTimeout(() => openShareAd(), 400); } else toast(t('toast.upgrade')); return; }
-    __model = id;
-    const lbl = $('#currentModelLabel'); if (lbl) lbl.textContent = m.label;
-    renderModelPicker(); closeModelPicker();
-  }
+  function selectModel(id) { const m = getModelsList().find((x) => x.id === id); if (!m || !canUseModel(m.tier)) return; __model = id; const lbl = $('#currentModelLabel'); if (lbl) lbl.textContent = m.label; renderModelPicker(); closeModelPicker(); }
   function openModelPicker() { $('#modelPicker')?.classList.add('open'); $('#modelPickerMenu')?.classList.add('open'); renderModelPicker(); }
   function closeModelPicker() { $('#modelPicker')?.classList.remove('open'); $('#modelPickerMenu')?.classList.remove('open'); }
 
-  /* ═══════════ USAGE / AUTH ═══════════ */
+  /* ═══════════ USAGE ═══════════ */
   async function refreshUsage() {
     const res = await jsonOr('/api/me', {}, null, 7000);
     if (!res || !res.user) {
       __user = null; __tier = 'free';
-      const label = $('#accountLabel'); if (label) label.textContent = t('guestMode');
-      const sub = $('#accountSub'); if (sub) sub.textContent = t('settingsT.accountSub');
+      const label = $('#accountLabel'); if (label) label.textContent = 'Guest mode';
       const sb = $('#signInFromSettingsBtn'); if (sb) sb.style.display = '';
       const lo = $('#logoutBtn'); if (lo) lo.style.display = 'none';
-      const chip = $('#userChip');
-      if (chip) { chip.querySelector('.user-name').textContent = t('guestMode'); chip.querySelector('.user-sub').textContent = t('signInHint'); }
       renderModelPicker(); updateTokenUsage(); return;
     }
-    __user = res.user;
-    __tier = res.user.tier || 'free';
+    __user = res.user; __tier = res.user.tier || 'free';
     const label = $('#accountLabel'); if (label) label.textContent = res.user.name || res.user.email;
-    const sub = $('#accountSub'); if (sub) sub.textContent = (__tier.charAt(0).toUpperCase() + __tier.slice(1)) + ' plan · signed in';
     const sb = $('#signInFromSettingsBtn'); if (sb) sb.style.display = 'none';
     const lo = $('#logoutBtn'); if (lo) lo.style.display = '';
-    const chip = $('#userChip');
-    if (chip) { chip.querySelector('.user-name').textContent = res.user.name || res.user.email; chip.querySelector('.user-sub').textContent = (__tier.charAt(0).toUpperCase() + __tier.slice(1)) + ' plan'; }
     renderModelPicker(); updateTokenUsage();
   }
   async function loadConfig() {
     const data = await jsonOr('/api/config', {}, null, 7000);
     if (data && Array.isArray(data.models) && data.models.length) __config = data;
     if (!__config) __config = { models: FALLBACK_MODELS };
-    __model = getModelsList()[0].id;
-    renderModelPicker();
-    const wrap = $('#emailLoginWrap');
-    if (wrap && __config.email_login_available === false) wrap.style.display = 'none';
+    __model = getModelsList()[0].id; renderModelPicker();
   }
-  async function doLogin(e) {
-    if (e) e.preventDefault();
-    const name = $('#loginName')?.value.trim();
-    const email = $('#loginEmail')?.value.trim().toLowerCase();
-    if (!name || !email) return;
-    const res = await jsonOr('/api/auth/simple-login', { method: 'POST', body: JSON.stringify({ name, email }) }, null);
-    if (res && res.ok) { setToken(res.token || ''); closeModal('loginModal'); await refreshUsage(); toast(`${t('toast.signedIn')}, ${name}!`); openShareAd(); }
-    else toast(res?.error || 'Login failed', 2500);
-  }
-  function doLoginment() { window.location.href = '/api/auth/loginment/start'; }
-  async function doLogout() { await jsonOr('/api/logout', { method: 'POST' }, null); setToken(''); await refreshUsage(); closeModal('settingsModal'); toast(t('toast.signedOut')); }
+  async function doLogin(e) { if (e) e.preventDefault(); const name = $('#loginName')?.value.trim(); const email = $('#loginEmail')?.value.trim().toLowerCase(); if (!name || !email) return; const res = await jsonOr('/api/auth/simple-login', { method: 'POST', body: JSON.stringify({ name, email }) }, null); if (res && res.ok) { setToken(res.token || ''); closeModal('loginModal'); await refreshUsage(); toast('Welcome, ' + name + '!'); } }
+  async function doLogout() { await jsonOr('/api/logout', { method: 'POST' }, null); setToken(''); await refreshUsage(); closeModal('settingsModal'); toast('Signed out'); }
   async function loadPlans() {
     const grid = $('#plansGrid'); if (!grid) return;
     grid.innerHTML = '<div class="studio-empty">Loading…</div>';
     const res = await jsonOr('/api/subscription/plans', {}, null);
     if (!res || !Array.isArray(res.plans)) { grid.innerHTML = '<div class="studio-empty">Could not load plans.</div>'; return; }
-    grid.innerHTML = res.plans.map((p) => {
-      const isCurrent = p.id === __tier;
-      const price = p.id === 'free' ? '<div class="plan-price">Free</div>' : `<div class="plan-price">$${Number(p.price_usd).toFixed(2)}</div>`;
-      return `<div class="plan-card${isCurrent ? ' current' : ''}"><div class="plan-name">${escapeHtml(p.label)}</div><div class="plan-tagline">${escapeHtml(p.tagline || '')}</div>${price}<ul class="plan-perks">${(p.perks || []).map((x) => `<li>✓ ${escapeHtml(x)}</li>`).join('')}</ul></div>`;
-    }).join('');
+    grid.innerHTML = res.plans.map((p) => { const price = p.id === 'free' ? '<div class="plan-price">Free</div>' : `<div class="plan-price">$${Number(p.price_usd).toFixed(2)}</div>`; return `<div class="plan-card${p.id === __tier ? ' current' : ''}"><div class="plan-name">${escapeHtml(p.label)}</div>${price}<ul class="plan-perks">${(p.perks || []).map((x) => `<li>✓ ${escapeHtml(x)}</li>`).join('')}</ul></div>`; }).join('');
   }
   async function genImage() {
-    const prompt = $('#imagePrompt')?.value.trim();
-    if (!prompt) return;
+    const prompt = $('#imagePrompt')?.value.trim(); if (!prompt) return;
     const btn = $('#generateImageBtn'), result = $('#imageResult');
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line spin"></i> …'; }
     if (result) result.innerHTML = '<div class="studio-empty"><i class="ri-loader-4-line spin"></i> …</div>';
     try {
       const res = await netFetch('/v1/images/generations', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ prompt, guest_id: getGuestId() }) }, 90000);
       const data = await res.json().catch(() => ({}));
-      if (res.ok && data.ok && data.image) { if (result) { result.innerHTML = `<img src="${data.image}" alt="${escapeHtml(prompt)}">`; result.querySelector('img').onclick = () => openImageViewer(data.image); } }
-      else { const errMsg = data.error?.message || data.error || `HTTP ${res.status}`; if (result) result.innerHTML = `<div class="studio-error">Failed: ${escapeHtml(errMsg)}</div>`; }
-    } catch (e) { if (result) result.innerHTML = `<div class="studio-error">Error: ${escapeHtml(e.message)}</div>`; }
-    finally { if (btn) { btn.disabled = false; btn.innerHTML = `<i class="ri-image-add-line"></i> ${t('lumenal.generate')}`; } }
-  }
-
-  /* ═══════════ MCP ═══════════ */
-  function loadMcp() { __mcpServers = safeGet(MCP_KEY, []); if (!Array.isArray(__mcpServers)) __mcpServers = []; }
-  function saveMcp() { safeSet(MCP_KEY, __mcpServers); }
-  function renderMcpList() {
-    const wrap = $('#mcpServerList'); if (!wrap) return;
-    if (!__mcpServers.length) { wrap.innerHTML = `<div class="mcp-empty">${escapeHtml(t('settingsT.mcp.empty'))}</div>`; return; }
-    wrap.innerHTML = __mcpServers.map((s, i) => `
-      <div class="mcp-row" data-idx="${i}">
-        <div class="mcp-row-icon"><i class="ri-server-line"></i></div>
-        <div class="mcp-row-info"><div class="mcp-row-name">${escapeHtml(s.name)}</div><div class="mcp-row-url">${escapeHtml(s.url)}</div></div>
-        <div class="mcp-row-actions">
-          <button class="icon-btn mcp-test" data-idx="${i}"><i class="ri-flashlight-line"></i></button>
-          <button class="icon-btn mcp-remove" data-idx="${i}"><i class="ri-delete-bin-line"></i></button>
-        </div>
-      </div>`).join('');
-    wrap.querySelectorAll('.mcp-remove').forEach((b) => { b.onclick = () => { const i = parseInt(b.dataset.idx, 10); __mcpServers.splice(i, 1); saveMcp(); renderMcpList(); toast(t('toast.serverRemoved')); }; });
-    wrap.querySelectorAll('.mcp-test').forEach((b) => { b.onclick = async () => { const i = parseInt(b.dataset.idx, 10); const s = __mcpServers[i]; if (!s) return; try { const r = await netFetch(s.url, { method: 'GET', headers: s.key ? { Authorization: 'Bearer ' + s.key } : {} }, 5000); toast(r.ok ? `✓ ${s.name}` : `✗ ${r.status}`); } catch { toast(`✗ ${s.name}`); } }; });
+      if (res.ok && data.ok && data.image) { if (result) { result.innerHTML = `<img src="${data.image}" alt="">`; result.querySelector('img').onclick = () => openImageViewer(data.image); } }
+      else { if (result) result.innerHTML = `<div class="studio-error">Failed</div>`; }
+    } catch (e) { if (result) result.innerHTML = `<div class="studio-error">Error</div>`; }
+    finally { if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-image-add-line"></i> Generate'; } }
   }
 
   /* ═══════════ BRIDGE ═══════════ */
-  function loadBridgeLS() { const b = safeGet(BRIDGE_KEY, {}); __bridge = { ...__bridge, ...b, connected: false, baseUrl: null, env: null }; }
-  function saveBridgeLS() { safeSet(BRIDGE_KEY, { name: __bridge.name, port: __bridge.port }); }
   function loadBridgeOpts() { const o = safeGet(BRIDGE_OPTS_KEY, {}); if (typeof o.autoRun === 'boolean') __bridgeAutoRun = o.autoRun; if (typeof o.showCode === 'boolean') __bridgeShowCode = o.showCode; }
   function saveBridgeOpts() { safeSet(BRIDGE_OPTS_KEY, { autoRun: __bridgeAutoRun, showCode: __bridgeShowCode }); }
-  function loadKdeDevice() { const v = safeGet(KDE_DEVICE_KEY, null); if (v && v.id && v.name) __kdeCurrentDevice = v; }
-  function saveKdeDevice() { if (__kdeCurrentDevice) safeSet(KDE_DEVICE_KEY, __kdeCurrentDevice); else { try { localStorage.removeItem(KDE_DEVICE_KEY); } catch {} } }
-
   function renderBridgeStatus() {
     [['#bridgeStatus'], ['#bwStatusPill'], ['#bwStatusBox']].forEach(([sel]) => {
       const wrap = document.querySelector(sel); if (!wrap) return;
-      const dot = wrap.querySelector('.bridge-status-dot');
-      const txt = wrap.querySelector('span');
+      const dot = wrap.querySelector('.bridge-status-dot'); const txt = wrap.querySelector('span');
       if (dot) { dot.classList.toggle('online', __bridge.connected); dot.classList.toggle('offline', !__bridge.connected); }
-      if (txt) txt.textContent = __bridge.connected ? t('bridge.connected') : t('bridge.disconnected');
+      if (txt) txt.textContent = __bridge.connected ? 'Connected' : 'Disconnected';
     });
     const c = $('#bwConnectBtn'), d = $('#bwDisconnectBtn');
     if (c) c.style.display = __bridge.connected ? 'none' : 'flex';
     if (d) d.style.display = __bridge.connected ? 'flex' : 'none';
-    updateBridgeSendBtn(); renderSudoStatus(); renderToggles();
+    updateBridgeSendBtn(); renderToggles();
   }
-  function renderToggles() {
-    $('#bwToggleAutoRun')?.classList.toggle('active', __bridgeAutoRun);
-    $('#bwToggleShowCode')?.classList.toggle('active', __bridgeShowCode);
-    const sb = $('#bwStopBtn'); if (sb) sb.style.display = bridgeRunning ? 'inline-flex' : 'none';
-  }
-  function renderSudoStatus() {
-    const s = $('#bwSudoStatus'); if (!s) return;
-    s.textContent = __sudoPassword ? (__sudoRemember ? 'Password saved (session)' : 'Password set (temporary)') : t('bridge.noPassword');
-  }
-  function renderKdeStatus() {
-    const txt = $('#bwKdeStatus');
-    if (!txt) return;
-    txt.textContent = __kdeAvailable ? 'KDE Connect ready' : 'KDE Connect: not installed';
-    renderKdeDeviceList();
-  }
-  function renderKdeDeviceList() {
-    const wrap = $('#bwDeviceList'); if (!wrap) return;
-    if (!__kdeAvailable) { wrap.innerHTML = '<div class="bw-hint">Install: <code>sudo apt install kdeconnect</code></div>'; return; }
-    if (!__kdeDevices.length) { wrap.innerHTML = '<div class="bw-hint">No devices found. Tap <b>Scan</b>.</div>'; return; }
-    wrap.innerHTML = __kdeDevices.map((d) => `
-      <div class="bw-device-row" data-id="${escapeHtml(d.id)}">
-        <div class="bw-device-icon"><i class="ri-smartphone-line"></i></div>
-        <div class="bw-device-info"><div class="bw-device-name">${escapeHtml(d.name)}</div><div class="bw-device-id">${escapeHtml(d.id)}${d.reachable ? ' · reachable' : ''}</div></div>
-        <div class="bw-device-actions">
-          <button class="icon-btn" data-kde-ping><i class="ri-wifi-line"></i></button>
-          <button class="icon-btn" data-kde-ring><i class="ri-notification-3-line"></i></button>
-          <button class="icon-btn" data-kde-pick><i class="ri-check-line"></i></button>
-        </div>
-      </div>`).join('');
-    wrap.querySelectorAll('.bw-device-row').forEach((row) => {
-      const dev = __kdeDevices.find((x) => x.id === row.dataset.id);
-      if (!dev) return;
-      row.querySelector('[data-kde-pick]')?.addEventListener('click', () => { __kdeCurrentDevice = { id: dev.id, name: dev.name }; saveKdeDevice(); renderKdeDeviceList(); toast(`Selected: ${dev.name}`); });
-      row.querySelector('[data-kde-ping]')?.addEventListener('click', async () => { try { const r = await bridgeCall('/kde/ping', { device: dev.id }); toast(r.ok ? `📱 ${dev.name} online` : '✗'); } catch { toast('Failed'); } });
-      row.querySelector('[data-kde-ring]')?.addEventListener('click', async () => { try { await bridgeCall('/kde/ring', { device: dev.id }); } catch {} });
-    });
-  }
-  function showSudoModal(command) {
-    return new Promise((resolve) => {
-      __sudoResolver = resolve;
-      const modal = $('#sudoModal'); if (!modal) { resolve(null); return; }
-      const cmdText = $('#sudoCommandText'); if (cmdText) cmdText.textContent = command || '';
-      const pwd = $('#sudoPasswordInput'); if (pwd) { pwd.value = ''; pwd.type = 'password'; }
-      const rev = $('#sudoRevealBtn'); if (rev) rev.innerHTML = '<i class="ri-eye-line"></i>';
-      const hint = $('#sudoHint'); if (hint) { hint.textContent = ''; hint.className = 'sudo-hint'; }
-      modal.classList.add('open'); setTimeout(() => pwd?.focus(), 100);
-    });
-  }
-  function closeSudoModal() { $('#sudoModal')?.classList.remove('open'); }
-  function submitSudo() {
-    const pwd = $('#sudoPasswordInput')?.value || '';
-    const remember = !!$('#sudoRememberChk')?.checked;
-    const hint = $('#sudoHint');
-    if (!pwd) { if (hint) { hint.textContent = 'Enter your password.'; hint.className = 'sudo-hint err'; } return; }
-    __sudoPassword = pwd; __sudoRemember = remember;
-    closeSudoModal(); renderSudoStatus();
-    if (__sudoResolver) { __sudoResolver({ password: pwd, remember }); __sudoResolver = null; }
-  }
-  function skipSudo() { closeSudoModal(); if (__sudoResolver) { __sudoResolver(null); __sudoResolver = null; } }
-  function forgetSudo() { __sudoPassword = ''; __sudoRemember = false; renderSudoStatus(); toast('Sudo forgotten'); }
-  async function askSudo(cmd) { if (__sudoPassword) return { password: __sudoPassword, remember: __sudoRemember, reused: true }; return await showSudoModal(cmd); }
-
-  async function testBridge(port) {
-    for (const host of ['localhost', '127.0.0.1']) {
-      try { const r = await netFetch(`http://${host}:${port}/ping`, { mode: 'cors' }, 4000); if (r.ok) { const d = await r.json(); if (d && d.ok) return { ok: true, base: `http://${host}:${port}` }; } } catch {}
-    }
-    return { ok: false };
-  }
+  function renderToggles() { $('#bwToggleAutoRun')?.classList.toggle('active', __bridgeAutoRun); $('#bwToggleShowCode')?.classList.toggle('active', __bridgeShowCode); const sb = $('#bwStopBtn'); if (sb) sb.style.display = bridgeRunning ? 'inline-flex' : 'none'; }
+  function renderSudoStatus() { const s = $('#bwSudoStatus'); if (!s) return; s.textContent = __sudoPassword ? 'Password set' : 'No password saved'; }
+  async function testBridge(port) { for (const host of ['localhost', '127.0.0.1']) { try { const r = await netFetch(`http://${host}:${port}/ping`, { mode: 'cors' }, 4000); if (r.ok) { const d = await r.json(); if (d && d.ok) return { ok: true, base: `http://${host}:${port}` }; } } catch {} } return { ok: false }; }
   async function fetchEnv(base) { try { const r = await netFetch(`${base}/env`, { mode: 'cors' }, 5000); if (!r.ok) return null; const d = await r.json(); return d && d.ok ? d : null; } catch { return null; } }
   async function startBridge() {
     const name = ($('#bwNameInput')?.value || __bridge.name).trim() || 'My Laptop';
     const port = parseInt($('#bwPortInput')?.value || __bridge.port, 10) || 8765;
-    __bridge.name = name; __bridge.port = port; saveBridgeLS();
-    setBwHint('Connecting…', '');
+    __bridge.name = name; __bridge.port = port;
+    setBwHint('Connecting…');
     const res = await testBridge(port);
-    if (res.ok) {
-      __bridge.connected = true; __bridge.baseUrl = res.base; __bridge.env = await fetchEnv(res.base);
-      __kdeAvailable = !!__bridge.env?.kde_connect_available;
-      renderBridgeStatus(); renderKdeStatus();
-      $('#bridgeEmpty')?.remove();
-      const home = __bridge.env?.home || '(unknown)';
-      setBwHint(`Connected · Home: ${home}`, 'ok');
-      addBridgeSystemMsg(`Connected. Home: ${home}`);
-    } else {
-      __bridge.connected = false; __bridge.baseUrl = null; __bridge.env = null; __kdeAvailable = false;
-      renderBridgeStatus(); renderKdeStatus();
-      setBwHint(`Could not reach the bridge on port ${port}.`, 'err');
-    }
+    if (res.ok) { __bridge.connected = true; __bridge.baseUrl = res.base; __bridge.env = await fetchEnv(res.base); renderBridgeStatus(); $('#bridgeEmpty')?.remove(); setBwHint(`Connected · Home: ${__bridge.env?.home || '?'}`, 'ok'); addBridgeSystemMsg(`Connected. Home: ${__bridge.env?.home || '?'}`); }
+    else { __bridge.connected = false; setBwHint(`Could not reach port ${port}.`, 'err'); renderBridgeStatus(); }
   }
-  function stopBridge() {
-    __bridge.connected = false; __bridge.baseUrl = null; __bridge.env = null;
-    __sudoPassword = ''; __sudoRemember = false; __kdeAvailable = false; __kdeDevices = [];
-    renderBridgeStatus(); renderKdeStatus(); setBwHint('', '');
-  }
+  function stopBridge() { __bridge.connected = false; __bridge.baseUrl = null; __bridge.env = null; __sudoPassword = ''; renderBridgeStatus(); setBwHint(''); }
   async function bridgeCall(endpoint, payload) {
     if (!__bridge.connected || !__bridge.baseUrl) throw new Error('Bridge not connected');
     const r = await netFetch(__bridge.baseUrl + endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}), credentials: 'omit' }, 130000);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return await r.json();
   }
-  function downloadBridgeClient() {
-    const params = new URLSearchParams({ name: __bridge.name, port: String(__bridge.port) });
-    const a = document.createElement('a');
-    a.href = '/api/bridge/download?' + params.toString();
-    a.download = 'mirox_client_bridge.zip';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  }
   function setBwHint(text, cls = '') { const el = $('#bwConnectHint'); if (!el) return; el.textContent = text; el.className = 'bw-hint' + (cls ? ' ' + cls : ''); }
-  function updateBridgeSendBtn() {
-    const btn = $('#bridgeSendBtn'), inp = $('#bridgeInput');
-    if (!btn || !inp) return;
-    const enabled = __bridge.connected && !bridgeRunning && inp.value.trim().length > 0;
-    btn.classList.toggle('is-disabled', !enabled);
-    btn.setAttribute('aria-disabled', String(!enabled));
-    renderToggles();
-  }
+  function updateBridgeSendBtn() { const btn = $('#bridgeSendBtn'), inp = $('#bridgeInput'); if (!btn || !inp) return; const enabled = __bridge.connected && !bridgeRunning && inp.value.trim().length > 0; btn.classList.toggle('is-disabled', !enabled); btn.setAttribute('aria-disabled', String(!enabled)); renderToggles(); }
   function openBridgeWorkspace() { $('#bridgeWorkspace')?.classList.add('open'); document.body.style.overflow = 'hidden'; if (!__bridge.connected) setTimeout(() => startBridge(), 50); }
-  function closeBridgeWorkspace() { $('#bridgeWorkspace')?.classList.remove('open'); $('#bwPanel')?.classList.remove('side-open'); document.body.style.overflow = ''; }
-  function clearBridgeChat() {
-    const m = $('#bridgeMessages'); if (m) m.innerHTML = '';
-    bridgeConversation = []; bridgeProgress = 0; bridgeTurn = null;
-    bridgeTaskComplete = true; bridgeWaitingForUser = false;
-    __lastBuildFolder = null; __lastBuildWasMobile = false;
-    updateBridgeProgress(0, 'Ready');
-    const w = $('#bwProgress'); if (w) w.style.display = 'none';
-    renderBuildStatus();
-  }
+  function closeBridgeWorkspace() { $('#bridgeWorkspace')?.classList.remove('open'); document.body.style.overflow = ''; }
+  function clearBridgeChat() { const m = $('#bridgeMessages'); if (m) m.innerHTML = ''; bridgeConversation = []; bridgeProgress = 0; bridgeTurn = null; bridgeTaskComplete = true; bridgeWaitingForUser = false; __lastBuildFolder = null; updateBridgeProgress(0, 'Ready'); const w = $('#bwProgress'); if (w) w.style.display = 'none'; renderBuildStatus(); }
   function scrollBridgeBottom() { const c = $('#bridgeMessages'); if (c) c.scrollTop = c.scrollHeight; }
-  function renderBuildStatus() { const s = $('#bwBuildStatus'); if (!s) return; s.textContent = __lastBuildFolder || t('bridge.noProject'); }
-  function addBridgeUserMsg(text) {
-    const container = $('#bridgeMessages'); if (!container) return;
-    $('#bridgeEmpty')?.remove();
-    const el = document.createElement('div'); el.className = 'bridge-msg user';
-    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    el.innerHTML = `<div class="bridge-bubble">${escapeHtml(text).replace(/\n/g, '<br>')}</div><div class="bridge-meta">You · ${time}</div>`;
-    container.appendChild(el); scrollBridgeBottom();
-  }
-  function addBridgeAiMsg(text) {
-    if (!text) return null;
-    const container = $('#bridgeMessages'); if (!container) return null;
-    $('#bridgeEmpty')?.remove();
-    const el = document.createElement('div'); el.className = 'bridge-msg ai';
-    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    el.innerHTML = `<div class="bridge-bubble">${escapeHtml(text).replace(/\n/g, '<br>')}</div><div class="bridge-meta">Mirox · ${time}</div>`;
-    container.appendChild(el); scrollBridgeBottom();
-    return el;
-  }
-  function addBridgeSystemMsg(text) {
-    const container = $('#bridgeMessages'); if (!container) return;
-    $('#bridgeEmpty')?.remove();
-    const el = document.createElement('div'); el.className = 'bridge-msg system';
-    el.innerHTML = `<div class="bridge-bubble">${escapeHtml(text)}</div>`;
-    container.appendChild(el); scrollBridgeBottom();
-  }
+  function renderBuildStatus() { const s = $('#bwBuildStatus'); if (!s) return; s.textContent = __lastBuildFolder || 'No project yet'; }
+  function addBridgeUserMsg(text) { const c = $('#bridgeMessages'); if (!c) return; $('#bridgeEmpty')?.remove(); const el = document.createElement('div'); el.className = 'bridge-msg user'; el.innerHTML = `<div class="bridge-bubble">${escapeHtml(text).replace(/\n/g, '<br>')}</div><div class="bridge-meta">You</div>`; c.appendChild(el); scrollBridgeBottom(); }
+  function addBridgeAiMsg(text) { if (!text) return; const c = $('#bridgeMessages'); if (!c) return; $('#bridgeEmpty')?.remove(); const el = document.createElement('div'); el.className = 'bridge-msg ai'; el.innerHTML = `<div class="bridge-bubble">${escapeHtml(text).replace(/\n/g, '<br>')}</div><div class="bridge-meta">Mirox</div>`; c.appendChild(el); scrollBridgeBottom(); }
+  function addBridgeSystemMsg(text) { const c = $('#bridgeMessages'); if (!c) return; $('#bridgeEmpty')?.remove(); const el = document.createElement('div'); el.className = 'bridge-msg system'; el.innerHTML = `<div class="bridge-bubble">${escapeHtml(text)}</div>`; c.appendChild(el); scrollBridgeBottom(); }
   function addBridgeSuccessMsg(text, extras) {
-    const container = $('#bridgeMessages'); if (!container) return;
+    const c = $('#bridgeMessages'); if (!c) return;
     const e = extras || {};
     let buttons = '';
     if (e.previewPath) buttons += `<button class="bridge-success-btn" data-preview="${escapeHtml(e.previewPath)}"><i class="ri-eye-line"></i> Preview</button>`;
@@ -1730,59 +1264,38 @@
     const el = document.createElement('div'); el.className = 'bridge-msg ai';
     el.innerHTML = `<div class="bridge-success"><div class="bridge-success-head"><i class="ri-checkbox-circle-fill"></i><span>${escapeHtml(text)}</span></div>${buttons ? `<div class="bridge-success-actions">${buttons}</div>` : ''}</div>`;
     el.querySelectorAll('[data-preview]').forEach((b) => { b.onclick = () => openPreview(b.dataset.preview); });
-    el.querySelectorAll('[data-copy-folder]').forEach((b) => { b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copyFolder); toast('Path copied'); } catch {} }; });
-    container.appendChild(el); scrollBridgeBottom();
+    el.querySelectorAll('[data-copy-folder]').forEach((b) => { b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copyFolder); toast('Copied'); } catch {} }; });
+    c.appendChild(el); scrollBridgeBottom();
   }
-  function addBridgeThinkingPanel(label, steps) {
-    const container = $('#bridgeMessages'); if (!container) return null;
-    $('#bridgeEmpty')?.remove();
-    const panel = createThinkPanel(label || 'Thinking', steps || []);
-    panel.el.classList.add('bridge-think');
-    container.appendChild(panel.el); scrollBridgeBottom();
-    return panel;
-  }
+  function addBridgeThinkingPanel(label, steps) { const c = $('#bridgeMessages'); if (!c) return null; $('#bridgeEmpty')?.remove(); const panel = createThinkPanel(label || 'Thinking', steps || []); panel.el.classList.add('bridge-think'); c.appendChild(panel.el); scrollBridgeBottom(); return panel; }
   function addBridgeActionBubble(cmd) {
-    const container = $('#bridgeMessages'); if (!container) return null;
+    const c = $('#bridgeMessages'); if (!c) return null;
     const data = getActionData(cmd);
     const el = document.createElement('div'); el.className = 'bridge-msg ai';
-    el.innerHTML = `<div class="bridge-action"><div class="bridge-action-head"><div class="bridge-action-icon ${data.iconClass}"><i class="${data.icon}"></i></div><div class="bridge-action-label">${data.label}</div><span class="bridge-action-status working"><i class="ri-loader-4-line spin"></i> Working</span></div><div class="bridge-action-code" style="display:none;"></div></div>`;
-    container.appendChild(el); scrollBridgeBottom();
-    return el;
+    el.innerHTML = `<div class="bridge-action"><div class="bridge-action-head"><div class="bridge-action-icon ${data.iconClass}"><i class="${data.icon}"></i></div><div class="bridge-action-label">${data.label}</div><span class="bridge-action-status working"><i class="ri-loader-4-line spin"></i> Working</span></div></div>`;
+    c.appendChild(el); scrollBridgeBottom(); return el;
   }
   function updateBridgeActionBubble(el, cmd, result) {
-    if (!el) return;
-    const status = el.querySelector('.bridge-action-status'); if (!status) return;
+    if (!el) return; const status = el.querySelector('.bridge-action-status'); if (!status) return;
     if (result && result.ok) { status.className = 'bridge-action-status ok'; status.innerHTML = '<i class="ri-check-line"></i> Done'; }
     else if (result && result.cancelled) { status.className = 'bridge-action-status err'; status.innerHTML = '<i class="ri-close-line"></i> Cancelled'; }
     else { status.className = 'bridge-action-status err'; status.innerHTML = '<i class="ri-close-line"></i> Failed'; }
-    const codeWrap = el.querySelector('.bridge-action-code');
-    if (codeWrap) {
-      if (__bridgeShowCode && cmd.type === 'write' && typeof cmd.content === 'string') { codeWrap.style.display = 'block'; codeWrap.innerHTML = `<pre><code>${escapeHtml(cmd.content.slice(0, 3000))}</code></pre>`; }
-      else { codeWrap.style.display = 'none'; codeWrap.innerHTML = ''; }
-    }
     scrollBridgeBottom();
   }
   function getBaseName(p) { if (!p) return ''; const parts = String(p).split('/'); return parts[parts.length - 1] || p; }
   function getActionData(cmd) {
-    const t2 = cmd.type;
-    const base = getBaseName(cmd.path) || getBaseName(cmd.from) || '';
-    const map = { 'kde-list':['ri-radar-line','list','Scanning devices'],'kde-refresh':['ri-refresh-line','list','Refreshing'],'kde-ping':['ri-wifi-line','exec','Pinging'],'kde-ring':['ri-notification-3-line','exec','Ringing'],sudo:['ri-shield-keyhole-line','exec','sudo'],delete:['ri-delete-bin-line','exec',`Deleting <code>${escapeHtml(base)}</code>`],move:['ri-drag-move-line','exec',`Moving <code>${escapeHtml(base)}</code>`],copy:['ri-file-copy-2-line','exec',`Copying <code>${escapeHtml(base)}</code>`],read:['ri-file-text-line','read',`Reading <code>${escapeHtml(base)}</code>`],list:['ri-folder-line','list',`Listing <code>${escapeHtml(base || cmd.path || '')}</code>`] };
-    if (t2 === 'write') return { icon:'ri-file-add-line', iconClass:'write', label:`Writing <code>${escapeHtml(base)}</code>` };
-    if (t2 === 'append') return { icon:'ri-file-edit-line', iconClass:'write', label:`Appending <code>${escapeHtml(base)}</code>` };
-    if (map[t2]) return { icon: map[t2][0], iconClass: map[t2][1], label: map[t2][2] };
-    if (t2 === 'exec') return { icon:'ri-terminal-box-line', iconClass:'exec', label:'Running command' };
-    return { icon:'ri-terminal-line', iconClass:'', label:'Working' };
+    const t2 = cmd.type; const base = getBaseName(cmd.path) || '';
+    if (t2 === 'write') return { icon: 'ri-file-add-line', iconClass: 'write', label: `Writing <code>${escapeHtml(base)}</code>` };
+    if (t2 === 'append') return { icon: 'ri-file-edit-line', iconClass: 'write', label: `Appending <code>${escapeHtml(base)}</code>` };
+    if (t2 === 'exec') return { icon: 'ri-terminal-box-line', iconClass: 'exec', label: 'Running command' };
+    if (t2 === 'sudo') return { icon: 'ri-shield-keyhole-line', iconClass: 'exec', label: 'sudo' };
+    if (t2 === 'read') return { icon: 'ri-file-text-line', iconClass: 'read', label: `Reading <code>${escapeHtml(base)}</code>` };
+    if (t2 === 'list') return { icon: 'ri-folder-line', iconClass: 'list', label: `Listing <code>${escapeHtml(base)}</code>` };
+    if (t2 === 'delete') return { icon: 'ri-delete-bin-line', iconClass: 'exec', label: `Deleting <code>${escapeHtml(base)}</code>` };
+    return { icon: 'ri-terminal-line', iconClass: '', label: 'Working' };
   }
   function setProgressText(text) { const el = $('#bwProgressText'); if (el && text) el.textContent = text; }
-  function updateBridgeProgress(pct, text) {
-    const newPct = Math.max(0, Math.min(100, Math.round(pct)));
-    if (newPct > bridgeProgress) bridgeProgress = newPct;
-    const bar = $('#bwProgress'), fill = $('#bwProgressFill'), pctEl = $('#bwProgressPct');
-    if (bar) bar.style.display = 'block';
-    if (fill) { fill.style.width = bridgeProgress + '%'; fill.classList.toggle('done', bridgeProgress >= 100); }
-    if (pctEl) { pctEl.textContent = bridgeProgress + '%'; }
-    if (text) setProgressText(text);
-  }
+  function updateBridgeProgress(pct, text) { const newPct = Math.max(0, Math.min(100, Math.round(pct))); if (newPct > bridgeProgress) bridgeProgress = newPct; const bar = $('#bwProgress'), fill = $('#bwProgressFill'), pctEl = $('#bwProgressPct'); if (bar) bar.style.display = 'block'; if (fill) { fill.style.width = bridgeProgress + '%'; fill.classList.toggle('done', bridgeProgress >= 100); } if (pctEl) pctEl.textContent = bridgeProgress + '%'; if (text) setProgressText(text); }
   function extractBridgeCommands(text) {
     const cmds = []; const add = (type, mm, extra) => cmds.push(Object.assign({ type, index: mm.index }, extra));
     const rules = [
@@ -1798,65 +1311,22 @@
     cmds.sort((a, b) => a.index - b.index);
     return cmds;
   }
-  function hasUnclosedWriteOrAppend(text) {
-    const t2 = String(text || '');
-    return (t2.match(/<bridge-write\b/g) || []).length > (t2.match(/<\/bridge-write>/g) || []).length || (t2.match(/<bridge-append\b/g) || []).length > (t2.match(/<\/bridge-append>/g) || []).length;
-  }
-  function lastWriteOrAppendPath(text) {
-    const matches = [...String(text || '').matchAll(/<bridge-(?:write|append)\s+path="([^"]+)"/g)];
-    return matches.length ? matches[matches.length - 1][1] : null;
-  }
-  function buildEnvBlockString() {
-    const env = __bridge.env || {};
-    const home = env.home || '(unknown)';
-    return [`[Bridge environment]`, `home=${home}`, `cwd=${env.cwd || home}`, `platform=${env.platform || '?'}`, `allowed_dirs=${(env.allowed_dirs || []).join(', ') || '(none)'}`].join('\n');
-  }
-  function absBridgePath(p, home) {
-    let s = String(p || '').trim().replace(/\\/g, '/');
-    if (!home) return s;
-    if (s === '' || s === '~' || s === '.' || s === './') return home;
-    if (s.startsWith('~/')) return home + s.slice(1);
-    if (s.startsWith('./')) return home + '/' + s.slice(2);
-    if (!s.startsWith('/')) return home + '/' + s;
-    return s;
-  }
-  function askDeviceChoice(devices) {
-    return new Promise((resolve) => {
-      const modal = $('#kdeModal'), grid = $('#kdeGrid');
-      if (!modal || !grid) { resolve(null); return; }
-      __kdeResolver = resolve; grid.innerHTML = '';
-      if (!devices || !devices.length) grid.innerHTML = '<div class="kde-empty">No devices found.</div>';
-      else devices.forEach((d, i) => {
-        const card = document.createElement('div'); card.className = 'kde-device-card' + (d.reachable ? ' reachable' : '');
-        card.innerHTML = `<div class="kde-device-card-head"><div class="kde-device-card-icon"><i class="ri-smartphone-line"></i></div><div class="kde-device-card-meta"><div class="kde-device-card-name">${escapeHtml(d.name)}</div><div class="kde-device-card-id">${escapeHtml(d.id)}</div></div><div class="kde-device-card-num">${i + 1}</div></div><div class="kde-device-card-status ${d.reachable ? 'ok' : 'warn'}">${d.reachable ? '● reachable' : '○ not reachable'}</div><button class="planner-choose-btn" type="button"><i class="ri-check-line"></i> ${escapeHtml(t('planner.choose'))}</button>`;
-        grid.appendChild(card);
-        card.querySelector('.planner-choose-btn').addEventListener('click', () => { __kdeCurrentDevice = { id: d.id, name: d.name }; saveKdeDevice(); renderKdeDeviceList(); closeKdeModal(); resolve({ id: d.id, name: d.name }); });
-      });
-      modal.classList.add('open');
-    });
-  }
-  function closeKdeModal() { $('#kdeModal')?.classList.remove('open'); }
-  function kdeSkip() { closeKdeModal(); if (__kdeResolver) { __kdeResolver(null); __kdeResolver = null; } }
+  function hasUnclosedWriteOrAppend(text) { const t2 = String(text || ''); return (t2.match(/<bridge-write\b/g) || []).length > (t2.match(/<\/bridge-write>/g) || []).length || (t2.match(/<bridge-append\b/g) || []).length > (t2.match(/<\/bridge-append>/g) || []).length; }
+  function lastWriteOrAppendPath(text) { const matches = [...String(text || '').matchAll(/<bridge-(?:write|append)\s+path="([^"]+)"/g)]; return matches.length ? matches[matches.length - 1][1] : null; }
+  function buildEnvBlockString() { const env = __bridge.env || {}; const home = env.home || '(unknown)'; return [`[Bridge environment]`, `home=${home}`, `cwd=${env.cwd || home}`, `platform=${env.platform || '?'}`].join('\n'); }
+  function absBridgePath(p, home) { let s = String(p || '').trim().replace(/\\/g, '/'); if (!home) return s; if (s === '' || s === '~' || s === '.' || s === './') return home; if (s.startsWith('~/')) return home + s.slice(1); if (s.startsWith('./')) return home + '/' + s.slice(2); if (!s.startsWith('/')) return home + '/' + s; return s; }
+  function showSudoModal(command) { return new Promise((resolve) => { __sudoResolver = resolve; const modal = $('#sudoModal'); if (!modal) { resolve(null); return; } const cmdText = $('#sudoCommandText'); if (cmdText) cmdText.textContent = command || ''; const pwd = $('#sudoPasswordInput'); if (pwd) { pwd.value = ''; pwd.type = 'password'; } modal.classList.add('open'); setTimeout(() => pwd?.focus(), 100); }); }
+  function closeSudoModal() { $('#sudoModal')?.classList.remove('open'); }
+  function submitSudo() { const pwd = $('#sudoPasswordInput')?.value || ''; const remember = !!$('#sudoRememberChk')?.checked; if (!pwd) return; __sudoPassword = pwd; __sudoRemember = remember; closeSudoModal(); renderSudoStatus(); if (__sudoResolver) { __sudoResolver({ password: pwd, remember }); __sudoResolver = null; } }
+  function skipSudo() { closeSudoModal(); if (__sudoResolver) { __sudoResolver(null); __sudoResolver = null; } }
+  function forgetSudo() { __sudoPassword = ''; __sudoRemember = false; renderSudoStatus(); toast('Sudo forgotten'); }
+  async function askSudo(cmd) { if (__sudoPassword) return { password: __sudoPassword, remember: __sudoRemember, reused: true }; return await showSudoModal(cmd); }
   async function executeBridgeCommand(cmd) {
     const home = __bridge.env?.home || '';
     if (cmd.path) cmd.path = absBridgePath(cmd.path, home);
-    if (cmd.from) cmd.from = absBridgePath(cmd.from, home);
-    if (cmd.to) cmd.to = absBridgePath(cmd.to, home);
     const t2 = cmd.type;
-    if (t2 === 'sudo') {
-      const sudo = await askSudo(cmd.command);
-      if (!sudo || !sudo.password) return { ok: false, error: 'cancelled', cancelled: true };
-      try { return await bridgeCall('/sudo-exec', { command: cmd.command, password: sudo.password, timeout: 120 }); } catch (e) { return { ok: false, error: 'sudo failed: ' + e.message }; }
-    }
-    if (t2 === 'exec') {
-      const rawCmd = String(cmd.command || '').trim();
-      if (/(?:^|[\s&|;])sudo\b/.test(rawCmd) && !__sudoPassword) {
-        const sudo = await askSudo(rawCmd);
-        if (!sudo || !sudo.password) return { ok: false, error: 'cancelled', cancelled: true };
-        return bridgeCall('/sudo-exec', { command: rawCmd, password: sudo.password, timeout: 120 });
-      }
-      return bridgeCall('/exec', { command: cmd.command });
-    }
+    if (t2 === 'sudo') { const sudo = await askSudo(cmd.command); if (!sudo || !sudo.password) return { ok: false, cancelled: true }; try { return await bridgeCall('/sudo-exec', { command: cmd.command, password: sudo.password, timeout: 120 }); } catch (e) { return { ok: false, error: e.message }; } }
+    if (t2 === 'exec') return bridgeCall('/exec', { command: cmd.command });
     const map = { write: ['/write', { path: cmd.path, content: cmd.content }], append: ['/append', { path: cmd.path, content: cmd.content }], delete: ['/delete', { path: cmd.path }], read: ['/read', { path: cmd.path }], list: ['/list', { path: cmd.path }] };
     if (map[t2]) return bridgeCall(map[t2][0], map[t2][1]);
     return { ok: false, error: 'Unknown command' };
@@ -1872,41 +1342,28 @@
       default: return `[${cmd.type}] ok`;
     }
   }
-  function newTurnState() { return { runs: 0, plannedFiles: new Set(), writtenFiles: new Set(), commandLog: new Map(), failedSignatures: new Set(), commandsRun: 0 }; }
-  function cmdSignature(cmd) {
-    const t2 = cmd.type;
-    if (t2 === 'exec' || t2 === 'sudo') return t2 + ':' + (cmd.command || '').trim();
-    if (t2 === 'write' || t2 === 'append') return t2 + ':' + cmd.path + ':' + (cmd.content || '').length;
-    if (t2 === 'delete') return 'delete:' + cmd.path;
-    if (t2 === 'read' || t2 === 'list') return t2 + ':' + cmd.path;
-    return t2 + ':' + (cmd.path || '');
-  }
-  function shouldBlockSignature(sig) {
-    if (!bridgeTurn) return false;
-    if (bridgeTurn.failedSignatures.has(sig)) return true;
-    return (bridgeTurn.commandLog.get(sig) || 0) >= MAX_DUP_COMMANDS;
-  }
+  function newTurnState() { return { runs: 0, plannedFiles: new Set(), writtenFiles: new Set(), commandLog: new Map(), failedSignatures: new Set() }; }
+  function cmdSignature(cmd) { const t2 = cmd.type; if (t2 === 'exec' || t2 === 'sudo') return t2 + ':' + (cmd.command || '').trim(); if (t2 === 'write' || t2 === 'append') return t2 + ':' + cmd.path + ':' + (cmd.content || '').length; return t2 + ':' + (cmd.path || ''); }
+  function shouldBlockSignature(sig) { if (!bridgeTurn) return false; if (bridgeTurn.failedSignatures.has(sig)) return true; return (bridgeTurn.commandLog.get(sig) || 0) >= MAX_DUP_COMMANDS; }
   async function fetchBridgeReply(history) {
     const envBlock = buildEnvBlockString();
     const lastMsg = history[history.length - 1];
-    const r = await netFetch('/v1/chat/completions', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ message: `${envBlock}\n\n${lastMsg.content}`, history: history.slice(0, -1).map((h) => ({ role: h.role, content: h.content })), model: 'mirox-luna-1.2', stream: false, bridge: { connected: true, name: __bridge.name, env: __bridge.env || {} } }) }, 120000);
+    const r = await netFetch('/v1/chat/completions', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ message: `${envBlock}\n\n${lastMsg.content}`, history: history.slice(0, -1).map((h) => ({ role: h.role, content: h.content })), model: 'mirox-luna-1.2', stream: false }) }, 120000);
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error?.message || `HTTP ${r.status}`);
     return data.reply || '';
   }
   function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
   async function runBridgeTurn(userText, isResume = false) {
-    if (!__bridge.connected) { setBwHint('Bridge not connected.', 'err'); return; }
+    if (!__bridge.connected) return;
     if (bridgeRunning) return;
-    bridgeRunning = true; bridgeAbort = false;
-    updateBridgeSendBtn();
+    bridgeRunning = true; bridgeAbort = false; updateBridgeSendBtn();
     if (!isResume) {
       bridgeTaskComplete = false; bridgeWaitingForUser = false;
       bridgeTurn = newTurnState(); bridgeProgress = 0;
-      updateBridgeProgress(2, t('bridge.starting'));
+      updateBridgeProgress(2, 'Starting…');
       addBridgeUserMsg(userText);
-      __lastBuildWasMobile = /\b(phone|mobile|tablet|android|iphone|ipad|device)\b/i.test(userText);
-      bridgeConversation.push({ role: 'user', content: `[System] Rules:\n1. NEVER paste code into visible text. All file content goes inside <bridge-write> or <bridge-append>.\n2. ALWAYS close tags.\n3. Create projects inside <home>/<project-name>/.\n4. When done, reply DONE on its own line.\n\n${userText}` });
+      bridgeConversation.push({ role: 'user', content: `[System] Rules: use <bridge-write> for files, close tags. Reply DONE when finished.\n\n${userText}` });
     }
     let iter = 0, autoContinues = 0;
     try {
@@ -1919,10 +1376,7 @@
         let reply = '';
         try { reply = await fetchBridgeReply(bridgeConversation); thinking?.finish(); }
         catch (e) { thinking?.fail('AI error: ' + e.message); break; }
-        if (!reply || !reply.trim()) {
-          if (autoContinues < MAX_AUTO_CONTINUES && __bridgeAutoRun) { autoContinues++; await sleep(600); bridgeConversation.push({ role: 'user', content: '[System] Continue.' }); continue; }
-          break;
-        }
+        if (!reply || !reply.trim()) { if (autoContinues < MAX_AUTO_CONTINUES && __bridgeAutoRun) { autoContinues++; await sleep(600); bridgeConversation.push({ role: 'user', content: '[System] Continue.' }); continue; } break; }
         const cmdsInReply = extractBridgeCommands(reply);
         const saidDone = /\bDONE\b/i.test(reply);
         const truncatedWrite = hasUnclosedWriteOrAppend(reply);
@@ -1937,7 +1391,6 @@
             const sig = cmdSignature(cmd);
             if (shouldBlockSignature(sig)) continue;
             bridgeTurn.commandLog.set(sig, (bridgeTurn.commandLog.get(sig) || 0) + 1);
-            bridgeTurn.commandsRun++;
             if (cmd.type === 'write' || cmd.type === 'append') bridgeTurn.plannedFiles.add(cmd.path);
             const bubble = addBridgeActionBubble(cmd);
             let result;
@@ -1953,10 +1406,7 @@
           if (truncatedWrite && lastPath) bridgeConversation.push({ role: 'user', content: `[System] Continue with <bridge-append path="${lastPath}">.` });
           continue;
         }
-        if (truncatedWrite) {
-          if (__bridgeAutoRun && autoContinues < MAX_AUTO_CONTINUES) { autoContinues++; bridgeConversation.push({ role: 'user', content: `[System] Continue from last character with <bridge-append path="${lastPath}">.` }); continue; }
-          bridgeWaitingForUser = true; break;
-        }
+        if (truncatedWrite) { if (__bridgeAutoRun && autoContinues < MAX_AUTO_CONTINUES) { autoContinues++; bridgeConversation.push({ role: 'user', content: `[System] Continue with <bridge-append path="${lastPath}">.` }); continue; } bridgeWaitingForUser = true; break; }
         const hasPlan = bridgeTurn.plannedFiles.size > 0;
         const allFilesWritten = hasPlan && bridgeTurn.writtenFiles.size >= bridgeTurn.plannedFiles.size;
         if (saidDone && (allFilesWritten || !hasPlan)) {
@@ -1964,69 +1414,37 @@
           const toVerify = [...bridgeTurn.writtenFiles];
           if (toVerify.length) {
             const rows = [];
-            for (const p of toVerify) { let exists = false, sz = 0; try { const res = await bridgeCall('/read', { path: p }); if (res && res.ok) { exists = true; sz = (res.content || '').length; } } catch {} rows.push({ path: p, exists, size: sz }); }
+            for (const p of toVerify) { let exists = false; try { const res = await bridgeCall('/read', { path: p }); if (res && res.ok) exists = true; } catch {} rows.push({ path: p, exists }); }
             const allOk = rows.every((r) => r.exists);
             const projRoot = toVerify[0]?.replace(/\/[^/]*$/, '') || __bridge.env?.home || '';
             __lastBuildFolder = projRoot;
             __lastPreviewFile = toVerify.find((p) => /index\.html?$/i.test(p)) || toVerify[0];
             addBridgeSuccessMsg(allOk ? `Project complete · ${rows.length} files` : `Finished · ${rows.filter((r) => r.exists).length}/${rows.length}`, { folder: projRoot, previewPath: __lastPreviewFile || '' });
             renderBuildStatus();
-          } else { addBridgeSuccessMsg('Task complete'); }
+          } else addBridgeSuccessMsg('Task complete');
           bridgeTaskComplete = true; break;
         }
-        if (!saidDone) {
-          if (__bridgeAutoRun && autoContinues < MAX_AUTO_CONTINUES) { autoContinues++; await sleep(600); bridgeConversation.push({ role: 'user', content: '[System] Continue.' }); continue; }
-          bridgeWaitingForUser = true; break;
-        }
+        if (!saidDone) { if (__bridgeAutoRun && autoContinues < MAX_AUTO_CONTINUES) { autoContinues++; await sleep(600); bridgeConversation.push({ role: 'user', content: '[System] Continue.' }); continue; } bridgeWaitingForUser = true; break; }
       }
     } catch (e) { addBridgeSystemMsg('Bridge error: ' + e.message); }
     finally { bridgeRunning = false; updateBridgeSendBtn(); setProgressText(bridgeTaskComplete ? 'Done' : 'Paused'); }
   }
-  function handleBridgeSend() {
-    const inp = $('#bridgeInput'); if (!inp) return;
-    const text = inp.value.trim();
-    if (!text || bridgeRunning || !__bridge.connected) return;
-    if (bridgeWaitingForUser) { bridgeWaitingForUser = false; if (!bridgeTurn) bridgeTurn = newTurnState(); }
-    else { bridgeConversation = []; bridgeTaskComplete = true; bridgeTurn = null; }
-    inp.value = ''; inp.style.height = 'auto';
-    updateBridgeSendBtn();
-    runBridgeTurn(text, false);
-  }
+  function handleBridgeSend() { const inp = $('#bridgeInput'); if (!inp) return; const text = inp.value.trim(); if (!text || bridgeRunning || !__bridge.connected) return; if (bridgeWaitingForUser) { bridgeWaitingForUser = false; if (!bridgeTurn) bridgeTurn = newTurnState(); } else { bridgeConversation = []; bridgeTaskComplete = true; bridgeTurn = null; } inp.value = ''; inp.style.height = 'auto'; updateBridgeSendBtn(); runBridgeTurn(text, false); }
   async function openPreview(pathOrEmpty) {
     const modal = $('#bwPreviewModal'); if (!modal) return;
-    const frame = $('#bwPreviewFrame');
-    const subtitle = $('#bwPreviewSubtitle');
-    const pathInput = $('#bwPreviewPath');
+    const frame = $('#bwPreviewFrame'); const subtitle = $('#bwPreviewSubtitle'); const pathInput = $('#bwPreviewPath');
     modal.classList.add('open');
     const targetPath = absBridgePath(pathOrEmpty || pathInput?.value.trim() || __lastPreviewFile || '', __bridge.env?.home || '');
     if (pathInput) pathInput.value = targetPath;
-    if (!targetPath) { if (subtitle) subtitle.textContent = t('bridge.noProject'); return; }
+    if (!targetPath) { if (subtitle) subtitle.textContent = 'No project yet'; return; }
     if (subtitle) subtitle.textContent = targetPath;
     try {
       const r = await bridgeCall('/read', { path: targetPath });
       if (!r || !r.ok) throw new Error(r?.error || 'could not read file');
-      let html = r.content || '';
-      const baseDir = targetPath.replace(/\/[^/]*$/, '');
-      for (const m of [...html.matchAll(/<link\s+[^>]*href=["']([^"']+\.css[^"']*)["'][^>]*>/gi)]) { if (/^https?:/i.test(m[1])) continue; const cssPath = m[1].startsWith('/') ? m[1] : `${baseDir}/${m[1]}`.replace(/\/\.\//g, '/'); try { const cr = await bridgeCall('/read', { path: cssPath }); if (cr && cr.ok) html = html.replace(m[0], `<style>\n${cr.content}\n</style>`); } catch {} }
-      for (const m of [...html.matchAll(/<script\s+[^>]*src=["']([^"']+\.js[^"']*)["'][^>]*>\s*<\/script>/gi)]) { if (/^https?:/i.test(m[1])) continue; const jsPath = m[1].startsWith('/') ? m[1] : `${baseDir}/${m[1]}`.replace(/\/\.\//g, '/'); try { const jr = await bridgeCall('/read', { path: jsPath }); if (jr && jr.ok) html = html.replace(m[0], `<script>\n${jr.content}\n</script>`); } catch {} }
-      if (frame) frame.srcdoc = html;
+      if (frame) frame.srcdoc = r.content || '';
     } catch (e) { if (frame) frame.srcdoc = `<html><body style="font-family:system-ui;padding:40px;color:#b91c1c"><h2>Preview failed</h2><p>${escapeHtml(e.message)}</p></body></html>`; }
   }
   function closePreview() { $('#bwPreviewModal')?.classList.remove('open'); }
-
-  /* ═══════════ BONUS WATCHER ═══════════ */
-  function startBonusWatcher() {
-    if (__bonusTimer) clearInterval(__bonusTimer);
-    __bonusTimer = setInterval(() => {
-      const active = isBonusActive();
-      if (active !== __lastBonusActive) {
-        __lastBonusActive = active;
-        updateTokenUsage(); renderModelPicker();
-        if (!active && __model && !canUseModel(getModelsList().find((m) => m.id === __model)?.tier || 'free')) { __model = 'mirox-luna-1.2'; const lbl = $('#currentModelLabel'); if (lbl) lbl.textContent = 'Luna'; toast(t('toast.bonusExpired'), 5000); }
-        else if (active) toast(t('toast.bonusActive'), 4500);
-      } else if (active) updateTokenUsage();
-    }, BONUS_CHECK_MS);
-  }
 
   /* ═══════════ MODALS ═══════════ */
   function openModal(id) { const el = document.getElementById(id); if (el) el.classList.add('open'); }
@@ -2071,19 +1489,17 @@
     on('#stopBtn', 'click', stopStreaming);
     on('#modelPickerBtn', 'click', (e) => { e.stopPropagation(); if ($('#modelPickerMenu')?.classList.contains('open')) closeModelPicker(); else openModelPicker(); });
     document.addEventListener('click', (e) => { if (!e.target.closest('#modelPicker')) closeModelPicker(); });
-    on('#searchModeBtn', 'click', (e) => { e.preventDefault(); forceSearchNext = !forceSearchNext; $('#searchModeBtn')?.classList.toggle('active', forceSearchNext); toast(forceSearchNext ? t('tools.search') : ''); });
+    on('#searchModeBtn', 'click', (e) => { e.preventDefault(); forceSearchNext = !forceSearchNext; $('#searchModeBtn')?.classList.toggle('active', forceSearchNext); });
     on('#imageModeBtn', 'click', () => openModal('imageModal'));
     on('#plansModeBtn', 'click', () => { openModal('plansModal'); loadPlans(); });
     on('#supportModeBtn', 'click', (e) => { e.preventDefault(); openModal('supportModal'); });
     on('#supportModeBtn2', 'click', () => openModal('supportModal'));
     on('#bridgeModeBtn', 'click', openBridgeWorkspace);
     on('#bridgeOpenBtn', 'click', openBridgeWorkspace);
-    on('#bridgeDownloadBtn', 'click', downloadBridgeClient);
     on('#generateImageBtn', 'click', genImage);
-    on('#submitReportBtn', 'click', () => { toast('Ticket submitted!'); closeModal('supportModal'); });
+    on('#submitReportBtn', 'click', () => { toast('Submitted!'); closeModal('supportModal'); });
     on('#settingsBtn', 'click', (e) => { e.preventDefault(); openSettingsModal(); });
     on('#logoutBtn', 'click', doLogout);
-    on('#loginmentBtn', 'click', doLoginment);
     on('#signInFromSettingsBtn', 'click', () => { closeModal('settingsModal'); openModal('loginModal'); });
     on('#shareFromSettingsBtn', 'click', () => { closeModal('settingsModal'); setTimeout(() => openShareAd(), 100); });
 
@@ -2098,68 +1514,39 @@
     $$('#accentSwatches .swatch').forEach((b) => { b.onclick = () => { __prefs.theme = b.dataset.theme; savePrefs(); applyAppearanceFromPrefs(); applyPrefs(); }; });
     $$('#fontSizeSegmented .seg-btn').forEach((b) => { b.onclick = () => { __prefs.fontSize = b.dataset.fontsize; savePrefs(); applyPrefs(); }; });
 
-    const bindToggle = (id, key, cb) => {
-      const el = document.getElementById(id); if (!el) return;
-      el.addEventListener('change', () => { __prefs[key] = el.checked; savePrefs(); applyPrefs(); if (cb) cb(el.checked); });
-    };
-    bindToggle('autoScrollToggle', 'autoScroll', (v) => { autoScrollEnabled = v; });
+    const bindToggle = (id, key) => { const el = document.getElementById(id); if (!el) return; el.addEventListener('change', () => { __prefs[key] = el.checked; savePrefs(); applyPrefs(); }); };
+    bindToggle('autoScrollToggle', 'autoScroll');
     bindToggle('enterSendToggle', 'enterSend');
-    bindToggle('showThinkingToggle', 'showThinking');
     bindToggle('visionToggle', 'vision');
     bindToggle('compactToggle', 'compact');
     bindToggle('reduceMotionToggle', 'reduceMotion');
-    bindToggle('desktopNotifyToggle', 'desktopNotify', (v) => { if (v && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission(); });
-    bindToggle('soundToggle', 'sound');
-    bindToggle('bonusReminderToggle', 'bonusReminder');
-    bindToggle('verboseLogToggle', 'verboseLog');
-    bindToggle('translateCommentsToggle', 'translateComments');
-    bindToggle('mcpEnableToggle', 'mcpEnabled');
 
-    on('#savePersonaBtn', 'click', () => { const inp2 = $('#personaInput'); if (!inp2) return; __prefs.persona = inp2.value.trim(); savePrefs(); const st = $('#personaStatus'); if (st) { st.textContent = t('toast.personaSaved'); st.className = 'persona-status ok'; setTimeout(() => { st.textContent = ''; }, 2000); } toast(t('toast.personaSaved')); });
-    on('#clearPersonaBtn', 'click', () => { const inp2 = $('#personaInput'); if (inp2) inp2.value = ''; __prefs.persona = ''; savePrefs(); toast(t('toast.personaCleared')); });
-    $$('.persona-preset').forEach((b) => { b.onclick = () => { const inp2 = $('#personaInput'); if (inp2) inp2.value = b.dataset.persona; toast(t('toast.presetApplied')); }; });
-
-    on('#mcpAddBtn', 'click', () => {
-      const name = $('#mcpNameInput')?.value.trim();
-      const url = $('#mcpUrlInput')?.value.trim();
-      const key = $('#mcpKeyInput')?.value.trim();
-      if (!name || !url) { toast('Name and URL required'); return; }
-      __mcpServers.push({ name, url, key }); saveMcp(); renderMcpList();
-      $('#mcpNameInput').value = ''; $('#mcpUrlInput').value = ''; $('#mcpKeyInput').value = '';
-      toast(t('toast.serverAdded') + ': ' + name);
-    });
-
-    on('#languageSelect', 'change', (e) => { __prefs.responseLanguage = e.target.value; savePrefs(); const langName = e.target.options[e.target.selectedIndex] ? e.target.options[e.target.selectedIndex].textContent : ''; toast(t('toast.respLangChanged') + ': ' + langName); });
+    // LANGUAGE SELECT — the main new feature
     on('#uiLanguageSelect', 'change', (e) => {
       __prefs.uiLanguage = e.target.value;
       savePrefs();
       applyTranslations();
-      toast(t('toast.langChanged'));
+      toast('Translating interface… this may take a moment');
     });
+    on('#languageSelect', 'change', (e) => { __prefs.responseLanguage = e.target.value; savePrefs(); });
 
-    on('#testNotifyBtn', 'click', () => { playChime(); if ('Notification' in window && Notification.permission === 'granted') { try { new Notification('Mirox', { body: 'Notifications working', icon: '/logo.png' }); } catch {} } toast(t('toast.testSent')); });
-
-    on('#exportChatsBtn', 'click', () => { const blob = new Blob([JSON.stringify(__conversations, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `mirox-chats-${Date.now()}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); toast(t('toast.chatsExported')); });
-    on('#importChatsBtn', 'click', () => $('#importChatsInput')?.click());
-    on('#importChatsInput', 'change', (e) => { const file = e.target.files?.[0]; if (!file) return; const r = new FileReader(); r.onload = () => { try { const arr = JSON.parse(String(r.result)); if (!Array.isArray(arr)) throw new Error(); __conversations = arr.concat(__conversations); saveChats(); renderHistory(); toast(`${t('toast.chatsImported')} ${arr.length}`); } catch { toast('Invalid file'); } }; r.readAsText(file); e.target.value = ''; });
-    on('#clearChatsBtn', 'click', () => { if (!confirm('Clear all chats?')) return; __conversations = []; saveChats(); startNewChat(); toast(t('toast.chatsCleared')); });
-    on('#clearAllDataBtn', 'click', () => { if (!confirm('Reset everything?')) return; [LS_KEY, APPEARANCE_KEY, SHARE_KEY, BONUS_KEY, PREFS_KEY, MCP_KEY, BRIDGE_KEY, BRIDGE_OPTS_KEY, KDE_DEVICE_KEY, TOKEN_KEY, GUEST_KEY].forEach((k) => safeRemove(k)); toast(t('toast.resetAll')); setTimeout(() => location.reload(), 900); });
-
-    on('#copyDiagBtn', 'click', async () => { const diag = { ua: navigator.userAgent, url: location.href, ts: Date.now(), tier: __tier, guestId: getGuestId(), bonus: loadBonusRaw(), model: __model, mcpServers: __mcpServers.length, prefs: __prefs }; try { await navigator.clipboard.writeText(JSON.stringify(diag, null, 2)); toast(t('toast.copied')); } catch {} });
-    on('#resetGuestBtn', 'click', () => { if (!confirm('Reset guest ID?')) return; const newId = resetGuestId(); const lbl = $('#guestIdLabel'); if (lbl) lbl.textContent = newId; toast(t('toast.guestReset')); });
+    on('#exportChatsBtn', 'click', () => {
+      const blob = new Blob([JSON.stringify(__conversations, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `mirox-chats-${Date.now()}.json`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a); toast('Exported');
+    });
+    on('#clearChatsBtn', 'click', () => { if (!confirm('Clear all chats?')) return; __conversations = []; saveChats(); startNewChat(); toast('Cleared'); });
+    on('#clearI18nCacheBtn', 'click', () => { __i18nCache = {}; saveI18nCache(); toast('Translation cache cleared'); });
 
     on('#bwCloseBtn', 'click', closeBridgeWorkspace);
     on('#bwNewBtn', 'click', clearBridgeChat);
-    on('#bwDownloadBtn', 'click', downloadBridgeClient);
     on('#bwConnectBtn', 'click', startBridge);
     on('#bwDisconnectBtn', 'click', stopBridge);
     on('#bwSudoForgetBtn', 'click', forgetSudo);
-    on('#bwSideToggle', 'click', () => $('#bwPanel')?.classList.toggle('side-open'));
     on('#bwToggleAutoRun', 'click', () => { __bridgeAutoRun = !__bridgeAutoRun; saveBridgeOpts(); renderToggles(); });
     on('#bwToggleShowCode', 'click', () => { __bridgeShowCode = !__bridgeShowCode; saveBridgeOpts(); renderToggles(); });
     on('#bwPreviewBtn', 'click', () => openPreview(__lastPreviewFile || ''));
-    on('#bwStopBtn', 'click', () => { bridgeAbort = true; toast('Stopping…'); });
-    on('#bwScanDevicesBtn', 'click', async () => { if (!__bridge.connected) { toast('Connect first'); return; } try { await bridgeCall('/kde/refresh', {}); const r = await bridgeCall('/kde/list', {}); __kdeDevices = r.devices || []; __kdeAvailable = !!r.installed; renderKdeStatus(); toast(`Found ${__kdeDevices.length} devices`); } catch {} });
+    on('#bwStopBtn', 'click', () => { bridgeAbort = true; });
     on('#bwBuildOpenBtn', 'click', () => openPreview(__lastPreviewFile || ''));
     on('#bwBuildFolderBtn', 'click', async () => { if (!__lastBuildFolder) return; try { await navigator.clipboard.writeText(__lastBuildFolder); toast('Copied'); } catch {} });
     on('#bwPreviewCloseBtn', 'click', closePreview);
@@ -2168,13 +1555,8 @@
     on('#sudoSubmitBtn', 'click', submitSudo);
     on('#sudoSkipBtn', 'click', skipSudo);
     on('#sudoCloseBtn', 'click', skipSudo);
-    on('#sudoRevealBtn', 'click', () => { const pwd = $('#sudoPasswordInput'); if (!pwd) return; const rev = $('#sudoRevealBtn'); if (pwd.type === 'password') { pwd.type = 'text'; if (rev) rev.innerHTML = '<i class="ri-eye-off-line"></i>'; } else { pwd.type = 'password'; if (rev) rev.innerHTML = '<i class="ri-eye-line"></i>'; } });
     on('#sudoPasswordInput', 'keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitSudo(); } });
-    on('#plannerCloseBtn', 'click', () => { $('#plannerModal')?.classList.remove('open'); if (__plannerResolver) { __plannerResolver({ id: 0, name: 'auto' }); __plannerResolver = null; } });
-    on('#plannerSkipBtn', 'click', () => { $('#plannerModal')?.classList.remove('open'); if (__plannerResolver) { __plannerResolver({ id: 0, name: 'auto' }); __plannerResolver = null; } });
-    on('#kdeCloseBtn', 'click', kdeSkip);
-    on('#kdeSkipBtn', 'click', kdeSkip);
-    on('#kdeRefreshBtn', 'click', async () => { try { await bridgeCall('/kde/refresh', {}); const r = await bridgeCall('/kde/list', {}); __kdeDevices = r.devices || []; renderKdeDeviceList(); } catch {} });
+
     const bwInp = $('#bridgeInput');
     if (bwInp) { bwInp.addEventListener('input', () => { bwInp.style.height = 'auto'; bwInp.style.height = Math.min(bwInp.scrollHeight, 140) + 'px'; updateBridgeSendBtn(); }); bwInp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); handleBridgeSend(); } }); }
     on('#bridgeSendBtn', 'click', handleBridgeSend);
@@ -2199,28 +1581,20 @@
         closeImageViewer(); closeModelPicker();
         if ($('#shareAdModal')?.classList.contains('open')) { closeShareAd(true); return; }
         if ($('#bridgeWorkspace')?.classList.contains('open')) { closeBridgeWorkspace(); return; }
-        if ($('#bwPreviewModal')?.classList.contains('open')) { closePreview(); return; }
-        if ($('#kdeModal')?.classList.contains('open')) { kdeSkip(); return; }
-        if ($('#plannerModal')?.classList.contains('open')) { $('#plannerModal').classList.remove('open'); return; }
         if ($('#sudoModal')?.classList.contains('open')) { skipSudo(); return; }
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); $('#messageInput')?.focus(); }
     });
     window.addEventListener('resize', () => { if (window.innerWidth > 860) closeSidebar(); });
-    if (window.matchMedia) { try { window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (__prefs.mode === 'auto') applyAppearanceFromPrefs(); }); } catch {} }
   }
 
-  function openSettingsModal() {
-    const lbl = $('#guestIdLabel'); if (lbl) lbl.textContent = getGuestId();
-    renderMcpList(); applyPrefs();
-    openModal('settingsModal');
-  }
+  function openSettingsModal() { renderMcpListSafe(); applyPrefs(); openModal('settingsModal'); }
+  function renderMcpListSafe() {} // placeholder for compatibility
 
   async function openConversation(id) {
     const convo = __conversations.find((c) => c.id === id);
     if (!convo) return;
     currentConversationId = id;
-    updateTokenUsage();
     const ttl = $('#chatTitle'); if (ttl) ttl.textContent = convo.title || 'Chat';
     const c = $('#chatMessages'); if (c) c.innerHTML = '';
     let lastAiEl = null, lastAiMessage = null;
@@ -2233,8 +1607,7 @@
       const lastBubble = lastAiEl.querySelector('.bubble');
       if (lastBubble && shouldShowContinue(lastAiMessage.content || '', convo, true)) attachContinueButton(lastAiEl, lastBubble, lastAiMessage);
     }
-    renderHistory(); updateTokenUsage();
-    scrollToBottom(true);
+    renderHistory(); updateTokenUsage(); scrollToBottom(true);
   }
 
   const idb = (() => {
@@ -2252,14 +1625,21 @@
   async function init() {
     try {
       loadPrefs();
-      applyTranslations();
-      applyAppearanceFromPrefs(); applyPrefs();
-      loadShareState(); loadChats(); loadMcp(); loadBridgeLS(); loadBridgeOpts(); loadKdeDevice();
+      loadI18nCache();
+      applyAppearanceFromPrefs();
+      applyPrefs();
+      loadShareState();
+      loadChats();
+      loadBridgeOpts();
       wireAll();
       __lastBonusActive = isBonusActive();
-      renderHistory(); renderModelPicker(); renderBridgeStatus(); renderKdeStatus(); startIdleMascot();
-      updateTokenUsage(); renderMcpList();
-      startBonusWatcher();
+      renderHistory();
+      renderModelPicker();
+      renderBridgeStatus();
+      startIdleMascot();
+      updateTokenUsage();
+      // Apply translations after DOM is wired
+      applyTranslations();
     } catch (e) { console.error('[Mirox init]', e); }
     finally { killLoader(); }
     loadConfig().catch(() => {});
