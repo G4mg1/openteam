@@ -68,7 +68,10 @@
     <div id="userChip" class="user-chip">
       <div class="user-avatar" id="userAvatar"><i class="ri-user-line"></i></div>
       <div class="user-info">
-        <span class="user-name" id="accountLabel">Guest mode</span>
+        <span class="user-name-row">
+          <span class="user-name" id="accountLabel">Guest mode</span>
+          <span class="user-tier-badge" id="accountTierBadge" style="display:none;">FREE</span>
+        </span>
         <span class="user-sub" id="accountSub">Sign in to save chats</span>
       </div>
       <button id="upgradeBtn" class="upgrade-btn" type="button" title="Plans"><i class="ri-vip-crown-line"></i></button>
@@ -102,7 +105,7 @@
     <div class="welcome-screen">
       <div class="welcome-mascot"><div class="mascot mascot-lg" id="welcomeMascot" data-mood="idle"></div></div>
       <h1 class="welcome-title">Hi, I'm Mirox</h1>
-      <p class="welcome-sub">Luna and Gen are unlimited and free. Share to unlock <strong>Pro, Ultra &amp; Eclipse</strong> free for 7 days.</p>
+      <p class="welcome-sub">Luna and Gen are unlimited and free. Share to unlock <strong>Pro, Ultra &amp; Eclipse</strong> free for 2 days.</p>
       <div class="suggestion-grid">
         <button class="suggestion-card" type="button" data-prompt="Show me a simple Lua script that prints numbers 1 to 5"><i class="ri-code-box-line"></i><span>Write a Lua script</span></button>
         <button class="suggestion-card" type="button" data-prompt="Show me an HTML example with a table"><i class="ri-html5-line"></i><span>Show an HTML table</span></button>
@@ -127,14 +130,14 @@
       <button id="supportModeBtn2" class="tool-btn" type="button"><i class="ri-question-line"></i><span>Help</span></button>
     </div>
     <div class="composer">
-      <button type="button" id="attachBtn" class="icon-btn attach-btn" title="Attach"><i class="ri-attachment-2"></i></button>
-      <input type="file" id="fileInput" multiple hidden accept="image/*,.txt,.md,.json,.csv,.log,.py,.js,.ts,.html,.css,.yml,.yaml,.xml,.sh,.sql,.java,.c,.cpp,.go,.rs,.rb,.php,.lua,.zip">
+      <button type="button" id="attachBtn" class="icon-btn attach-btn" title="Attach files"><i class="ri-attachment-2"></i></button>
+      <input type="file" id="fileInput" multiple hidden accept="image/*,.txt,.md,.json,.csv,.log,.py,.js,.mjs,.ts,.tsx,.jsx,.html,.htm,.css,.scss,.yml,.yaml,.xml,.sh,.bash,.sql,.java,.c,.h,.cpp,.hpp,.go,.rs,.rb,.php,.lua,.zip">
       <textarea id="messageInput" class="message-input" rows="1" placeholder="How can I help you today?"></textarea>
       <button type="button" id="voiceBtn" class="icon-btn voice-btn" title="Voice input"><i class="ri-mic-line"></i></button>
       <button type="button" id="stopBtn" class="icon-btn stop-btn" style="display:none;" title="Stop"><i class="ri-stop-circle-line"></i></button>
       <button type="button" id="sendBtn" class="send-btn is-disabled" aria-disabled="true" title="Send"><i class="ri-arrow-up-line"></i></button>
     </div>
-    <div class="composer-note">Mirox can make mistakes — double-check important info.</div>
+    <div class="composer-note">Attach code or text files (.py, .js, .txt, .md, …) and ask Mirox to explain, fix, or rewrite them.</div>
   </div>
 </main>
 
@@ -144,10 +147,10 @@
     <button class="icon-btn share-ad-close" type="button" id="shareAdCloseBtn"><i class="ri-close-line"></i></button>
     <div class="share-ad-icon"><i class="ri-gift-2-line"></i></div>
     <h2 class="share-ad-title">Share our site, get 50k tokens</h2>
-    <p class="share-ad-sub">Get <strong>50k tokens for 1 week</strong> and unlock <strong>Pro, Ultra &amp; Eclipse</strong> models free.</p>
+    <p class="share-ad-sub">Get <strong>50k tokens for 2 days</strong> and unlock <strong>Pro, Ultra &amp; Eclipse</strong> models free.</p>
     <ul class="share-ad-perks">
       <li><i class="ri-check-line"></i> <span>50,000 bonus tokens</span></li>
-      <li><i class="ri-check-line"></i> <span>Valid for 7 days</span></li>
+      <li><i class="ri-check-line"></i> <span>Valid for 2 days</span></li>
       <li><i class="ri-vip-crown-fill"></i> <span>Pro · Ultra · Eclipse unlocked</span></li>
     </ul>
     <div class="share-ad-actions">
@@ -156,6 +159,25 @@
     </div>
     <div class="share-ad-status" id="shareAdStatus"></div>
     <div class="share-ad-hint">We verify shares through your device's native share sheet.</div>
+  </div>
+</div>
+
+<!-- FILE PREVIEW -->
+<div id="filePreviewModal" class="modal-overlay">
+  <div class="modal modal-file-preview">
+    <button class="icon-btn modal-close" type="button" data-close="filePreviewModal"><i class="ri-close-line"></i></button>
+    <div class="file-preview-head">
+      <span class="file-preview-icon" id="filePreviewIcon"><i class="ri-file-text-line"></i></span>
+      <div class="file-preview-meta">
+        <div class="file-preview-name" id="filePreviewName">file.txt</div>
+        <div class="file-preview-info" id="filePreviewInfo">—</div>
+      </div>
+    </div>
+    <pre class="file-preview-content" id="filePreviewContent"></pre>
+    <div class="file-preview-actions">
+      <button class="modal-btn" type="button" id="filePreviewCopyBtn"><i class="ri-file-copy-line"></i> Copy content</button>
+      <button class="modal-btn primary" type="button" id="filePreviewAskBtn"><i class="ri-sparkling-2-line"></i> Ask Mirox about this</button>
+    </div>
   </div>
 </div>
 
@@ -338,7 +360,7 @@
         <div class="setting-row">
           <div class="setting-row-info">
             <span class="setting-row-label">Share &amp; earn</span>
-            <span class="setting-row-sub">Get 50k tokens + Pro/Ultra/Eclipse free for 7 days</span>
+            <span class="setting-row-sub">Get 50k tokens + Pro/Ultra/Eclipse free for 2 days</span>
           </div>
           <button id="shareFromSettingsBtn" class="setting-mini-btn primary" type="button"><i class="ri-share-forward-2-line"></i> <span>Share</span></button>
         </div>
@@ -472,7 +494,7 @@
   <div class="modal modal-wide">
     <button class="icon-btn modal-close" type="button" data-close="plansModal"><i class="ri-close-line"></i></button>
     <h2 class="modal-title">Plans</h2>
-    <p class="modal-sub">Luna and Gen are free. Share to unlock Pro, Ultra and Eclipse for 7 days.</p>
+    <p class="modal-sub">Luna and Gen are free. Share to unlock Pro, Ultra and Eclipse for 2 days.</p>
     <div id="plansGrid" class="plans-grid"></div>
   </div>
 </div>
