@@ -2,7 +2,7 @@
   'use strict';
 
   /* ═══════════ i18n — strict whitelist ═══════════ */
-  const I18N_CACHE_KEY = 'miroxai_i18n_cache_v5';
+  const I18N_CACHE_KEY = 'miroxai_i18n_cache_v6';
   const RTL_LANGS = ['fa','ar','he','ur'];
   const TRANSLATE_CONCURRENCY = 2;
   const MYMEMORY_OK = new Set([
@@ -156,22 +156,25 @@
     { id: 'mirox-ultra-10', label: 'Ultra', tier: 'pro', tagline: 'Long context', icon: 'ri-rocket-2-line' },
     { id: 'mirox-eclipse-2.0', label: 'Eclipse', tier: 'ultimate', tagline: 'Most powerful', icon: 'ri-sun-fill' },
   ];
-  const LS_KEY = 'miroxai_conversations_v48';
+  const LS_KEY = 'miroxai_conversations_v50';
   const TOKEN_KEY = 'mirox_token';
-  const LOCAL_USER_KEY = 'mirox_local_user_v2';
+  const LOCAL_USER_KEY = 'mirox_local_user_v3';
   const GUEST_KEY = 'miroxai_guest_id_v1';
-  const APPEARANCE_KEY = 'miroxai_appearance_v48';
-  const SHARE_KEY = 'miroxai_share_v15';
-  const BONUS_KEY = 'miroxai_bonus_v15';
-  const PREFS_KEY = 'miroxai_prefs_v10';
+  const APPEARANCE_KEY = 'miroxai_appearance_v50';
+  const SHARE_KEY = 'miroxai_share_v16';
+  const BONUS_KEY = 'miroxai_bonus_v16';
+  const PREFS_KEY = 'miroxai_prefs_v11';
   const BRIDGE_OPTS_KEY = 'miroxai_bridge_opts_v1';
   const PASTE_ATTACH_THRESHOLD = 1024;
   const NET_TIMEOUT_MS = 15000;
   const STREAM_TIMEOUT_MS = 120000;
   const BASE_FREE_LIMIT = 10000;
   const BONUS_TOKENS = 50000;
-  const BONUS_MS = 7 * 24 * 60 * 60 * 1000;
+  // ⚡ Bonus is now 2 days (was 7)
+  const BONUS_MS = 2 * 24 * 60 * 60 * 1000;
+  const BONUS_VALID_DAYS = 2;
   const MAX_IMAGE_DIM = 1600;
+  const MAX_TEXT_FILE_BYTES = 300000; // 300 KB cap for text/code attachments
   const MAX_BRIDGE_ITER = 40;
   const MAX_AUTO_CONTINUES = 6;
   const MAX_DUP_COMMANDS = 3;
@@ -194,6 +197,7 @@
   let __bridgeAutoRun = true, __bridgeShowCode = false;
   let __voiceRecognition = null;
   let __voiceListening = false;
+  let __previewFileRef = null; // reference to file object being previewed
 
   const uid = () => 'c_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
   const escapeHtml = (s) => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
@@ -203,9 +207,8 @@
   function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
   function setToken(tk) { try { tk ? localStorage.setItem(TOKEN_KEY, tk) : localStorage.removeItem(TOKEN_KEY); } catch {} }
 
-  // ⚠ Only REAL API keys (mxk_live_...) are sent as Bearer tokens.
-  //    Session logins rely on the HttpOnly cookie, which the browser
-  //    sends automatically because of credentials: 'same-origin'.
+  // Only REAL API keys (mxk_live_...) are sent as Bearer tokens.
+  // Session logins rely on the HttpOnly cookie set by /api/auth/simple-login.
   function isApiKey(tk) { return typeof tk === 'string' && /^mxk_live_/.test(tk); }
 
   function getLocalUser() {
@@ -232,7 +235,6 @@
   function authHeaders(extra) {
     const h = { 'Content-Type': 'application/json', ...(extra || {}) };
     const tk = getToken();
-    // Only attach Authorization for real API keys. Session cookies go automatically.
     if (isApiKey(tk)) h.Authorization = 'Bearer ' + tk;
     Object.assign(h, bonusProofHeaders());
     if (__prefs.responseLanguage && __prefs.responseLanguage !== 'auto') h['X-Mirox-Lang'] = __prefs.responseLanguage;
@@ -448,7 +450,13 @@
       messages: (c.messages || []).map((m) => ({
         id: m.id, role: m.role, content: m.content, ts: m.ts,
         imageKey: m.imageKey || null,
-        files: (m.files || []).map((f) => ({ name: f.name, size: f.size, type: f.type, mime: f.mime, dataUrl: (f.type === 'image' && f.dataUrl && f.dataUrl.length < 200000) ? f.dataUrl : undefined, width: f.width, height: f.height })),
+        files: (m.files || []).map((f) => ({
+          name: f.name, size: f.size, type: f.type, mime: f.mime,
+          dataUrl: (f.type === 'image' && f.dataUrl && f.dataUrl.length < 200000) ? f.dataUrl : undefined,
+          width: f.width, height: f.height,
+          // Persist text file content so it survives a reload (up to 60KB per file)
+          content: (f.type === 'text' && f.content && f.content.length < 60000) ? f.content : undefined,
+        })),
       })),
     }));
     safeSet(LS_KEY, slim);
@@ -459,7 +467,7 @@
     return `<div class="welcome-screen">
       <div class="welcome-mascot"><div class="mascot mascot-lg m-idle" id="welcomeMascot" data-mood="idle">${blobSvg()}</div></div>
       <h1 class="welcome-title">Hi, I'm Mirox</h1>
-      <p class="welcome-sub">Luna and Gen are unlimited and free. Share to unlock <strong>Pro, Ultra &amp; Eclipse</strong> free for 7 days.</p>
+      <p class="welcome-sub">Luna and Gen are unlimited and free. Share to unlock <strong>Pro, Ultra &amp; Eclipse</strong> free for 2 days.</p>
       <div class="suggestion-grid">
         <button class="suggestion-card" type="button" data-prompt="Show me a simple Lua script that prints numbers 1 to 5"><i class="ri-code-box-line"></i><span>Write a Lua script</span></button>
         <button class="suggestion-card" type="button" data-prompt="Show me an HTML example with a table"><i class="ri-html5-line"></i><span>Show an HTML table</span></button>
@@ -533,6 +541,64 @@
   function freeLimitReached(convo = currentConvo()) { return __tier === 'free' && conversationTokenUsage(convo) >= getFreeLimit(); }
   function fmtSize(n) { if (n == null) return ''; if (n < 1024) return n + ' B'; if (n < 1048576) return (n / 1024).toFixed(1) + ' KB'; return (n / 1048576).toFixed(1) + ' MB'; }
   function fileIconHTML() { return '<span class="file-glyph" aria-hidden="true"><i class="ri-file-text-line"></i></span>'; }
+
+  /* ═══════════ FILE META ═══════════ */
+  function getFileMeta(name) {
+    const m = String(name || '').match(/\.([a-z0-9]+)$/i);
+    if (!m) return { label: 'TXT', icon: 'ri-file-text-line' };
+    const ext = m[1].toLowerCase();
+    const map = {
+      py:   { label: 'PY',   icon: 'devicon-python-plain colored' },
+      js:   { label: 'JS',   icon: 'devicon-javascript-plain colored' },
+      mjs:  { label: 'JS',   icon: 'devicon-javascript-plain colored' },
+      ts:   { label: 'TS',   icon: 'devicon-typescript-plain colored' },
+      tsx:  { label: 'TSX',  icon: 'devicon-typescript-plain colored' },
+      jsx:  { label: 'JSX',  icon: 'devicon-javascript-plain colored' },
+      html: { label: 'HTML', icon: 'devicon-html5-plain colored' },
+      htm:  { label: 'HTML', icon: 'devicon-html5-plain colored' },
+      css:  { label: 'CSS',  icon: 'devicon-css3-plain colored' },
+      scss: { label: 'SCSS', icon: 'devicon-css3-plain colored' },
+      json: { label: 'JSON', icon: 'devicon-json-plain colored' },
+      md:   { label: 'MD',   icon: 'ri-markdown-line' },
+      txt:  { label: 'TXT',  icon: 'ri-file-text-line' },
+      csv:  { label: 'CSV',  icon: 'ri-file-list-2-line' },
+      log:  { label: 'LOG',  icon: 'ri-file-list-line' },
+      lua:  { label: 'LUA',  icon: 'devicon-lua-plain colored' },
+      sh:   { label: 'SH',   icon: 'devicon-bash-plain colored' },
+      bash: { label: 'SH',   icon: 'devicon-bash-plain colored' },
+      java: { label: 'JAVA', icon: 'devicon-java-plain colored' },
+      cpp:  { label: 'C++',  icon: 'devicon-cplusplus-plain colored' },
+      hpp:  { label: 'C++',  icon: 'devicon-cplusplus-plain colored' },
+      c:    { label: 'C',    icon: 'devicon-c-plain colored' },
+      h:    { label: 'C',    icon: 'devicon-c-plain colored' },
+      go:   { label: 'GO',   icon: 'devicon-go-plain colored' },
+      rs:   { label: 'RS',   icon: 'devicon-rust-plain colored' },
+      rb:   { label: 'RB',   icon: 'devicon-ruby-plain colored' },
+      php:  { label: 'PHP',  icon: 'devicon-php-plain colored' },
+      sql:  { label: 'SQL',  icon: 'ri-database-2-line' },
+      yml:  { label: 'YAML', icon: 'ri-file-list-2-line' },
+      yaml: { label: 'YAML', icon: 'ri-file-list-2-line' },
+      xml:  { label: 'XML',  icon: 'ri-file-code-line' },
+      svg:  { label: 'SVG',  icon: 'devicon-html5-plain colored' },
+      zip:  { label: 'ZIP',  icon: 'ri-file-zip-line' },
+    };
+    return map[ext] || { label: ext.toUpperCase().slice(0, 4), icon: 'ri-file-text-line' };
+  }
+  // Files we treat as text (readable content)
+  const TEXT_EXTS = ['txt','md','json','csv','log','py','js','mjs','ts','tsx','jsx','html','htm','css','scss','yml','yaml','xml','sh','bash','sql','java','c','h','cpp','hpp','go','rs','rb','php','lua','svg'];
+  function isTextFile(f) {
+    const name = String(f.name || '').toLowerCase();
+    const m = name.match(/\.([a-z0-9]+)$/);
+    if (!m) return false;
+    return TEXT_EXTS.includes(m[1]);
+  }
+  function countLines(text) {
+    if (!text) return 0;
+    const s = String(text);
+    let n = 1;
+    for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) === 10) n++;
+    return n;
+  }
 
   /* ═══════════ CODE LANG ═══════════ */
   const LANG_META = {
@@ -632,6 +698,25 @@
   }
 
   /* ═══════════ MESSAGE DOM ═══════════ */
+  function renderAttachmentChip(f, forMessage) {
+    if (f.type === 'image' && f.dataUrl) {
+      const dims = f.width && f.height ? `<span class="attach-size">${f.width}×${f.height}</span>` : '';
+      const vision = f.vision ? '<span class="attach-vision"><i class="ri-eye-line"></i> vision</span>' : '';
+      return `<div class="attach-chip attach-chip-image"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name || '')}${dims}${vision}</div>`;
+    }
+    // Text / code file
+    const meta = getFileMeta(f.name);
+    const lines = f.content ? countLines(f.content) : 0;
+    const idx = pendingFiles.indexOf(f);
+    const previewAttr = forMessage ? '' : ` data-preview-file="${idx}"`;
+    return `<div class="attach-chip attach-chip-file"${previewAttr} title="${escapeHtml(f.name || 'file')}${lines ? ` · ${lines} lines` : ''}">
+      <span class="attach-file-badge"><i class="${meta.icon}"></i> ${escapeHtml(meta.label)}</span>
+      <span class="attach-chip-file-name">${escapeHtml(f.name || 'file')}</span>
+      ${f.size ? `<span class="attach-size">${fmtSize(f.size)}</span>` : ''}
+      ${lines > 1 ? `<span class="attach-lines">${lines} lines</span>` : ''}
+    </div>`;
+  }
+
   function addMessageToDOM(role, content, ts, msgId, files, image) {
     const container = $('#chatMessages'); if (!container) return null;
     container.querySelector('.welcome-screen')?.remove();
@@ -649,7 +734,11 @@
           const dims = f.width && f.height ? `<span class="attach-size">${f.width}×${f.height}</span>` : '';
           const vision = f.vision ? '<span class="attach-vision"><i class="ri-eye-line"></i> vision</span>' : '';
           inner += `<div class="attach-chip attach-chip-image"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name || '')}${dims}${vision}</div>`;
-        } else inner += `<div class="attach-chip">${fileIconHTML()}${escapeHtml(f.name || 'file')}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`;
+        } else {
+          const meta = getFileMeta(f.name);
+          const lines = f.content ? countLines(f.content) : 0;
+          inner += `<div class="attach-chip attach-chip-file" title="${escapeHtml(f.name || 'file')}"><span class="attach-file-badge"><i class="${meta.icon}"></i> ${escapeHtml(meta.label)}</span><span class="attach-chip-file-name">${escapeHtml(f.name || 'file')}</span>${f.size ? `<span class="attach-size">${fmtSize(f.size)}</span>` : ''}${lines > 1 ? `<span class="attach-lines">${lines} lines</span>` : ''}</div>`;
+        }
       }
       inner += '</div>';
     }
@@ -810,7 +899,27 @@
     const scheduleRender = () => { const now = performance.now(); if (renderTimer) return; renderTimer = setTimeout(renderStreamText, Math.max(50, 120 - (now - streamRenderAt))); streamRenderAt = now; };
     const streamTimeout = setTimeout(() => { try { activeStreamController?.abort(); } catch {} }, STREAM_TIMEOUT_MS);
     try {
-      const reqBody = { message: text, history, model, stream: true, search: !!forceSearch, files: files.map((f) => ({ name: f.name, size: f.size, type: f.type, mime: f.mime, width: f.width, height: f.height, dataUrl: f.dataUrl, base64: f.base64 || null, svgText: f.svgText || null, vision: !!f.vision })), content_parts: contentParts.length ? contentParts : null, guest_id: getGuestId(), bonus_active: isBonusActive(), language: __prefs.responseLanguage || 'auto' };
+      const reqBody = {
+        message: text,
+        history,
+        model,
+        stream: true,
+        search: !!forceSearch,
+        files: files.map((f) => ({
+          name: f.name, size: f.size, type: f.type, mime: f.mime,
+          width: f.width, height: f.height,
+          dataUrl: f.dataUrl,
+          base64: f.base64 || null,
+          svgText: f.svgText || null,
+          vision: !!f.vision,
+          // Send the text content so the backend can pass it to the model
+          content: f.type === 'text' ? f.content : undefined,
+        })),
+        content_parts: contentParts.length ? contentParts : null,
+        guest_id: getGuestId(),
+        bonus_active: isBonusActive(),
+        language: __prefs.responseLanguage || 'auto',
+      };
       const res = await fetch('/v1/chat/completions', { method: 'POST', headers: authHeaders(), credentials: 'same-origin', body: JSON.stringify(reqBody), signal: activeStreamController.signal });
       if (!res.ok) {
         let detail = `HTTP ${res.status}`;
@@ -979,12 +1088,12 @@
     const bonus = grantLocalBonus(BONUS_TOKENS);
     __shareState.claimed = true; __shareState.claimedAt = Date.now(); __shareState.dismissedAt = 0;
     saveShareState(); updateTokenUsage(); renderModelPicker(); celebrateReward();
-    const days = Math.round((bonus.expiresAt - Date.now()) / 86400000);
-    toast(`🎉 ${BONUS_TOKENS.toLocaleString()} bonus tokens for ${days} days!`, 6500, 'ok');
+    const days = Math.max(1, Math.round((bonus.expiresAt - Date.now()) / 86400000));
+    toast(`🎉 ${BONUS_TOKENS.toLocaleString()} bonus tokens for ${days} day${days === 1 ? '' : 's'}!`, 6500, 'ok');
   }
   async function grantShareReward() {
     grantShareRewardLocal();
-    try { await jsonOr('/api/share/reward', { method: 'POST', body: JSON.stringify({ bonus_tokens: BONUS_TOKENS, valid_days: 7, verified: true, guest_id: getGuestId() }) }, null); } catch {}
+    try { await jsonOr('/api/share/reward', { method: 'POST', body: JSON.stringify({ bonus_tokens: BONUS_TOKENS, valid_days: BONUS_VALID_DAYS, verified: true, guest_id: getGuestId() }) }, null); } catch {}
     try { if (__user) await refreshUsage(); } catch {}
   }
   async function attemptShare() {
@@ -1098,20 +1207,44 @@
       reader.readAsText(file);
     });
   }
+  function readTextFile(file) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        // Slice to prevent huge payloads
+        const text = String(reader.result || '').slice(0, MAX_TEXT_FILE_BYTES);
+        resolve({
+          type: 'text',
+          name: file.name,
+          size: file.size,
+          mime: file.type || 'text/plain',
+          content: text,
+        });
+      };
+      reader.onerror = () => resolve(null);
+      reader.readAsText(file);
+    });
+  }
   function hasAttachment(name, size) { return pendingFiles.some((f) => f.name === name && f.size === size); }
   function handleFiles(fileList) {
     if (!fileList || !fileList.length) return;
     const arr = []; for (const f of Array.from(fileList)) { if (hasAttachment(f.name, f.size)) continue; arr.push(f); }
     if (!arr.length) return;
     let done = 0; const newFiles = [];
-    const finish = () => { newFiles.sort((a, b) => (a.order || 0) - (b.order || 0)); for (const nf of newFiles) if (!hasAttachment(nf.name, nf.size)) pendingFiles.push(nf); updatePreview(); updateSendButtonState(); };
+    const finish = () => {
+      newFiles.sort((a, b) => (a.order || 0) - (b.order || 0));
+      for (const nf of newFiles) if (!hasAttachment(nf.name, nf.size)) pendingFiles.push(nf);
+      updatePreview(); updateSendButtonState();
+    };
     arr.forEach((f, idx) => {
       const isSvg = f.type === 'image/svg+xml' || /\.svg$/i.test(f.name);
       const isImg = !isSvg && ((f.type || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(f.name));
+      const isTxt = !isSvg && !isImg && (isTextFile(f) || (f.type || '').startsWith('text/') || !f.type);
       const one = () => { done++; if (done === arr.length) finish(); };
       if (isSvg) svgToVisionData(f).then((d) => { if (d) newFiles.push({ ...d, order: idx }); one(); }).catch(one);
       else if (isImg) imageToBase64DataURL(f).then((d) => { if (d) newFiles.push({ ...d, order: idx }); one(); }).catch(one);
-      else { const r = new FileReader(); r.onload = () => { newFiles.push({ name: f.name, size: f.size, type: 'text', mime: f.type || 'text/plain', content: String(r.result).slice(0, 80000), order: idx }); one(); }; r.onerror = one; r.readAsText(f); }
+      else if (isTxt) readTextFile(f).then((d) => { if (d) newFiles.push({ ...d, order: idx }); one(); }).catch(one);
+      else one(); // skip unsupported
     });
   }
   function updatePreview() {
@@ -1119,10 +1252,16 @@
     if (!p || !list) return;
     if (!pendingFiles.length) { p.style.display = 'none'; list.innerHTML = ''; return; }
     p.style.display = 'flex';
-    list.innerHTML = pendingFiles.map((f) => {
-      if (f.type === 'image' && f.dataUrl) { const d = f.width && f.height ? `<span class="attach-size">${f.width}×${f.height}</span>` : ''; const v = f.vision ? '<span class="attach-vision"><i class="ri-eye-line"></i> vision</span>' : ''; return `<div class="attach-chip attach-chip-image"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name)}${d}${v}</div>`; }
-      return `<div class="attach-chip">${fileIconHTML()}${escapeHtml(f.name)}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`;
-    }).join('');
+    list.innerHTML = pendingFiles.map((f) => renderAttachmentChip(f, false)).join('');
+    // Wire preview clicks
+    list.querySelectorAll('[data-preview-file]').forEach((chip) => {
+      chip.onclick = (e) => {
+        e.stopPropagation();
+        const idx = parseInt(chip.dataset.previewFile, 10);
+        const file = pendingFiles[idx];
+        if (file) openFilePreview(file);
+      };
+    });
   }
   function addTextAttachment(text, name) {
     const body = String(text).slice(0, 80000);
@@ -1131,6 +1270,30 @@
     pendingFiles.push({ name: fname, size: text.length, type: 'text', mime: 'text/plain', content: body });
     updatePreview(); updateSendButtonState();
   }
+
+  /* ═══════════ FILE PREVIEW ═══════════ */
+  function openFilePreview(file) {
+    if (!file) return;
+    __previewFileRef = file;
+    const modal = $('#filePreviewModal');
+    const icon = $('#filePreviewIcon');
+    const name = $('#filePreviewName');
+    const info = $('#filePreviewInfo');
+    const content = $('#filePreviewContent');
+    if (!modal) return;
+    const meta = getFileMeta(file.name);
+    if (icon) icon.innerHTML = `<i class="${meta.icon}"></i>`;
+    if (name) name.textContent = file.name || 'file';
+    const lines = file.content ? countLines(file.content) : 0;
+    const parts = [];
+    if (file.size) parts.push(fmtSize(file.size));
+    if (lines > 1) parts.push(lines + ' lines');
+    if (file.mime) parts.push(file.mime);
+    if (info) info.textContent = parts.join(' · ') || '—';
+    if (content) content.textContent = file.content || '(no content)';
+    modal.classList.add('open');
+  }
+  function closeFilePreview() { $('#filePreviewModal')?.classList.remove('open'); __previewFileRef = null; }
 
   function openImageViewer(url) {
     if (!url) return; __ivDataUrl = url;
@@ -1146,7 +1309,16 @@
   function getModelsList() { return __config?.models?.length ? __config.models : FALLBACK_MODELS; }
   function canUseModel(tier) { if (__tier === 'free' && isBonusActive()) return true; if (tier === 'free') return true; if (__tier === 'ultimate') return true; if (__tier === 'pro' && tier === 'pro') return true; return false; }
   function modelAccessReason(tier) { if (__tier === 'free' && isBonusActive() && tier !== 'free') return 'bonus'; if (tier === 'free') return 'free'; if (__tier === 'ultimate' || (__tier === 'pro' && tier === 'pro')) return 'tier'; return 'locked'; }
-  function tierLabel(tier) { return tier === 'free' ? 'FREE' : (tier === 'pro' ? 'PRO' : (tier === 'ultimate' ? 'ULT' : tier.toUpperCase())); }
+  function tierLabel(tier) {
+    if (tier === 'ultimate') return 'ULT';
+    if (tier === 'pro') return 'PRO';
+    return 'FREE';
+  }
+  function tierFullLabel(tier) {
+    if (tier === 'ultimate') return 'Ultimate';
+    if (tier === 'pro') return 'Pro';
+    return 'Free';
+  }
   function renderModelPicker() {
     const menu = $('#modelPickerMenu'); if (!menu) return;
     const models = getModelsList(); const cur = __model || models[0].id;
@@ -1161,7 +1333,7 @@
       const icon = m.icon || 'ri-sparkling-2-line';
       return `<div class="model-option${isActive ? ' active' : ''}${usable ? '' : ' locked'} ${reasonClass}" data-model-id="${m.id}" data-usable="${usable}" data-tier="${m.tier}"><span class="model-option-icon"><i class="${icon}"></i></span><span class="model-option-body"><span class="model-option-top"><span class="model-option-name">${escapeHtml(m.label)}</span><span class="model-tier-badge tier-${m.tier}">${tierLabel(m.tier)}</span>${bonusCrown}${lockIcon}</span><span class="model-option-tagline">${escapeHtml(m.tagline || '')}</span></span></div>`;
     }).join('');
-    if (!bonusActive && __tier === 'free') html += `<div class="model-picker-cta" id="modelPickerShareCta"><i class="ri-gift-2-line"></i><span>Share to unlock <strong>Pro, Ultra &amp; Eclipse</strong> free for 7 days</span></div>`;
+    if (!bonusActive && __tier === 'free') html += `<div class="model-picker-cta" id="modelPickerShareCta"><i class="ri-gift-2-line"></i><span>Share to unlock <strong>Pro, Ultra &amp; Eclipse</strong> free for 2 days</span></div>`;
     menu.innerHTML = html;
     menu.querySelectorAll('.model-option').forEach((opt) => {
       opt.onclick = (e) => { e.stopPropagation(); if (opt.dataset.usable === 'false') { toast('Share to unlock this model'); closeModelPicker(); setTimeout(() => openShareAd(), 400); return; } selectModel(opt.dataset.modelId); };
@@ -1185,6 +1357,7 @@
     const avatar = document.getElementById('userAvatar');
     const label = document.getElementById('accountLabel');
     const sub = document.getElementById('accountSub');
+    const tierBadge = document.getElementById('accountTierBadge');
 
     const sLabel = document.getElementById('settingsAccountLabel');
     const sSub = document.getElementById('settingsAccountSub');
@@ -1205,6 +1378,13 @@
         avatar.style.fontSize = '15px';
         avatar.style.fontWeight = '600';
       }
+      // ⚡ Tier badge next to name
+      if (tierBadge) {
+        const t = (__user.tier || 'free');
+        tierBadge.textContent = tierLabel(t);
+        tierBadge.className = 'user-tier-badge tier-' + t;
+        tierBadge.style.display = '';
+      }
       if (chip) chip.classList.add('signed-in');
       if (signInBtn) signInBtn.style.display = 'none';
       if (logoutBtn) logoutBtn.style.display = '';
@@ -1218,6 +1398,7 @@
         avatar.style.fontSize = '';
         avatar.style.fontWeight = '';
       }
+      if (tierBadge) tierBadge.style.display = 'none';
       if (chip) chip.classList.remove('signed-in');
       if (signInBtn) signInBtn.style.display = '';
       if (logoutBtn) logoutBtn.style.display = 'none';
@@ -1270,16 +1451,11 @@
 
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line spin"></i> Signing in…'; }
 
-    // Step 1 — local sign-in, updates UI immediately
     setLocalUser({ name, email, signedIn: true, ts: Date.now() });
     __user = { name, email, tier: 'free', local: true };
     __tier = 'free';
     updateAccountUI();
 
-    // Step 2 — try the server (best-effort). Do NOT save the returned token —
-    //          it's a session-cookie value, not an API key. The server already
-    //          set the HttpOnly cookie automatically, and credentials:
-    //          'same-origin' will send it on future requests.
     try {
       await netFetch('/api/auth/simple-login', {
         method: 'POST',
@@ -1288,7 +1464,6 @@
       }, 10000);
     } catch { /* ignore — local sign-in stands */ }
 
-    // Step 3 — done
     setLoginError('Signed in!', 'ok');
     if (btn) btn.innerHTML = '<i class="ri-check-line"></i> Welcome';
     setTimeout(async () => {
@@ -1302,7 +1477,7 @@
 
   async function doLogout() {
     try { await jsonOr('/api/logout', { method: 'POST' }, null, 4000); } catch {}
-    setToken('');                 // clear any old mxk_live_ token
+    setToken('');
     setLocalUser(null);
     __user = null;
     __tier = 'free';
@@ -1317,7 +1492,16 @@
     grid.innerHTML = '<div class="studio-empty">Loading…</div>';
     const res = await jsonOr('/api/subscription/plans', {}, null);
     if (!res || !Array.isArray(res.plans)) { grid.innerHTML = '<div class="studio-empty">Could not load plans.</div>'; return; }
-    grid.innerHTML = res.plans.map((p) => { const price = p.id === 'free' ? '<div class="plan-price">Free</div>' : `<div class="plan-price">$${Number(p.price_usd).toFixed(2)}</div>`; return `<div class="plan-card${p.id === __tier ? ' current' : ''}"><div class="plan-name">${escapeHtml(p.label)}</div>${price}<ul class="plan-perks">${(p.perks || []).map((x) => `<li>✓ ${escapeHtml(x)}</li>`).join('')}</ul></div>`; }).join('');
+    grid.innerHTML = res.plans.map((p) => {
+      const price = p.id === 'free' ? '<div class="plan-price">Free</div>' : `<div class="plan-price">$${Number(p.price_usd).toFixed(2)}</div>`;
+      const t = p.id;
+      return `<div class="plan-card${p.id === __tier ? ' current' : ''}">
+        <span class="plan-card-badge tier-${t}">${tierFullLabel(t)}</span>
+        <div class="plan-name">${escapeHtml(p.label)}</div>
+        ${price}
+        <ul class="plan-perks">${(p.perks || []).map((x) => `<li>✓ ${escapeHtml(x)}</li>`).join('')}</ul>
+      </div>`;
+    }).join('');
   }
 
   async function genImage() {
@@ -1777,10 +1961,31 @@
     on('#shareAdShareBtn', 'click', attemptShare);
     on('#shareAdIgnoreBtn', 'click', () => closeShareAd(true));
     on('#shareAdCloseBtn', 'click', () => closeShareAd(true));
+
+    // File preview actions
+    on('#filePreviewCopyBtn', 'click', async () => {
+      if (!__previewFileRef) return;
+      try { await navigator.clipboard.writeText(__previewFileRef.content || ''); toast('Copied file content', 1800, 'ok'); } catch {}
+    });
+    on('#filePreviewAskBtn', 'click', () => {
+      const f = __previewFileRef;
+      if (!f) return;
+      closeFilePreview();
+      const inp = $('#messageInput');
+      if (inp) {
+        inp.value = `Please read the attached file "${f.name}" and explain what it does, then suggest improvements.`;
+        inp.style.height = 'auto';
+        inp.style.height = Math.min(inp.scrollHeight, 180) + 'px';
+        updateSendButtonState();
+        inp.focus();
+      }
+    });
+
     bindSuggestionClicks();
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         closeImageViewer(); closeModelPicker();
+        if ($('#filePreviewModal')?.classList.contains('open')) { closeFilePreview(); return; }
         if ($('#shareAdModal')?.classList.contains('open')) { closeShareAd(true); return; }
         if ($('#bridgeWorkspace')?.classList.contains('open')) { closeBridgeWorkspace(); return; }
         if ($('#sudoModal')?.classList.contains('open')) { skipSudo(); return; }
@@ -1829,9 +2034,8 @@
 
   async function init() {
     try {
-      // ── Cleanup: if a stale non-API-key value is in mirox_token, drop it.
-      //    Older versions saved the session cookie there by mistake; that's
-      //    what caused "Invalid API key".
+      // One-time cleanup: drop any non-API-key value that older versions
+      // accidentally stored under mirox_token (caused "Invalid API key").
       try {
         const t = localStorage.getItem('mirox_token');
         if (t && !isApiKey(t)) localStorage.removeItem('mirox_token');
@@ -1846,7 +2050,6 @@
       loadBridgeOpts();
       wireAll();
       setupVoice();
-      // Show signed-in user IMMEDIATELY (before any network call)
       const local = getLocalUser();
       if (local) { __user = { name: local.name, email: local.email, tier: 'free', local: true }; __tier = 'free'; }
       updateAccountUI();
