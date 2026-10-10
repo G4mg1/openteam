@@ -30,18 +30,18 @@
     { id: 'mirox-eclipse-2.0', label: 'Eclipse', tier: 'ultimate' },
   ];
   const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
-  const LS_KEY = 'miroxai_conversations_v31';
+  const LS_KEY = 'miroxai_conversations_v32';
   const TOKEN_KEY = 'mirox_token';
-  const APPEARANCE_KEY = 'miroxai_appearance_v31';
-  const SHARE_KEY = 'miroxai_share_v2';
-  const BONUS_KEY = 'miroxai_bonus_v2';
-  const BRIDGE_KEY = 'miroxai_bridge_v31';
+  const APPEARANCE_KEY = 'miroxai_appearance_v32';
+  const SHARE_KEY = 'miroxai_share_v3';
+  const BONUS_KEY = 'miroxai_bonus_v3';
   const PASTE_ATTACH_THRESHOLD = 1024;
   const NET_TIMEOUT_MS = 15000;
   const STREAM_TIMEOUT_MS = 120000;
   const BASE_FREE_LIMIT = 10000;
   const BONUS_TOKENS = 50000;
   const BONUS_MS = 7 * 24 * 60 * 60 * 1000;
+  const BONUS_CHECK_MS = 30 * 1000; // periodic bonus-expiry checker
   const MAX_IMAGE_DIM = 1280;
 
   let __config = null, __user = null, __tier = 'free', __model = 'mirox-luna-1.2';
@@ -49,11 +49,12 @@
   let continuationBusy = false, streamRenderAt = 0, userIsAtBottom = true;
   let autoScrollEnabled = true;
   let __conversations = [], pendingFiles = [], activeStreamController = null, __usage = null;
-  let __bridge = { name: 'My Laptop', model: 'mirox-luna-1.2', port: 8765, connected: false, baseUrl: null, env: null };
+  let __bridge = { name: 'My Laptop', port: 8765, connected: false, baseUrl: null };
   let bridgeRunning = false;
   let forceSearchNext = false, __historyQuery = '';
   let __ivDataUrl = '';
   let __shareState = { claimed: false, claimedAt: 0, dismissedAt: 0 };
+  let __bonusTimer = null;
 
   const uid = () => 'c_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
   const escapeHtml = (s) => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
@@ -69,15 +70,11 @@
     if (t) h.Authorization = 'Bearer ' + t;
     return h;
   }
-
   async function netFetch(url, opts = {}, ms = NET_TIMEOUT_MS) {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), ms);
-    const extra = opts.signal ? [opts.signal] : [];
-    try {
-      if (extra.length) extra[0].addEventListener('abort', () => ctrl.abort());
-      return await fetch(url, { ...opts, signal: ctrl.signal, credentials: 'same-origin', cache: 'no-store' });
-    } finally { clearTimeout(timer); }
+    try { return await fetch(url, { ...opts, signal: ctrl.signal, credentials: 'same-origin', cache: 'no-store' }); }
+    finally { clearTimeout(timer); }
   }
   async function jsonOr(url, opts = {}, fallback = null, ms = NET_TIMEOUT_MS) {
     try {
@@ -89,32 +86,93 @@
     } catch { return fallback; }
   }
 
-  /* ═══════════ Bonus token system ═══════════ */
-  function loadBonus() { return safeGet(BONUS_KEY, null); }
-  function saveBonus(b) { b ? safeSet(BONUS_KEY, b) : safeRemove(BONUS_KEY); }
+  /* ═══════════ BONUS SYSTEM — bulletproof 7-day validation ═══════════ */
+  function loadBonusRaw() {
+    const b = safeGet(BONUS_KEY, null);
+    if (!b || typeof b !== 'object') return null;
+    return b;
+  }
+  function saveBonusRaw(b) { b ? safeSet(BONUS_KEY, b) : safeRemove(BONUS_KEY); }
+  function isBonusValid(b) {
+    if (!b) return false;
+    const tokens = parseInt(b.tokens, 10) || 0;
+    const expiresAt = parseInt(b.expiresAt, 10) || 0;
+    if (tokens <= 0) return false;
+    if (expiresAt <= 0) return false;
+    return Date.now() < expiresAt;
+  }
   function getActiveBonus() {
-    const b = loadBonus();
-    if (!b || !b.tokens || !b.expiresAt) return 0;
-    if (Date.now() >= b.expiresAt) { saveBonus(null); return 0; }
+    const b = loadBonusRaw();
+    if (!b) return 0;
+    if (!isBonusValid(b)) {
+      // Expired or invalid → wipe and reset share state so user can re-claim
+      saveBonusRaw(null);
+      if (__shareState.claimed) {
+        __shareState.claimed = false;
+        saveShareState();
+      }
+      return 0;
+    }
     return b.tokens;
   }
   function getBonusExpiryMs() {
-    const b = loadBonus();
-    if (!b || !b.expiresAt) return 0;
-    if (Date.now() >= b.expiresAt) return 0;
+    const b = loadBonusRaw();
+    if (!isBonusValid(b)) return 0;
     return b.expiresAt - Date.now();
   }
+  function getBonusExpiryDate() {
+    const b = loadBonusRaw();
+    if (!isBonusValid(b)) return null;
+    return new Date(b.expiresAt);
+  }
   function grantLocalBonus(tokens) {
-    const prev = loadBonus();
+    const prev = loadBonusRaw();
     const now = Date.now();
-    const baseExpiry = (prev && prev.expiresAt > now) ? prev.expiresAt : now;
-    const newExpiry = Math.max(baseExpiry, now + BONUS_MS);
-    const newTokens = (prev && prev.expiresAt > now ? (prev.tokens || 0) : 0) + tokens;
+    let newTokens, newExpiry;
+    if (isBonusValid(prev)) {
+      // Stack on top of active bonus
+      newTokens = (prev.tokens || 0) + tokens;
+      newExpiry = Math.max(prev.expiresAt, now + BONUS_MS);
+    } else {
+      // Fresh grant
+      newTokens = tokens;
+      newExpiry = now + BONUS_MS;
+    }
     const bonus = { tokens: newTokens, expiresAt: newExpiry, grantedAt: now };
-    saveBonus(bonus);
+    saveBonusRaw(bonus);
     return bonus;
   }
   function getFreeLimit() { return BASE_FREE_LIMIT + getActiveBonus(); }
+
+  function formatBonusRemaining() {
+    const ms = getBonusExpiryMs();
+    if (ms <= 0) return '';
+    const days = Math.floor(ms / 86400000);
+    const hours = Math.floor((ms % 86400000) / 3600000);
+    if (days >= 1) return days + 'd';
+    if (hours >= 1) return hours + 'h';
+    const mins = Math.max(1, Math.floor(ms / 60000));
+    return mins + 'm';
+  }
+
+  // Periodic expiry checker — updates UI when bonus expires mid-session
+  function startBonusWatcher() {
+    if (__bonusTimer) clearInterval(__bonusTimer);
+    __bonusTimer = setInterval(() => {
+      const before = loadBonusRaw();
+      const wasValid = isBonusValid(before);
+      const nowTokens = getActiveBonus(); // this may clear expired bonus
+      const isValidNow = nowTokens > 0;
+      if (wasValid && !isValidNow) {
+        // Just expired
+        updateTokenUsage();
+        toast('Your 50k bonus tokens have expired. Share again to renew!', 4500);
+      } else if (isValidNow) {
+        // Refresh countdown display
+        updateTokenUsage();
+      }
+    }, BONUS_CHECK_MS);
+  }
 
   const idb = (() => {
     let p = null;
@@ -130,6 +188,123 @@
       async get(k) { const db = await open(); return new Promise((res, rej) => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result || null); q.onerror = () => rej(q.error); }); },
     };
   })();
+
+  /* ═══════════ CONFETTI ANIMATION ═══════════ */
+  function launchConfetti(opts) {
+    const o = opts || {};
+    const duration = o.duration || 4200;
+    const count = o.count || 180;
+    const canvas = document.createElement('canvas');
+    canvas.className = 'confetti-canvas';
+    canvas.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(canvas);
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const W = window.innerWidth, H = window.innerHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+
+    const colors = ['#4d6bfe', '#7c8aff', '#16a34a', '#4ade80', '#f59e0b', '#fbbf24', '#ec4899', '#f472b6', '#06b6d4', '#22d3ee', '#a855f7', '#c084fc', '#ef4444', '#f87171'];
+    const particles = [];
+
+    // Two burst origins — left and right of screen top, plus wide falling field
+    const origins = [
+      { x: W * 0.15, y: H * 0.25 },
+      { x: W * 0.85, y: H * 0.25 },
+      { x: W * 0.5, y: H * 0.2 },
+    ];
+
+    for (let i = 0; i < count; i++) {
+      const origin = origins[i % origins.length];
+      const angle = (Math.random() - 0.5) * Math.PI * 1.4 - Math.PI / 2;
+      const speed = 6 + Math.random() * 12;
+      particles.push({
+        x: origin.x + (Math.random() - 0.5) * 60,
+        y: origin.y + (Math.random() - 0.5) * 40,
+        vx: Math.cos(angle) * speed * (0.7 + Math.random() * 0.6),
+        vy: Math.sin(angle) * speed - 4 - Math.random() * 3,
+        gravity: 0.28 + Math.random() * 0.14,
+        drag: 0.988,
+        size: 6 + Math.random() * 8,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        rotation: Math.random() * Math.PI * 2,
+        rotationSpeed: (Math.random() - 0.5) * 0.34,
+        shape: Math.random() < 0.55 ? 'rect' : (Math.random() < 0.5 ? 'circle' : 'ribbon'),
+        swayAmp: 0.5 + Math.random() * 1.8,
+        swayFreq: 0.02 + Math.random() * 0.03,
+        swayPhase: Math.random() * Math.PI * 2,
+        life: 1,
+      });
+    }
+
+    const start = performance.now();
+    let raf = null;
+    let stopped = false;
+
+    function frame(now) {
+      if (stopped) return;
+      const elapsed = now - start;
+      const t = elapsed / duration;
+
+      ctx.clearRect(0, 0, W, H);
+
+      const fadeStart = 0.7;
+      const globalAlpha = t > fadeStart ? Math.max(0, 1 - (t - fadeStart) / (1 - fadeStart)) : 1;
+      ctx.globalAlpha = globalAlpha;
+
+      for (const p of particles) {
+        p.vy += p.gravity;
+        p.vx *= p.drag;
+        p.vy *= p.drag;
+        p.swayPhase += p.swayFreq;
+        const swayX = Math.sin(p.swayPhase) * p.swayAmp * 0.4;
+        p.x += p.vx + swayX;
+        p.y += p.vy;
+        p.rotation += p.rotationSpeed;
+
+        if (p.y > H + 40) continue;
+
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rotation);
+        ctx.fillStyle = p.color;
+
+        if (p.shape === 'circle') {
+          ctx.beginPath();
+          ctx.arc(0, 0, p.size / 2, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (p.shape === 'ribbon') {
+          // Ribbon: thin elongated rect that flips
+          const flip = Math.sin(p.rotation * 2);
+          ctx.fillRect(-p.size / 2, -p.size / 8, p.size, Math.abs(flip) * p.size * 0.4 + 1.5);
+        } else {
+          // Rect (classic confetti)
+          ctx.fillRect(-p.size / 2, -p.size / 3, p.size, p.size * 0.7);
+        }
+        ctx.restore();
+      }
+
+      if (t < 1) {
+        raf = requestAnimationFrame(frame);
+      } else {
+        stopped = true;
+        ctx.clearRect(0, 0, W, H);
+        canvas.remove();
+      }
+    }
+    raf = requestAnimationFrame(frame);
+
+    // Safety cleanup if something goes wrong
+    setTimeout(() => {
+      stopped = true;
+      if (raf) cancelAnimationFrame(raf);
+      if (canvas.parentNode) canvas.remove();
+    }, duration + 2000);
+  }
 
   /* ═══════════ Mascot ═══════════ */
   const MOODS = ['idle','happy','thinking','reasoning','searching','coding','celebrate','error','learning'];
@@ -171,7 +346,6 @@
       setMascotMood(pool[Math.floor(Math.random() * pool.length)], w.parentElement);
     }, 8000);
   }
-
   function pickStatusLabel(text) {
     const t = String(text || '').toLowerCase();
     if (!t) return 'Thinking';
@@ -199,12 +373,10 @@
     const headIcon = el.querySelector('.think-head-icon i');
     const t0 = performance.now();
     let done = false;
-
     const timer = setInterval(() => {
       if (done) { clearInterval(timer); return; }
       timerEl.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
     }, 100);
-
     function addNarration(text) {
       if (!text) return;
       const p = document.createElement('div');
@@ -213,7 +385,6 @@
       body.appendChild(p);
     }
     if (Array.isArray(steps)) steps.forEach((s) => addNarration(s));
-
     function close(finalLabel, mood) {
       if (done) return;
       done = true;
@@ -226,9 +397,7 @@
       setTimeout(() => el.classList.add('collapsed'), 1500);
     }
     return {
-      el,
-      addStep(text) { addNarration(text); },
-      addNarration,
+      el, addStep(text) { addNarration(text); }, addNarration,
       addTool() { return { setStatus() {}, addResult() {}, addCode() {} }; },
       setMood(mood) { setMascotMood(mood, el); },
       markWriting() { addNarration('Writing the answer…'); },
@@ -313,20 +482,22 @@
     const limit = __tier === 'free' ? (BASE_FREE_LIMIT + bonus) : null;
     const span = el.querySelector('span');
     if (span) {
-      if (limit) {
-        span.textContent = `${formatK(Math.min(used, limit))} / ${formatK(limit)}`;
-      } else {
-        span.textContent = `${formatK(used)} tokens`;
-      }
+      if (limit) span.textContent = `${formatK(Math.min(used, limit))} / ${formatK(limit)}`;
+      else span.textContent = `${formatK(used)} tokens`;
     }
-    // Bonus indicator
     const hasBonus = bonus > 0 && __tier === 'free';
     el.classList.toggle('has-bonus', hasBonus);
+    // Remove any old bonus badge
+    el.querySelector('.token-bonus-badge')?.remove();
     if (hasBonus) {
-      const daysLeft = Math.ceil(getBonusExpiryMs() / 86400000);
-      el.title = `+${bonus.toLocaleString()} bonus tokens active · expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`;
+      const badge = document.createElement('span');
+      badge.className = 'token-bonus-badge';
+      badge.innerHTML = `<i class="ri-gift-fill"></i>+${formatK(bonus)} · ${formatBonusRemaining()}`;
+      el.appendChild(badge);
+      const expiry = getBonusExpiryDate();
+      el.title = `+${bonus.toLocaleString()} bonus tokens active${expiry ? ' · expires ' + expiry.toLocaleString() : ''}`;
     } else {
-      el.title = limit ? `Estimated conversation usage. Free limit: ${limit.toLocaleString()} tokens.` : 'Estimated tokens used';
+      el.title = limit ? `Free limit: ${limit.toLocaleString()} tokens` : 'Estimated tokens used';
     }
   }
   function atChatBottom(c = $('#chatMessages')) { return !c || c.scrollHeight - c.scrollTop - c.clientHeight < 100; }
@@ -353,33 +524,32 @@
 
   /* ═══════════ Language meta ═══════════ */
   const LANG_META = {
-    lua:        { label: 'LUA',  icon: 'devicon-lua-plain colored',        hljs: 'lua' },
-    python:     { label: 'PY',   icon: 'devicon-python-plain colored',     hljs: 'python' },
-    py:         { label: 'PY',   icon: 'devicon-python-plain colored',     hljs: 'python' },
-    javascript: { label: 'JS',   icon: 'devicon-javascript-plain colored', hljs: 'javascript' },
-    js:         { label: 'JS',   icon: 'devicon-javascript-plain colored', hljs: 'javascript' },
-    typescript: { label: 'TS',   icon: 'devicon-typescript-plain colored', hljs: 'typescript' },
-    ts:         { label: 'TS',   icon: 'devicon-typescript-plain colored', hljs: 'typescript' },
-    html:       { label: 'HTML', icon: 'devicon-html5-plain colored',      hljs: 'xml' },
-    xml:        { label: 'XML',  icon: 'devicon-html5-plain colored',      hljs: 'xml' },
-    css:        { label: 'CSS',  icon: 'devicon-css3-plain colored',       hljs: 'css' },
-    json:       { label: 'JSON', icon: 'devicon-json-plain colored',       hljs: 'json' },
-    bash:       { label: 'SH',   icon: 'devicon-bash-plain colored',       hljs: 'bash' },
-    sh:         { label: 'SH',   icon: 'devicon-bash-plain colored',       hljs: 'bash' },
-    shell:      { label: 'SH',   icon: 'devicon-bash-plain colored',       hljs: 'bash' },
-    java:       { label: 'JAVA', icon: 'devicon-java-plain colored',       hljs: 'java' },
-    cpp:        { label: 'C++',  icon: 'devicon-cplusplus-plain colored',  hljs: 'cpp' },
-    'c++':      { label: 'C++',  icon: 'devicon-cplusplus-plain colored',  hljs: 'cpp' },
-    c:          { label: 'C',    icon: 'devicon-c-plain colored',          hljs: 'c' },
-    go:         { label: 'GO',   icon: 'devicon-go-plain colored',         hljs: 'go' },
-    rust:       { label: 'RUST', icon: 'devicon-rust-plain colored',       hljs: 'rust' },
-    ruby:       { label: 'RB',   icon: 'devicon-ruby-plain colored',       hljs: 'ruby' },
-    php:        { label: 'PHP',  icon: 'devicon-php-plain colored',        hljs: 'php' },
-    sql:        { label: 'SQL',  icon: 'ri-database-2-line',               hljs: 'sql' },
-    yaml:       { label: 'YAML', icon: 'ri-file-list-2-line',              hljs: 'yaml' },
-    yml:        { label: 'YAML', icon: 'ri-file-list-2-line',              hljs: 'yaml' },
-    markdown:   { label: 'MD',   icon: 'ri-markdown-line',                 hljs: 'markdown' },
-    md:         { label: 'MD',   icon: 'ri-markdown-line',                 hljs: 'markdown' },
+    lua: { label: 'LUA', icon: 'devicon-lua-plain colored', hljs: 'lua' },
+    python: { label: 'PY', icon: 'devicon-python-plain colored', hljs: 'python' },
+    py: { label: 'PY', icon: 'devicon-python-plain colored', hljs: 'python' },
+    javascript: { label: 'JS', icon: 'devicon-javascript-plain colored', hljs: 'javascript' },
+    js: { label: 'JS', icon: 'devicon-javascript-plain colored', hljs: 'javascript' },
+    typescript: { label: 'TS', icon: 'devicon-typescript-plain colored', hljs: 'typescript' },
+    ts: { label: 'TS', icon: 'devicon-typescript-plain colored', hljs: 'typescript' },
+    html: { label: 'HTML', icon: 'devicon-html5-plain colored', hljs: 'xml' },
+    xml: { label: 'XML', icon: 'devicon-html5-plain colored', hljs: 'xml' },
+    css: { label: 'CSS', icon: 'devicon-css3-plain colored', hljs: 'css' },
+    json: { label: 'JSON', icon: 'devicon-json-plain colored', hljs: 'json' },
+    bash: { label: 'SH', icon: 'devicon-bash-plain colored', hljs: 'bash' },
+    sh: { label: 'SH', icon: 'devicon-bash-plain colored', hljs: 'bash' },
+    java: { label: 'JAVA', icon: 'devicon-java-plain colored', hljs: 'java' },
+    cpp: { label: 'C++', icon: 'devicon-cplusplus-plain colored', hljs: 'cpp' },
+    'c++': { label: 'C++', icon: 'devicon-cplusplus-plain colored', hljs: 'cpp' },
+    c: { label: 'C', icon: 'devicon-c-plain colored', hljs: 'c' },
+    go: { label: 'GO', icon: 'devicon-go-plain colored', hljs: 'go' },
+    rust: { label: 'RUST', icon: 'devicon-rust-plain colored', hljs: 'rust' },
+    ruby: { label: 'RB', icon: 'devicon-ruby-plain colored', hljs: 'ruby' },
+    php: { label: 'PHP', icon: 'devicon-php-plain colored', hljs: 'php' },
+    sql: { label: 'SQL', icon: 'ri-database-2-line', hljs: 'sql' },
+    yaml: { label: 'YAML', icon: 'ri-file-list-2-line', hljs: 'yaml' },
+    yml: { label: 'YAML', icon: 'ri-file-list-2-line', hljs: 'yaml' },
+    markdown: { label: 'MD', icon: 'ri-markdown-line', hljs: 'markdown' },
+    md: { label: 'MD', icon: 'ri-markdown-line', hljs: 'markdown' },
   };
   function langMeta(lang) {
     const key = String(lang || '').toLowerCase().trim();
@@ -409,7 +579,7 @@
     </div>`;
   }
 
-  /* ═══════════ Rich text markdown ═══════════ */
+  /* ═══════════ Markdown ═══════════ */
   function renderMarkdown(rawText) {
     if (!rawText) return '';
     const src = String(rawText);
@@ -442,11 +612,9 @@
       return s.split('|').map((v) => v.trim());
     };
     const isSepRow = (line) => /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
-
     for (let i = 0; i < lines.length; i++) {
       const t = lines[i].trim();
       if (!t) { flush(); continue; }
-
       if (t.includes('|') && i + 1 < lines.length && isSepRow(lines[i + 1])) {
         flush();
         const headers = splitRow(t);
@@ -464,21 +632,15 @@
         out += table + '</tbody></table></div>';
         continue;
       }
-
       const hm = t.match(/^(#{1,6})\s+(.+)$/);
       if (hm) { flush(); const lvl = hm[1].length; out += `<h${lvl} class="md-h md-h${lvl}">${inlineFmt(hm[2])}</h${lvl}>`; continue; }
-
       const hr = t.match(/^([-*_])\1{2,}$/);
       if (hr) { flush(); out += '<hr class="md-hr">'; continue; }
-
       const um = t.match(/^[-*+]\s+(.+)$/);
       if (um) { flush(); out += `<div class="md-li md-ul">• ${inlineFmt(um[1])}</div>`; continue; }
-
       const om = t.match(/^(\d+)\.\s+(.+)$/);
       if (om) { flush(); out += `<div class="md-li md-ol">${om[1]}. ${inlineFmt(om[2])}</div>`; continue; }
-
       if (/^>\s?/.test(t)) { flush(); out += `<blockquote class="md-quote">${inlineFmt(t.replace(/^>\s?/, ''))}</blockquote>`; continue; }
-
       buf.push(t);
     }
     flush();
@@ -577,7 +739,6 @@
     el.remove();
     sendToAPI(userMsg.content, userMsg.files || []);
   }
-
   function updateSendButtonState() {
     const btn = $('#sendBtn'), inp = $('#messageInput');
     if (!btn || !inp) return;
@@ -585,7 +746,6 @@
     btn.classList.toggle('is-disabled', !enable);
     btn.setAttribute('aria-disabled', String(!enable));
   }
-
   function handleSend() {
     if (isReplying) return;
     const inp = $('#messageInput'); if (!inp) return;
@@ -609,8 +769,6 @@
     saveChats(); renderHistory(); updateTokenUsage();
     sendToAPI(text, files, searchFlag);
   }
-
-  /* ═══════════ Continue button logic ═══════════ */
   function shouldShowContinue(full, convo, streamComplete) {
     if (!full) return false;
     if (freeLimitReached(convo)) return true;
@@ -653,7 +811,6 @@
     const convo = currentConvo();
     const history = convo ? convo.messages.slice(-14).map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })) : [];
     const model = __model || 'mirox-luna-1.2';
-
     const container = $('#chatMessages');
     container?.querySelector('.welcome-screen')?.remove();
 
@@ -705,10 +862,7 @@
         method: 'POST',
         headers: authHeaders(),
         credentials: 'same-origin',
-        body: JSON.stringify({
-          message: text, history, model, stream: true, files, search: !!forceSearch,
-          bridge: __bridge.connected ? { connected: true, name: __bridge.name, model: __bridge.model, env: __bridge.env } : null,
-        }),
+        body: JSON.stringify({ message: text, history, model, stream: true, files, search: !!forceSearch }),
         signal: activeStreamController.signal,
       });
       if (!res.ok) {
@@ -716,23 +870,15 @@
         try { const d = await res.json(); detail = d.error?.message || d.error || d.message || detail; } catch {}
         if (res.status === 401 || res.status === 403) throw new Error('Not signed in.');
         if (res.status === 404) throw new Error('Endpoint /v1/chat/completions not found.');
-        if (res.status === 429) throw new Error('Rate limited.');
         if (res.status >= 500) throw new Error(`Server error (${res.status}).`);
         throw new Error(detail);
       }
-
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let buf = '';
-
       const ensureBubble = () => {
-        if (!bubble) {
-          bubble = document.createElement('div');
-          bubble.className = 'bubble';
-          msgEl.insertBefore(bubble, timeEl);
-        }
+        if (!bubble) { bubble = document.createElement('div'); bubble.className = 'bubble'; msgEl.insertBefore(bubble, timeEl); }
       };
-
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
@@ -747,7 +893,6 @@
           if (pl === '[DONE]') { streamComplete = true; continue; }
           let o;
           try { o = JSON.parse(pl); } catch { continue; }
-
           if (o.n) panel.addNarration(o.n);
           if (o.img) {
             generatedImage = o.img;
@@ -756,7 +901,7 @@
             bubbleText = bubble.querySelector('.bubble-text');
             const img = bubble.querySelector('img');
             if (img) img.onclick = () => openImageViewer(o.img);
-            scrollToBottom(); refreshUsage();
+            scrollToBottom();
             continue;
           }
           if (o.d) {
@@ -787,7 +932,6 @@
       if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
       if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); wireCopyButtons(bubbleText); }
       wireMessageActions(msgEl);
-
       let imageKey = null;
       if (generatedImage) {
         imageKey = 'img:' + aiMsgId;
@@ -808,7 +952,6 @@
       if (savedMsg && shouldShowContinue(full, convo, streamComplete)) {
         attachContinueButton(msgEl, bubble, savedMsg);
       }
-      refreshUsage(); renderSidebarImageHistory();
     } catch (e) {
       clearTimeout(streamTimeout);
       const aborted = e.name === 'AbortError';
@@ -826,7 +969,7 @@
       toast(msg, 5000);
       updateTokenUsage();
     } finally {
-      clearTimeout(streamTimeout);
+      clearTimeout(STREAM_TIMEOUT_MS);
       panel.destroy();
       isReplying = false;
       activeStreamController = null;
@@ -868,13 +1011,6 @@
       reader.readAsDataURL(file);
     });
   }
-  function addTextAttachment(text, name) {
-    const body = String(text).slice(0, 60000);
-    const fname = name || ('pasted-' + new Date().toISOString().slice(11, 19).replace(/:/g, '-') + '.txt');
-    if (pendingFiles.some((f) => f.type === 'text' && f.content === body)) { toast('Already added', 1500); return; }
-    pendingFiles.push({ name: fname, size: text.length, type: 'text', content: body });
-    updatePreview(); updateSendButtonState();
-  }
   function handleFiles(fileList) {
     if (!fileList || !fileList.length) return;
     const arr = [];
@@ -913,6 +1049,13 @@
       return `<div class="attach-chip">${fileIconHTML()}${escapeHtml(f.name)}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`;
     }).join('');
   }
+  function addTextAttachment(text, name) {
+    const body = String(text).slice(0, 60000);
+    const fname = name || ('pasted-' + new Date().toISOString().slice(11, 19).replace(/:/g, '-') + '.txt');
+    if (pendingFiles.some((f) => f.type === 'text' && f.content === body)) { toast('Already added', 1500); return; }
+    pendingFiles.push({ name: fname, size: text.length, type: 'text', content: body });
+    updatePreview(); updateSendButtonState();
+  }
 
   function toast(msg, ms) {
     const t = document.createElement('div');
@@ -926,11 +1069,8 @@
   function loadShareState() { __shareState = safeGet(SHARE_KEY, { claimed: false, claimedAt: 0, dismissedAt: 0 }); }
   function saveShareState() { safeSet(SHARE_KEY, __shareState); }
   function shareActive() {
-    if (__shareState.claimed) {
-      const bonus = loadBonus();
-      if (bonus && bonus.expiresAt > Date.now()) return true;
-    }
-    return false;
+    // Valid only if there's a currently-valid bonus
+    return getActiveBonus() > 0;
   }
   function shouldShowShareAd() {
     if (__tier !== 'free') return false;
@@ -953,19 +1093,40 @@
     el.textContent = text;
     el.className = 'share-ad-status' + (cls ? ' ' + cls : '');
   }
+
+  /* Confetti + reward on successful share */
+  function celebrateReward() {
+    // Fire confetti from two origins
+    launchConfetti({ duration: 4200, count: 200 });
+    // Pulse the token chip
+    const chip = $('#tokenUsage');
+    if (chip) {
+      chip.classList.add('pulse');
+      setTimeout(() => chip.classList.remove('pulse'), 1200);
+    }
+    // Celebrate mascot on welcome screen if visible
+    const wm = document.getElementById('welcomeMascot');
+    if (wm) {
+      setMascotMood('celebrate', wm.parentElement);
+      setTimeout(() => setMascotMood('happy', wm.parentElement), 2000);
+    }
+  }
+
   function grantShareRewardLocal() {
-    // Grant locally — user sees tokens immediately, regardless of backend
-    grantLocalBonus(BONUS_TOKENS);
+    const bonus = grantLocalBonus(BONUS_TOKENS);
     __shareState.claimed = true;
     __shareState.claimedAt = Date.now();
+    __shareState.dismissedAt = 0;
     saveShareState();
     updateTokenUsage();
-    toast(`🎉 ${BONUS_TOKENS.toLocaleString()} bonus tokens added for 7 days!`, 5000);
+    celebrateReward();
+    const days = Math.round((bonus.expiresAt - Date.now()) / 86400000);
+    toast(`🎉 ${BONUS_TOKENS.toLocaleString()} bonus tokens added — valid for ${days} days!`, 6000);
   }
   async function grantShareReward() {
-    // Grant locally first (always works)
+    // Local grant FIRST — always succeeds
     grantShareRewardLocal();
-    // Then try to sync with backend (best effort)
+    // Backend sync (best effort)
     try {
       await jsonOr('/api/share/reward', {
         method: 'POST',
@@ -981,17 +1142,15 @@
       text: 'I\'m using MiroxAI for free AI chats. Get 50k bonus tokens for a week!',
       url: location.origin + '/?ref=share',
     };
-
     if (btn) btn.disabled = true;
 
-    // Primary: native Web Share — resolves only on actual share
     if (navigator.share) {
       try {
         setShareStatus('Opening share sheet…', '');
         await navigator.share(shareData);
         setShareStatus('Share confirmed! Adding 50,000 tokens…', 'ok');
         await grantShareReward();
-        setTimeout(() => closeShareAd(false), 1800);
+        setTimeout(() => closeShareAd(false), 2200);
         return;
       } catch (e) {
         if (e && e.name === 'AbortError') {
@@ -999,15 +1158,12 @@
           if (btn) btn.disabled = false;
           return;
         }
-        // fall through to fallback
       }
     }
 
-    // Fallback: open Twitter share + detect return via focus
     const shareText = encodeURIComponent(shareData.text + ' ' + shareData.url);
     const url = `https://twitter.com/intent/tweet?text=${shareText}`;
     window.open(url, '_blank', 'noopener,width=600,height=500');
-
     setShareStatus('Complete the share in the new window…', '');
     let resolved = false;
     const focusHandler = () => {
@@ -1017,7 +1173,7 @@
       setTimeout(async () => {
         setShareStatus('Share detected! Adding 50,000 tokens…', 'ok');
         await grantShareReward();
-        setTimeout(() => closeShareAd(false), 1800);
+        setTimeout(() => closeShareAd(false), 2200);
       }, 800);
     };
     window.addEventListener('focus', focusHandler);
@@ -1055,27 +1211,16 @@
     wrap.innerHTML = '<div class="studio-empty">Loading…</div>';
     const items = await fetchImageHistory();
     if (!items.length) { wrap.innerHTML = '<div class="studio-empty">No images yet.</div>'; return; }
-    wrap.innerHTML = items.map((it, i) => `
-      <div class="image-history-item" data-idx="${i}">
-        <img src="${it.image}" alt="" loading="lazy">
-        <div class="image-history-prompt">${escapeHtml(it.prompt || '')}</div>
-      </div>`).join('');
-    wrap.querySelectorAll('.image-history-item').forEach((el) => {
-      el.onclick = () => { const it = items[parseInt(el.dataset.idx, 10)]; if (it) openImageViewer(it.image); };
-    });
+    wrap.innerHTML = items.map((it, i) => `<div class="image-history-item" data-idx="${i}"><img src="${it.image}" alt="" loading="lazy"><div class="image-history-prompt">${escapeHtml(it.prompt || '')}</div></div>`).join('');
+    wrap.querySelectorAll('.image-history-item').forEach((el) => { el.onclick = () => { const it = items[parseInt(el.dataset.idx, 10)]; if (it) openImageViewer(it.image); }; });
   }
   async function renderSidebarImageHistory() {
     const wrap = $('#sidebarImageHistory'); if (!wrap) return;
     wrap.innerHTML = '<div class="sidebar-empty">Loading…</div>';
     const items = await fetchImageHistory();
     if (!items.length) { wrap.innerHTML = '<div class="sidebar-empty">No images yet.</div>'; return; }
-    wrap.innerHTML = items.map((it, i) => `
-      <div class="sidebar-image-item" data-idx="${i}" title="${escapeHtml(it.prompt || '')}">
-        <img src="${it.image}" alt="" loading="lazy">
-      </div>`).join('');
-    wrap.querySelectorAll('.sidebar-image-item').forEach((el) => {
-      el.onclick = () => { const it = items[parseInt(el.dataset.idx, 10)]; if (it) openImageViewer(it.image); };
-    });
+    wrap.innerHTML = items.map((it, i) => `<div class="sidebar-image-item" data-idx="${i}" title="${escapeHtml(it.prompt || '')}"><img src="${it.image}" alt="" loading="lazy"></div>`).join('');
+    wrap.querySelectorAll('.sidebar-image-item').forEach((el) => { el.onclick = () => { const it = items[parseInt(el.dataset.idx, 10)]; if (it) openImageViewer(it.image); }; });
   }
 
   /* ═══════════ Models ═══════════ */
@@ -1200,34 +1345,13 @@
     });
   }
   function openBridgeWorkspace() { $('#bridgeWorkspace')?.classList.add('open'); document.body.style.overflow = 'hidden'; }
-  function closeBridgeWorkspace() { $('#bridgeWorkspace')?.classList.remove('open'); $('#bwPanel')?.classList.remove('side-open'); document.body.style.overflow = ''; }
-  function updateBridgeSendBtn() {
-    const btn = $('#bridgeSendBtn'), inp = $('#bridgeInput');
-    if (!btn || !inp) return;
-    const enabled = __bridge.connected && !bridgeRunning && inp.value.trim().length > 0;
-    btn.classList.toggle('is-disabled', !enabled);
-    btn.setAttribute('aria-disabled', String(!enabled));
-  }
-  async function startBridge() {
-    const name = ($('#bwNameInput')?.value || __bridge.name).trim() || 'My Laptop';
-    const port = parseInt($('#bwPortInput')?.value || __bridge.port, 10) || 8765;
-    __bridge.name = name; __bridge.port = port;
-    try {
-      const r = await netFetch(`http://localhost:${port}/ping`, { mode: 'cors' }, 4000);
-      if (r.ok) {
-        const d = await r.json();
-        if (d && d.ok) { __bridge.connected = true; __bridge.baseUrl = `http://localhost:${port}`; renderBridgeStatus(); toast('Bridge connected', 2500); }
-      }
-    } catch { toast('Bridge not reachable', 2500); }
-  }
-  function stopBridge() { __bridge.connected = false; __bridge.baseUrl = null; renderBridgeStatus(); }
+  function closeBridgeWorkspace() { $('#bridgeWorkspace')?.classList.remove('open'); document.body.style.overflow = ''; }
 
   /* ═══════════ Modals ═══════════ */
   function openModal(id) { const el = document.getElementById(id); if (el) el.classList.add('open'); }
   function closeModal(id) { const el = document.getElementById(id); if (el) el.classList.remove('open'); }
   function openSidebar() { $('#sidebar')?.classList.add('open'); $('#sidebarScrim')?.classList.add('open'); }
   function closeSidebar() { $('#sidebar')?.classList.remove('open'); $('#sidebarScrim')?.classList.remove('open'); }
-
   function applyAppearance(prefs) {
     const root = document.documentElement;
     const mode = prefs.mode || 'light';
@@ -1325,8 +1449,7 @@
     on('#simpleLoginForm', 'submit', doLogin);
     on('#ivDownload', 'click', () => { if (!__ivDataUrl) return; const a = document.createElement('a'); a.href = __ivDataUrl; a.download = `mirox-${Date.now()}.png`; document.body.appendChild(a); a.click(); document.body.removeChild(a); });
     on('#bwCloseBtn', 'click', closeBridgeWorkspace);
-    on('#bwConnectBtn', 'click', startBridge);
-    on('#bwDisconnectBtn', 'click', stopBridge);
+    on('#bwNewBtn', 'click', () => { const m = $('#bridgeMessages'); if (m) m.innerHTML = ''; });
     on('#shareAdShareBtn', 'click', attemptShare);
     on('#shareAdIgnoreBtn', 'click', () => closeShareAd(true));
     on('#shareAdCloseBtn', 'click', () => closeShareAd(true));
@@ -1339,7 +1462,7 @@
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); $('#messageInput')?.focus(); }
     });
-    window.addEventListener('resize', () => { if (window.innerWidth > 860) { closeSidebar(); $('#bwPanel')?.classList.remove('side-open'); } });
+    window.addEventListener('resize', () => { if (window.innerWidth > 860) closeSidebar(); });
   }
 
   async function openConversation(id) {
@@ -1371,6 +1494,7 @@
       loadAppearance(); loadShareState(); loadChats(); wireAll();
       renderHistory(); renderModelPicker(); renderBridgeStatus(); startIdleMascot();
       updateTokenUsage();
+      startBonusWatcher();
     } catch (e) { console.error('[Mirox init]', e); }
     finally { killLoader(); }
     loadConfig().catch(() => {});
