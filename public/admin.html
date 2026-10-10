@@ -309,7 +309,7 @@
             if (data && data.ok) {
               btn.textContent = '✓';
               setTimeout(() => { btn.textContent = 'Save'; btn.disabled = false; }, 1200);
-              tr.querySelector('.pill').outerHTML = `<span class="pill ${tier}">${esc(tier)}</span>`;
+              const p = tr.querySelector('.pill'); if (p) p.outerHTML = `<span class="pill ${tier}">${esc(tier)}</span>`;
             } else {
               btn.textContent = '✗';
               setTimeout(() => { btn.textContent = 'Save'; btn.disabled = false; }, 1500);
@@ -332,7 +332,7 @@
         <tr>
           <td style="white-space:nowrap;">${esc(formatTs(c.ts))}</td>
           <td>${esc(c.email || '—')}</td>
-          <td>${esc(c.model || '—')}${c.canned ? ' <span class="muted">(canned)</span>' : ''}</td>
+          <td>${esc(c.model || '—')}</td>
           <td class="prompt-cell">${esc(c.message || '—')}</td>
         </tr>`).join('');
     }
@@ -364,7 +364,7 @@
             const res = await fetch('/v1/images/generations', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ prompt, aspect_ratio: '1:1' }),
+              body: JSON.stringify({ prompt }),
             });
             const data = await res.json();
             if (data && data.image) {
@@ -399,6 +399,20 @@
       }).join('');
     }
 
+    function applyStats(data) {
+      lastStats = data;
+      renderWarning(data.warning);
+      $('#statUsers').textContent  = data.users  ?? 0;
+      $('#statChats').textContent  = data.chats  ?? 0;
+      $('#statImages').textContent = data.images ?? 0;
+      $('#statEvents').textContent = data.events ?? 0;
+
+      renderUsers(data.users_data);
+      renderChats(data.chats_data);
+      renderImages(data.images_data);
+      renderEvents(data.events_data);
+    }
+
     async function refreshStats() {
       if (loading) return;
       loading = true;
@@ -424,19 +438,7 @@
           $('#userTable tbody').innerHTML = '<tr><td colspan="7" class="err">Invalid response from server</td></tr>';
           return;
         }
-
-        lastStats = data;
-        renderWarning(data.warning);
-
-        $('#statUsers').textContent  = data.users  ?? 0;
-        $('#statChats').textContent  = data.chats  ?? 0;
-        $('#statImages').textContent = data.images ?? 0;
-        $('#statEvents').textContent = data.events ?? 0;
-
-        renderUsers(data.users_data);
-        renderChats(data.chats_data);
-        renderImages(data.images_data);
-        renderEvents(data.events_data);
+        applyStats(data);
       } catch (e) {
         const msg = e && e.name === 'AbortError' ? 'Request timed out' : 'Failed to load stats';
         setStatsPlaceholder('—');
@@ -488,16 +490,7 @@
         const data = await readJson(res);
         if (!data || !data.ok) { setAdminToken(''); showGate(); return; }
         showAdminShell();
-        lastStats = data;
-        renderWarning(data.warning);
-        $('#statUsers').textContent  = data.users  ?? 0;
-        $('#statChats').textContent  = data.chats  ?? 0;
-        $('#statImages').textContent = data.images ?? 0;
-        $('#statEvents').textContent = data.events ?? 0;
-        renderUsers(data.users_data);
-        renderChats(data.chats_data);
-        renderImages(data.images_data);
-        renderEvents(data.events_data);
+        applyStats(data);
       } catch {
         showGate();
       }
