@@ -2,14 +2,11 @@
   'use strict';
 
   /* ═══════════════════════════════════════════════════════════
-     i18n — uses MyMemory API (free, no key) with localStorage cache
-     English strings live in the HTML. On language switch we translate
-     each English source text and cache the result forever.
+     i18n — MyMemory API (translation only, not storage)
      ═══════════════════════════════════════════════════════════ */
-
   const I18N_CACHE_KEY = 'miroxai_i18n_cache_v1';
   const RTL_LANGS = ['fa','ps','ar','he','ur'];
-  const TRANSLATE_CONCURRENCY = 3; // max parallel API calls
+  const TRANSLATE_CONCURRENCY = 3;
 
   let __i18nCache = {};
   let __translationQueue = [];
@@ -29,12 +26,10 @@
     __translationStatusEl.className = 'translate-status' + (cls ? ' ' + cls : '');
   }
 
-  // Fetch translation for a single string from cache or API
   async function translateString(text, targetLang) {
     if (!text || !targetLang || targetLang === 'en') return text;
     const key = targetLang + ':' + text;
     if (__i18nCache[key]) return __i18nCache[key];
-    // MyMemory doesn't like very long strings — split at 400 chars
     const chunk = text.length > 400 ? text.slice(0, 400) : text;
     try {
       const url = 'https://api.mymemory.translated.net/get?q=' + encodeURIComponent(chunk) + '&langpair=en|' + encodeURIComponent(targetLang);
@@ -42,19 +37,16 @@
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const d = await r.json();
       const out = (d && d.responseData && d.responseData.translatedText) || chunk;
-      // MyMemory sometimes returns the query echo or quotes — clean up
       let clean = String(out).trim();
       if (clean.startsWith('"') && clean.endsWith('"')) clean = clean.slice(1, -1);
       __i18nCache[key] = clean;
       saveI18nCache();
       return clean;
-    } catch (e) {
-      // On failure, fall back to English and don't cache (so we retry next time)
+    } catch {
       return text;
     }
   }
 
-  // Queue system: 3 parallel workers pull from the queue
   function enqueueTranslation(element, sourceText, targetLang, mode) {
     __translationQueue.push({ element, sourceText, targetLang, mode });
     processQueue();
@@ -74,40 +66,31 @@
         if (!job.element || !job.element.isConnected) return;
         if (typeof translated !== 'string' || !translated) return;
         if (job.mode === 'text') {
-          // Preserve any nested icon children: only replace if the element has no child elements
           if (job.element.children.length === 0) job.element.textContent = translated;
           else {
-            // Find first text node and replace
             for (const node of job.element.childNodes) {
               if (node.nodeType === 3 && node.textContent.trim()) { node.textContent = translated; break; }
             }
           }
-        } else if (job.mode === 'placeholder') {
-          job.element.placeholder = translated;
-        } else if (job.mode === 'title') {
-          job.element.title = translated;
-        } else if (job.mode === 'html') {
-          job.element.innerHTML = translated;
-        }
+        } else if (job.mode === 'placeholder') job.element.placeholder = translated;
+        else if (job.mode === 'title') job.element.title = translated;
+        else if (job.mode === 'html') job.element.textContent = translated;
       });
       done += batch.length;
       setTranslateStatus('Translating… (' + Math.min(done, total) + '/' + total + ')');
     }
     __translating = false;
-    setTranslateStatus(''); // done
+    setTranslateStatus('');
   }
 
-  // Apply translations: iterate all data-i18n elements
   function applyTranslations() {
     const lang = (__prefs && __prefs.uiLanguage) || 'en';
     const isRtl = RTL_LANGS.includes(lang);
     document.documentElement.lang = lang;
     document.documentElement.setAttribute('data-dir', isRtl ? 'rtl' : 'ltr');
 
-    // For each translatable element, first capture the English source ONCE
     document.querySelectorAll('[data-i18n]').forEach((el) => {
       if (!el.dataset.i18nEn) {
-        // Store the source English only the first time
         let src = '';
         if (el.children.length === 0) src = el.textContent;
         else {
@@ -121,7 +104,6 @@
       const src = el.dataset.i18nEn;
       if (!src) return;
       if (lang === 'en') {
-        // Restore English
         if (el.children.length === 0) el.textContent = src;
         else {
           for (const node of el.childNodes) {
@@ -130,7 +112,6 @@
         }
         return;
       }
-      // Look up cache first for instant update
       const cacheKey = lang + ':' + src;
       if (__i18nCache[cacheKey]) {
         if (el.children.length === 0) el.textContent = __i18nCache[cacheKey];
@@ -139,28 +120,20 @@
             if (node.nodeType === 3 && node.textContent.trim()) { node.textContent = __i18nCache[cacheKey]; break; }
           }
         }
-      } else {
-        enqueueTranslation(el, src, lang, 'text');
-      }
+      } else enqueueTranslation(el, src, lang, 'text');
     });
 
     document.querySelectorAll('[data-i18n-html]').forEach((el) => {
       if (!el.dataset.i18nHtmlEn) el.dataset.i18nHtmlEn = el.innerHTML;
       const srcHtml = el.dataset.i18nHtmlEn;
       if (!srcHtml) return;
-      // For HTML strings, translate the plain-text portion only
       const tmp = document.createElement('div');
       tmp.innerHTML = srcHtml;
       const plain = tmp.textContent.trim();
       if (lang === 'en') { el.innerHTML = srcHtml; return; }
       const cacheKey = lang + ':html:' + plain;
-      if (__i18nCache[cacheKey]) {
-        // Rebuild with translated plain text but keep any <strong>/<code> highlights as-is
-        // Simplest: replace whole HTML with translated text
-        el.textContent = __i18nCache[cacheKey];
-      } else {
-        enqueueTranslation(el, plain, lang, 'html');
-      }
+      if (__i18nCache[cacheKey]) el.textContent = __i18nCache[cacheKey];
+      else enqueueTranslation(el, plain, lang, 'html');
     });
 
     document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
@@ -205,6 +178,14 @@
   const $$ = (s) => document.querySelectorAll(s);
   const on = (sel, ev, fn) => { const el = $(sel); if (el) el.addEventListener(ev, fn); };
 
+  /* ═══════════ Platform detection (Bridge is PC-only) ═══════════ */
+  const IS_PC = (() => {
+    const ua = navigator.userAgent || '';
+    const mobile = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|Mobile/i.test(ua);
+    const touchOnly = (('ontouchstart' in window) || navigator.maxTouchPoints > 1) && !window.matchMedia('(pointer: fine)').matches;
+    return !mobile && !touchOnly;
+  })();
+
   const FALLBACK_MODELS = [
     { id: 'mirox-luna-1.2', label: 'Luna', tier: 'free', tagline: 'Fast, unlimited', icon: 'ri-moon-line' },
     { id: 'mirox-gen-1', label: 'Gen', tier: 'free', tagline: 'Concise, unlimited', icon: 'ri-flashlight-line' },
@@ -213,13 +194,13 @@
     { id: 'mirox-eclipse-2.0', label: 'Eclipse', tier: 'ultimate', tagline: 'Most powerful', icon: 'ri-sun-fill' },
   ];
   const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
-  const LS_KEY = 'miroxai_conversations_v38';
+  const LS_KEY = 'miroxai_conversations_v40';
   const TOKEN_KEY = 'mirox_token';
   const GUEST_KEY = 'miroxai_guest_id_v1';
-  const APPEARANCE_KEY = 'miroxai_appearance_v38';
-  const SHARE_KEY = 'miroxai_share_v9';
-  const BONUS_KEY = 'miroxai_bonus_v9';
-  const PREFS_KEY = 'miroxai_prefs_v5';
+  const APPEARANCE_KEY = 'miroxai_appearance_v40';
+  const SHARE_KEY = 'miroxai_share_v10';
+  const BONUS_KEY = 'miroxai_bonus_v10';
+  const PREFS_KEY = 'miroxai_prefs_v6';
   const BRIDGE_KEY = 'miroxai_bridge_v1';
   const BRIDGE_OPTS_KEY = 'miroxai_bridge_opts_v1';
   const PASTE_ATTACH_THRESHOLD = 1024;
@@ -228,11 +209,11 @@
   const BASE_FREE_LIMIT = 10000;
   const BONUS_TOKENS = 50000;
   const BONUS_MS = 7 * 24 * 60 * 60 * 1000;
-  const BONUS_CHECK_MS = 30 * 1000;
   const MAX_IMAGE_DIM = 1600;
-  const MAX_BRIDGE_ITER = 200;
-  const MAX_AUTO_CONTINUES = 100;
-  const MAX_DUP_COMMANDS = 40;
+  const MAX_BRIDGE_ITER = 40;                 // reduced
+  const MAX_AUTO_CONTINUES = 6;               // reduced
+  const MAX_DUP_COMMANDS = 3;                 // reduced from 40
+  const MAX_DUP_REPLIES = 2;                  // new: repeated AI replies → stop
 
   let __config = null, __user = null, __tier = 'free', __model = 'mirox-luna-1.2';
   let currentConversationId = null, isReplying = false;
@@ -242,7 +223,6 @@
   let forceSearchNext = false, __historyQuery = '';
   let __ivDataUrl = '';
   let __shareState = { claimed: false, claimedAt: 0, dismissedAt: 0 };
-  let __bonusTimer = null;
   let __lastBonusActive = false;
   let __prefs = {};
   let __bridge = { name: 'My Laptop', port: 8765, connected: false, baseUrl: null, env: null };
@@ -251,6 +231,10 @@
   let __lastBuildFolder = null, __lastPreviewFile = null;
   let __sudoPassword = '', __sudoRemember = false, __sudoResolver = null;
   let __bridgeAutoRun = true, __bridgeShowCode = false;
+
+  // Voice input
+  let __voiceRecognition = null;
+  let __voiceListening = false;
 
   const uid = () => 'c_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
   const escapeHtml = (s) => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
@@ -371,13 +355,11 @@
     root.setAttribute('data-theme', __prefs.theme || 'default');
   }
 
-  /* ═══════════ BLOB MASCOT with new moods ═══════════ */
+  /* ═══════════ BLOB MASCOT ═══════════ */
   const MOODS = ['idle','happy','thinking','coding','celebrate','error','learning','wink','study','searching','reading'];
 
-  // Blob path — organic 4-lobe shape
   const BLOB_PATH = 'M100 20 C126 20 144 32 154 54 C178 56 194 76 194 102 C194 128 178 148 154 152 C144 174 126 186 100 186 C74 186 56 174 46 152 C22 148 6 128 6 102 C6 76 22 56 46 54 C56 32 74 20 100 20 Z';
 
-  // Full mascot SVG with separate eye elements and optional glasses for study/reading moods
   function blobSvg() {
     return `<svg class="blob-svg" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mirox avatar">
       <g class="blob-float">
@@ -417,7 +399,6 @@
   const lb = document.getElementById('loadingBlob');
   if (lb) lb.innerHTML = `<div class="mascot mascot-lg m-idle" data-mood="idle">${blobSvg()}</div>`;
 
-  // Idle mascot: rotates through cute moods including wink, study, searching
   function startIdleMascot() {
     const cuteMoods = ['wink', 'study', 'searching', 'happy', 'thinking', 'learning', 'reading'];
     setInterval(() => {
@@ -528,7 +509,6 @@
     const ttl = $('#chatTitle'); if (ttl) ttl.textContent = 'New chat';
     const c = $('#chatMessages'); if (c) c.innerHTML = welcomeHTML();
     bindSuggestionClicks(); updateTokenUsage(); renderHistory();
-    // Re-apply translations to newly created content
     applyTranslations();
   }
   function bindSuggestionClicks() {
@@ -691,7 +671,7 @@
     });
   }
 
-  /* ═══════════ MESSAGE DOM ═══════════ */
+  /* ═══════════ MESSAGE DOM (with blob avatar) ═══════════ */
   function addMessageToDOM(role, content, ts, msgId, files, image) {
     const container = $('#chatMessages'); if (!container) return null;
     container.querySelector('.welcome-screen')?.remove();
@@ -699,6 +679,15 @@
     const el = document.createElement('div');
     el.className = 'message ' + (role === 'user' ? 'user' : 'ai');
     el.dataset.msgId = id; el.dataset.role = role;
+
+    // Blob avatar (only for AI messages in the LEFT column)
+    let avatar = '';
+    if (role === 'ai') {
+      avatar = `<div class="message-avatar" data-mood="idle">
+        <div class="mascot mascot-sm m-idle" data-mood="idle">${blobSvg()}</div>
+      </div>`;
+    }
+
     let inner = '';
     if (role === 'user' && files && files.length) {
       inner += '<div class="attach-row">';
@@ -713,13 +702,20 @@
     }
     if (role === 'ai' && image) inner += `<div class="gen-image"><img src="${image}" draggable="false" alt=""></div>`;
     inner += '<div class="bubble-text"></div>';
-    el.innerHTML = `<div class="bubble">${inner}</div>
-      <div class="message-actions">
-        <button class="action-btn" data-action="copy" aria-label="Copy"><i class="ri-file-copy-line"></i></button>
-        ${role === 'ai' ? '<button class="action-btn" data-action="retry" aria-label="Retry"><i class="ri-refresh-line"></i></button>' : ''}
-      </div>
-      <div class="message-time">${ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</div>`;
+
+    el.innerHTML = `
+      ${avatar}
+      <div class="message-body">
+        <div class="bubble">${inner}</div>
+        <div class="message-actions">
+          <button class="action-btn" data-action="copy" aria-label="Copy"><i class="ri-file-copy-line"></i></button>
+          ${role === 'ai' ? '<button class="action-btn" data-action="retry" aria-label="Retry"><i class="ri-refresh-line"></i></button>' : ''}
+        </div>
+        <div class="message-time">${ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</div>
+      </div>`;
+
     container.appendChild(el);
+
     const bt = el.querySelector('.bubble-text');
     if (role === 'user') { bt.textContent = content || ''; if (!content) bt.style.display = 'none'; }
     else if (content) { bt.innerHTML = renderMarkdown(content); wireCopyButtons(bt); }
@@ -819,13 +815,14 @@
     const container = $('#chatMessages');
     container?.querySelector('.welcome-screen')?.remove();
 
-    let msgEl, bubble, bubbleText, timeEl, panel;
+    let msgEl, bubble, bubbleText, timeEl, panel, avatarEl;
     const aiMsgId = isContinuation ? continuation.messageObj.id : uid();
     if (isContinuation) {
       msgEl = continuation.existingMsgEl;
       bubble = continuation.existingBubble;
       bubbleText = bubble.querySelector('.bubble-text');
       timeEl = msgEl.querySelector('.message-time');
+      avatarEl = msgEl.querySelector('.message-avatar .mascot');
       bubble.querySelector('[data-continue]')?.remove();
       panel = { el: document.createElement('span'), addStep() {}, addNarration() {}, addTool() { return { setStatus() {}, addResult() {}, addCode() {} }; }, setMood() {}, markWriting() {}, finish() {}, fail() {}, destroy() {} };
       const prev = String(continuation.messageObj.content || '');
@@ -837,9 +834,18 @@
       msgEl.dataset.role = 'ai';
       panel = createThinkPanel(pickStatusLabel(text), [], text);
       panel.setMood(pickMoodFor(text));
-      msgEl.appendChild(panel.el);
+      // Avatar column
+      const avatar = document.createElement('div');
+      avatar.className = 'message-avatar';
+      avatar.innerHTML = `<div class="mascot mascot-sm m-${pickMoodFor(text)}" data-mood="${pickMoodFor(text)}">${blobSvg()}</div>`;
+      avatarEl = avatar.querySelector('.mascot');
+      msgEl.appendChild(avatar);
+      const body = document.createElement('div');
+      body.className = 'message-body';
+      body.appendChild(panel.el);
       timeEl = document.createElement('div'); timeEl.className = 'message-time';
-      msgEl.appendChild(timeEl);
+      body.appendChild(timeEl);
+      msgEl.appendChild(body);
       container?.appendChild(msgEl);
       bubble = null; bubbleText = null; var full = '';
       scrollToBottom(true);
@@ -858,6 +864,12 @@
     const scheduleRender = () => { const now = performance.now(); if (renderTimer) return; renderTimer = setTimeout(renderStreamText, Math.max(50, 120 - (now - streamRenderAt))); streamRenderAt = now; };
     const streamTimeout = setTimeout(() => { try { activeStreamController?.abort(); } catch {} }, STREAM_TIMEOUT_MS);
 
+    // swap avatar to "thinking/coding/searching" mood
+    if (avatarEl) {
+      const mood = pickMoodFor(text);
+      setMascotMood(mood, avatarEl.parentElement);
+    }
+
     try {
       const reqBody = { message: text, history, model, stream: true, search: !!forceSearch, files: files.map((f) => ({ name: f.name, size: f.size, type: f.type, mime: f.mime, width: f.width, height: f.height, dataUrl: f.dataUrl, base64: f.base64 || null, svgText: f.svgText || null, vision: !!f.vision })), content_parts: contentParts.length ? contentParts : null, guest_id: getGuestId(), bonus_active: isBonusActive(), language: __prefs.responseLanguage || 'auto' };
       const res = await fetch('/v1/chat/completions', { method: 'POST', headers: authHeaders(), credentials: 'same-origin', body: JSON.stringify(reqBody), signal: activeStreamController.signal });
@@ -869,7 +881,14 @@
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let buf = '';
-      const ensureBubble = () => { if (!bubble) { bubble = document.createElement('div'); bubble.className = 'bubble'; msgEl.insertBefore(bubble, timeEl); } };
+      const bodyEl = msgEl.querySelector('.message-body');
+      const ensureBubble = () => {
+        if (!bubble) {
+          bubble = document.createElement('div');
+          bubble.className = 'bubble';
+          bodyEl.insertBefore(bubble, timeEl);
+        }
+      };
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
@@ -882,12 +901,34 @@
           if (pl === '[DONE]') { streamComplete = true; continue; }
           let o; try { o = JSON.parse(pl); } catch { continue; }
           if (o.n) panel.addNarration(o.n);
-          if (o.img) { generatedImage = o.img; panel.markWriting(); panel.setMood('celebrate'); ensureBubble(); bubble.innerHTML = `<div class="gen-image"><img src="${o.img}" draggable="false" alt=""></div><div class="bubble-text"></div>`; bubbleText = bubble.querySelector('.bubble-text'); const img = bubble.querySelector('img'); if (img) img.onclick = () => openImageViewer(o.img); scrollToBottom(); continue; }
+          if (o.img) {
+            generatedImage = o.img; panel.markWriting();
+            if (avatarEl) setMascotMood('celebrate', avatarEl.parentElement);
+            ensureBubble();
+            bubble.innerHTML = `<div class="gen-image"><img src="${o.img}" draggable="false" alt=""></div><div class="bubble-text"></div>`;
+            bubbleText = bubble.querySelector('.bubble-text');
+            const img = bubble.querySelector('img'); if (img) img.onclick = () => openImageViewer(o.img);
+            scrollToBottom(); continue;
+          }
           if (o.d) {
             full += o.d;
             const limit = getFreeLimit();
-            if (__tier === 'free' && convo && conversationTokenUsage(convo) + estimateTokens(full) >= limit) { full = full.slice(0, Math.max(0, (limit - conversationTokenUsage(convo)) * 4)); limitHit = true; if (!gotToken) { gotToken = true; ensureBubble(); bubble.innerHTML = '<div class="bubble-text"></div>'; bubbleText = bubble.querySelector('.bubble-text'); } if (bubbleText) bubbleText.innerHTML = renderMarkdown(full); try { await reader.cancel(); } catch {} break; }
-            if (!gotToken) { gotToken = true; panel.markWriting(); panel.setMood('learning'); ensureBubble(); bubble.innerHTML = '<div class="bubble-text"></div>'; bubbleText = bubble.querySelector('.bubble-text'); }
+            if (__tier === 'free' && convo && conversationTokenUsage(convo) + estimateTokens(full) >= limit) {
+              full = full.slice(0, Math.max(0, (limit - conversationTokenUsage(convo)) * 4));
+              limitHit = true;
+              if (!gotToken) { gotToken = true; ensureBubble(); bubble.innerHTML = '<div class="bubble-text"></div>'; bubbleText = bubble.querySelector('.bubble-text'); }
+              if (bubbleText) bubbleText.innerHTML = renderMarkdown(full);
+              try { await reader.cancel(); } catch {}
+              break;
+            }
+            if (!gotToken) {
+              gotToken = true;
+              panel.markWriting();
+              if (avatarEl) setMascotMood('learning', avatarEl.parentElement);
+              ensureBubble();
+              bubble.innerHTML = '<div class="bubble-text"></div>';
+              bubbleText = bubble.querySelector('.bubble-text');
+            }
             scheduleRender();
           }
           if (o.error) throw new Error(o.error.message || 'Stream error');
@@ -896,6 +937,7 @@
       }
       clearTimeout(streamTimeout);
       panel.finish();
+      if (avatarEl) setMascotMood('happy', avatarEl.parentElement);
       if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
       if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); wireCopyButtons(bubbleText); }
       wireMessageActions(msgEl);
@@ -914,7 +956,9 @@
       const aborted = e.name === 'AbortError';
       const msg = aborted ? 'Stopped.' : (e.message || 'Something went wrong.');
       panel.fail(msg);
-      if (!bubble) { bubble = document.createElement('div'); bubble.className = 'bubble'; msgEl.insertBefore(bubble, timeEl); }
+      if (avatarEl) setMascotMood('error', avatarEl.parentElement);
+      const bodyEl = msgEl.querySelector('.message-body');
+      if (!bubble) { bubble = document.createElement('div'); bubble.className = 'bubble'; bodyEl.insertBefore(bubble, timeEl); }
       if (full) {
         if (!bubbleText) { bubbleText = document.createElement('div'); bubbleText.className = 'bubble-text'; bubble.prepend(bubbleText); }
         bubbleText.innerHTML = renderMarkdown(full); wireCopyButtons(bubbleText);
@@ -946,6 +990,77 @@
     el.textContent = typeof msg === 'string' ? msg : '';
     document.body.appendChild(el);
     setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 350); }, ms || 1800);
+  }
+
+  /* ═══════════ VOICE INPUT (Web Speech API) ═══════════ */
+  function setupVoice() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const btn = document.getElementById('voiceBtn');
+    if (!SR || !btn) {
+      if (btn) {
+        btn.disabled = true;
+        btn.title = 'Voice input is not supported in this browser';
+        btn.style.opacity = '0.4';
+      }
+      return;
+    }
+    const recog = new SR();
+    recog.continuous = false;
+    recog.interimResults = true;
+    recog.lang = (navigator.language || 'en-US');
+    recog.onstart = () => {
+      __voiceListening = true;
+      btn.classList.add('listening');
+      btn.innerHTML = '<i class="ri-mic-fill"></i>';
+    };
+    recog.onend = () => {
+      __voiceListening = false;
+      btn.classList.remove('listening');
+      btn.innerHTML = '<i class="ri-mic-line"></i>';
+    };
+    recog.onerror = (e) => {
+      __voiceListening = false;
+      btn.classList.remove('listening');
+      btn.innerHTML = '<i class="ri-mic-line"></i>';
+      if (e.error === 'not-allowed') toast('Microphone permission denied.');
+      else if (e.error === 'no-speech') { /* silent */ }
+      else toast('Voice error: ' + e.error);
+    };
+    recog.onresult = (event) => {
+      const inp = document.getElementById('messageInput');
+      if (!inp) return;
+      let interim = '';
+      let final = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const r = event.results[i];
+        if (r.isFinal) final += r[0].transcript;
+        else interim += r[0].transcript;
+      }
+      const base = inp.dataset.voiceBase || inp.value || '';
+      const combined = (base + (base && (final || interim) ? ' ' : '') + (final || interim)).trim();
+      if (final) {
+        inp.value = (inp.dataset.voiceBase || '').trim()
+          ? (inp.dataset.voiceBase + ' ' + final).trim()
+          : final.trim();
+        inp.dataset.voiceBase = inp.value;
+      } else {
+        inp.value = base ? (base + ' ' + interim).trim() : interim;
+      }
+      inp.style.height = 'auto';
+      inp.style.height = Math.min(inp.scrollHeight, 180) + 'px';
+      updateSendButtonState();
+    };
+    __voiceRecognition = recog;
+    btn.addEventListener('click', () => {
+      const inp = document.getElementById('messageInput');
+      if (!inp) return;
+      if (__voiceListening) {
+        try { recog.stop(); } catch {}
+        return;
+      }
+      inp.dataset.voiceBase = inp.value || '';
+      try { recog.start(); } catch (e) { toast('Could not start voice: ' + e.message); }
+    });
   }
 
   /* ═══════════ SHARE ═══════════ */
@@ -1247,7 +1362,12 @@
   }
   function setBwHint(text, cls = '') { const el = $('#bwConnectHint'); if (!el) return; el.textContent = text; el.className = 'bw-hint' + (cls ? ' ' + cls : ''); }
   function updateBridgeSendBtn() { const btn = $('#bridgeSendBtn'), inp = $('#bridgeInput'); if (!btn || !inp) return; const enabled = __bridge.connected && !bridgeRunning && inp.value.trim().length > 0; btn.classList.toggle('is-disabled', !enabled); btn.setAttribute('aria-disabled', String(!enabled)); renderToggles(); }
-  function openBridgeWorkspace() { $('#bridgeWorkspace')?.classList.add('open'); document.body.style.overflow = 'hidden'; if (!__bridge.connected) setTimeout(() => startBridge(), 50); }
+  function openBridgeWorkspace() {
+    if (!IS_PC) { toast('Bridge is only available on desktop computers.'); return; }
+    $('#bridgeWorkspace')?.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    if (!__bridge.connected) setTimeout(() => startBridge(), 50);
+  }
   function closeBridgeWorkspace() { $('#bridgeWorkspace')?.classList.remove('open'); document.body.style.overflow = ''; }
   function clearBridgeChat() { const m = $('#bridgeMessages'); if (m) m.innerHTML = ''; bridgeConversation = []; bridgeProgress = 0; bridgeTurn = null; bridgeTaskComplete = true; bridgeWaitingForUser = false; __lastBuildFolder = null; updateBridgeProgress(0, 'Ready'); const w = $('#bwProgress'); if (w) w.style.display = 'none'; renderBuildStatus(); }
   function scrollBridgeBottom() { const c = $('#bridgeMessages'); if (c) c.scrollTop = c.scrollHeight; }
@@ -1342,9 +1462,18 @@
       default: return `[${cmd.type}] ok`;
     }
   }
-  function newTurnState() { return { runs: 0, plannedFiles: new Set(), writtenFiles: new Set(), commandLog: new Map(), failedSignatures: new Set() }; }
+  function newTurnState() { return { runs: 0, plannedFiles: new Set(), writtenFiles: new Set(), commandLog: new Map(), failedSignatures: new Set(), lastReplyFingerprint: '', lastReplyCount: 0 }; }
   function cmdSignature(cmd) { const t2 = cmd.type; if (t2 === 'exec' || t2 === 'sudo') return t2 + ':' + (cmd.command || '').trim(); if (t2 === 'write' || t2 === 'append') return t2 + ':' + cmd.path + ':' + (cmd.content || '').length; return t2 + ':' + (cmd.path || ''); }
   function shouldBlockSignature(sig) { if (!bridgeTurn) return false; if (bridgeTurn.failedSignatures.has(sig)) return true; return (bridgeTurn.commandLog.get(sig) || 0) >= MAX_DUP_COMMANDS; }
+  function fingerprintReply(text) {
+    // normalize whitespace + strip tags + cap size for a stable fingerprint
+    return String(text || '')
+      .replace(/<bridge-[^>]+>[\s\S]*?<\/bridge-[^>]+>/g, '')
+      .replace(/<bridge-[^>]+\s+[^>]*\/>/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 400);
+  }
   async function fetchBridgeReply(history) {
     const envBlock = buildEnvBlockString();
     const lastMsg = history[history.length - 1];
@@ -1376,7 +1505,25 @@
         let reply = '';
         try { reply = await fetchBridgeReply(bridgeConversation); thinking?.finish(); }
         catch (e) { thinking?.fail('AI error: ' + e.message); break; }
-        if (!reply || !reply.trim()) { if (autoContinues < MAX_AUTO_CONTINUES && __bridgeAutoRun) { autoContinues++; await sleep(600); bridgeConversation.push({ role: 'user', content: '[System] Continue.' }); continue; } break; }
+        if (!reply || !reply.trim()) {
+          if (autoContinues < MAX_AUTO_CONTINUES && __bridgeAutoRun) { autoContinues++; await sleep(600); bridgeConversation.push({ role: 'user', content: '[System] Continue.' }); continue; }
+          break;
+        }
+
+        // ═══ REPETITION GUARD ═══
+        const fp = fingerprintReply(reply);
+        if (fp && fp === bridgeTurn.lastReplyFingerprint) {
+          bridgeTurn.lastReplyCount++;
+          if (bridgeTurn.lastReplyCount >= MAX_DUP_REPLIES) {
+            addBridgeSystemMsg('Stopping — the AI repeated itself. Try rephrasing or clearing the chat.');
+            bridgeTaskComplete = true;
+            break;
+          }
+        } else {
+          bridgeTurn.lastReplyFingerprint = fp;
+          bridgeTurn.lastReplyCount = 1;
+        }
+
         const cmdsInReply = extractBridgeCommands(reply);
         const saidDone = /\bDONE\b/i.test(reply);
         const truncatedWrite = hasUnclosedWriteOrAppend(reply);
@@ -1406,7 +1553,10 @@
           if (truncatedWrite && lastPath) bridgeConversation.push({ role: 'user', content: `[System] Continue with <bridge-append path="${lastPath}">.` });
           continue;
         }
-        if (truncatedWrite) { if (__bridgeAutoRun && autoContinues < MAX_AUTO_CONTINUES) { autoContinues++; bridgeConversation.push({ role: 'user', content: `[System] Continue with <bridge-append path="${lastPath}">.` }); continue; } bridgeWaitingForUser = true; break; }
+        if (truncatedWrite) {
+          if (__bridgeAutoRun && autoContinues < MAX_AUTO_CONTINUES) { autoContinues++; bridgeConversation.push({ role: 'user', content: `[System] Continue with <bridge-append path="${lastPath}">.` }); continue; }
+          bridgeWaitingForUser = true; break;
+        }
         const hasPlan = bridgeTurn.plannedFiles.size > 0;
         const allFilesWritten = hasPlan && bridgeTurn.writtenFiles.size >= bridgeTurn.plannedFiles.size;
         if (saidDone && (allFilesWritten || !hasPlan)) {
@@ -1424,12 +1574,25 @@
           } else addBridgeSuccessMsg('Task complete');
           bridgeTaskComplete = true; break;
         }
-        if (!saidDone) { if (__bridgeAutoRun && autoContinues < MAX_AUTO_CONTINUES) { autoContinues++; await sleep(600); bridgeConversation.push({ role: 'user', content: '[System] Continue.' }); continue; } bridgeWaitingForUser = true; break; }
+        if (!saidDone) {
+          if (__bridgeAutoRun && autoContinues < MAX_AUTO_CONTINUES) { autoContinues++; await sleep(600); bridgeConversation.push({ role: 'user', content: '[System] Continue.' }); continue; }
+          bridgeWaitingForUser = true; break;
+        }
       }
     } catch (e) { addBridgeSystemMsg('Bridge error: ' + e.message); }
     finally { bridgeRunning = false; updateBridgeSendBtn(); setProgressText(bridgeTaskComplete ? 'Done' : 'Paused'); }
   }
-  function handleBridgeSend() { const inp = $('#bridgeInput'); if (!inp) return; const text = inp.value.trim(); if (!text || bridgeRunning || !__bridge.connected) return; if (bridgeWaitingForUser) { bridgeWaitingForUser = false; if (!bridgeTurn) bridgeTurn = newTurnState(); } else { bridgeConversation = []; bridgeTaskComplete = true; bridgeTurn = null; } inp.value = ''; inp.style.height = 'auto'; updateBridgeSendBtn(); runBridgeTurn(text, false); }
+  function handleBridgeSend() {
+    if (!IS_PC) { toast('Bridge is only available on desktop computers.'); return; }
+    const inp = $('#bridgeInput'); if (!inp) return;
+    const text = inp.value.trim();
+    if (!text || bridgeRunning || !__bridge.connected) return;
+    if (bridgeWaitingForUser) { bridgeWaitingForUser = false; if (!bridgeTurn) bridgeTurn = newTurnState(); }
+    else { bridgeConversation = []; bridgeTaskComplete = true; bridgeTurn = null; }
+    inp.value = ''; inp.style.height = 'auto';
+    updateBridgeSendBtn();
+    runBridgeTurn(text, false);
+  }
   async function openPreview(pathOrEmpty) {
     const modal = $('#bwPreviewModal'); if (!modal) return;
     const frame = $('#bwPreviewFrame'); const subtitle = $('#bwPreviewSubtitle'); const pathInput = $('#bwPreviewPath');
@@ -1521,13 +1684,7 @@
     bindToggle('compactToggle', 'compact');
     bindToggle('reduceMotionToggle', 'reduceMotion');
 
-    // LANGUAGE SELECT — the main new feature
-    on('#uiLanguageSelect', 'change', (e) => {
-      __prefs.uiLanguage = e.target.value;
-      savePrefs();
-      applyTranslations();
-      toast('Translating interface… this may take a moment');
-    });
+    on('#uiLanguageSelect', 'change', (e) => { __prefs.uiLanguage = e.target.value; savePrefs(); applyTranslations(); toast('Translating interface… this may take a moment'); });
     on('#languageSelect', 'change', (e) => { __prefs.responseLanguage = e.target.value; savePrefs(); });
 
     on('#exportChatsBtn', 'click', () => {
@@ -1586,10 +1743,18 @@
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); $('#messageInput')?.focus(); }
     });
     window.addEventListener('resize', () => { if (window.innerWidth > 860) closeSidebar(); });
+
+    // PC-only: hide Bridge button in sidebar + composer
+    if (!IS_PC) {
+      document.querySelectorAll('#bridgeModeBtn, #bridgeOpenBtn, [data-pane="bridge"]').forEach((el) => {
+        el.style.display = 'none';
+      });
+      // also hide the bridge sidebar tab
+      document.querySelectorAll('.sidebar-tab[data-tab="bridge"]').forEach((el) => el.style.display = 'none');
+    }
   }
 
-  function openSettingsModal() { renderMcpListSafe(); applyPrefs(); openModal('settingsModal'); }
-  function renderMcpListSafe() {} // placeholder for compatibility
+  function openSettingsModal() { applyPrefs(); openModal('settingsModal'); }
 
   async function openConversation(id) {
     const convo = __conversations.find((c) => c.id === id);
@@ -1632,13 +1797,13 @@
       loadChats();
       loadBridgeOpts();
       wireAll();
+      setupVoice();
       __lastBonusActive = isBonusActive();
       renderHistory();
       renderModelPicker();
       renderBridgeStatus();
       startIdleMascot();
       updateTokenUsage();
-      // Apply translations after DOM is wired
       applyTranslations();
     } catch (e) { console.error('[Mirox init]', e); }
     finally { killLoader(); }
