@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  /* ═══════════ I18N — full UI translation ═══════════ */
+  /* ═══════════ TRANSLATIONS ═══════════ */
   const TRANSLATIONS = {
     en: {
       brand:'MiroxAI', newChat:'New chat', newChatTitle:'New chat',
@@ -16,16 +16,15 @@
       composerPlaceholder:'How can I help you today?',
       composerNote:'Mirox can make mistakes — double-check important info.',
       latest:'Latest', send:'Send', stop:'Stop', close:'Close', skip:'Skip',
-      openMenu:'Open menu', plans:'Plans', tokenBudget:'Token budget', scrollLatest:'Scroll to latest message',
+      openMenu:'Open menu', plans:'Plans', tokenBudget:'Token budget', scrollLatest:'Scroll to latest',
       attachFiles:'Attach files', removeAttach:'Remove attachments',
       loading:{waking:'Waking up Luna…'},
       share:{title:'Share our site, get 50k tokens',sub:'Get <strong>50k tokens for 1 week</strong> and unlock <strong>Pro, Ultra &amp; Eclipse</strong> models free.',perk1:'50,000 bonus tokens',perk2:'Valid for 7 days',perk3:'Pro · Ultra · Eclipse unlocked',now:'Share now',ignore:'Ignore',hint:"We verify shares through your device's native share sheet."},
       login:{title:'Sign in',sub:'Sign in with Google, Apple, or email — powered by Loginment.',loginment:'Continue with Loginment',orDemo:'or use a quick demo login',name:'Name',email:'Email',continue:'Continue'},
-      settings2:{},
       bridge:{title:'Bridge',disconnected:'Disconnected',connected:'Connected',sideHint:'Give Mirox direct control of your laptop.',openWorkspace:'Open Bridge Workspace',download:'Download client',panel:'Panel',autoRun:'Auto-Run',showCode:'Show Code',preview:'Preview',stop:'Stop',clearChat:'Clear chat',starting:'Starting…',emptyTitle:'Bridge Workspace',emptyBody:'Tell Mirox what to build. It writes files into <code>~/&lt;project&gt;/</code>, verifies them, and shows you a live preview.',inputPlaceholder:'e.g. Build a calculator in my home folder',connection:'Connection',name:'Name',namePlaceholder:'My Laptop',port:'Port',connect:'Connect',disconnect:'Disconnect',phoneDevices:'Phone & Devices',kdeChecking:'KDE Connect: checking…',scanDevices:'Scan for devices',build:'Build',noProject:'No project yet',openPreview:'Open live preview',copyPath:'Copy folder path',sudo:'Sudo',noPassword:'No password saved',forgetPassword:'Forget password',quickActions:'Quick actions',quick:{calc:'Calculator',landing:'Landing page',snake:'Snake game',todo:'Todo app',portfolio:'Portfolio',scan:'Scan devices'},livePreview:'Live Preview',loadPath:'Load path',reload:'Reload'},
       kde:{title:'KDE Connect · Devices',subtitle:'Pick a device for Mirox to work with',hint:'Devices marked reachable are on the same Wi-Fi and paired.',rescan:'Rescan',skip:'Skip'},
       planner:{title:'Mirox Planner',subtitle:'Pick a design — Mirox will build it for you',hint:'Live demos — pick your favorite.',auto:'Let Mirox decide',choose:'Choose'},
-      sudo:{title:'Password required',sub:'Mirox needs root access to continue.',password:'Your sudo password',showHide:'Show / hide',remember:'Remember for this session (kept in memory only)',run:'Run with sudo'},
+      sudo:{title:'Password required',sub:'Mirox needs root access to continue.',password:'Your sudo password',showHide:'Show / hide',remember:'Remember for this session',run:'Run with sudo'},
       bq:{title:'Mirox needs your input',customPlaceholder:'Or type your own answer…',custom:'Custom',submit:'Submit & continue'},
       plans:{title:'Plans',sub:'Luna and Gen are free and unlimited. Share to unlock Pro, Ultra and Eclipse for 7 days.'},
       lumenal:{title:'Lumenal 1.0',sub:'Strong image generation, powered by Mirox.',prompt:'Describe the image you want…',generate:'Generate'},
@@ -34,22 +33,22 @@
       settingsT:{tab:{general:'General',appearance:'Appearance',persona:'Persona',mcp:'MCP',language:'Language',alerts:'Alerts',data:'Data',dev:'Dev'},
         title:'Settings',account:'Account',accountSub:'Chats saved locally in this browser',signIn:'Sign in',signOut:'Sign out',
         rewards:'Rewards',shareEarn:'Share & earn',shareSub:'Get 50k tokens + Pro/Ultra/Eclipse free for 7 days',shareBtn:'Share',
-        behavior:'Behavior',autoScroll:'Auto-scroll',autoScrollSub:'Follow new messages as they arrive',enterSend:'Send with Enter',enterSendSub:'Use Shift+Enter for a new line',showThinking:'Show thinking trace',showThinkingSub:'Display the reasoning panel above replies',vision:'Vision for images',visionSub:'Send attached images to the AI (base64)',compact:'Compact mode',compactSub:'Tighter spacing for dense chats',
+        behavior:'Behavior',autoScroll:'Auto-scroll',autoScrollSub:'Follow new messages as they arrive',enterSend:'Send with Enter',enterSendSub:'Use Shift+Enter for a new line',showThinking:'Show thinking trace',showThinkingSub:'Display reasoning panel above replies',vision:'Vision for images',visionSub:'Send attached images to the AI (base64)',compact:'Compact mode',compactSub:'Tighter spacing for dense chats',
         mode:'Mode',mode2:{light:'Light',dark:'Dark',auto:'Auto'},accent:'Accent color',fontSize:'Font size',font2:{sm:'Small',md:'Medium',lg:'Large'},animations:'Animations',reduceMotion:'Reduce motion',reduceMotionSub:'Minimize animation across the app',
-        persona:'Custom character',personaHelp:'Describe how Mirox should behave — tone, style, expertise, quirks.',personaPlaceholder:'e.g. You are a patient teacher. Explain in simple steps…',personaSave:'Save persona',personaClear:'Clear',personaPresets:'Preset personalities',preset:{casual:'Casual',engineer:'Engineer',teacher:'Teacher',writer:'Writer',philosopher:'Philosopher'},
-        mcp:{title:'Model Context Protocol',help:'Connect MCP servers so Mirox can use external tools and data sources.',enable:'Enable MCP',enableSub:'Allow Mirox to call connected servers',add:'Add server',name:'Server name (e.g. filesystem)',url:'Server URL (e.g. http://localhost:3001/mcp)',key:'API key / token (optional)',addBtn:'Add server',connected:'Connected servers',empty:'No MCP servers configured.'},
-        lang:{response:'Preferred response language',responseHelp:'Mirox will reply in this language unless asked otherwise.',auto:'Auto-detect',ui:'Interface language',uiHelp:'Language of buttons, menus and labels — applies immediately.',comments:'Code comments',translateComments:'Translate code comments',translateCommentsSub:'Write code comments in preferred language'},
-        alerts:{title:'Notifications',desktop:'Desktop notifications',desktopSub:'Notify when a reply finishes in the background',sound:'Sound',soundSub:'Play a soft chime when a reply arrives',bonus:'Bonus reminders',bonusSub:'Remind me before my 50k bonus expires',test:'Test notification',testSub:'Fire a sample chime + notification',testBtn:'Test'},
-        data:{chats:'Chats',export:'Export all chats (JSON)',import:'Import chats from file',clearChats:'Clear all chats',local:'Local data',reset:'Reset everything (chats, settings, bonus)'},
-        dev:{console:'Developer console',open:'Open Developer Console',diag:'Diagnostics',verbose:'Verbose logging',verboseSub:'Log API requests to the browser console',copyDiag:'Copy diagnostic info',guest:'Guest identity',guestSub:'Device-scoped ID used for bonus verification',reset:'Reset'},
+        persona:'Custom character',personaHelp:'Describe how Mirox should behave.',personaPlaceholder:'e.g. You are a patient teacher…',personaSave:'Save persona',personaClear:'Clear',personaPresets:'Preset personalities',preset:{casual:'Casual',engineer:'Engineer',teacher:'Teacher',writer:'Writer',philosopher:'Philosopher'},
+        mcp:{title:'Model Context Protocol',help:'Connect MCP servers so Mirox can use external tools.',enable:'Enable MCP',enableSub:'Allow Mirox to call connected servers',add:'Add server',name:'Server name',url:'Server URL',key:'API key (optional)',addBtn:'Add server',connected:'Connected servers',empty:'No MCP servers configured.'},
+        lang:{response:'Preferred response language',responseHelp:'Mirox will reply in this language.',auto:'Auto-detect',ui:'Interface language',uiHelp:'Language of buttons, menus and labels — applies immediately.',comments:'Code comments',translateComments:'Translate code comments',translateCommentsSub:'Write code comments in preferred language'},
+        alerts:{title:'Notifications',desktop:'Desktop notifications',desktopSub:'Notify when a reply finishes in background',sound:'Sound',soundSub:'Play a soft chime when a reply arrives',bonus:'Bonus reminders',bonusSub:'Remind me before my 50k bonus expires',test:'Test notification',testSub:'Fire a sample chime + notification',testBtn:'Test'},
+        data:{chats:'Chats',export:'Export all chats (JSON)',import:'Import chats from file',clearChats:'Clear all chats',local:'Local data',reset:'Reset everything'},
+        dev:{console:'Developer console',open:'Open Developer Console',diag:'Diagnostics',verbose:'Verbose logging',verboseSub:'Log API requests to console',copyDiag:'Copy diagnostic info',guest:'Guest identity',guestSub:'Device-scoped ID for bonus verification',reset:'Reset'},
       },
-      toast:{bonusAdded:'bonus tokens + Pro/Ultra/Eclipse unlocked for',days:'days!',shared:'Share detected! Adding reward…',sharedOk:'Share confirmed! Adding reward…',cancelled:'Share cancelled. Try again when you\'re ready.',noShare:'No share detected. Try again?',bonusActive:'Bonus active — Pro, Ultra & Eclipse unlocked!',bonusExpired:'Bonus expired — switched back to Luna. Share again to renew!',signedIn:'Welcome',signedOut:'Signed out',langChanged:'Interface language updated',respLangChanged:'Response language',personaSaved:'Persona saved',personaCleared:'Persona cleared',presetApplied:'Preset applied — click Save to persist',serverAdded:'Added server',serverRemoved:'Server removed',chatsExported:'Chats exported',chatsImported:'Imported',chatsCleared:'All chats cleared',resetAll:'All local data cleared — reloading…',guestReset:'Guest ID reset',copied:'Diagnostics copied',testSent:'Test notification sent',shareUnlock:'Share to unlock this model free for 7 days',upgrade:'Upgrade to use this model',noToken:'Max tokens reached — share for more or upgrade.',bridgeConnected:'Bridge connected',bridgeNotReachable:'Bridge not reachable'},
+      toast:{bonusAdded:'bonus tokens + Pro/Ultra/Eclipse unlocked for',days:'days!',shared:'Share detected! Adding reward…',sharedOk:'Share confirmed! Adding reward…',cancelled:'Share cancelled. Try again when you are ready.',noShare:'No share detected. Try again?',bonusActive:'Bonus active — Pro, Ultra & Eclipse unlocked!',bonusExpired:'Bonus expired — switched back to Luna. Share again to renew!',signedIn:'Welcome',signedOut:'Signed out',langChanged:'Interface language updated',respLangChanged:'Response language',personaSaved:'Persona saved',personaCleared:'Persona cleared',presetApplied:'Preset applied — click Save to persist',serverAdded:'Added server',serverRemoved:'Server removed',chatsExported:'Chats exported',chatsImported:'Imported',chatsCleared:'All chats cleared',resetAll:'All local data cleared — reloading…',guestReset:'Guest ID reset',copied:'Diagnostics copied',testSent:'Test notification sent',shareUnlock:'Share to unlock this model free for 7 days',upgrade:'Upgrade to use this model',noToken:'Max tokens reached — share for more or upgrade.',bridgeConnected:'Bridge connected',bridgeNotReachable:'Bridge not reachable'},
     },
     fa: {
       brand:'MiroxAI', newChat:'گفتگوی جدید', newChatTitle:'گفتگوی جدید',
       tab:{chats:'گفتگوها',bridge:'پل',images:'تصاویر'},
-      searchChats:'جستجوی گفتگوها…', noChats:'هنوز گفتگویی نیست', noImages:'هنوز تصویری نیست.',
-      guestMode:'حالت مهمان', signInHint:'برای ذخیره گفتگوها وارد شوید',
+      searchChats:'جستجو…', noChats:'هنوز گفتگویی نیست', noImages:'هنوز تصویری نیست.',
+      guestMode:'حالت مهمان', signInHint:'برای ذخیره وارد شوید',
       settings:'تنظیمات', support:'پشتیبانی', developers:'توسعه‌دهندگان', madeBy:'ساخته‌شده توسط OpenSurr',
       welcomeTitle:'سلام، من Mirox هستم',
       welcomeSub:'Luna و Gen نامحدود و رایگان هستند. اشتراک‌گذاری کنید تا <strong>Pro، Ultra و Eclipse</strong> را ۷ روز رایگان باز کنید.',
@@ -58,74 +57,74 @@
       composerPlaceholder:'چطور می‌توانم کمکتان کنم؟',
       composerNote:'Mirox اشتباه می‌کند — اطلاعات مهم را بررسی کنید.',
       latest:'آخرین', send:'ارسال', stop:'توقف', close:'بستن', skip:'رد کردن',
-      openMenu:'باز کردن منو', plans:'طرح‌ها', tokenBudget:'بودجه توکن', scrollLatest:'پیمایش به آخرین پیام',
-      attachFiles:'پیوست فایل‌ها', removeAttach:'حذف پیوست‌ها',
+      openMenu:'باز کردن منو', plans:'طرح‌ها', tokenBudget:'بودجه توکن', scrollLatest:'پیمایش به آخرین',
+      attachFiles:'پیوست فایل', removeAttach:'حذف پیوست',
       loading:{waking:'بیدار کردن Luna…'},
-      share:{title:'سایت ما را به اشتراک بگذارید، ۵۰ هزار توکن بگیرید',sub:'<strong>۵۰ هزار توکن برای یک هفته</strong> بگیرید و مدل‌های <strong>Pro، Ultra و Eclipse</strong> را رایگان باز کنید.',perk1:'۵۰,۰۰۰ توکن پاداش',perk2:'برای ۷ روز معتبر',perk3:'Pro · Ultra · Eclipse باز شده',now:'همین حالا به اشتراک بگذارید',ignore:'نادیده بگیرید',hint:'ما اشتراک‌گذاری را از طریق صفحه اشتراک بومی دستگاه شما تأیید می‌کنیم.'},
-      login:{title:'ورود',sub:'با Google، Apple یا ایمیل وارد شوید — با قدرت Loginment.',loginment:'ادامه با Loginment',orDemo:'یا از ورود سریع استفاده کنید',name:'نام',email:'ایمیل',continue:'ادامه'},
-      bridge:{title:'پل',disconnected:'قطع',connected:'متصل',sideHint:'به Mirox کنترل مستقیم لپ‌تاپ خود را بدهید.',openWorkspace:'باز کردن فضای کاری پل',download:'دانلود کلاینت',panel:'پنل',autoRun:'اجرای خودکار',showCode:'نمایش کد',preview:'پیش‌نمایش',stop:'توقف',clearChat:'پاک کردن گفتگو',starting:'شروع…',emptyTitle:'فضای کاری پل',emptyBody:'به Mirox بگویید چه بسازد. فایل‌ها را در <code>~/&lt;project&gt;/</code> می‌نویسد، آن‌ها را تأیید می‌کند و پیش‌نمایش زنده نشان می‌دهد.',inputPlaceholder:'مثلاً یک ماشین‌حساب در پوشه خانه من بساز',connection:'اتصال',name:'نام',namePlaceholder:'لپ‌تاپ من',port:'پورت',connect:'اتصال',disconnect:'قطع اتصال',phoneDevices:'تلفن و دستگاه‌ها',kdeChecking:'KDE Connect: در حال بررسی…',scanDevices:'جستجوی دستگاه‌ها',build:'ساخت',noProject:'هنوز پروژه‌ای نیست',openPreview:'باز کردن پیش‌نمایش زنده',copyPath:'کپی مسیر پوشه',sudo:'Sudo',noPassword:'رمز ذخیره نشده',forgetPassword:'فراموش کردن رمز',quickActions:'اقدامات سریع',quick:{calc:'ماشین‌حساب',landing:'صفحه فرود',snake:'بازی مار',todo:'اپ کارها',portfolio:'نمونه کار',scan:'جستجوی دستگاه‌ها'},livePreview:'پیش‌نمایش زنده',loadPath:'بارگذاری مسیر',reload:'بارگذاری مجدد'},
-      kde:{title:'KDE Connect · دستگاه‌ها',subtitle:'دستگاهی را برای کار Mirox انتخاب کنید',hint:'دستگاه‌های علامت‌گذاری‌شده روی همان Wi-Fi هستند و جفت شده‌اند.',rescan:'اسکن مجدد',skip:'رد کردن'},
-      planner:{title:'Mirox Planner',subtitle:'یک طرح انتخاب کنید — Mirox آن را برایتان می‌سازد',hint:'دموی زنده — مورد علاقه‌تان را انتخاب کنید.',auto:'بگذارید Mirox تصمیم بگیرد',choose:'انتخاب'},
-      sudo:{title:'رمز عبور لازم است',sub:'Mirox برای ادامه به دسترسی root نیاز دارد.',password:'رمز sudo شما',showHide:'نمایش / مخفی',remember:'برای این جلسه به خاطر بسپار (فقط در حافظه)',run:'اجرا با sudo'},
+      share:{title:'سایت ما را به اشتراک بگذارید، ۵۰ هزار توکن بگیرید',sub:'<strong>۵۰ هزار توکن برای یک هفته</strong> بگیرید و مدل‌های <strong>Pro، Ultra و Eclipse</strong> را رایگان باز کنید.',perk1:'۵۰,۰۰۰ توکن پاداش',perk2:'برای ۷ روز معتبر',perk3:'Pro · Ultra · Eclipse باز شده',now:'همین حالا به اشتراک بگذارید',ignore:'نادیده بگیرید',hint:'ما اشتراک‌گذاری را از طریق صفحه بومی دستگاه تأیید می‌کنیم.'},
+      login:{title:'ورود',sub:'با Google، Apple یا ایمیل وارد شوید.',loginment:'ادامه با Loginment',orDemo:'یا ورود سریع',name:'نام',email:'ایمیل',continue:'ادامه'},
+      bridge:{title:'پل',disconnected:'قطع',connected:'متصل',sideHint:'به Mirox کنترل مستقیم لپ‌تاپ خود را بدهید.',openWorkspace:'باز کردن فضای کاری پل',download:'دانلود کلاینت',panel:'پنل',autoRun:'اجرای خودکار',showCode:'نمایش کد',preview:'پیش‌نمایش',stop:'توقف',clearChat:'پاک کردن گفتگو',starting:'شروع…',emptyTitle:'فضای کاری پل',emptyBody:'به Mirox بگویید چه بسازد. فایل‌ها را در <code>~/&lt;project&gt;/</code> می‌نویسد و پیش‌نمایش نشان می‌دهد.',inputPlaceholder:'مثلاً یک ماشین‌حساب بساز',connection:'اتصال',name:'نام',namePlaceholder:'لپ‌تاپ من',port:'پورت',connect:'اتصال',disconnect:'قطع',phoneDevices:'تلفن و دستگاه‌ها',kdeChecking:'KDE Connect: بررسی…',scanDevices:'جستجوی دستگاه‌ها',build:'ساخت',noProject:'هنوز پروژه‌ای نیست',openPreview:'باز کردن پیش‌نمایش',copyPath:'کپی مسیر',sudo:'Sudo',noPassword:'رمز ذخیره نشده',forgetPassword:'فراموش کردن رمز',quickActions:'اقدامات سریع',quick:{calc:'ماشین‌حساب',landing:'صفحه فرود',snake:'بازی مار',todo:'اپ کارها',portfolio:'نمونه کار',scan:'جستجوی دستگاه‌ها'},livePreview:'پیش‌نمایش زنده',loadPath:'بارگذاری مسیر',reload:'بارگذاری مجدد'},
+      kde:{title:'KDE Connect · دستگاه‌ها',subtitle:'دستگاهی را انتخاب کنید',hint:'دستگاه‌های علامت‌گذاری‌شده روی همان Wi-Fi هستند.',rescan:'اسکن مجدد',skip:'رد کردن'},
+      planner:{title:'Mirox Planner',subtitle:'یک طرح انتخاب کنید',hint:'دموی زنده — مورد علاقه‌تان را انتخاب کنید.',auto:'بگذارید Mirox تصمیم بگیرد',choose:'انتخاب'},
+      sudo:{title:'رمز عبور لازم است',sub:'Mirox به دسترسی root نیاز دارد.',password:'رمز sudo شما',showHide:'نمایش / مخفی',remember:'برای این جلسه به خاطر بسپار',run:'اجرا با sudo'},
       bq:{title:'Mirox به ورودی شما نیاز دارد',customPlaceholder:'یا پاسخ خود را بنویسید…',custom:'سفارشی',submit:'ارسال و ادامه'},
-      plans:{title:'طرح‌ها',sub:'Luna و Gen رایگان و نامحدود هستند. اشتراک‌گذاری کنید تا Pro، Ultra و Eclipse را برای ۷ روز باز کنید.'},
-      lumenal:{title:'Lumenal 1.0',sub:'تولید تصویر قوی، با قدرت Mirox.',prompt:'تصویری که می‌خواهید را توصیف کنید…',generate:'تولید'},
+      plans:{title:'طرح‌ها',sub:'Luna و Gen رایگان و نامحدود هستند.'},
+      lumenal:{title:'Lumenal 1.0',sub:'تولید تصویر قوی، با قدرت Mirox.',prompt:'تصویر دلخواه را توصیف کنید…',generate:'تولید'},
       support:{title:'تماس با پشتیبانی',subject:'موضوع',message:'پیام',submit:'ارسال'},
       iv:{title:'تصویر تولید شده',download:'دانلود'},
       settingsT:{tab:{general:'عمومی',appearance:'ظاهر',persona:'شخصیت',mcp:'MCP',language:'زبان',alerts:'هشدارها',data:'داده',dev:'توسعه'},
-        title:'تنظیمات',account:'حساب',accountSub:'گفتگوها به صورت محلی در این مرورگر ذخیره می‌شوند',signIn:'ورود',signOut:'خروج',
+        title:'تنظیمات',account:'حساب',accountSub:'گفتگوها به صورت محلی ذخیره می‌شوند',signIn:'ورود',signOut:'خروج',
         rewards:'پاداش‌ها',shareEarn:'اشتراک و کسب',shareSub:'۵۰ هزار توکن + Pro/Ultra/Eclipse رایگان برای ۷ روز',shareBtn:'اشتراک',
-        behavior:'رفتار',autoScroll:'پیمایش خودکار',autoScrollSub:'دنبال کردن پیام‌های جدید',enterSend:'ارسال با Enter',enterSendSub:'از Shift+Enter برای خط جدید استفاده کنید',showThinking:'نمایش مسیر تفکر',showThinkingSub:'نمایش پنل استدلال بالای پاسخ‌ها',vision:'بینایی برای تصاویر',visionSub:'ارسال تصاویر پیوست به AI (base64)',compact:'حالت فشرده',compactSub:'فاصله تنگ‌تر برای گفتگوهای زیاد',
-        mode:'حالت',mode2:{light:'روشن',dark:'تیره',auto:'خودکار'},accent:'رنگ تأکید',fontSize:'اندازه فونت',font2:{sm:'کوچک',md:'متوسط',lg:'بزرگ'},animations:'انیمیشن‌ها',reduceMotion:'کاهش حرکت',reduceMotionSub:'کمینه کردن انیمیشن در سراسر برنامه',
-        persona:'شخصیت سفارشی',personaHelp:'توصیف کنید Mirox چگونه رفتار کند — لحن، سبک، تخصص.',personaPlaceholder:'مثلاً شما یک معلم صبور هستید. در مراحل ساده توضیح دهید…',personaSave:'ذخیره شخصیت',personaClear:'پاک کردن',personaPresets:'شخصیت‌های پیش‌فرض',preset:{casual:'غیررسمی',engineer:'مهندس',teacher:'معلم',writer:'نویسنده',philosopher:'فیلسوف'},
-        mcp:{title:'Model Context Protocol',help:'سرورهای MCP را برای ابزارهای خارجی وصل کنید.',enable:'فعال‌سازی MCP',enableSub:'اجازه به Mirox برای فراخوانی سرورها',add:'افزودن سرور',name:'نام سرور',url:'آدرس سرور',key:'کلید API (اختیاری)',addBtn:'افزودن سرور',connected:'سرورهای متصل',empty:'هیچ سرور MCP تنظیم نشده.'},
-        lang:{response:'زبان پاسخ ترجیحی',responseHelp:'Mirox به این زبان پاسخ می‌دهد مگر خلاف آن خواسته شود.',auto:'تشخیص خودکار',ui:'زبان رابط کاربری',uiHelp:'زبان دکمه‌ها و منوها — بلافاصله اعمال می‌شود.',comments:'کامنت‌های کد',translateComments:'ترجمه کامنت‌های کد',translateCommentsSub:'نوشتن کامنت‌ها به زبان ترجیحی'},
-        alerts:{title:'اعلان‌ها',desktop:'اعلان‌های دسکتاپ',desktopSub:'اعلان هنگام اتمام پاسخ در پس‌زمینه',sound:'صدا',soundSub:'پخش صدای ملایم هنگام رسیدن پاسخ',bonus:'یادآور پاداش',bonusSub:'یادآوری قبل از انقضای پاداش ۵۰ هزار توکن',test:'اعلان آزمایشی',testSub:'پخش یک اعلان نمونه',testBtn:'آزمایش'},
-        data:{chats:'گفتگوها',export:'خروجی همه گفتگوها (JSON)',import:'وارد کردن گفتگوها',clearChats:'پاک کردن همه گفتگوها',local:'داده محلی',reset:'بازنشانی همه چیز (گفتگوها، تنظیمات، پاداش)'},
-        dev:{console:'کنسول توسعه‌دهنده',open:'باز کردن کنسول توسعه‌دهنده',diag:'تشخیص',verbose:'لاگ دقیق',verboseSub:'ثبت درخواست‌های API در کنسول مرورگر',copyDiag:'کپی اطلاعات تشخیص',guest:'هویت مهمان',guestSub:'شناسه دستگاه برای تأیید پاداش',reset:'بازنشانی'},
+        behavior:'رفتار',autoScroll:'پیمایش خودکار',autoScrollSub:'دنبال کردن پیام‌های جدید',enterSend:'ارسال با Enter',enterSendSub:'Shift+Enter برای خط جدید',showThinking:'نمایش مسیر تفکر',showThinkingSub:'نمایش پنل استدلال',vision:'بینایی تصاویر',visionSub:'ارسال تصاویر به AI (base64)',compact:'حالت فشرده',compactSub:'فاصله تنگ‌تر',
+        mode:'حالت',mode2:{light:'روشن',dark:'تیره',auto:'خودکار'},accent:'رنگ تأکید',fontSize:'اندازه فونت',font2:{sm:'کوچک',md:'متوسط',lg:'بزرگ'},animations:'انیمیشن‌ها',reduceMotion:'کاهش حرکت',reduceMotionSub:'کمینه کردن انیمیشن',
+        persona:'شخصیت سفارشی',personaHelp:'توصیف رفتار Mirox.',personaPlaceholder:'مثلاً معلم صبور…',personaSave:'ذخیره',personaClear:'پاک کردن',personaPresets:'شخصیت‌های پیش‌فرض',preset:{casual:'غیررسمی',engineer:'مهندس',teacher:'معلم',writer:'نویسنده',philosopher:'فیلسوف'},
+        mcp:{title:'Model Context Protocol',help:'اتصال سرورهای MCP.',enable:'فعال‌سازی MCP',enableSub:'اجازه به Mirox برای فراخوانی',add:'افزودن سرور',name:'نام سرور',url:'آدرس سرور',key:'کلید API',addBtn:'افزودن',connected:'سرورهای متصل',empty:'هیچ سروری تنظیم نشده.'},
+        lang:{response:'زبان پاسخ',responseHelp:'Mirox به این زبان پاسخ می‌دهد.',auto:'تشخیص خودکار',ui:'زبان رابط',uiHelp:'زبان دکمه‌ها — بلافاصله اعمال می‌شود.',comments:'کامنت‌های کد',translateComments:'ترجمه کامنت‌ها',translateCommentsSub:'نوشتن کامنت‌ها به زبان ترجیحی'},
+        alerts:{title:'اعلان‌ها',desktop:'اعلان دسکتاپ',desktopSub:'اعلان هنگام اتمام پاسخ',sound:'صدا',soundSub:'پخش صدای ملایم',bonus:'یادآور پاداش',bonusSub:'یادآوری قبل از انقضا',test:'اعلان آزمایشی',testSub:'پخش اعلان نمونه',testBtn:'آزمایش'},
+        data:{chats:'گفتگوها',export:'خروجی (JSON)',import:'وارد کردن',clearChats:'پاک کردن همه',local:'داده محلی',reset:'بازنشانی همه'},
+        dev:{console:'کنسول توسعه',open:'باز کردن کنسول',diag:'تشخیص',verbose:'لاگ دقیق',verboseSub:'ثبت درخواست‌ها',copyDiag:'کپی تشخیص',guest:'هویت مهمان',guestSub:'شناسه دستگاه',reset:'بازنشانی'},
       },
-      toast:{bonusAdded:'توکن پاداش + Pro/Ultra/Eclipse باز شد برای',days:'روز!',shared:'اشتراک تشخیص داده شد! افزودن پاداش…',sharedOk:'اشتراک تأیید شد! افزودن پاداش…',cancelled:'اشتراک لغو شد. دوباره تلاش کنید.',noShare:'اشتراکی تشخیص داده نشد. دوباره؟',bonusActive:'پاداش فعال — Pro، Ultra و Eclipse باز شدند!',bonusExpired:'پاداش منقضی — بازگشت به Luna. دوباره اشتراک کنید!',signedIn:'خوش آمدید',signedOut:'خارج شدید',langChanged:'زبان رابط به‌روز شد',respLangChanged:'زبان پاسخ',personaSaved:'شخصیت ذخیره شد',personaCleared:'شخصیت پاک شد',presetApplied:'پیش‌فرض اعمال شد — ذخیره کنید',serverAdded:'سرور اضافه شد',serverRemoved:'سرور حذف شد',chatsExported:'گفتگوها صادر شد',chatsImported:'وارد شد',chatsCleared:'همه گفتگوها پاک شد',resetAll:'همه داده‌ها پاک شد — بارگذاری مجدد…',guestReset:'شناسه مهمان بازنشانی شد',copied:'اطلاعات کپی شد',testSent:'اعلان آزمایشی ارسال شد',shareUnlock:'برای باز کردن این مدل رایگان اشتراک کنید',upgrade:'ارتقا برای استفاده',noToken:'حداکثر توکن — اشتراک کنید یا ارتقا دهید.',bridgeConnected:'پل متصل شد',bridgeNotReachable:'پل قابل دسترسی نیست'},
+      toast:{bonusAdded:'توکن پاداش + Pro/Ultra/Eclipse برای',days:'روز!',shared:'اشتراک کشف شد!',sharedOk:'اشتراک تأیید شد!',cancelled:'اشتراک لغو شد.',noShare:'اشتراکی کشف نشد.',bonusActive:'پاداش فعال — Pro، Ultra و Eclipse باز!',bonusExpired:'پاداش منقضی — Luna. دوباره اشتراک کنید!',signedIn:'خوش آمدید',signedOut:'خارج شدید',langChanged:'زبان رابط به‌روز شد',respLangChanged:'زبان پاسخ',personaSaved:'ذخیره شد',personaCleared:'پاک شد',presetApplied:'پیش‌فرض اعمال شد',serverAdded:'سرور اضافه شد',serverRemoved:'سرور حذف شد',chatsExported:'گفتگوها صادر شد',chatsImported:'وارد شد',chatsCleared:'همه پاک شد',resetAll:'همه داده پاک شد…',guestReset:'شناسه بازنشانی شد',copied:'کپی شد',testSent:'ارسال شد',shareUnlock:'برای باز کردن این مدل اشتراک کنید',upgrade:'ارتقا برای استفاده',noToken:'حداکثر توکن.',bridgeConnected:'پل متصل شد',bridgeNotReachable:'پل قابل دسترسی نیست'},
     },
     ps: {
-      brand:'MiroxAI', newChat:'نوی خبرې اترې', newChatTitle:'نوی خبرې اترې',
+      brand:'MiroxAI', newChat:'نوی خبرې', newChatTitle:'نوی خبرې',
       tab:{chats:'خبرې',bridge:'پل',images:'انځورونه'},
-      searchChats:'د خبرو پلټنه…', noChats:'لا خبرې نشته', noImages:'لا انځورونه نشته.',
-      guestMode:'میلمه حالت', signInHint:'د خبرو خوندي کولو لپاره ننوځئ',
-      settings:'ترتیبات', support:'ملاتړ', developers:'پراختیا کوونکي', madeBy:'د OpenSurr لخوا جوړ شوی',
+      searchChats:'پلټنه…', noChats:'لا خبرې نشته', noImages:'لا انځورونه نشته.',
+      guestMode:'میلمه حالت', signInHint:'د خوندي کولو لپاره ننوځئ',
+      settings:'ترتیبات', support:'ملاتړ', developers:'پراختیا کوونکي', madeBy:'د OpenSurr لخوا',
       welcomeTitle:'سلام، زه Mirox یم',
       welcomeSub:'Luna او Gen بې حد او وړیا دي. شریک کړئ چې <strong>Pro، Ultra او Eclipse</strong> ۷ ورځې وړیا خلاص کړئ.',
-      suggest:{lua:'د Lua سکریپټ لیکل',html:'د HTML میز ښودل',image:'انځور جوړول',explain:'یو مفهوم تشریح کړئ'},
+      suggest:{lua:'د Lua سکریپټ',html:'د HTML میز',image:'انځور جوړول',explain:'تشریح'},
       tools:{search:'پلټنه',lumenal:'Lumenal',bridge:'پل',plans:'پلانونه',help:'مرسته'},
-      composerPlaceholder:'نن څنګه مرسته وکړم؟',
+      composerPlaceholder:'څنګه مرسته وکړم؟',
       composerNote:'Mirox غلطي کوي — مهم معلومات وګورئ.',
       latest:'وروستی', send:'لېږل', stop:'ودرول', close:'بندول', skip:'پرېښودل',
-      openMenu:'مینو پرانیستل', plans:'پلانونه', tokenBudget:'د ټوکن بودیجه', scrollLatest:'وروستي پیغام ته سکرول',
+      openMenu:'مینو پرانیستل', plans:'پلانونه', tokenBudget:'د ټوکن بودیجه', scrollLatest:'وروستي ته',
       attachFiles:'دوتنه ضمیمه', removeAttach:'ضمیمې لرې کړئ',
       loading:{waking:'Luna ویښول…'},
-      share:{title:'زموږ سایټ شریک کړئ، ۵۰ زره ټوکن ترلاسه کړئ',sub:'د <strong>یوې اونۍ لپاره ۵۰ زره ټوکن</strong> ترلاسه کړئ او <strong>Pro، Ultra او Eclipse</strong> ماډلونه وړیا خلاص کړئ.',perk1:'۵۰،۰۰۰ بونس ټوکن',perk2:'۷ ورځو لپاره معتبر',perk3:'Pro · Ultra · Eclipse خلاص شوي',now:'همدا اوس شریک کړئ',ignore:'پام مه کوئ',hint:'موږ ستاسو د وسیلې د اصلي شریک شیټ له لارې شریک تأییدوو.'},
-      login:{title:'ننوتل',sub:'د Google، Apple یا ایمیل سره ننوځئ — د Loginment لخوا.',loginment:'د Loginment سره دوام',orDemo:'یا د چټک ننوتلو کار واخلئ',name:'نوم',email:'ایمیل',continue:'دوام'},
-      bridge:{title:'پل',disconnected:'قطع',connected:'وصل',sideHint:'Mirox ته خپل لیپ ټاپ مستقیم کنټرول ورکړئ.',openWorkspace:'د پل کاري ځای پرانیستل',download:'کلاینټ ډاونلوډ',panel:'پینل',autoRun:'اتومات چلول',showCode:'کوډ ښودل',preview:'مخکتنه',stop:'ودرول',clearChat:'خبرې پاکې کړئ',starting:'پیل…',emptyTitle:'د پل کاري ځای',emptyBody:'Mirox ته ووایاست چې څه جوړ کړي. دوتنې په <code>~/&lt;project&gt;/</code> کې لیکي، تصدیق کوي، او ژوندې مخکتنه ښیي.',inputPlaceholder:'لکه زما په کور فولډر کې یو کیلکولیټر جوړ کړه',connection:'اړیکه',name:'نوم',namePlaceholder:'زما لیپ ټاپ',port:'پورټ',connect:'وصل',disconnect:'قطع',phoneDevices:'تلیفون او وسیلې',kdeChecking:'KDE Connect: ګوري…',scanDevices:'د وسیلو سکن',build:'جوړول',noProject:'لا پروژه نشته',openPreview:'ژوندې مخکتنه پرانیستل',copyPath:'د فولډر لاره کاپي',sudo:'Sudo',noPassword:'پټ نوم نه دی خوندي',forgetPassword:'پټ نوم هېر کړئ',quickActions:'چټک عملونه',quick:{calc:'کیلکولیټر',landing:'د ځمکې پاڼه',snake:'د مار لوبه',todo:'د کارونو اپ',portfolio:'پورټفولیو',scan:'د وسیلو سکن'},livePreview:'ژوندې مخکتنه',loadPath:'لاره پورته کړئ',reload:'بیا پورته'},
-      kde:{title:'KDE Connect · وسیلې',subtitle:'د Mirox لپاره یوه وسیله غوره کړئ',hint:'نښه شوي وسیلې په ورته Wi-Fi دي او جوړه شوې.',rescan:'بیا سکن',skip:'پرېښودل'},
-      planner:{title:'Mirox پلانر',subtitle:'یو ډیزاین غوره کړئ — Mirox به یې جوړ کړي',hint:'ژوندي ډیمو — خپل خوښ غوره کړئ.',auto:'Mirox پریکړه وکړي',choose:'غوره کړئ'},
-      sudo:{title:'پټ نوم اړین',sub:'Mirox ته د دوام لپاره root لاسرسی ته اړتیا ده.',password:'ستاسو sudo پټ نوم',showHide:'ښودل / پټول',remember:'دې غونډې لپاره یاد کړه (یوازې په حافظه)',run:'د sudo سره چل کړه'},
-      bq:{title:'Mirox ستاسو ننوتلو ته اړتیا لري',customPlaceholder:'یا خپل ځواب ولیکئ…',custom:'دودیز',submit:'سپارل او دوام'},
-      plans:{title:'پلانونه',sub:'Luna او Gen وړیا او بې حده دي. د Pro، Ultra او Eclipse لپاره ۷ ورځې شریک کړئ.'},
-      lumenal:{title:'Lumenal 1.0',sub:'د انځور قوي تولید، د Mirox لخوا.',prompt:'هغه انځور تشریح کړئ چې غواړئ…',generate:'جوړول'},
-      support:{title:'د ملاتړ سره اړیکه',subject:'موضوع',message:'پیغام',submit:'سپارل'},
+      share:{title:'زموږ سایټ شریک کړئ، ۵۰ زره ټوکن',sub:'د <strong>یوې اونۍ لپاره ۵۰ زره ټوکن</strong> او <strong>Pro، Ultra او Eclipse</strong> وړیا.',perk1:'۵۰،۰۰۰ بونس ټوکن',perk2:'۷ ورځې',perk3:'Pro · Ultra · Eclipse خلاص',now:'همدا اوس شریک کړئ',ignore:'پام مه کوئ',hint:'موږ د وسیلې د اصلي شریک شیټ له لارې تأییدوو.'},
+      login:{title:'ننوتل',sub:'د Google، Apple یا ایمیل سره.',loginment:'د Loginment سره',orDemo:'یا چټک ننوتل',name:'نوم',email:'ایمیل',continue:'دوام'},
+      bridge:{title:'پل',disconnected:'قطع',connected:'وصل',sideHint:'Mirox ته کنټرول ورکړئ.',openWorkspace:'د پل کاري ځای',download:'کلاینټ ډاونلوډ',panel:'پینل',autoRun:'اتومات',showCode:'کوډ ښودل',preview:'مخکتنه',stop:'ودرول',clearChat:'پاکې کړئ',starting:'پیل…',emptyTitle:'د پل کاري ځای',emptyBody:'Mirox ته ووایاست چې څه جوړ کړي.',inputPlaceholder:'لکه یو کیلکولیټر جوړ کړه',connection:'اړیکه',name:'نوم',namePlaceholder:'زما لیپ ټاپ',port:'پورټ',connect:'وصل',disconnect:'قطع',phoneDevices:'تلیفون او وسیلې',kdeChecking:'KDE Connect: ګوري…',scanDevices:'د وسیلو سکن',build:'جوړول',noProject:'لا پروژه نشته',openPreview:'ژوندې مخکتنه',copyPath:'لاره کاپي',sudo:'Sudo',noPassword:'پټ نوم نه دی',forgetPassword:'هېر کړئ',quickActions:'چټک عملونه',quick:{calc:'کیلکولیټر',landing:'د ځمکې پاڼه',snake:'د مار لوبه',todo:'د کارونو اپ',portfolio:'پورټفولیو',scan:'سکن'},livePreview:'ژوندې مخکتنه',loadPath:'لاره پورته',reload:'بیا پورته'},
+      kde:{title:'KDE Connect · وسیلې',subtitle:'یوه وسیله غوره کړئ',hint:'نښه شوي وسیلې ورته Wi-Fi دي.',rescan:'بیا سکن',skip:'پرېښودل'},
+      planner:{title:'Mirox پلانر',subtitle:'یو ډیزاین غوره کړئ',hint:'ژوندي ډیمو.',auto:'Mirox پریکړه وکړي',choose:'غوره کړئ'},
+      sudo:{title:'پټ نوم اړین',sub:'Mirox ته root ته اړتیا ده.',password:'ستاسو sudo پټ نوم',showHide:'ښودل / پټول',remember:'یاد کړه',run:'د sudo سره'},
+      bq:{title:'Mirox ننوتلو ته اړتیا لري',customPlaceholder:'یا ځواب ولیکئ…',custom:'دودیز',submit:'سپارل او دوام'},
+      plans:{title:'پلانونه',sub:'Luna او Gen وړیا او بې حده.'},
+      lumenal:{title:'Lumenal 1.0',sub:'د انځور قوي تولید.',prompt:'انځور تشریح کړئ…',generate:'جوړول'},
+      support:{title:'د ملاتړ سره',subject:'موضوع',message:'پیغام',submit:'سپارل'},
       iv:{title:'جوړ شوی انځور',download:'ډاونلوډ'},
       settingsT:{tab:{general:'عمومي',appearance:'ښکاریدل',persona:'شخصیت',mcp:'MCP',language:'ژبه',alerts:'خبرتیاوې',data:'ډاټا',dev:'پراختیا'},
-        title:'ترتیبات',account:'حساب',accountSub:'خبرې په دې براوزر کې په محلي ډول خوندي',signIn:'ننوتل',signOut:'وتل',
-        rewards:'انعامونه',shareEarn:'شریک کړه او ترلاسه کړه',shareSub:'۵۰ زره ټوکن + Pro/Ultra/Eclipse ۷ ورځې وړیا',shareBtn:'شریک',
-        behavior:'چلند',autoScroll:'اتومات سکرول',autoScrollSub:'د نویو پیغامونو تعقیب',enterSend:'د Enter سره لېږل',enterSendSub:'د نوي کرښې لپاره Shift+Enter',showThinking:'د فکر کولو ښودل',showThinkingSub:'د ځوابونو پورتنۍ د استدلال پینل ښودل',vision:'د انځورونو لپاره لید',visionSub:'ضمیمه انځورونه AI ته لېږل (base64)',compact:'کمپیکټ حالت',compactSub:'د ګڼو خبرو لپاره تنګ فاصله',
-        mode:'حالت',mode2:{light:'روښانه',dark:'تیاره',auto:'اتومات'},accent:'د تینګار رنګ',fontSize:'د فونټ اندازه',font2:{sm:'کوچنی',md:'منځنی',lg:'لوی'},animations:'انیمیشنونه',reduceMotion:'د خوځښت کمول',reduceMotionSub:'په اپلیکیشن کې د انیمیشن کمول',
-        persona:'دودیز کرکټر',personaHelp:'تشریح کړئ Mirox څنګه چلند وکړي — لحن، سټایل، تخصص.',personaPlaceholder:'لکه تاسو یو صابر ښوونکی یاست. په ساده ګامونو تشریح کړئ…',personaSave:'شخصیت خوندي کړه',personaClear:'پاک کړه',personaPresets:'مخکې ټاکل شوي شخصیتونه',preset:{casual:'نارسمي',engineer:'انجینر',teacher:'ښوونکی',writer:'لیکوال',philosopher:'فیلسوف'},
-        mcp:{title:'Model Context Protocol',help:'د باندنیو وسیلو لپاره د MCP سرورونه وصل کړئ.',enable:'MCP فعال کړه',enableSub:'Mirox ته اجازه ورکړه چې سرورونه وبللي',add:'سرور اضافه کړه',name:'د سرور نوم',url:'د سرور URL',key:'API کیلي (اختیاري)',addBtn:'سرور اضافه کړه',connected:'وصل شوي سرورونه',empty:'هیڅ MCP سرور تنظیم نشوی.'},
-        lang:{response:'د غوره ځواب ژبه',responseHelp:'Mirox به په دې ژبه ځواب ووایي.',auto:'اتومات کشف',ui:'د انٹرفیس ژبه',uiHelp:'د تڼیو او مینو ژبه — سمدلاسه تطبیق کیږي.',comments:'د کوډ تبصرې',translateComments:'د کوډ تبصرې ژباړه',translateCommentsSub:'په غوره ژبه تبصرې لیکل'},
-        alerts:{title:'خبرتیاوې',desktop:'د ډیسکټاپ خبرتیاوې',desktopSub:'کله چې ځواب پای ته ورسي خبرتیا',sound:'غږ',soundSub:'نرم زنګ غږ کړه',bonus:'د انعام یادونې',bonusSub:'زما د ۵۰ زره انعام له پای وړاندې یادونه',test:'ازموینه خبرتیا',testSub:'یوه بېلګه خبرتیا ولېږه',testBtn:'ازموینه'},
-        data:{chats:'خبرې',export:'ټولې خبرې صادرې کړه (JSON)',import:'خبرې وارد کړه',clearChats:'ټولې خبرې پاکې کړه',local:'محلي ډاټا',reset:'هر څه بیا تنظیم کړه'},
-        dev:{console:'د پراختیا کنسول',open:'د پراختیا کنسول پرانیستل',diag:'تشخیص',verbose:'تفصیلي لاګ',verboseSub:'API غوښتنې په کنسول ثبت کړه',copyDiag:'د تشخیص معلومات کاپي',guest:'د میلمه هویت',guestSub:'د وسیلې ID د انعام تصدیق لپاره',reset:'بیا تنظیم'},
+        title:'ترتیبات',account:'حساب',accountSub:'محلي ذخیره',signIn:'ننوتل',signOut:'وتل',
+        rewards:'انعامونه',shareEarn:'شریک کړه',shareSub:'۵۰ زره ټوکن + Pro/Ultra/Eclipse ۷ ورځې',shareBtn:'شریک',
+        behavior:'چلند',autoScroll:'اتومات سکرول',autoScrollSub:'د پیغامونو تعقیب',enterSend:'Enter سره لېږل',enterSendSub:'Shift+Enter نوی کرښه',showThinking:'فکر ښودل',showThinkingSub:'د استدلال پینل',vision:'لید',visionSub:'انځورونه AI ته',compact:'کمپیکټ',compactSub:'تنګ فاصله',
+        mode:'حالت',mode2:{light:'روښانه',dark:'تیاره',auto:'اتومات'},accent:'تینګار رنګ',fontSize:'فونټ',font2:{sm:'کوچنی',md:'منځنی',lg:'لوی'},animations:'انیمیشن',reduceMotion:'کمول',reduceMotionSub:'انیمیشن کمول',
+        persona:'شخصیت',personaHelp:'تشریح کړئ.',personaPlaceholder:'لکه صابر ښوونکی…',personaSave:'خوندي',personaClear:'پاک',personaPresets:'پیش‌فرض',preset:{casual:'نارسمي',engineer:'انجینر',teacher:'ښوونکی',writer:'لیکوال',philosopher:'فیلسوف'},
+        mcp:{title:'MCP',help:'MCP سرورونه وصل کړئ.',enable:'MCP فعال',enableSub:'اجازه ورکړه',add:'سرور اضافه',name:'نوم',url:'URL',key:'API کیلي',addBtn:'اضافه',connected:'وصل شوي',empty:'هیڅ نه.'},
+        lang:{response:'د ځواب ژبه',responseHelp:'Mirox به پدې ژبه ځواب ووایي.',auto:'اتومات',ui:'د انٹرفیس ژبه',uiHelp:'د تڼیو ژبه.',comments:'تبصرې',translateComments:'ژباړه',translateCommentsSub:'په غوره ژبه'},
+        alerts:{title:'خبرتیاوې',desktop:'ډیسکټاپ',desktopSub:'خبرتیا',sound:'غږ',soundSub:'زنګ',bonus:'انعام یادونه',bonusSub:'یادونه',test:'ازموینه',testSub:'خبرتیا ولېږه',testBtn:'ازموینه'},
+        data:{chats:'خبرې',export:'صادرې',import:'وارد',clearChats:'پاک',local:'ډاټا',reset:'بیا تنظیم'},
+        dev:{console:'کنسول',open:'پرانیستل',diag:'تشخیص',verbose:'لاګ',verboseSub:'غوښتنې',copyDiag:'کاپي',guest:'میلمه',guestSub:'ID',reset:'بیا'},
       },
-      toast:{bonusAdded:'بونس ټوکن + Pro/Ultra/Eclipse خلاص شو د',days:'ورځو لپاره!',shared:'شریک کشف شو! انعام اضافه کیږي…',sharedOk:'شریک تایید شو! انعام اضافه کیږي…',cancelled:'شریک لغو شو. بیا هڅه وکړئ.',noShare:'هیڅ شریک کشف نشو. بیا؟',bonusActive:'انعام فعال — Pro، Ultra او Eclipse خلاص!',bonusExpired:'انعام پای ته ورسید — Luna ته بېرته. بیا شریک کړئ!',signedIn:'ښه راغلاست',signedOut:'وتل',langChanged:'د انٹرفیس ژبه تازه شوه',respLangChanged:'د ځواب ژبه',personaSaved:'شخصیت خوندي شو',personaCleared:'شخصیت پاک شو',presetApplied:'پریسیټ تطبیق شو',serverAdded:'سرور اضافه شو',serverRemoved:'سرور لرې شو',chatsExported:'خبرې صادرې شوې',chatsImported:'وارد شوې',chatsCleared:'ټولې خبرې پاکې شوې',resetAll:'ټول محلي ډاټا پاکه شوه — بیا پورته…',guestReset:'د میلمه ID بیا تنظیم',copied:'تشخیص کاپي شو',testSent:'ازموینه خبرتیا ولېږل شوه',shareUnlock:'دې ماډل وړیا خلاصولو لپاره شریک کړئ',upgrade:'لوړولو لپاره ارتقا',noToken:'د ټوکن حد — شریک یا ارتقا.',bridgeConnected:'پل وصل شو',bridgeNotReachable:'پل نشي رسیدلی'},
+      toast:{bonusAdded:'بونس ټوکن + Pro/Ultra/Eclipse د',days:'ورځو!',shared:'شریک کشف!',sharedOk:'تأیید شو!',cancelled:'لغو شو.',noShare:'نه کشف شو.',bonusActive:'انعام فعال!',bonusExpired:'انعام پای — Luna!',signedIn:'ښه راغلاست',signedOut:'وتل',langChanged:'ژبه تازه',respLangChanged:'ځواب ژبه',personaSaved:'خوندي',personaCleared:'پاک',presetApplied:'تطبیق',serverAdded:'اضافه',serverRemoved:'لرې',chatsExported:'صادرې',chatsImported:'وارد',chatsCleared:'پاک',resetAll:'ټول پاک…',guestReset:'ID بیا',copied:'کاپي',testSent:'ولېږل',shareUnlock:'شریک کړئ',upgrade:'ارتقا',noToken:'حد.',bridgeConnected:'وصل',bridgeNotReachable:'نه رسیږي'},
     },
     de: {
       brand:'MiroxAI', newChat:'Neuer Chat', newChatTitle:'Neuer Chat',
@@ -140,39 +139,39 @@
       composerPlaceholder:'Wie kann ich heute helfen?',
       composerNote:'Mirox macht Fehler — prüfen Sie wichtige Infos.',
       latest:'Neueste', send:'Senden', stop:'Stopp', close:'Schließen', skip:'Überspringen',
-      openMenu:'Menü öffnen', plans:'Pläne', tokenBudget:'Token-Budget', scrollLatest:'Zum letzten scrollen',
+      openMenu:'Menü öffnen', plans:'Pläne', tokenBudget:'Token-Budget', scrollLatest:'Zum letzten',
       attachFiles:'Dateien anhängen', removeAttach:'Anhänge entfernen',
       loading:{waking:'Luna wird geweckt…'},
-      share:{title:'Seite teilen, 50k Token erhalten',sub:'<strong>50k Token für 1 Woche</strong> und <strong>Pro, Ultra &amp; Eclipse</strong> kostenlos.',perk1:'50.000 Bonus-Token',perk2:'7 Tage gültig',perk3:'Pro · Ultra · Eclipse freigeschaltet',now:'Jetzt teilen',ignore:'Ignorieren',hint:'Wir überprüfen Shares über das native Share-Sheet Ihres Geräts.'},
-      login:{title:'Anmelden',sub:'Anmelden mit Google, Apple oder E-Mail — mit Loginment.',loginment:'Weiter mit Loginment',orDemo:'oder Demo-Login',name:'Name',email:'E-Mail',continue:'Weiter'},
-      bridge:{title:'Bridge',disconnected:'Nicht verbunden',connected:'Verbunden',sideHint:'Geben Sie Mirox direkte Kontrolle über Ihren Laptop.',openWorkspace:'Bridge-Workspace öffnen',download:'Client herunterladen',panel:'Panel',autoRun:'Auto-Run',showCode:'Code zeigen',preview:'Vorschau',stop:'Stopp',clearChat:'Chat leeren',starting:'Starte…',emptyTitle:'Bridge-Workspace',emptyBody:'Sagen Sie Mirox, was zu bauen ist. Es schreibt Dateien nach <code>~/&lt;projekt&gt;/</code>, verifiziert sie und zeigt eine Live-Vorschau.',inputPlaceholder:'z.B. Baue einen Taschenrechner in meinem Home-Ordner',connection:'Verbindung',name:'Name',namePlaceholder:'Mein Laptop',port:'Port',connect:'Verbinden',disconnect:'Trennen',phoneDevices:'Telefon & Geräte',kdeChecking:'KDE Connect: prüfe…',scanDevices:'Geräte suchen',build:'Build',noProject:'Noch kein Projekt',openPreview:'Live-Vorschau öffnen',copyPath:'Ordnerpfad kopieren',sudo:'Sudo',noPassword:'Kein Passwort gespeichert',forgetPassword:'Passwort vergessen',quickActions:'Schnellaktionen',quick:{calc:'Taschenrechner',landing:'Landingpage',snake:'Snake-Spiel',todo:'Todo-App',portfolio:'Portfolio',scan:'Geräte suchen'},livePreview:'Live-Vorschau',loadPath:'Pfad laden',reload:'Neu laden'},
-      kde:{title:'KDE Connect · Geräte',subtitle:'Wählen Sie ein Gerät für Mirox',hint:'Erreichbare Geräte sind im selben WLAN und gekoppelt.',rescan:'Neu scannen',skip:'Überspringen'},
-      planner:{title:'Mirox Planner',subtitle:'Wählen Sie ein Design — Mirox baut es',hint:'Live-Demos — wählen Sie Ihren Favoriten.',auto:'Mirox entscheiden lassen',choose:'Wählen'},
-      sudo:{title:'Passwort erforderlich',sub:'Mirox braucht Root-Zugriff.',password:'Ihr sudo-Passwort',showHide:'Zeigen / verbergen',remember:'Für diese Sitzung merken (nur im Speicher)',run:'Mit sudo ausführen'},
+      share:{title:'Seite teilen, 50k Token erhalten',sub:'<strong>50k Token für 1 Woche</strong> und <strong>Pro, Ultra &amp; Eclipse</strong> kostenlos.',perk1:'50.000 Bonus-Token',perk2:'7 Tage gültig',perk3:'Pro · Ultra · Eclipse freigeschaltet',now:'Jetzt teilen',ignore:'Ignorieren',hint:'Wir überprüfen Shares über das native Share-Sheet.'},
+      login:{title:'Anmelden',sub:'Mit Google, Apple oder E-Mail anmelden.',loginment:'Weiter mit Loginment',orDemo:'oder Demo-Login',name:'Name',email:'E-Mail',continue:'Weiter'},
+      bridge:{title:'Bridge',disconnected:'Nicht verbunden',connected:'Verbunden',sideHint:'Geben Sie Mirox direkte Kontrolle über Ihren Laptop.',openWorkspace:'Bridge-Workspace öffnen',download:'Client herunterladen',panel:'Panel',autoRun:'Auto-Run',showCode:'Code zeigen',preview:'Vorschau',stop:'Stopp',clearChat:'Chat leeren',starting:'Starte…',emptyTitle:'Bridge-Workspace',emptyBody:'Sagen Sie Mirox, was zu bauen ist.',inputPlaceholder:'z.B. Baue einen Taschenrechner',connection:'Verbindung',name:'Name',namePlaceholder:'Mein Laptop',port:'Port',connect:'Verbinden',disconnect:'Trennen',phoneDevices:'Telefon & Geräte',kdeChecking:'KDE Connect: prüfe…',scanDevices:'Geräte suchen',build:'Build',noProject:'Noch kein Projekt',openPreview:'Live-Vorschau öffnen',copyPath:'Ordnerpfad kopieren',sudo:'Sudo',noPassword:'Kein Passwort gespeichert',forgetPassword:'Passwort vergessen',quickActions:'Schnellaktionen',quick:{calc:'Taschenrechner',landing:'Landingpage',snake:'Snake-Spiel',todo:'Todo-App',portfolio:'Portfolio',scan:'Geräte suchen'},livePreview:'Live-Vorschau',loadPath:'Pfad laden',reload:'Neu laden'},
+      kde:{title:'KDE Connect · Geräte',subtitle:'Wählen Sie ein Gerät für Mirox',hint:'Erreichbare Geräte sind im selben WLAN.',rescan:'Neu scannen',skip:'Überspringen'},
+      planner:{title:'Mirox Planner',subtitle:'Wählen Sie ein Design',hint:'Live-Demos.',auto:'Mirox entscheiden lassen',choose:'Wählen'},
+      sudo:{title:'Passwort erforderlich',sub:'Mirox braucht Root-Zugriff.',password:'Ihr sudo-Passwort',showHide:'Zeigen / verbergen',remember:'Für diese Sitzung merken',run:'Mit sudo ausführen'},
       bq:{title:'Mirox braucht Ihre Eingabe',customPlaceholder:'Oder eigene Antwort eingeben…',custom:'Benutzerdefiniert',submit:'Absenden & weiter'},
-      plans:{title:'Pläne',sub:'Luna und Gen sind kostenlos und unbegrenzt. Teilen Sie, um Pro, Ultra und Eclipse 7 Tage freizuschalten.'},
-      lumenal:{title:'Lumenal 1.0',sub:'Starke Bildgenerierung, powered by Mirox.',prompt:'Beschreiben Sie das gewünschte Bild…',generate:'Generieren'},
+      plans:{title:'Pläne',sub:'Luna und Gen sind kostenlos und unbegrenzt.'},
+      lumenal:{title:'Lumenal 1.0',sub:'Starke Bildgenerierung.',prompt:'Beschreiben Sie das Bild…',generate:'Generieren'},
       support:{title:'Support kontaktieren',subject:'Betreff',message:'Nachricht',submit:'Absenden'},
       iv:{title:'Generiertes Bild',download:'Herunterladen'},
       settingsT:{tab:{general:'Allgemein',appearance:'Aussehen',persona:'Persona',mcp:'MCP',language:'Sprache',alerts:'Hinweise',data:'Daten',dev:'Dev'},
-        title:'Einstellungen',account:'Konto',accountSub:'Chats lokal in diesem Browser gespeichert',signIn:'Anmelden',signOut:'Abmelden',
-        rewards:'Belohnungen',shareEarn:'Teilen & verdienen',shareSub:'50k Token + Pro/Ultra/Eclipse 7 Tage kostenlos',shareBtn:'Teilen',
-        behavior:'Verhalten',autoScroll:'Auto-Scroll',autoScrollSub:'Neuen Nachrichten folgen',enterSend:'Mit Enter senden',enterSendSub:'Shift+Enter für neue Zeile',showThinking:'Denkspur zeigen',showThinkingSub:'Argumentations-Panel über Antworten',vision:'Vision für Bilder',visionSub:'Bilder an KI senden (base64)',compact:'Kompaktmodus',compactSub:'Engere Abstände',
+        title:'Einstellungen',account:'Konto',accountSub:'Chats lokal gespeichert',signIn:'Anmelden',signOut:'Abmelden',
+        rewards:'Belohnungen',shareEarn:'Teilen & verdienen',shareSub:'50k Token + Pro/Ultra/Eclipse 7 Tage',shareBtn:'Teilen',
+        behavior:'Verhalten',autoScroll:'Auto-Scroll',autoScrollSub:'Neuen Nachrichten folgen',enterSend:'Mit Enter senden',enterSendSub:'Shift+Enter für neue Zeile',showThinking:'Denkspur zeigen',showThinkingSub:'Argumentations-Panel',vision:'Vision für Bilder',visionSub:'Bilder an KI senden',compact:'Kompaktmodus',compactSub:'Engere Abstände',
         mode:'Modus',mode2:{light:'Hell',dark:'Dunkel',auto:'Auto'},accent:'Akzentfarbe',fontSize:'Schriftgröße',font2:{sm:'Klein',md:'Mittel',lg:'Groß'},animations:'Animationen',reduceMotion:'Bewegung reduzieren',reduceMotionSub:'Animationen minimieren',
-        persona:'Eigene Figur',personaHelp:'Beschreiben Sie, wie Mirox sich verhalten soll.',personaPlaceholder:'z.B. Sie sind ein geduldiger Lehrer…',personaSave:'Persona speichern',personaClear:'Löschen',personaPresets:'Voreingestellte Charaktere',preset:{casual:'Locker',engineer:'Ingenieur',teacher:'Lehrer',writer:'Autor',philosopher:'Philosoph'},
-        mcp:{title:'Model Context Protocol',help:'MCP-Server verbinden für externe Tools.',enable:'MCP aktivieren',enableSub:'Mirox darf Server aufrufen',add:'Server hinzufügen',name:'Server-Name',url:'Server-URL',key:'API-Schlüssel (optional)',addBtn:'Server hinzufügen',connected:'Verbundene Server',empty:'Keine MCP-Server konfiguriert.'},
-        lang:{response:'Bevorzugte Antwortsprache',responseHelp:'Mirox antwortet in dieser Sprache.',auto:'Automatisch',ui:'Oberflächensprache',uiHelp:'Sprache von Knöpfen und Menüs — sofort wirksam.',comments:'Code-Kommentare',translateComments:'Code-Kommentare übersetzen',translateCommentsSub:'Kommentare in bevorzugter Sprache'},
-        alerts:{title:'Benachrichtigungen',desktop:'Desktop-Benachrichtigungen',desktopSub:'Benachrichtigen wenn Antwort fertig',sound:'Ton',soundSub:'Sanfter Ton wenn Antwort ankommt',bonus:'Bonus-Erinnerungen',bonusSub:'Vor Ablauf des 50k-Bonus erinnern',test:'Test',testSub:'Testbenachrichtigung senden',testBtn:'Test'},
-        data:{chats:'Chats',export:'Alle Chats exportieren (JSON)',import:'Chats importieren',clearChats:'Alle Chats löschen',local:'Lokale Daten',reset:'Alles zurücksetzen'},
-        dev:{console:'Entwicklerkonsole',open:'Entwicklerkonsole öffnen',diag:'Diagnose',verbose:'Ausführliches Logging',verboseSub:'API-Anfragen in Konsole loggen',copyDiag:'Diagnose kopieren',guest:'Gast-Identität',guestSub:'Geräte-ID für Bonus-Verifizierung',reset:'Zurücksetzen'},
+        persona:'Eigene Figur',personaHelp:'Beschreiben Sie Mirox Verhalten.',personaPlaceholder:'z.B. geduldiger Lehrer…',personaSave:'Speichern',personaClear:'Löschen',personaPresets:'Voreinstellungen',preset:{casual:'Locker',engineer:'Ingenieur',teacher:'Lehrer',writer:'Autor',philosopher:'Philosoph'},
+        mcp:{title:'Model Context Protocol',help:'MCP-Server verbinden.',enable:'MCP aktivieren',enableSub:'Mirox darf Server aufrufen',add:'Server hinzufügen',name:'Server-Name',url:'Server-URL',key:'API-Schlüssel',addBtn:'Hinzufügen',connected:'Verbundene Server',empty:'Keine MCP-Server.'},
+        lang:{response:'Bevorzugte Antwortsprache',responseHelp:'Mirox antwortet in dieser Sprache.',auto:'Automatisch',ui:'Oberflächensprache',uiHelp:'Sprache von Knöpfen — sofort wirksam.',comments:'Code-Kommentare',translateComments:'Kommentare übersetzen',translateCommentsSub:'In bevorzugter Sprache'},
+        alerts:{title:'Benachrichtigungen',desktop:'Desktop',desktopSub:'Benachrichtigung bei Antwort',sound:'Ton',soundSub:'Sanfter Ton',bonus:'Bonus-Erinnerungen',bonusSub:'Erinnern vor Ablauf',test:'Test',testSub:'Test senden',testBtn:'Test'},
+        data:{chats:'Chats',export:'Exportieren',import:'Importieren',clearChats:'Alle löschen',local:'Lokale Daten',reset:'Zurücksetzen'},
+        dev:{console:'Entwicklerkonsole',open:'Konsole öffnen',diag:'Diagnose',verbose:'Logging',verboseSub:'API-Anfragen loggen',copyDiag:'Kopieren',guest:'Gast-ID',guestSub:'Geräte-ID',reset:'Zurücksetzen'},
       },
-      toast:{bonusAdded:'Bonus-Token + Pro/Ultra/Eclipse für',days:'Tage freigeschaltet!',shared:'Share erkannt! Belohnung wird hinzugefügt…',sharedOk:'Share bestätigt! Belohnung wird hinzugefügt…',cancelled:'Share abgebrochen. Versuchen Sie es erneut.',noShare:'Kein Share erkannt. Nochmal?',bonusActive:'Bonus aktiv — Pro, Ultra & Eclipse freigeschaltet!',bonusExpired:'Bonus abgelaufen — zurück zu Luna. Erneut teilen!',signedIn:'Willkommen',signedOut:'Abgemeldet',langChanged:'Sprache aktualisiert',respLangChanged:'Antwortsprache',personaSaved:'Persona gespeichert',personaCleared:'Persona gelöscht',presetApplied:'Preset angewendet',serverAdded:'Server hinzugefügt',serverRemoved:'Server entfernt',chatsExported:'Chats exportiert',chatsImported:'Importiert',chatsCleared:'Alle Chats gelöscht',resetAll:'Alles gelöscht — neu laden…',guestReset:'Gast-ID zurückgesetzt',copied:'Diagnose kopiert',testSent:'Test gesendet',shareUnlock:'Teilen um dieses Modell freizuschalten',upgrade:'Upgrade zum Nutzen',noToken:'Token-Limit — teilen oder upgraden.',bridgeConnected:'Bridge verbunden',bridgeNotReachable:'Bridge nicht erreichbar'},
+      toast:{bonusAdded:'Bonus-Token + Pro/Ultra/Eclipse für',days:'Tage!',shared:'Share erkannt!',sharedOk:'Share bestätigt!',cancelled:'Abgebrochen.',noShare:'Kein Share.',bonusActive:'Bonus aktiv!',bonusExpired:'Abgelaufen — Luna!',signedIn:'Willkommen',signedOut:'Abgemeldet',langChanged:'Sprache aktualisiert',respLangChanged:'Antwortsprache',personaSaved:'Gespeichert',personaCleared:'Gelöscht',presetApplied:'Angewendet',serverAdded:'Hinzugefügt',serverRemoved:'Entfernt',chatsExported:'Exportiert',chatsImported:'Importiert',chatsCleared:'Gelöscht',resetAll:'Alles gelöscht…',guestReset:'Zurückgesetzt',copied:'Kopiert',testSent:'Test gesendet',shareUnlock:'Teilen zum Freischalten',upgrade:'Upgrade nötig',noToken:'Token-Limit.',bridgeConnected:'Verbunden',bridgeNotReachable:'Nicht erreichbar'},
     },
     es: {
       brand:'MiroxAI', newChat:'Nuevo chat', newChatTitle:'Nuevo chat',
       tab:{chats:'Chats',bridge:'Bridge',images:'Imágenes'},
-      searchChats:'Buscar chats…', noChats:'Sin conversaciones', noImages:'Sin imágenes.',
-      guestMode:'Modo invitado', signInHint:'Inicia sesión para guardar chats',
+      searchChats:'Buscar…', noChats:'Sin conversaciones', noImages:'Sin imágenes.',
+      guestMode:'Modo invitado', signInHint:'Inicia sesión para guardar',
       settings:'Ajustes', support:'Soporte', developers:'Desarrolladores', madeBy:'Hecho por OpenSurr',
       welcomeTitle:'Hola, soy Mirox',
       welcomeSub:'Luna y Gen son ilimitados y gratuitos. Comparte para desbloquear <strong>Pro, Ultra y Eclipse</strong> gratis 7 días.',
@@ -184,32 +183,49 @@
       openMenu:'Abrir menú', plans:'Planes', tokenBudget:'Presupuesto', scrollLatest:'Ir al último',
       attachFiles:'Adjuntar archivos', removeAttach:'Quitar adjuntos',
       loading:{waking:'Despertando a Luna…'},
-      share:{title:'Comparte nuestra web, obtén 50k tokens',sub:'Obtén <strong>50k tokens por 1 semana</strong> y desbloquea <strong>Pro, Ultra y Eclipse</strong> gratis.',perk1:'50,000 tokens de bonificación',perk2:'Válido por 7 días',perk3:'Pro · Ultra · Eclipse desbloqueados',now:'Compartir ahora',ignore:'Ignorar',hint:'Verificamos los compartidos con la hoja nativa.'},
-      login:{title:'Iniciar sesión',sub:'Inicia con Google, Apple o email — con Loginment.',loginment:'Continuar con Loginment',orDemo:'o usa un inicio rápido',name:'Nombre',email:'Email',continue:'Continuar'},
-      bridge:{title:'Bridge',disconnected:'Desconectado',connected:'Conectado',sideHint:'Da a Mirox control directo de tu portátil.',openWorkspace:'Abrir espacio Bridge',download:'Descargar cliente',panel:'Panel',autoRun:'Auto-Run',showCode:'Mostrar código',preview:'Vista previa',stop:'Detener',clearChat:'Limpiar chat',starting:'Iniciando…',emptyTitle:'Espacio Bridge',emptyBody:'Dile a Mirox qué construir. Escribe archivos en <code>~/&lt;proyecto&gt;/</code>, los verifica y muestra una vista previa.',inputPlaceholder:'ej. Crea una calculadora en mi carpeta home',connection:'Conexión',name:'Nombre',namePlaceholder:'Mi portátil',port:'Puerto',connect:'Conectar',disconnect:'Desconectar',phoneDevices:'Teléfono y dispositivos',kdeChecking:'KDE Connect: comprobando…',scanDevices:'Escanear dispositivos',build:'Construir',noProject:'Sin proyecto',openPreview:'Abrir vista previa',copyPath:'Copiar ruta',sudo:'Sudo',noPassword:'Sin contraseña',forgetPassword:'Olvidar contraseña',quickActions:'Acciones rápidas',quick:{calc:'Calculadora',landing:'Landing',snake:'Snake',todo:'Todo app',portfolio:'Portafolio',scan:'Escanear'},livePreview:'Vista previa',loadPath:'Cargar ruta',reload:'Recargar'},
-      kde:{title:'KDE Connect · Dispositivos',subtitle:'Elige un dispositivo para Mirox',hint:'Los dispositivos marcados están en la misma Wi-Fi.',rescan:'Reescanear',skip:'Saltar'},
-      planner:{title:'Mirox Planner',subtitle:'Elige un diseño — Mirox lo construirá',hint:'Demos en vivo — elige tu favorito.',auto:'Que Mirox decida',choose:'Elegir'},
-      sudo:{title:'Contraseña requerida',sub:'Mirox necesita acceso root.',password:'Tu contraseña sudo',showHide:'Mostrar / ocultar',remember:'Recordar en esta sesión (solo en memoria)',run:'Ejecutar con sudo'},
+      share:{title:'Comparte nuestra web, obtén 50k tokens',sub:'Obtén <strong>50k tokens por 1 semana</strong> y desbloquea <strong>Pro, Ultra y Eclipse</strong> gratis.',perk1:'50,000 tokens',perk2:'Válido por 7 días',perk3:'Pro · Ultra · Eclipse desbloqueados',now:'Compartir ahora',ignore:'Ignorar',hint:'Verificamos los compartidos con la hoja nativa.'},
+      login:{title:'Iniciar sesión',sub:'Inicia con Google, Apple o email.',loginment:'Continuar con Loginment',orDemo:'o inicio rápido',name:'Nombre',email:'Email',continue:'Continuar'},
+      bridge:{title:'Bridge',disconnected:'Desconectado',connected:'Conectado',sideHint:'Da a Mirox control directo de tu portátil.',openWorkspace:'Abrir espacio Bridge',download:'Descargar cliente',panel:'Panel',autoRun:'Auto-Run',showCode:'Mostrar código',preview:'Vista previa',stop:'Detener',clearChat:'Limpiar chat',starting:'Iniciando…',emptyTitle:'Espacio Bridge',emptyBody:'Dile a Mirox qué construir.',inputPlaceholder:'ej. Crea una calculadora',connection:'Conexión',name:'Nombre',namePlaceholder:'Mi portátil',port:'Puerto',connect:'Conectar',disconnect:'Desconectar',phoneDevices:'Teléfono y dispositivos',kdeChecking:'KDE Connect: comprobando…',scanDevices:'Escanear dispositivos',build:'Construir',noProject:'Sin proyecto',openPreview:'Abrir vista previa',copyPath:'Copiar ruta',sudo:'Sudo',noPassword:'Sin contraseña',forgetPassword:'Olvidar contraseña',quickActions:'Acciones rápidas',quick:{calc:'Calculadora',landing:'Landing',snake:'Snake',todo:'Todo app',portfolio:'Portafolio',scan:'Escanear'},livePreview:'Vista previa',loadPath:'Cargar ruta',reload:'Recargar'},
+      kde:{title:'KDE Connect · Dispositivos',subtitle:'Elige un dispositivo',hint:'Los dispositivos están en la misma Wi-Fi.',rescan:'Reescanear',skip:'Saltar'},
+      planner:{title:'Mirox Planner',subtitle:'Elige un diseño',hint:'Demos en vivo.',auto:'Que Mirox decida',choose:'Elegir'},
+      sudo:{title:'Contraseña requerida',sub:'Mirox necesita acceso root.',password:'Tu contraseña sudo',showHide:'Mostrar / ocultar',remember:'Recordar en esta sesión',run:'Ejecutar con sudo'},
       bq:{title:'Mirox necesita tu aporte',customPlaceholder:'O escribe tu respuesta…',custom:'Personalizado',submit:'Enviar y continuar'},
-      plans:{title:'Planes',sub:'Luna y Gen son gratis e ilimitados. Comparte para desbloquear Pro, Ultra y Eclipse 7 días.'},
-      lumenal:{title:'Lumenal 1.0',sub:'Generación fuerte de imágenes, por Mirox.',prompt:'Describe la imagen que quieres…',generate:'Generar'},
+      plans:{title:'Planes',sub:'Luna y Gen son gratis e ilimitados.'},
+      lumenal:{title:'Lumenal 1.0',sub:'Generación fuerte de imágenes.',prompt:'Describe la imagen que quieres…',generate:'Generar'},
       support:{title:'Contactar soporte',subject:'Asunto',message:'Mensaje',submit:'Enviar'},
       iv:{title:'Imagen generada',download:'Descargar'},
       settingsT:{tab:{general:'General',appearance:'Apariencia',persona:'Persona',mcp:'MCP',language:'Idioma',alerts:'Alertas',data:'Datos',dev:'Dev'},
         title:'Ajustes',account:'Cuenta',accountSub:'Chats guardados localmente',signIn:'Iniciar sesión',signOut:'Salir',
-        rewards:'Recompensas',shareEarn:'Comparte y gana',shareSub:'50k tokens + Pro/Ultra/Eclipse 7 días gratis',shareBtn:'Compartir',
-        behavior:'Comportamiento',autoScroll:'Desplazamiento automático',autoScrollSub:'Seguir mensajes nuevos',enterSend:'Enviar con Enter',enterSendSub:'Shift+Enter para nueva línea',showThinking:'Mostrar razonamiento',showThinkingSub:'Panel de razonamiento arriba de respuestas',vision:'Visión para imágenes',visionSub:'Enviar imágenes a la IA (base64)',compact:'Modo compacto',compactSub:'Espaciado más ajustado',
+        rewards:'Recompensas',shareEarn:'Comparte y gana',shareSub:'50k tokens + Pro/Ultra/Eclipse 7 días',shareBtn:'Compartir',
+        behavior:'Comportamiento',autoScroll:'Desplazamiento auto',autoScrollSub:'Seguir mensajes nuevos',enterSend:'Enviar con Enter',enterSendSub:'Shift+Enter para nueva línea',showThinking:'Mostrar razonamiento',showThinkingSub:'Panel de razonamiento',vision:'Visión para imágenes',visionSub:'Enviar imágenes a la IA',compact:'Modo compacto',compactSub:'Espaciado más ajustado',
         mode:'Modo',mode2:{light:'Claro',dark:'Oscuro',auto:'Auto'},accent:'Color de acento',fontSize:'Tamaño de fuente',font2:{sm:'Pequeño',md:'Medio',lg:'Grande'},animations:'Animaciones',reduceMotion:'Reducir movimiento',reduceMotionSub:'Minimizar animaciones',
-        persona:'Carácter personalizado',personaHelp:'Describe cómo debe comportarse Mirox.',personaPlaceholder:'ej. Eres un profesor paciente…',personaSave:'Guardar persona',personaClear:'Limpiar',personaPresets:'Personalidades predefinidas',preset:{casual:'Casual',engineer:'Ingeniero',teacher:'Profesor',writer:'Escritor',philosopher:'Filósofo'},
-        mcp:{title:'Model Context Protocol',help:'Conecta servidores MCP para herramientas externas.',enable:'Activar MCP',enableSub:'Permitir que Mirox llame servidores',add:'Añadir servidor',name:'Nombre del servidor',url:'URL del servidor',key:'Clave API (opcional)',addBtn:'Añadir servidor',connected:'Servidores conectados',empty:'Sin servidores MCP.'},
-        lang:{response:'Idioma preferido de respuesta',responseHelp:'Mirox responderá en este idioma.',auto:'Detectar automáticamente',ui:'Idioma de interfaz',uiHelp:'Idioma de botones y menús — aplica al instante.',comments:'Comentarios de código',translateComments:'Traducir comentarios',translateCommentsSub:'Escribir comentarios en idioma preferido'},
-        alerts:{title:'Notificaciones',desktop:'Notificaciones de escritorio',desktopSub:'Notificar cuando acabe una respuesta',sound:'Sonido',soundSub:'Reproducir un timbre suave',bonus:'Recordatorios de bonos',bonusSub:'Recordar antes de que expire el bono',test:'Notificación de prueba',testSub:'Enviar notificación de muestra',testBtn:'Probar'},
-        data:{chats:'Chats',export:'Exportar todos los chats (JSON)',import:'Importar chats',clearChats:'Borrar todos los chats',local:'Datos locales',reset:'Restablecer todo'},
-        dev:{console:'Consola de desarrollador',open:'Abrir consola',diag:'Diagnóstico',verbose:'Registro detallado',verboseSub:'Registrar solicitudes API',copyDiag:'Copiar diagnóstico',guest:'Identidad de invitado',guestSub:'ID del dispositivo para verificar bonos',reset:'Restablecer'},
+        persona:'Carácter personalizado',personaHelp:'Describe cómo comportarse.',personaPlaceholder:'ej. profesor paciente…',personaSave:'Guardar',personaClear:'Limpiar',personaPresets:'Personalidades',preset:{casual:'Casual',engineer:'Ingeniero',teacher:'Profesor',writer:'Escritor',philosopher:'Filósofo'},
+        mcp:{title:'MCP',help:'Conecta servidores MCP.',enable:'Activar MCP',enableSub:'Permitir llamadas',add:'Añadir servidor',name:'Nombre',url:'URL',key:'Clave API',addBtn:'Añadir',connected:'Conectados',empty:'Sin servidores.'},
+        lang:{response:'Idioma de respuesta',responseHelp:'Mirox responderá en este idioma.',auto:'Detectar',ui:'Idioma de interfaz',uiHelp:'Idioma de botones.',comments:'Comentarios',translateComments:'Traducir comentarios',translateCommentsSub:'En idioma preferido'},
+        alerts:{title:'Notificaciones',desktop:'Notificaciones',desktopSub:'Notificar al acabar',sound:'Sonido',soundSub:'Timbre suave',bonus:'Recordatorios',bonusSub:'Aviso antes de expirar',test:'Test',testSub:'Enviar test',testBtn:'Probar'},
+        data:{chats:'Chats',export:'Exportar',import:'Importar',clearChats:'Borrar',local:'Datos locales',reset:'Restablecer'},
+        dev:{console:'Consola dev',open:'Abrir consola',diag:'Diagnóstico',verbose:'Registro',verboseSub:'Registrar API',copyDiag:'Copiar',guest:'Invitado',guestSub:'ID del dispositivo',reset:'Restablecer'},
       },
-      toast:{bonusAdded:'tokens de bonificación + Pro/Ultra/Eclipse desbloqueados por',days:'días!',shared:'¡Compartido detectado! Añadiendo recompensa…',sharedOk:'¡Compartido confirmado! Añadiendo…',cancelled:'Compartido cancelado. Inténtalo de nuevo.',noShare:'No se detectó compartido. ¿Otra vez?',bonusActive:'¡Bono activo — Pro, Ultra y Eclipse desbloqueados!',bonusExpired:'Bono expirado — vuelta a Luna. ¡Comparte de nuevo!',signedIn:'Bienvenido',signedOut:'Sesión cerrada',langChanged:'Idioma actualizado',respLangChanged:'Idioma de respuesta',personaSaved:'Persona guardada',personaCleared:'Persona limpiada',presetApplied:'Preset aplicado',serverAdded:'Servidor añadido',serverRemoved:'Servidor eliminado',chatsExported:'Chats exportados',chatsImported:'Importados',chatsCleared:'Chats borrados',resetAll:'Todo borrado — recargando…',guestReset:'ID de invitado restablecido',copied:'Diagnóstico copiado',testSent:'Prueba enviada',shareUnlock:'Comparte para desbloquear este modelo',upgrade:'Actualiza para usar',noToken:'Límite alcanzado — comparte o actualiza.',bridgeConnected:'Bridge conectado',bridgeNotReachable:'Bridge inalcanzable'},
+      toast:{bonusAdded:'tokens + Pro/Ultra/Eclipse por',days:'días!',shared:'¡Compartido!',sharedOk:'¡Confirmado!',cancelled:'Cancelado.',noShare:'No detectado.',bonusActive:'¡Bono activo!',bonusExpired:'Expirado — Luna!',signedIn:'Bienvenido',signedOut:'Sesión cerrada',langChanged:'Idioma actualizado',respLangChanged:'Idioma respuesta',personaSaved:'Guardado',personaCleared:'Limpiado',presetApplied:'Aplicado',serverAdded:'Añadido',serverRemoved:'Eliminado',chatsExported:'Exportado',chatsImported:'Importado',chatsCleared:'Borrado',resetAll:'Todo borrado…',guestReset:'Restablecido',copied:'Copiado',testSent:'Enviado',shareUnlock:'Comparte para desbloquear',upgrade:'Actualiza',noToken:'Límite.',bridgeConnected:'Conectado',bridgeNotReachable:'Inalcanzable'},
     },
-    'es-MX': null, fr: {
+    'es-MX': {
+      brand:'MiroxAI', newChat:'Nuevo chat', newChatTitle:'Nuevo chat',
+      tab:{chats:'Chats',bridge:'Bridge',images:'Imágenes'},
+      searchChats:'Buscar…', noChats:'Sin conversaciones', noImages:'Sin imágenes.',
+      guestMode:'Modo invitado', signInHint:'Inicia sesión para guardar',
+      settings:'Ajustes', support:'Soporte', developers:'Desarrolladores', madeBy:'Hecho por OpenSurr',
+      welcomeTitle:'¡Hola, soy Mirox!',
+      welcomeSub:'Luna y Gen son ilimitados y gratis. Comparte para desbloquear <strong>Pro, Ultra y Eclipse</strong> gratis 7 días.',
+      suggest:{lua:'Escribe un script Lua',html:'Muestra una tabla HTML',image:'Genera una imagen',explain:'Explica un concepto'},
+      tools:{search:'Buscar',lumenal:'Lumenal',bridge:'Bridge',plans:'Planes',help:'Ayuda'},
+      composerPlaceholder:'¿Cómo te ayudo hoy?',
+      composerNote:'Mirox comete errores — verifica la info.',
+      latest:'Recientes', send:'Enviar', stop:'Parar', close:'Cerrar', skip:'Saltar',
+      openMenu:'Abrir menú', plans:'Planes', tokenBudget:'Presupuesto', scrollLatest:'Ir al último',
+      attachFiles:'Adjuntar', removeAttach:'Quitar',
+      loading:{waking:'Despertando a Luna…'},
+    },
+    fr: {
       brand:'MiroxAI', newChat:'Nouveau chat', newChatTitle:'Nouveau chat',
       tab:{chats:'Chats',bridge:'Bridge',images:'Images'},
       searchChats:'Rechercher…', noChats:'Aucune conversation', noImages:'Aucune image.',
@@ -220,97 +236,109 @@
       suggest:{lua:'Écrire un script Lua',html:'Montrer un tableau HTML',image:'Générer une image',explain:'Expliquer un concept'},
       tools:{search:'Recherche',lumenal:'Lumenal',bridge:'Bridge',plans:'Forfaits',help:'Aide'},
       composerPlaceholder:'Comment puis-je vous aider ?',
-      composerNote:'Mirox peut se tromper — vérifiez les infos importantes.',
+      composerNote:'Mirox peut se tromper — vérifiez les infos.',
       latest:'Récent', send:'Envoyer', stop:'Arrêter', close:'Fermer', skip:'Passer',
       openMenu:'Ouvrir le menu', plans:'Forfaits', tokenBudget:'Budget tokens', scrollLatest:'Aller au dernier',
-      attachFiles:'Joindre des fichiers', removeAttach:'Retirer les pièces jointes',
+      attachFiles:'Joindre', removeAttach:'Retirer',
       loading:{waking:'Réveil de Luna…'},
-      share:{title:'Partagez notre site, obtenez 50k tokens',sub:'<strong>50k tokens pendant 1 semaine</strong> et <strong>Pro, Ultra &amp; Eclipse</strong> gratuits.',perk1:'50 000 tokens bonus',perk2:'Valide 7 jours',perk3:'Pro · Ultra · Eclipse débloqués',now:'Partager',ignore:'Ignorer',hint:'Nous vérifions via la feuille de partage native.'},
-      login:{title:'Connexion',sub:'Connectez-vous avec Google, Apple ou email — via Loginment.',loginment:'Continuer avec Loginment',orDemo:'ou connexion démo',name:'Nom',email:'Email',continue:'Continuer'},
-      bridge:{title:'Bridge',disconnected:'Déconnecté',connected:'Connecté',sideHint:'Donnez à Mirox le contrôle direct de votre ordinateur.',openWorkspace:'Ouvrir l\'espace Bridge',download:'Télécharger le client',panel:'Panneau',autoRun:'Auto-Run',showCode:'Voir le code',preview:'Aperçu',stop:'Arrêter',clearChat:'Effacer le chat',starting:'Démarrage…',emptyTitle:'Espace Bridge',emptyBody:'Dites à Mirox quoi construire. Il écrit les fichiers dans <code>~/&lt;projet&gt;/</code>, les vérifie et affiche un aperçu.',inputPlaceholder:'ex. Crée une calculatrice dans mon dossier personnel',connection:'Connexion',name:'Nom',namePlaceholder:'Mon ordinateur',port:'Port',connect:'Connecter',disconnect:'Déconnecter',phoneDevices:'Téléphone et appareils',kdeChecking:'KDE Connect : vérification…',scanDevices:'Rechercher des appareils',build:'Build',noProject:'Aucun projet',openPreview:'Ouvrir l\'aperçu',copyPath:'Copier le chemin',sudo:'Sudo',noPassword:'Aucun mot de passe',forgetPassword:'Oublier le mot de passe',quickActions:'Actions rapides',quick:{calc:'Calculatrice',landing:'Landing',snake:'Snake',todo:'Todo',portfolio:'Portfolio',scan:'Scanner'},livePreview:'Aperçu en direct',loadPath:'Charger le chemin',reload:'Recharger'},
-      kde:{title:'KDE Connect · Appareils',subtitle:'Choisissez un appareil',hint:'Les appareils marqués sont sur le même Wi-Fi.',rescan:'Rescanner',skip:'Passer'},
-      planner:{title:'Mirox Planner',subtitle:'Choisissez un design — Mirox le construira',hint:'Démos en direct — choisissez votre préféré.',auto:'Laisser Mirox décider',choose:'Choisir'},
-      sudo:{title:'Mot de passe requis',sub:'Mirox a besoin d\'un accès root.',password:'Votre mot de passe sudo',showHide:'Afficher / masquer',remember:'Mémoriser pour cette session (en mémoire)',run:'Exécuter avec sudo'},
-      bq:{title:'Mirox a besoin de votre réponse',customPlaceholder:'Ou tapez votre réponse…',custom:'Personnalisé',submit:'Envoyer & continuer'},
-      plans:{title:'Forfaits',sub:'Luna et Gen sont gratuits et illimités. Partagez pour débloquer Pro, Ultra et Eclipse 7 jours.'},
-      lumenal:{title:'Lumenal 1.0',sub:'Forte génération d\'images, par Mirox.',prompt:'Décrivez l\'image souhaitée…',generate:'Générer'},
-      support:{title:'Contacter le support',subject:'Sujet',message:'Message',submit:'Envoyer'},
-      iv:{title:'Image générée',download:'Télécharger'},
-      settingsT:{tab:{general:'Général',appearance:'Apparence',persona:'Persona',mcp:'MCP',language:'Langue',alerts:'Alertes',data:'Données',dev:'Dev'},
-        title:'Paramètres',account:'Compte',accountSub:'Chats enregistrés localement',signIn:'Connexion',signOut:'Déconnexion',
-        rewards:'Récompenses',shareEarn:'Partager & gagner',shareSub:'50k tokens + Pro/Ultra/Eclipse 7 jours gratuits',shareBtn:'Partager',
-        behavior:'Comportement',autoScroll:'Défilement auto',autoScrollSub:'Suivre les nouveaux messages',enterSend:'Envoyer avec Entrée',enterSendSub:'Shift+Entrée pour nouvelle ligne',showThinking:'Afficher le raisonnement',showThinkingSub:'Panneau de raisonnement au-dessus des réponses',vision:'Vision pour images',visionSub:'Envoyer les images à l\'IA (base64)',compact:'Mode compact',compactSub:'Espacement plus serré',
-        mode:'Mode',mode2:{light:'Clair',dark:'Sombre',auto:'Auto'},accent:'Couleur d\'accent',fontSize:'Taille police',font2:{sm:'Petit',md:'Moyen',lg:'Grand'},animations:'Animations',reduceMotion:'Réduire le mouvement',reduceMotionSub:'Minimiser les animations',
-        persona:'Caractère personnalisé',personaHelp:'Décrivez comment Mirox doit se comporter.',personaPlaceholder:'ex. Vous êtes un professeur patient…',personaSave:'Enregistrer',personaClear:'Effacer',personaPresets:'Personnalités prédéfinies',preset:{casual:'Décontracté',engineer:'Ingénieur',teacher:'Professeur',writer:'Écrivain',philosopher:'Philosophe'},
-        mcp:{title:'Model Context Protocol',help:'Connectez des serveurs MCP pour outils externes.',enable:'Activer MCP',enableSub:'Autoriser Mirox à appeler les serveurs',add:'Ajouter un serveur',name:'Nom du serveur',url:'URL du serveur',key:'Clé API (optionnel)',addBtn:'Ajouter',connected:'Serveurs connectés',empty:'Aucun serveur MCP.'},
-        lang:{response:'Langue de réponse préférée',responseHelp:'Mirox répondra dans cette langue.',auto:'Détection automatique',ui:'Langue de l\'interface',uiHelp:'Langue des boutons et menus — appliquée immédiatement.',comments:'Commentaires de code',translateComments:'Traduire les commentaires',translateCommentsSub:'Écrire les commentaires en langue préférée'},
-        alerts:{title:'Notifications',desktop:'Notifications de bureau',desktopSub:'Notifier quand une réponse est prête',sound:'Son',soundSub:'Jouer un carillon doux',bonus:'Rappels de bonus',bonusSub:'Rappeler avant l\'expiration du bonus',test:'Notification test',testSub:'Envoyer une notification test',testBtn:'Tester'},
-        data:{chats:'Chats',export:'Exporter tous les chats (JSON)',import:'Importer des chats',clearChats:'Effacer tous les chats',local:'Données locales',reset:'Tout réinitialiser'},
-        dev:{console:'Console développeur',open:'Ouvrir la console',diag:'Diagnostic',verbose:'Journalisation détaillée',verboseSub:'Journaliser les requêtes API',copyDiag:'Copier le diagnostic',guest:'Identité invité',guestSub:'ID appareil pour vérifier les bonus',reset:'Réinitialiser'},
-      },
-      toast:{bonusAdded:'tokens bonus + Pro/Ultra/Eclipse débloqués pour',days:'jours!',shared:'Partage détecté ! Ajout de la récompense…',sharedOk:'Partage confirmé ! Ajout…',cancelled:'Partage annulé. Réessayez.',noShare:'Aucun partage détecté.',bonusActive:'Bonus actif — Pro, Ultra & Eclipse débloqués !',bonusExpired:'Bonus expiré — retour à Luna. Repartagez !',signedIn:'Bienvenue',signedOut:'Déconnecté',langChanged:'Langue mise à jour',respLangChanged:'Langue de réponse',personaSaved:'Persona enregistré',personaCleared:'Persona effacé',presetApplied:'Préréglage appliqué',serverAdded:'Serveur ajouté',serverRemoved:'Serveur retiré',chatsExported:'Chats exportés',chatsImported:'Importés',chatsCleared:'Chats effacés',resetAll:'Tout effacé — rechargement…',guestReset:'ID invité réinitialisé',copied:'Diagnostic copié',testSent:'Test envoyé',shareUnlock:'Partagez pour débloquer ce modèle',upgrade:'Passez à un forfait supérieur',noToken:'Limite atteinte — partagez ou mettez à niveau.',bridgeConnected:'Bridge connecté',bridgeNotReachable:'Bridge injoignable'},
     },
-    ar: { welcomeTitle:'مرحباً، أنا Mirox', newChat:'محادثة جديدة', settings:'الإعدادات', support:'الدعم', developers:'المطورون', guestMode:'وضع الضيف', signInHint:'سجّل الدخول لحفظ المحادثات', composerPlaceholder:'كيف أساعدك اليوم؟', send:'إرسال', close:'إغلاق', plans:'الخطط', madeBy:'صنع بواسطة OpenSurr', tab:{chats:'الدردشات',bridge:'Bridge',images:'الصور'}, noChats:'لا توجد محادثات بعد', noImages:'لا توجد صور بعد.', welcomeSub:'Luna و Gen غير محدودين ومجانيان. شارك لفتح <strong>Pro و Ultra و Eclipse</strong> مجاناً لمدة 7 أيام.' },
+    ar: { welcomeTitle:'مرحباً، أنا Mirox', newChat:'محادثة جديدة', settings:'الإعدادات', support:'الدعم', developers:'المطورون', guestMode:'وضع الضيف', signInHint:'سجّل الدخول', composerPlaceholder:'كيف أساعدك اليوم؟', send:'إرسال', close:'إغلاق', plans:'الخطط', madeBy:'صنع بواسطة OpenSurr', tab:{chats:'الدردشات',bridge:'Bridge',images:'الصور'}, noChats:'لا توجد محادثات', noImages:'لا توجد صور.', welcomeSub:'Luna و Gen غير محدودين ومجانيان. شارك لفتح <strong>Pro و Ultra و Eclipse</strong> مجاناً لمدة 7 أيام.' },
     'zh-CN': { welcomeTitle:'你好，我是 Mirox', newChat:'新对话', settings:'设置', support:'支持', developers:'开发者', guestMode:'访客模式', signInHint:'登录以保存对话', composerPlaceholder:'今天我能帮您什么？', send:'发送', close:'关闭', plans:'方案', madeBy:'由 OpenSurr 制作', tab:{chats:'对话',bridge:'Bridge',images:'图片'}, noChats:'尚无对话', noImages:'尚无图片。', welcomeSub:'Luna 和 Gen 无限且免费。分享即可免费解锁 <strong>Pro、Ultra 和 Eclipse</strong> 7 天。' },
-    ja: { welcomeTitle:'こんにちは、Miroxです', newChat:'新しいチャット', settings:'設定', support:'サポート', developers:'開発者', guestMode:'ゲストモード', signInHint:'サインインしてチャットを保存', composerPlaceholder:'今日は何をお手伝いしましょうか？', send:'送信', close:'閉じる', plans:'プラン', madeBy:'OpenSurr 製', tab:{chats:'チャット',bridge:'Bridge',images:'画像'}, noChats:'まだ会話がありません', noImages:'まだ画像がありません。', welcomeSub:'Luna と Gen は無制限で無料です。シェアして <strong>Pro、Ultra、Eclipse</strong> を 7 日間無料で解除。' },
-    ru: { welcomeTitle:'Привет, я Mirox', newChat:'Новый чат', settings:'Настройки', support:'Поддержка', developers:'Разработчикам', guestMode:'Гостевой режим', signInHint:'Войдите, чтобы сохранить чаты', composerPlaceholder:'Чем помочь сегодня?', send:'Отправить', close:'Закрыть', plans:'Тарифы', madeBy:'Сделано OpenSurr', tab:{chats:'Чаты',bridge:'Bridge',images:'Изображения'}, noChats:'Пока нет чатов', noImages:'Пока нет изображений.', welcomeSub:'Luna и Gen безлимитные и бесплатные. Поделитесь, чтобы разблокировать <strong>Pro, Ultra и Eclipse</strong> на 7 дней.' },
-    tr: { welcomeTitle:'Merhaba, ben Mirox', newChat:'Yeni sohbet', settings:'Ayarlar', support:'Destek', developers:'Geliştiriciler', guestMode:'Misafir modu', signInHint:'Sohbetleri kaydetmek için giriş yapın', composerPlaceholder:'Bugün nasıl yardımcı olabilirim?', send:'Gönder', close:'Kapat', plans:'Planlar', madeBy:'OpenSurr yapımı', tab:{chats:'Sohbetler',bridge:'Bridge',images:'Görseller'}, noChats:'Henüz sohbet yok', noImages:'Henüz görsel yok.', welcomeSub:'Luna ve Gen sınırsız ve ücretsiz. <strong>Pro, Ultra ve Eclipse</strong> için 7 gün ücretsiz paylaşın.' },
-    hi: { welcomeTitle:'नमस्ते, मैं Mirox हूँ', newChat:'नया चैट', settings:'सेटिंग्स', support:'समर्थन', developers:'डेवलपर्स', guestMode:'अतिथि मोड', signInHint:'चैट सहेजने के लिए साइन इन करें', composerPlaceholder:'आज मैं कैसे मदद कर सकता हूँ?', send:'भेजें', close:'बंद करें', plans:'योजनाएँ', madeBy:'OpenSurr द्वारा निर्मित', tab:{chats:'चैट',bridge:'Bridge',images:'छवियाँ'}, noChats:'अभी कोई चैट नहीं', noImages:'अभी कोई छवि नहीं।', welcomeSub:'Luna और Gen असीमित और मुफ्त हैं। <strong>Pro, Ultra और Eclipse</strong> को 7 दिनों के लिए मुफ्त अनलॉक करने के लिए साझा करें।' },
-    ur: { welcomeTitle:'ہیلو، میں Mirox ہوں', newChat:'نئی چیٹ', settings:'ترتیبات', support:'معاونت', developers:'ڈویلپرز', guestMode:'مہمان موڈ', signInHint:'چیٹس محفوظ کرنے کے لیے سائن ان کریں', composerPlaceholder:'آج میں کیسے مدد کر سکتا ہوں؟', send:'بھیجیں', close:'بند کریں', plans:'پلانز', madeBy:'OpenSurr کی طرف سے', tab:{chats:'چیٹس',bridge:'Bridge',images:'تصاویر'}, noChats:'ابھی کوئی چیٹ نہیں', noImages:'ابھی کوئی تصویر نہیں۔', welcomeSub:'Luna اور Gen لامحدود اور مفت ہیں۔ <strong>Pro، Ultra اور Eclipse</strong> کو 7 دن کے لیے مفت کھولنے کے لیے شیئر کریں۔' },
+    ja: { welcomeTitle:'こんにちは、Miroxです', newChat:'新しいチャット', settings:'設定', support:'サポート', developers:'開発者', guestMode:'ゲストモード', signInHint:'サインインして保存', composerPlaceholder:'今日は何をお手伝いしましょうか？', send:'送信', close:'閉じる', plans:'プラン', madeBy:'OpenSurr 製', tab:{chats:'チャット',bridge:'Bridge',images:'画像'}, noChats:'まだ会話がありません', noImages:'まだ画像がありません。', welcomeSub:'Luna と Gen は無制限で無料です。シェアして <strong>Pro、Ultra、Eclipse</strong> を 7 日間無料で解除。' },
+    ru: { welcomeTitle:'Привет, я Mirox', newChat:'Новый чат', settings:'Настройки', support:'Поддержка', developers:'Разработчикам', guestMode:'Гостевой режим', signInHint:'Войдите для сохранения', composerPlaceholder:'Чем помочь сегодня?', send:'Отправить', close:'Закрыть', plans:'Тарифы', madeBy:'Сделано OpenSurr', tab:{chats:'Чаты',bridge:'Bridge',images:'Изображения'}, noChats:'Пока нет чатов', noImages:'Пока нет изображений.', welcomeSub:'Luna и Gen безлимитные и бесплатные. Поделитесь, чтобы разблокировать <strong>Pro, Ultra и Eclipse</strong> на 7 дней.' },
+    tr: { welcomeTitle:'Merhaba, ben Mirox', newChat:'Yeni sohbet', settings:'Ayarlar', support:'Destek', developers:'Geliştiriciler', guestMode:'Misafir modu', signInHint:'Kaydetmek için giriş yapın', composerPlaceholder:'Bugün nasıl yardımcı olabilirim?', send:'Gönder', close:'Kapat', plans:'Planlar', madeBy:'OpenSurr yapımı', tab:{chats:'Sohbetler',bridge:'Bridge',images:'Görseller'}, noChats:'Henüz sohbet yok', noImages:'Henüz görsel yok.', welcomeSub:'Luna ve Gen sınırsız ve ücretsiz. <strong>Pro, Ultra ve Eclipse</strong> için 7 gün ücretsiz paylaşın.' },
+    hi: { welcomeTitle:'नमस्ते, मैं Mirox हूँ', newChat:'नया चैट', settings:'सेटिंग्स', support:'समर्थन', developers:'डेवलपर्स', guestMode:'अतिथि मोड', signInHint:'साइन इन करें', composerPlaceholder:'आज कैसे मदद करूँ?', send:'भेजें', close:'बंद करें', plans:'योजनाएँ', madeBy:'OpenSurr द्वारा', tab:{chats:'चैट',bridge:'Bridge',images:'छवियाँ'}, noChats:'अभी कोई चैट नहीं', noImages:'अभी कोई छवि नहीं।', welcomeSub:'Luna और Gen असीमित और मुफ्त हैं। <strong>Pro, Ultra और Eclipse</strong> के लिए 7 दिनों के लिए मुफ्त साझा करें।' },
+    ur: { welcomeTitle:'ہیلو، میں Mirox ہوں', newChat:'نئی چیٹ', settings:'ترتیبات', support:'معاونت', developers:'ڈویلپرز', guestMode:'مہمان موڈ', signInHint:'سائن ان کریں', composerPlaceholder:'آج کیسے مدد کر سکتا ہوں؟', send:'بھیجیں', close:'بند کریں', plans:'پلانز', madeBy:'OpenSurr کی طرف سے', tab:{chats:'چیٹس',bridge:'Bridge',images:'تصاویر'}, noChats:'ابھی کوئی چیٹ نہیں', noImages:'ابھی کوئی تصویر نہیں۔', welcomeSub:'Luna اور Gen لامحدود اور مفت ہیں۔ <strong>Pro، Ultra اور Eclipse</strong> کے لیے 7 دن کے لیے مفت شیئر کریں۔' },
   };
-  TRANSLATIONS['es-MX'] = Object.assign({}, TRANSLATIONS.es, {
-    welcomeTitle:'¡Hola, soy Mirox!', newChat:'Nuevo chat', composerPlaceholder:'¿Cómo te ayudo hoy?', welcomeSub:'Luna y Gen son ilimitados y gratis. Comparte para desbloquear <strong>Pro, Ultra y Eclipse</strong> gratis 7 días.',
-  });
+
+  // Deep-merge es-MX on top of es so any missing key falls back
+  function deepMerge(base, override) {
+    const out = Object.assign({}, base);
+    for (const k of Object.keys(override || {})) {
+      const bv = base ? base[k] : undefined;
+      const ov = override[k];
+      if (bv && typeof bv === 'object' && !Array.isArray(bv) && ov && typeof ov === 'object' && !Array.isArray(ov)) {
+        out[k] = deepMerge(bv, ov);
+      } else {
+        out[k] = ov;
+      }
+    }
+    return out;
+  }
+  TRANSLATIONS['es-MX'] = deepMerge(TRANSLATIONS.es, TRANSLATIONS['es-MX'] || {});
+
   const RTL_LANGS = ['fa','ps','ar','he','ur'];
 
+  // SAFE t(): always returns a string, never an object
   function t(key, fallback) {
-    if (!key) return fallback || '';
-    const lang = __prefs.uiLanguage || 'en';
-    const parts = key.split('.');
-    // Try current lang → en → fallback
+    if (!key) return fallback != null ? String(fallback) : '';
+    const lang = (__prefs && __prefs.uiLanguage) || 'en';
+    const parts = String(key).split('.');
     const fromLang = (TRANSLATIONS[lang] || TRANSLATIONS.en);
     const fromEn = TRANSLATIONS.en;
-    const dig = (obj) => { let v = obj; for (const p of parts) { if (v == null) return undefined; v = v[p]; } return v; };
+    const dig = (obj) => {
+      let v = obj;
+      for (const p of parts) {
+        if (v == null || typeof v !== 'object') return undefined;
+        v = v[p];
+      }
+      return v;
+    };
     let val = dig(fromLang);
     if (val === undefined || val === null) val = dig(fromEn);
     if (val === undefined || val === null) val = fallback;
-    return val != null ? String(val) : (fallback || key);
+    // Guard: never return objects/arrays as "[object Object]"
+    if (val == null) return '';
+    if (typeof val === 'object') {
+      // If we accidentally resolved a nested object, return the fallback
+      return fallback != null ? String(fallback) : '';
+    }
+    return String(val);
   }
   window.__t = t;
 
   function applyTranslations() {
-    const lang = __prefs.uiLanguage || 'en';
+    const lang = (__prefs && __prefs.uiLanguage) || 'en';
+    const isRtl = RTL_LANGS.includes(lang);
+    // Set the language attribute only — DO NOT set dir=rtl on the whole document
     document.documentElement.lang = lang;
-    document.documentElement.dir = RTL_LANGS.includes(lang) ? 'rtl' : 'ltr';
-    // Text content
+    // Store RTL hint as a data attribute so we can style only text content, not the whole layout
+    document.documentElement.setAttribute('data-dir', isRtl ? 'rtl' : 'ltr');
+
+    // TEXT
     document.querySelectorAll('[data-i18n]').forEach((el) => {
       const key = el.dataset.i18n;
-      const txt = t(key, el.textContent);
-      if (txt != null && txt !== '') el.textContent = txt;
+      if (!key) return;
+      const fallback = el.textContent;
+      const txt = t(key, fallback);
+      if (typeof txt === 'string' && txt !== '') el.textContent = txt;
     });
-    // HTML content
+    // HTML
     document.querySelectorAll('[data-i18n-html]').forEach((el) => {
       const key = el.dataset.i18nHtml;
+      if (!key) return;
       const txt = t(key, null);
-      if (txt) el.innerHTML = txt;
+      if (typeof txt === 'string' && txt) el.innerHTML = txt;
     });
-    // Placeholders
+    // PLACEHOLDER
     document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
       const key = el.dataset.i18nPlaceholder;
+      if (!key) return;
       const txt = t(key, el.placeholder);
-      if (txt) el.placeholder = txt;
+      if (typeof txt === 'string' && txt) el.placeholder = txt;
     });
-    // Titles (tooltips)
+    // TITLE
     document.querySelectorAll('[data-i18n-title]').forEach((el) => {
       const key = el.dataset.i18nTitle;
+      if (!key) return;
       const txt = t(key, el.title);
-      if (txt) el.title = txt;
+      if (typeof txt === 'string' && txt) el.title = txt;
     });
     // Update dynamic pieces
-    updateTokenUsage();
-    renderModelPicker();
-    renderHistory();
-    if (typeof renderMcpList === 'function') renderMcpList();
+    try { updateTokenUsage(); } catch {}
+    try { renderModelPicker(); } catch {}
+    try { renderHistory(); } catch {}
+    try { if (typeof renderMcpList === 'function') renderMcpList(); } catch {}
   }
 
   /* ═══════════ Loader ═══════════ */
@@ -342,14 +370,14 @@
     { id: 'mirox-eclipse-2.0', label: 'Eclipse', tier: 'ultimate', tagline: 'Most powerful', icon: 'ri-sun-fill' },
   ];
   const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
-  const LS_KEY = 'miroxai_conversations_v36';
+  const LS_KEY = 'miroxai_conversations_v37';
   const TOKEN_KEY = 'mirox_token';
   const GUEST_KEY = 'miroxai_guest_id_v1';
-  const APPEARANCE_KEY = 'miroxai_appearance_v36';
-  const SHARE_KEY = 'miroxai_share_v7';
-  const BONUS_KEY = 'miroxai_bonus_v7';
-  const PREFS_KEY = 'miroxai_prefs_v3';
-  const MCP_KEY = 'miroxai_mcp_v3';
+  const APPEARANCE_KEY = 'miroxai_appearance_v37';
+  const SHARE_KEY = 'miroxai_share_v8';
+  const BONUS_KEY = 'miroxai_bonus_v8';
+  const PREFS_KEY = 'miroxai_prefs_v4';
+  const MCP_KEY = 'miroxai_mcp_v4';
   const BRIDGE_KEY = 'miroxai_bridge_v1';
   const BRIDGE_OPTS_KEY = 'miroxai_bridge_opts_v1';
   const KDE_DEVICE_KEY = 'miroxai_kde_device_v1';
@@ -361,7 +389,6 @@
   const BONUS_MS = 7 * 24 * 60 * 60 * 1000;
   const BONUS_CHECK_MS = 30 * 1000;
   const MAX_IMAGE_DIM = 1600;
-  const MAX_BRIDGE_QUESTIONS = 6;
   const MAX_BRIDGE_ITER = 200;
   const MAX_AUTO_CONTINUES = 100;
   const MAX_DUP_COMMANDS = 40;
@@ -379,8 +406,6 @@
   let __lastBonusActive = false;
   let __prefs = {};
   let __mcpServers = [];
-  let __lastBonusWarnDay = null;
-  // Bridge state
   let __bridge = { name: 'My Laptop', port: 8765, connected: false, baseUrl: null, env: null };
   let bridgeRunning = false, bridgeAbort = false, bridgeConversation = [], bridgeProgress = 0;
   let bridgeTurn = null, bridgeTaskComplete = true, bridgeWaitingForUser = false;
@@ -397,7 +422,7 @@
   function safeSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } }
   function safeRemove(k) { try { localStorage.removeItem(k); } catch {} }
   function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
-  function setToken(t) { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch {} }
+  function setToken(tk) { try { tk ? localStorage.setItem(TOKEN_KEY, tk) : localStorage.removeItem(TOKEN_KEY); } catch {} }
 
   function getGuestId() {
     let id = null;
@@ -420,8 +445,8 @@
   }
   function authHeaders(extra) {
     const h = { 'Content-Type': 'application/json', ...(extra || {}) };
-    const t = getToken();
-    if (t) h.Authorization = 'Bearer ' + t;
+    const tk = getToken();
+    if (tk) h.Authorization = 'Bearer ' + tk;
     Object.assign(h, bonusProofHeaders());
     if (__prefs.responseLanguage && __prefs.responseLanguage !== 'auto') h['X-Mirox-Lang'] = __prefs.responseLanguage;
     if (__prefs.translateComments) h['X-Mirox-Translate-Comments'] = '1';
@@ -494,9 +519,7 @@
     reduceMotion: false, fontSize: 'md', mode: 'light', theme: 'default',
     responseLanguage: 'auto', uiLanguage: 'en', translateComments: false,
     desktopNotify: false, sound: true, bonusReminder: true,
-    verboseLog: false, persona: '',
-    mcpEnabled: false,
-    bridgeAutoRun: true, bridgeShowCode: false,
+    verboseLog: false, persona: '', mcpEnabled: false,
   };
   function loadPrefs() {
     __prefs = Object.assign({}, DEFAULT_PREFS, safeGet(PREFS_KEY, {}));
@@ -504,17 +527,13 @@
     if (app.mode) __prefs.mode = app.mode;
     if (app.theme) __prefs.theme = app.theme;
   }
-  function savePrefs() {
-    safeSet(PREFS_KEY, __prefs);
-    safeSet(APPEARANCE_KEY, { mode: __prefs.mode, theme: __prefs.theme });
-  }
+  function savePrefs() { safeSet(PREFS_KEY, __prefs); safeSet(APPEARANCE_KEY, { mode: __prefs.mode, theme: __prefs.theme }); }
   function applyPrefs() {
     const root = document.documentElement;
     root.setAttribute('data-fontsize', __prefs.fontSize || 'md');
     root.classList.toggle('reduce-motion', !!__prefs.reduceMotion);
     root.classList.toggle('compact-mode', !!__prefs.compact);
     autoScrollEnabled = __prefs.autoScroll !== false;
-
     const syncChk = (id, val) => { const el = document.getElementById(id); if (el && el.checked !== !!val) el.checked = !!val; };
     syncChk('autoScrollToggle', __prefs.autoScroll);
     syncChk('enterSendToggle', __prefs.enterSend);
@@ -528,12 +547,10 @@
     syncChk('verboseLogToggle', __prefs.verboseLog);
     syncChk('translateCommentsToggle', __prefs.translateComments);
     syncChk('mcpEnableToggle', __prefs.mcpEnabled);
-
     const langSel = document.getElementById('languageSelect');
     if (langSel && langSel.value !== (__prefs.responseLanguage || 'auto')) langSel.value = __prefs.responseLanguage || 'auto';
     const uiSel = document.getElementById('uiLanguageSelect');
     if (uiSel && uiSel.value !== (__prefs.uiLanguage || 'en')) uiSel.value = __prefs.uiLanguage || 'en';
-
     const mode = __prefs.mode || 'light';
     $$('#modeSegmented .seg-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
     const fs = __prefs.fontSize || 'md';
@@ -542,8 +559,6 @@
     $$('#accentSwatches .swatch').forEach((b) => b.classList.toggle('active', b.dataset.theme === theme));
     const pInp = document.getElementById('personaInput');
     if (pInp && pInp.value !== (__prefs.persona || '')) pInp.value = __prefs.persona || '';
-    const attachBtn = document.getElementById('attachBtn');
-    if (attachBtn) attachBtn.title = t('attachFiles', 'Attach files');
   }
   function applyAppearanceFromPrefs() {
     const root = document.documentElement;
@@ -574,7 +589,7 @@
     } catch {}
   }
 
-  /* ═══════════ IMAGE → base64 ═══════════ */
+  /* ═══════════ IMAGES ═══════════ */
   function imageToBase64DataURL(file) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -699,10 +714,10 @@
     const start = performance.now(); let raf = null, stopped = false;
     function frame(now) {
       if (stopped) return;
-      const t = (now - start) / duration;
+      const tt = (now - start) / duration;
       ctx.clearRect(0, 0, W, H);
       const fadeStart = 0.7;
-      ctx.globalAlpha = t > fadeStart ? Math.max(0, 1 - (t - fadeStart) / (1 - fadeStart)) : 1;
+      ctx.globalAlpha = tt > fadeStart ? Math.max(0, 1 - (tt - fadeStart) / (1 - fadeStart)) : 1;
       for (const p of particles) {
         p.vy += p.gravity; p.vx *= p.drag; p.vy *= p.drag; p.swayPhase += p.swayFreq;
         p.x += p.vx + Math.sin(p.swayPhase) * p.swayAmp * 0.4;
@@ -714,7 +729,7 @@
         else { ctx.fillRect(-p.size/2, -p.size/3, p.size, p.size * 0.7); }
         ctx.restore();
       }
-      if (t < 1) raf = requestAnimationFrame(frame);
+      if (tt < 1) raf = requestAnimationFrame(frame);
       else { stopped = true; ctx.clearRect(0, 0, W, H); canvas.remove(); }
     }
     raf = requestAnimationFrame(frame);
@@ -767,7 +782,7 @@
     return 'Thinking';
   }
 
-  /* ═══════════ THINKING PANEL ═══════════ */
+  /* ═══════════ THINKING ═══════════ */
   function createThinkPanel(label, steps, headline) {
     const el = document.createElement('div');
     el.className = 'think-wrap';
@@ -861,7 +876,7 @@
     const q = __historyQuery.trim().toLowerCase();
     let items = __conversations;
     if (q) items = __conversations.filter((c) => (c.title || '').toLowerCase().includes(q) || (c.messages || []).some((m) => (m.content || '').toLowerCase().includes(q)));
-    if (!items.length) { list.innerHTML = `<li class="history-empty">${escapeHtml(q ? (t('noMatches') || 'No matches') : t('noChats'))}</li>`; return; }
+    if (!items.length) { list.innerHTML = `<li class="history-empty">${escapeHtml(t('noChats'))}</li>`; return; }
     list.innerHTML = items.map((c) =>
       `<li class="history-item${c.id === currentConversationId ? ' active' : ''}" data-id="${c.id}">
         <i class="ri-chat-3-line"></i>
@@ -919,19 +934,16 @@
 
   /* ═══════════ CODE LANG ═══════════ */
   const LANG_META = {
-    lua:{label:'LUA',icon:'devicon-lua-plain colored',hljs:'lua'},
-    python:{label:'PY',icon:'devicon-python-plain colored',hljs:'python'},py:{label:'PY',icon:'devicon-python-plain colored',hljs:'python'},
-    javascript:{label:'JS',icon:'devicon-javascript-plain colored',hljs:'javascript'},js:{label:'JS',icon:'devicon-javascript-plain colored',hljs:'javascript'},
-    typescript:{label:'TS',icon:'devicon-typescript-plain colored',hljs:'typescript'},ts:{label:'TS',icon:'devicon-typescript-plain colored',hljs:'typescript'},
+    lua:{label:'LUA',icon:'devicon-lua-plain colored',hljs:'lua'},python:{label:'PY',icon:'devicon-python-plain colored',hljs:'python'},
+    javascript:{label:'JS',icon:'devicon-javascript-plain colored',hljs:'javascript'},typescript:{label:'TS',icon:'devicon-typescript-plain colored',hljs:'typescript'},
     html:{label:'HTML',icon:'devicon-html5-plain colored',hljs:'xml'},css:{label:'CSS',icon:'devicon-css3-plain colored',hljs:'css'},
-    json:{label:'JSON',icon:'devicon-json-plain colored',hljs:'json'},
-    bash:{label:'SH',icon:'devicon-bash-plain colored',hljs:'bash'},sh:{label:'SH',icon:'devicon-bash-plain colored',hljs:'bash'},
-    java:{label:'JAVA',icon:'devicon-java-plain colored',hljs:'java'},
-    cpp:{label:'C++',icon:'devicon-cplusplus-plain colored',hljs:'cpp'},c:{label:'C',icon:'devicon-c-plain colored',hljs:'c'},
-    go:{label:'GO',icon:'devicon-go-plain colored',hljs:'go'},rust:{label:'RUST',icon:'devicon-rust-plain colored',hljs:'rust'},
-    ruby:{label:'RB',icon:'devicon-ruby-plain colored',hljs:'ruby'},php:{label:'PHP',icon:'devicon-php-plain colored',hljs:'php'},
-    sql:{label:'SQL',icon:'ri-database-2-line',hljs:'sql'},yaml:{label:'YAML',icon:'ri-file-list-2-line',hljs:'yaml'},yml:{label:'YAML',icon:'ri-file-list-2-line',hljs:'yaml'},
-    markdown:{label:'MD',icon:'ri-markdown-line',hljs:'markdown'},md:{label:'MD',icon:'ri-markdown-line',hljs:'markdown'},svg:{label:'SVG',icon:'devicon-html5-plain colored',hljs:'xml'},
+    json:{label:'JSON',icon:'devicon-json-plain colored',hljs:'json'},bash:{label:'SH',icon:'devicon-bash-plain colored',hljs:'bash'},
+    java:{label:'JAVA',icon:'devicon-java-plain colored',hljs:'java'},cpp:{label:'C++',icon:'devicon-cplusplus-plain colored',hljs:'cpp'},
+    c:{label:'C',icon:'devicon-c-plain colored',hljs:'c'},go:{label:'GO',icon:'devicon-go-plain colored',hljs:'go'},
+    rust:{label:'RUST',icon:'devicon-rust-plain colored',hljs:'rust'},ruby:{label:'RB',icon:'devicon-ruby-plain colored',hljs:'ruby'},
+    php:{label:'PHP',icon:'devicon-php-plain colored',hljs:'php'},sql:{label:'SQL',icon:'ri-database-2-line',hljs:'sql'},
+    yaml:{label:'YAML',icon:'ri-file-list-2-line',hljs:'yaml'},markdown:{label:'MD',icon:'ri-markdown-line',hljs:'markdown'},
+    svg:{label:'SVG',icon:'devicon-html5-plain colored',hljs:'xml'},
   };
   function langMeta(lang) { const k = String(lang || '').toLowerCase().trim(); return LANG_META[k] || { label: (k || 'CODE').toUpperCase().slice(0, 6), icon: 'ri-code-s-slash-line', hljs: k || 'plaintext' }; }
   function highlightCode(lang, code) {
@@ -1085,7 +1097,7 @@
     const inp = $('#messageInput'); if (!inp) return;
     const text = inp.value.trim();
     if (!text && !pendingFiles.length) return;
-    if (freeLimitReached()) { toast(t('toast.noToken', 'Max tokens reached — share or upgrade.'), 5000); return; }
+    if (freeLimitReached()) { toast(t('toast.noToken'), 5000); return; }
     const files = pendingFiles.slice();
     const searchFlag = forceSearchNext;
     forceSearchNext = false;
@@ -1129,7 +1141,7 @@
     finally { continuationBusy = false; if (btn.isConnected) btn.remove(); }
   }
 
-  /* ═══════════ API — with vision content parts ═══════════ */
+  /* ═══════════ API ═══════════ */
   async function sendToAPI(text, files, forceSearch, continuation = null) {
     const isContinuation = !!(continuation && continuation.continuation);
     const convoAtStart = currentConvo();
@@ -1271,7 +1283,7 @@
       timeEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       if (savedMsg && shouldShowContinue(full, convo, streamComplete)) attachContinueButton(msgEl, bubble, savedMsg);
       playChime();
-      if (__prefs.desktopNotify && document.hidden && 'Notification' in window && Notification.permission === 'granted') { try { new Notification('Mirox replied', { body: 'Tap to view', icon: '/logo.png' }); } catch {} }
+      if (__prefs.desktopNotify && document.hidden && 'Notification' in window && Notification.permission === 'granted') { try { new Notification('Mirox', { body: 'Replied', icon: '/logo.png' }); } catch {} }
     } catch (e) {
       clearTimeout(streamTimeout);
       const aborted = e.name === 'AbortError';
@@ -1308,7 +1320,7 @@
   function toast(msg, ms) {
     const el = document.createElement('div');
     el.className = 'mirox-toast';
-    el.textContent = msg;
+    el.textContent = typeof msg === 'string' ? msg : String(msg || '');
     document.body.appendChild(el);
     setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 350); }, ms || 1800);
   }
@@ -1324,7 +1336,7 @@
   }
   function openShareAd() { if (!shouldShowShareAd()) return; setTimeout(() => $('#shareAdModal')?.classList.add('open'), 1800); }
   function closeShareAd(dismiss) { const modal = $('#shareAdModal'); if (modal) modal.classList.remove('open'); if (dismiss) { __shareState.dismissedAt = Date.now(); saveShareState(); } }
-  function setShareStatus(text, cls) { const el = $('#shareAdStatus'); if (!el) return; el.textContent = text; el.className = 'share-ad-status' + (cls ? ' ' + cls : ''); }
+  function setShareStatus(text, cls) { const el = $('#shareAdStatus'); if (!el) return; el.textContent = typeof text === 'string' ? text : ''; el.className = 'share-ad-status' + (cls ? ' ' + cls : ''); }
   function celebrateReward() {
     launchConfetti({ duration: 4500, count: 240 });
     const chip = $('#tokenUsage'); if (chip) { chip.classList.add('pulse'); setTimeout(() => chip.classList.remove('pulse'), 1200); }
@@ -1534,7 +1546,7 @@
     wrap.querySelectorAll('.mcp-test').forEach((b) => { b.onclick = async () => { const i = parseInt(b.dataset.idx, 10); const s = __mcpServers[i]; if (!s) return; try { const r = await netFetch(s.url, { method: 'GET', headers: s.key ? { Authorization: 'Bearer ' + s.key } : {} }, 5000); toast(r.ok ? `✓ ${s.name}` : `✗ ${r.status}`); } catch { toast(`✗ ${s.name}`); } }; });
   }
 
-  /* ═══════════ BRIDGE — full workspace ═══════════ */
+  /* ═══════════ BRIDGE ═══════════ */
   function loadBridgeLS() { const b = safeGet(BRIDGE_KEY, {}); __bridge = { ...__bridge, ...b, connected: false, baseUrl: null, env: null }; }
   function saveBridgeLS() { safeSet(BRIDGE_KEY, { name: __bridge.name, port: __bridge.port }); }
   function loadBridgeOpts() { const o = safeGet(BRIDGE_OPTS_KEY, {}); if (typeof o.autoRun === 'boolean') __bridgeAutoRun = o.autoRun; if (typeof o.showCode === 'boolean') __bridgeShowCode = o.showCode; }
@@ -1572,8 +1584,8 @@
   }
   function renderKdeDeviceList() {
     const wrap = $('#bwDeviceList'); if (!wrap) return;
-    if (!__kdeAvailable) { wrap.innerHTML = '<div class="bw-hint">Install on bridge: <code>sudo apt install kdeconnect</code></div>'; return; }
-    if (!__kdeDevices.length) { wrap.innerHTML = '<div class="bw-hint">No devices found. Tap <b>Scan for devices</b>.</div>'; return; }
+    if (!__kdeAvailable) { wrap.innerHTML = '<div class="bw-hint">Install: <code>sudo apt install kdeconnect</code></div>'; return; }
+    if (!__kdeDevices.length) { wrap.innerHTML = '<div class="bw-hint">No devices found. Tap <b>Scan</b>.</div>'; return; }
     wrap.innerHTML = __kdeDevices.map((d) => `
       <div class="bw-device-row" data-id="${escapeHtml(d.id)}">
         <div class="bw-device-icon"><i class="ri-smartphone-line"></i></div>
@@ -1754,16 +1766,7 @@
   function getActionData(cmd) {
     const t2 = cmd.type;
     const base = getBaseName(cmd.path) || getBaseName(cmd.from) || '';
-    const map = {
-      'kde-list':['ri-radar-line','list','Scanning devices'],'kde-refresh':['ri-refresh-line','list','Refreshing'],
-      'kde-ping':['ri-wifi-line','exec','Pinging'],'kde-ring':['ri-notification-3-line','exec','Ringing'],
-      sudo:['ri-shield-keyhole-line','exec','sudo'],
-      delete:['ri-delete-bin-line','exec',`Deleting <code>${escapeHtml(base)}</code>`],
-      move:['ri-drag-move-line','exec',`Moving <code>${escapeHtml(base)}</code>`],
-      copy:['ri-file-copy-2-line','exec',`Copying <code>${escapeHtml(base)}</code>`],
-      read:['ri-file-text-line','read',`Reading <code>${escapeHtml(base)}</code>`],
-      list:['ri-folder-line','list',`Listing <code>${escapeHtml(base || cmd.path || '')}</code>`],
-    };
+    const map = { 'kde-list':['ri-radar-line','list','Scanning devices'],'kde-refresh':['ri-refresh-line','list','Refreshing'],'kde-ping':['ri-wifi-line','exec','Pinging'],'kde-ring':['ri-notification-3-line','exec','Ringing'],sudo:['ri-shield-keyhole-line','exec','sudo'],delete:['ri-delete-bin-line','exec',`Deleting <code>${escapeHtml(base)}</code>`],move:['ri-drag-move-line','exec',`Moving <code>${escapeHtml(base)}</code>`],copy:['ri-file-copy-2-line','exec',`Copying <code>${escapeHtml(base)}</code>`],read:['ri-file-text-line','read',`Reading <code>${escapeHtml(base)}</code>`],list:['ri-folder-line','list',`Listing <code>${escapeHtml(base || cmd.path || '')}</code>`] };
     if (t2 === 'write') return { icon:'ri-file-add-line', iconClass:'write', label:`Writing <code>${escapeHtml(base)}</code>` };
     if (t2 === 'append') return { icon:'ri-file-edit-line', iconClass:'write', label:`Appending <code>${escapeHtml(base)}</code>` };
     if (map[t2]) return { icon: map[t2][0], iconClass: map[t2][1], label: map[t2][2] };
@@ -1854,13 +1857,7 @@
       }
       return bridgeCall('/exec', { command: cmd.command });
     }
-    const map = {
-      write: ['/write', { path: cmd.path, content: cmd.content }],
-      append: ['/append', { path: cmd.path, content: cmd.content }],
-      delete: ['/delete', { path: cmd.path }],
-      read: ['/read', { path: cmd.path }],
-      list: ['/list', { path: cmd.path }],
-    };
+    const map = { write: ['/write', { path: cmd.path, content: cmd.content }], append: ['/append', { path: cmd.path, content: cmd.content }], delete: ['/delete', { path: cmd.path }], read: ['/read', { path: cmd.path }], list: ['/list', { path: cmd.path }] };
     if (map[t2]) return bridgeCall(map[t2][0], map[t2][1]);
     return { ok: false, error: 'Unknown command' };
   }
@@ -2090,7 +2087,6 @@
     on('#signInFromSettingsBtn', 'click', () => { closeModal('settingsModal'); openModal('loginModal'); });
     on('#shareFromSettingsBtn', 'click', () => { closeModal('settingsModal'); setTimeout(() => openShareAd(), 100); });
 
-    // Settings tabs
     $$('.settings-tab').forEach((tab) => {
       tab.onclick = () => {
         const tabKey = tab.dataset.tab;
@@ -2098,14 +2094,10 @@
         $$('.settings-pane').forEach((p) => p.classList.toggle('active', p.dataset.pane === tabKey));
       };
     });
-    // Mode
     $$('#modeSegmented .seg-btn').forEach((b) => { b.onclick = () => { __prefs.mode = b.dataset.mode; savePrefs(); applyAppearanceFromPrefs(); applyPrefs(); }; });
-    // Accent
     $$('#accentSwatches .swatch').forEach((b) => { b.onclick = () => { __prefs.theme = b.dataset.theme; savePrefs(); applyAppearanceFromPrefs(); applyPrefs(); }; });
-    // Font size
     $$('#fontSizeSegmented .seg-btn').forEach((b) => { b.onclick = () => { __prefs.fontSize = b.dataset.fontsize; savePrefs(); applyPrefs(); }; });
 
-    // Generic toggles
     const bindToggle = (id, key, cb) => {
       const el = document.getElementById(id); if (!el) return;
       el.addEventListener('change', () => { __prefs[key] = el.checked; savePrefs(); applyPrefs(); if (cb) cb(el.checked); });
@@ -2123,12 +2115,10 @@
     bindToggle('translateCommentsToggle', 'translateComments');
     bindToggle('mcpEnableToggle', 'mcpEnabled');
 
-    // Persona
     on('#savePersonaBtn', 'click', () => { const inp2 = $('#personaInput'); if (!inp2) return; __prefs.persona = inp2.value.trim(); savePrefs(); const st = $('#personaStatus'); if (st) { st.textContent = t('toast.personaSaved'); st.className = 'persona-status ok'; setTimeout(() => { st.textContent = ''; }, 2000); } toast(t('toast.personaSaved')); });
     on('#clearPersonaBtn', 'click', () => { const inp2 = $('#personaInput'); if (inp2) inp2.value = ''; __prefs.persona = ''; savePrefs(); toast(t('toast.personaCleared')); });
     $$('.persona-preset').forEach((b) => { b.onclick = () => { const inp2 = $('#personaInput'); if (inp2) inp2.value = b.dataset.persona; toast(t('toast.presetApplied')); }; });
 
-    // MCP
     on('#mcpAddBtn', 'click', () => {
       const name = $('#mcpNameInput')?.value.trim();
       const url = $('#mcpUrlInput')?.value.trim();
@@ -2139,8 +2129,7 @@
       toast(t('toast.serverAdded') + ': ' + name);
     });
 
-    // Language — response AND ui
-    on('#languageSelect', 'change', (e) => { __prefs.responseLanguage = e.target.value; savePrefs(); const langName = e.target.options[e.target.selectedIndex].textContent; toast(t('toast.respLangChanged') + ': ' + langName); });
+    on('#languageSelect', 'change', (e) => { __prefs.responseLanguage = e.target.value; savePrefs(); const langName = e.target.options[e.target.selectedIndex] ? e.target.options[e.target.selectedIndex].textContent : ''; toast(t('toast.respLangChanged') + ': ' + langName); });
     on('#uiLanguageSelect', 'change', (e) => {
       __prefs.uiLanguage = e.target.value;
       savePrefs();
@@ -2148,21 +2137,17 @@
       toast(t('toast.langChanged'));
     });
 
-    // Notifications
     on('#testNotifyBtn', 'click', () => { playChime(); if ('Notification' in window && Notification.permission === 'granted') { try { new Notification('Mirox', { body: 'Notifications working', icon: '/logo.png' }); } catch {} } toast(t('toast.testSent')); });
 
-    // Data
     on('#exportChatsBtn', 'click', () => { const blob = new Blob([JSON.stringify(__conversations, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `mirox-chats-${Date.now()}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); toast(t('toast.chatsExported')); });
     on('#importChatsBtn', 'click', () => $('#importChatsInput')?.click());
     on('#importChatsInput', 'change', (e) => { const file = e.target.files?.[0]; if (!file) return; const r = new FileReader(); r.onload = () => { try { const arr = JSON.parse(String(r.result)); if (!Array.isArray(arr)) throw new Error(); __conversations = arr.concat(__conversations); saveChats(); renderHistory(); toast(`${t('toast.chatsImported')} ${arr.length}`); } catch { toast('Invalid file'); } }; r.readAsText(file); e.target.value = ''; });
     on('#clearChatsBtn', 'click', () => { if (!confirm('Clear all chats?')) return; __conversations = []; saveChats(); startNewChat(); toast(t('toast.chatsCleared')); });
     on('#clearAllDataBtn', 'click', () => { if (!confirm('Reset everything?')) return; [LS_KEY, APPEARANCE_KEY, SHARE_KEY, BONUS_KEY, PREFS_KEY, MCP_KEY, BRIDGE_KEY, BRIDGE_OPTS_KEY, KDE_DEVICE_KEY, TOKEN_KEY, GUEST_KEY].forEach((k) => safeRemove(k)); toast(t('toast.resetAll')); setTimeout(() => location.reload(), 900); });
 
-    // Dev
-    on('#copyDiagBtn', 'click', async () => { const diag = { ua: navigator.userAgent, url: location.href, ts: Date.now(), tier: __tier, guestId: getGuestId(), bonus: loadBonusRaw(), model: __model, mcpServers: __mcpServers.length, prefs: __prefs, bridge: { name: __bridge.name, port: __bridge.port, connected: __bridge.connected } }; try { await navigator.clipboard.writeText(JSON.stringify(diag, null, 2)); toast(t('toast.copied')); } catch {} });
+    on('#copyDiagBtn', 'click', async () => { const diag = { ua: navigator.userAgent, url: location.href, ts: Date.now(), tier: __tier, guestId: getGuestId(), bonus: loadBonusRaw(), model: __model, mcpServers: __mcpServers.length, prefs: __prefs }; try { await navigator.clipboard.writeText(JSON.stringify(diag, null, 2)); toast(t('toast.copied')); } catch {} });
     on('#resetGuestBtn', 'click', () => { if (!confirm('Reset guest ID?')) return; const newId = resetGuestId(); const lbl = $('#guestIdLabel'); if (lbl) lbl.textContent = newId; toast(t('toast.guestReset')); });
 
-    // Bridge toggles & actions
     on('#bwCloseBtn', 'click', closeBridgeWorkspace);
     on('#bwNewBtn', 'click', clearBridgeChat);
     on('#bwDownloadBtn', 'click', downloadBridgeClient);
@@ -2195,7 +2180,6 @@
     on('#bridgeSendBtn', 'click', handleBridgeSend);
     $$('.bw-quick').forEach((btn) => { btn.onclick = () => { const inp2 = $('#bridgeInput'); if (inp2) { inp2.value = btn.dataset.q; updateBridgeSendBtn(); } handleBridgeSend(); }; });
 
-    // Generic close
     document.addEventListener('click', (e) => {
       const cb = e.target.closest('[data-close]');
       if (cb) { closeModal(cb.dataset.close); return; }
@@ -2253,7 +2237,6 @@
     scrollToBottom(true);
   }
 
-  // Simple IDB
   const idb = (() => {
     let p = null;
     const open = () => p || (p = new Promise((res, rej) => {
@@ -2269,7 +2252,6 @@
   async function init() {
     try {
       loadPrefs();
-      // Init i18n before anything else renders
       applyTranslations();
       applyAppearanceFromPrefs(); applyPrefs();
       loadShareState(); loadChats(); loadMcp(); loadBridgeLS(); loadBridgeOpts(); loadKdeDevice();
