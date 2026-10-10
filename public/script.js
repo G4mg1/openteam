@@ -1,6 +1,7 @@
 (function () {
   'use strict';
 
+  /* ═══════════ Loader ═══════════ */
   let __loaderGone = false;
   function killLoader() {
     if (__loaderGone) return;
@@ -29,14 +30,15 @@
     { id: 'mirox-eclipse-2.0', label: 'Eclipse', tier: 'ultimate' },
   ];
   const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
-  const LS_KEY = 'miroxai_conversations_v28';
+  const LS_KEY = 'miroxai_conversations_v29';
   const TOKEN_KEY = 'mirox_token';
-  const APPEARANCE_KEY = 'miroxai_appearance_v28';
-  const BRIDGE_KEY = 'miroxai_bridge_v28';
+  const APPEARANCE_KEY = 'miroxai_appearance_v29';
+  const BRIDGE_KEY = 'miroxai_bridge_v29';
   const KDE_DEVICE_KEY = 'miroxai_kde_device_v1';
   const BRIDGE_OPTS_KEY = 'miroxai_bridge_opts_v1';
   const PASTE_ATTACH_THRESHOLD = 1024;
-  const NET_TIMEOUT_MS = 9000;
+  const NET_TIMEOUT_MS = 15000;
+  const STREAM_TIMEOUT_MS = 120000;
 
   const MAX_BRIDGE_QUESTIONS = 6;
   const MAX_BRIDGE_ITER = 200;
@@ -47,7 +49,7 @@
 
   let __config = null, __user = null, __tier = 'free', __model = 'mirox-luna-1.2';
   let currentConversationId = null, isReplying = false;
-  let continuationBusy = false, streamRenderPending = false, streamRenderAt = 0, userIsAtBottom = true;
+  let continuationBusy = false, streamRenderAt = 0, userIsAtBottom = true;
   const FREE_CONVO_TOKEN_LIMIT = 10000;
   let autoScrollEnabled = true;
   let __conversations = [], pendingFiles = [], activeStreamController = null, __usage = null;
@@ -70,6 +72,14 @@
   function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
   function setToken(t) { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch {} }
 
+  /* ═══════════ Auth-aware fetch helpers ═══════════ */
+  function authHeaders(extra) {
+    const h = { 'Content-Type': 'application/json', ...(extra || {}) };
+    const t = getToken();
+    if (t) h.Authorization = 'Bearer ' + t;
+    return h;
+  }
+
   async function netFetch(url, opts = {}, ms = NET_TIMEOUT_MS) {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), ms);
@@ -81,8 +91,7 @@
   }
   async function jsonOr(url, opts = {}, fallback = null, ms = NET_TIMEOUT_MS) {
     try {
-      const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
-      const t = getToken(); if (t) headers.Authorization = 'Bearer ' + t;
+      const headers = authHeaders(opts.headers);
       const r = await netFetch(url, { ...opts, headers }, ms);
       const ct = (r.headers.get('content-type') || '').toLowerCase();
       if (!ct.includes('application/json')) return fallback;
@@ -90,6 +99,7 @@
     } catch { return fallback; }
   }
 
+  /* ═══════════ IndexedDB ═══════════ */
   const idb = (() => {
     let p = null;
     const open = () => p || (p = new Promise((res, rej) => {
@@ -113,7 +123,7 @@
     r.setProperty('--look-y', y.toFixed(1) + 'px');
   }, { passive: true });
 
-  /* ═══════════ Blob mascot — 4-lobed cloud with two eye streaks ═══════════ */
+  /* ═══════════ Blob mascot ═══════════ */
   const MOODS = ['idle','happy','love','wink','sad','surprised','sleepy','thinking','reasoning','searching','reading','learning','coding','celebrate','error','listening','cool','confused','focus'];
 
   const BLOB_PATH = 'M100 20 C126 20 144 32 154 54 C178 56 194 76 194 102 C194 128 178 148 154 152 C144 174 126 186 100 186 C74 186 56 174 46 152 C22 148 6 128 6 102 C6 76 22 56 46 54 C56 32 74 20 100 20 Z';
@@ -206,7 +216,7 @@
     return steps;
   }
 
-  /* ═══════════ Tool registry ═══════════ */
+  /* ═══════════ Tools ═══════════ */
   const __tools = new Map();
   window.miroxRegisterTool = function(name, def) {
     if (!name || !def || typeof def.run !== 'function') return false;
@@ -229,7 +239,6 @@
   window.miroxRegisterTool('extract_zip', {
     label: 'Extract ZIP archive',
     icon: 'ri-file-zip-line',
-    description: 'Extracts files from a zip attachment.',
     async run(input) {
       const dataUrl = input?.dataUrl || input?.file?.dataUrl;
       const filename = input?.filename || input?.file?.name || 'archive.zip';
@@ -252,7 +261,6 @@
   window.miroxRegisterTool('execute_python', {
     label: 'Execute Python code',
     icon: 'ri-code-box-line',
-    description: 'Runs Python in a sandbox (Pyodide).',
     async run(input) {
       const code = input?.code || '';
       if (!code) return { ok: false, error: 'No code.' };
@@ -279,12 +287,9 @@
   window.miroxRegisterTool('list_attachments', {
     label: 'List attachments',
     icon: 'ri-attachment-2',
-    async run() {
-      return { ok: true, files: pendingFiles.map((f) => ({ name: f.name, size: f.size, type: f.type })) };
-    },
+    async run() { return { ok: true, files: pendingFiles.map((f) => ({ name: f.name, size: f.size, type: f.type })) }; },
   });
 
-  /* ═══════════ Tool icon mapping ═══════════ */
   function iconForTool(name) {
     const t = __tools.get(name);
     if (t && t.icon) return t.icon;
@@ -298,9 +303,6 @@
     if (/list|ls|dir|folder/.test(n)) return 'ri-folder-open-line';
     if (/search|find|grep|query/.test(n)) return 'ri-search-line';
     if (/browse|http|fetch|web|url/.test(n)) return 'ri-global-line';
-    if (/image|img|photo/.test(n)) return 'ri-image-line';
-    if (/move|copy|cp|mv/.test(n)) return 'ri-drag-move-line';
-    if (/delete|rm/.test(n)) return 'ri-delete-bin-line';
     return 'ri-tools-line';
   }
   function humanToolLabel(name) {
@@ -309,7 +311,7 @@
     return String(name || 'tool').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   }
 
-  /* ═══════════ Thinking panel — flat terminal style, no bubble ═══════════ */
+  /* ═══════════ Thinking panel ═══════════ */
   function createThinkPanel(label, steps, headline) {
     const el = document.createElement('div');
     el.className = 'think-wrap';
@@ -332,8 +334,7 @@
     const summaryEl = el.querySelector('.think-tool-summary');
     const headIcon = el.querySelector('.think-head-icon i');
     const t0 = performance.now();
-    let done = false;
-    let toolCount = 0;
+    let done = false, toolCount = 0;
 
     const timer = setInterval(() => {
       if (done) { clearInterval(timer); return; }
@@ -341,13 +342,9 @@
     }, 100);
 
     function updateSummary() {
-      if (toolCount > 0) {
-        summaryEl.hidden = false;
-        summaryEl.textContent = `Used ${toolCount} tool${toolCount === 1 ? '' : 's'} · `;
-      } else summaryEl.hidden = true;
+      if (toolCount > 0) { summaryEl.hidden = false; summaryEl.textContent = `Used ${toolCount} tool${toolCount === 1 ? '' : 's'} · `; }
+      else summaryEl.hidden = true;
     }
-
-    // Plain narration line — no bubble, just text with small bullet
     function addNarration(text) {
       if (!text) return;
       const p = document.createElement('div');
@@ -355,12 +352,9 @@
       p.innerHTML = `<span class="think-narration-dot"></span><span>${escapeHtml(text)}</span>`;
       body.appendChild(p);
     }
-
-    // Tool row — icon + name + status + chevron, terminal style
     function addTool(name, opts) {
       const o = opts || {};
-      toolCount++;
-      updateSummary();
+      toolCount++; updateSummary();
       const row = document.createElement('div');
       row.className = 'think-tool';
       const lbl = o.label || humanToolLabel(name);
@@ -375,7 +369,6 @@
         <div class="think-tool-body"></div>`;
       body.appendChild(row);
       row.querySelector('.think-tool-head').addEventListener('click', () => row.classList.toggle('open'));
-
       return {
         row,
         setStatus(state) {
@@ -401,7 +394,6 @@
         },
       };
     }
-
     if (Array.isArray(steps)) steps.forEach((s) => addNarration(s));
 
     el.querySelector('[data-think="min"]').addEventListener('click', (e) => { e.stopPropagation(); el.classList.toggle('collapsed'); });
@@ -490,7 +482,6 @@
       };
     });
   }
-
   function makeSnippet(text, q) {
     const s = String(text || '');
     const i = s.toLowerCase().indexOf(q);
@@ -681,6 +672,7 @@
     sendToAPI(text, files, searchFlag);
   }
 
+  /* ═══════════ MAIN API CALL — now with auth header and error surfacing ═══════════ */
   async function sendToAPI(text, files, forceSearch, continuation = null) {
     const isContinuation = !!(continuation && continuation.continuation);
     const convoAtStart = currentConvo();
@@ -737,12 +729,13 @@
       renderTimer = setTimeout(renderStreamText, Math.max(50, 120 - (now - streamRenderAt)));
       streamRenderAt = now;
     };
-    const streamTimeout = setTimeout(() => { try { activeStreamController?.abort(); } catch {} }, 90000);
+    const streamTimeout = setTimeout(() => { try { activeStreamController?.abort(); } catch {} }, STREAM_TIMEOUT_MS);
 
     try {
+      /* FIX: include Authorization header so the backend accepts the request */
       const res = await fetch('/v1/chat/completions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         credentials: 'same-origin',
         body: JSON.stringify({
           message: text, history, model, stream: true, files, search: !!forceSearch,
@@ -751,11 +744,22 @@
         }),
         signal: activeStreamController.signal,
       });
-      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error?.message || `HTTP ${res.status}`); }
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`;
+        try { const d = await res.json(); detail = d.error?.message || d.error || d.message || detail; } catch {}
+        if (res.status === 401 || res.status === 403) throw new Error('Not signed in. Please sign in and try again.');
+        if (res.status === 404) throw new Error('Backend endpoint not found (/v1/chat/completions).');
+        if (res.status === 429) throw new Error('Rate limited. Wait a moment and try again.');
+        if (res.status >= 500) throw new Error(`Server error (${res.status}). Try again.`);
+        throw new Error(detail);
+      }
+      if (!res.body) throw new Error('Empty response body from server.');
+
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let buf = '', searchStepAdded = false;
       let currentToolHandle = null;
+      let gotAnyData = false;
 
       const ensureBubble = () => {
         if (!bubble) {
@@ -778,6 +782,7 @@
           if (!pl || pl === '[DONE]') continue;
           let o;
           try { o = JSON.parse(pl); } catch { continue; }
+          gotAnyData = true;
 
           if (o.tool) {
             const name = typeof o.tool === 'string' ? o.tool : (o.tool.name || 'tool');
@@ -839,7 +844,7 @@
             }
             scheduleRender();
           }
-          if (o.error) throw new Error(o.error.message || 'Stream error');
+          if (o.error) throw new Error(o.error.message || o.error || 'Stream error');
         }
         if (limitHit) break;
       }
@@ -847,6 +852,12 @@
       panel.finish();
       if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
       if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); wireCopyButtons(bubbleText); }
+      if (!gotAnyData && !full) {
+        panel.fail('Server returned no data.');
+        if (!bubble) { bubble = document.createElement('div'); bubble.className = 'bubble'; msgEl.insertBefore(bubble, timeEl); }
+        bubble.textContent = 'The server returned an empty response. Check that the backend is running.';
+        return;
+      }
       wireMessageActions(msgEl);
 
       let imageKey = null;
@@ -872,7 +883,8 @@
     } catch (e) {
       clearTimeout(streamTimeout);
       const aborted = e.name === 'AbortError';
-      panel.fail(aborted ? 'Stopped (timed out or by you).' : (e.message || 'Something went wrong.'));
+      const msg = aborted ? 'Stopped (timed out or by you).' : (e.message || 'Something went wrong.');
+      panel.fail(msg);
       if (!bubble) { bubble = document.createElement('div'); bubble.className = 'bubble'; msgEl.insertBefore(bubble, timeEl); }
       if (full) {
         if (!bubbleText) { bubbleText = document.createElement('div'); bubbleText.className = 'bubble-text'; bubble.prepend(bubbleText); }
@@ -881,7 +893,10 @@
         if (isContinuation && continuation.messageObj) savedMsg = continuation.messageObj;
         if (!savedMsg && convo) { savedMsg = { id: aiMsgId, role: 'assistant', content: full, ts: Date.now() }; convo.messages.push(savedMsg); }
         if (savedMsg) { savedMsg.content = full; saveChats(); attachContinueButton(msgEl, bubble, savedMsg); }
-      } else bubble.textContent = aborted ? '(stopped)' : 'Error: ' + e.message;
+      } else {
+        bubble.textContent = aborted ? '(stopped)' : 'Error: ' + msg;
+      }
+      toast(msg, 5000);
       updateTokenUsage();
     } finally {
       clearTimeout(streamTimeout);
@@ -903,7 +918,6 @@
 
   /* ═══════════ Files ═══════════ */
   function hasAttachment(name, size) { return pendingFiles.some((f) => f.name === name && f.size === size); }
-
   function readImageAsResizedDataUrl(file) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -1164,27 +1178,37 @@
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line spin"></i> Generating…'; }
     if (result) result.innerHTML = '<div class="studio-empty"><i class="ri-loader-4-line spin"></i> Painting your image…</div>';
     try {
-      const res = await netFetch('/v1/images/generations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt }) }, 70000);
+      /* FIX: auth header included */
+      const res = await netFetch('/v1/images/generations', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ prompt }),
+      }, 90000);
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok && data.image) {
         if (result) { result.innerHTML = `<img src="${data.image}" alt="${escapeHtml(prompt)}">`; result.querySelector('img').onclick = () => openImageViewer(data.image); }
         refreshUsage(); renderImageHistory(); renderSidebarImageHistory();
-      } else if (result) result.innerHTML = `<div class="studio-error">Failed: ${escapeHtml(data.error?.message || data.error || 'Unknown')}</div>`;
+      } else {
+        const errMsg = data.error?.message || data.error || data.message || `HTTP ${res.status}`;
+        if (result) result.innerHTML = `<div class="studio-error">Failed: ${escapeHtml(errMsg)}</div>`;
+        toast('Image generation failed: ' + errMsg, 4000);
+      }
     } catch (e) {
-      if (result) result.innerHTML = `<div class="studio-error">Error: ${escapeHtml(e.name === 'AbortError' ? 'Timed out' : e.message)}</div>`;
+      const msg = e.name === 'AbortError' ? 'Timed out — server took too long.' : e.message;
+      if (result) result.innerHTML = `<div class="studio-error">Error: ${escapeHtml(msg)}</div>`;
+      toast(msg, 4000);
     } finally {
       if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-image-add-line"></i> Generate'; }
     }
   }
 
-  /* ═══════════ Bridge (unchanged core) ═══════════ */
+  /* ═══════════ Bridge ═══════════ */
   function loadBridgeLS() { const b = safeGet(BRIDGE_KEY, {}); __bridge = { ...__bridge, ...b, connected: false, baseUrl: null, env: null }; }
   function saveBridgeLS() { safeSet(BRIDGE_KEY, { name: __bridge.name, model: __bridge.model, port: __bridge.port }); }
   function loadBridgeOpts() { const o = safeGet(BRIDGE_OPTS_KEY, {}); if (typeof o.autoRun === 'boolean') __bridgeAutoRun = o.autoRun; if (typeof o.showCode === 'boolean') __bridgeShowCode = o.showCode; }
   function saveBridgeOpts() { safeSet(BRIDGE_OPTS_KEY, { autoRun: __bridgeAutoRun, showCode: __bridgeShowCode }); }
   function loadKdeDevice() { const v = safeGet(KDE_DEVICE_KEY, null); if (v && v.id && v.name) __kdeCurrentDevice = v; }
   function saveKdeDevice() { if (__kdeCurrentDevice) safeSet(KDE_DEVICE_KEY, __kdeCurrentDevice); else { try { localStorage.removeItem(KDE_DEVICE_KEY); } catch {} } }
-
   function renderBridgeStatus() {
     [['#bridgeStatus'], ['#bwStatusPill'], ['#bwStatusBox']].forEach(([sel]) => {
       const wrap = document.querySelector(sel); if (!wrap) return;
@@ -1334,7 +1358,6 @@
   }
   function scrollBridgeBottom() { const c = $('#bridgeMessages'); if (c) c.scrollTop = c.scrollHeight; }
   function renderBuildStatus() { const s = $('#bwBuildStatus'); if (!s) return; s.textContent = __lastBuildFolder || 'No project yet'; s.style.color = __lastBuildFolder ? 'var(--success)' : ''; }
-
   function addBridgeUserMsg(text) {
     const container = $('#bridgeMessages'); if (!container) return;
     $('#bridgeEmpty')?.remove();
@@ -1417,43 +1440,19 @@
     const map = {
       'kde-list': ['ri-radar-line', 'list', 'Scanning devices'], 'kde-refresh': ['ri-refresh-line', 'list', 'Refreshing'],
       'kde-ping': ['ri-wifi-line', 'exec', 'Pinging device'], 'kde-ring': ['ri-notification-3-line', 'exec', 'Ringing device'],
-      'kde-share-text': ['ri-file-text-line', 'write', 'Sharing text'], 'kde-sms': ['ri-message-3-line', 'write', 'SMS'],
-      'kde-lock': ['ri-lock-line', 'exec', 'Locking device'], 'kde-notifications': ['ri-notification-badge-line', 'read', 'Notifications'],
-      'kde-plugins': ['ri-puzzle-line', 'list', 'Plugins'], 'kde-photo': ['ri-camera-lens-line', 'write', 'Photo'],
-      'kde-myid': ['ri-fingerprint-line', 'read', 'Own ID'],
       sudo: ['ri-shield-keyhole-line', 'exec', 'sudo'],
       delete: ['ri-delete-bin-line', 'exec', `Deleting <code>${escapeHtml(base)}</code>`],
       move: ['ri-drag-move-line', 'exec', `Moving <code>${escapeHtml(base)}</code>`],
       copy: ['ri-file-copy-2-line', 'exec', `Copying <code>${escapeHtml(base)}</code>`],
       read: ['ri-file-text-line', 'read', `Reading <code>${escapeHtml(base)}</code>`],
       list: ['ri-folder-line', 'list', `Listing <code>${escapeHtml(base || cmd.path || '')}</code>`],
-      sysinfo: ['ri-cpu-line', 'list', 'System info'], syscheck: ['ri-heart-pulse-line', 'list', 'Health check'],
-      processes: ['ri-list-check-2', 'list', 'Processes'], email: ['ri-mail-send-line', 'write', 'Email'],
-      http: ['ri-global-line', 'exec', 'HTTP'], clipboard: ['ri-clipboard-line', 'read', 'Clipboard'],
-      screenshot: ['ri-screenshot-2-line', 'list', 'Screenshot'], pkgs: ['ri-archive-line', 'list', 'Packages'],
     };
-    if (t === 'kde-share') return { icon: 'ri-send-plane-fill', iconClass: 'write', label: `Sending <code>${escapeHtml(getBaseName(cmd.path) || cmd.path || '')}</code>` };
     if (t === 'write') return { icon: 'ri-file-add-line', iconClass: 'write', label: `Writing <code>${escapeHtml(base)}</code>` };
     if (t === 'append') return { icon: 'ri-file-edit-line', iconClass: 'write', label: `Appending <code>${escapeHtml(base)}</code>` };
-    if (t === 'git') return { icon: 'ri-git-branch-line', iconClass: 'exec', label: `Git ${escapeHtml(cmd.action || '')}` };
     if (map[t]) return { icon: map[t][0], iconClass: map[t][1], label: map[t][2] };
-    if (t === 'exec') {
-      const c = cmd.command || '';
-      let friendly = 'Running command';
-      if (/^npm\s+(install|i)/i.test(c)) friendly = 'Installing packages';
-      else if (/^pip\s+install/i.test(c)) friendly = 'Installing Python packages';
-      else if (/^mkdir/i.test(c)) friendly = 'Creating folder';
-      else if (/^(ls|dir)\b/i.test(c)) friendly = 'Listing files';
-      else if (/^(cat|type)\b/i.test(c)) friendly = 'Reading file';
-      else if (/^(python|python3)\s/i.test(c)) friendly = 'Running Python';
-      else if (/^lua\s/i.test(c)) friendly = 'Running Lua';
-      else if (/^node\s/i.test(c)) friendly = 'Running Node';
-      else if (/^git\s/i.test(c)) friendly = 'Git operation';
-      return { icon: 'ri-terminal-box-line', iconClass: 'exec', label: friendly };
-    }
+    if (t === 'exec') return { icon: 'ri-terminal-box-line', iconClass: 'exec', label: 'Running command' };
     return { icon: 'ri-terminal-line', iconClass: '', label: 'Working' };
   }
-
   function setProgressText(text) { const el = $('#bwProgressText'); if (el && text) el.textContent = text; }
   function updateBridgeProgress(pct, text) {
     const newPct = Math.max(0, Math.min(100, Math.round(pct)));
@@ -1464,41 +1463,17 @@
     if (pctEl) { pctEl.textContent = bridgeProgress + '%'; pctEl.classList.toggle('done', bridgeProgress >= 100); }
     if (text) setProgressText(text);
   }
-
   function extractBridgeCommands(text) {
     const cmds = [];
     const add = (type, mm, extra) => cmds.push(Object.assign({ type, index: mm.index }, extra));
     const rules = [
-      [/<bridge-kde-refresh\s*\/>/g, 'kde-refresh', () => ({})],
-      [/<bridge-kde-list(?:\s+available="([^"]*)")?\s*\/>/g, 'kde-list', (m) => ({ available: m[1] === 'true' })],
-      [/<bridge-kde-ping\s+device="([^"]+)"(?:\s*\/>|>([\s\S]*?)<\/bridge-kde-ping>)/g, 'kde-ping', (m) => ({ device: m[1], message: (m[2] || '').trim() })],
-      [/<bridge-kde-ring\s+device="([^"]+)"\s*\/>/g, 'kde-ring', (m) => ({ device: m[1] })],
-      [/<bridge-kde-share\s+device="([^"]+)"\s+path="([^"]+)"\s*\/>/g, 'kde-share', (m) => ({ device: m[1], path: m[2] })],
-      [/<bridge-kde-share-text\s+device="([^"]+)">([\s\S]*?)<\/bridge-kde-share-text>/g, 'kde-share-text', (m) => ({ device: m[1], text: m[2] })],
-      [/<bridge-kde-sms\s+device="([^"]+)"\s+number="([^"]+)">([\s\S]*?)<\/bridge-kde-sms>/g, 'kde-sms', (m) => ({ device: m[1], number: m[2], message: m[3] })],
-      [/<bridge-kde-lock\s+device="([^"]+)"\s*\/>/g, 'kde-lock', (m) => ({ device: m[1] })],
-      [/<bridge-kde-notifications\s+device="([^"]+)"\s*\/>/g, 'kde-notifications', (m) => ({ device: m[1] })],
-      [/<bridge-kde-plugins\s+device="([^"]+)"\s*\/>/g, 'kde-plugins', (m) => ({ device: m[1] })],
-      [/<bridge-kde-photo\s+device="([^"]+)"(?:\s+path="([^"]*)")?\s*\/>/g, 'kde-photo', (m) => ({ device: m[1], path: m[2] || '' })],
-      [/<bridge-kde-my-id\s*\/>/g, 'kde-myid', () => ({})],
       [/<bridge-sudo>([\s\S]*?)<\/bridge-sudo>/g, 'sudo', (m) => ({ command: m[1].trim() })],
       [/<bridge-exec>([\s\S]*?)<\/bridge-exec>/g, 'exec', (m) => ({ command: m[1].trim() })],
       [/<bridge-write\s+path="([^"]+)">([\s\S]*?)<\/bridge-write>/g, 'write', (m) => ({ path: m[1], content: m[2] })],
       [/<bridge-append\s+path="([^"]+)">([\s\S]*?)<\/bridge-append>/g, 'append', (m) => ({ path: m[1], content: m[2] })],
       [/<bridge-delete\s+path="([^"]+)"\s*\/>/g, 'delete', (m) => ({ path: m[1] })],
-      [/<bridge-move\s+from="([^"]+)"\s+to="([^"]+)"\s*\/>/g, 'move', (m) => ({ from: m[1], to: m[2] })],
-      [/<bridge-copy\s+from="([^"]+)"\s+to="([^"]+)"\s*\/>/g, 'copy', (m) => ({ from: m[1], to: m[2] })],
       [/<bridge-read\s+path="([^"]+)"\s*\/>/g, 'read', (m) => ({ path: m[1] })],
       [/<bridge-list\s+path="([^"]+)"\s*\/>/g, 'list', (m) => ({ path: m[1] })],
-      [/<bridge-sysinfo\s*\/>/g, 'sysinfo', () => ({})],
-      [/<bridge-syscheck\s*\/>/g, 'syscheck', () => ({})],
-      [/<bridge-processes\s*\/>/g, 'processes', () => ({})],
-      [/<bridge-email\s+to="([^"]+)"\s+subject="([^"]*)">([\s\S]*?)<\/bridge-email>/g, 'email', (m) => ({ to: m[1], subject: m[2], body: m[3] })],
-      [/<bridge-http\s+url="([^"]+)"(?:\s+method="([^"]*)")?(?:\s*\/>|>([\s\S]*?)<\/bridge-http>)/g, 'http', (m) => ({ url: m[1], method: m[2] || 'GET', body: m[3] || '' })],
-      [/<bridge-clipboard\s+action="(get|set)"(?:\s*>([\s\S]*?)<\/bridge-clipboard>|\s*\/>)/g, 'clipboard', (m) => ({ action: m[1], content: m[2] || '' })],
-      [/<bridge-screenshot(?:\s+path="([^"]*)")?\s*\/>/g, 'screenshot', (m) => ({ path: m[1] || '' })],
-      [/<bridge-git\s+action="([^"]+)"(?:\s+cwd="([^"]*)")?(?:\s+message="([^"]*)")?\s*\/>/g, 'git', (m) => ({ action: m[1], cwd: m[2] || '', message: m[3] || '' })],
-      [/<bridge-pkgs\s+type="([^"]+)"(?:\s+cwd="([^"]*)")?\s*\/>/g, 'pkgs', (m) => ({ pkgType: m[1], cwd: m[2] || '' })],
     ];
     for (const [re, type, fn] of rules) { re.lastIndex = 0; let m; while ((m = re.exec(text)) !== null) add(type, m, fn(m)); }
     cmds.sort((a, b) => a.index - b.index);
@@ -1513,27 +1488,6 @@
     const matches = [...String(text || '').matchAll(/<bridge-(?:write|append)\s+path="([^"]+)"/g)];
     return matches.length ? matches[matches.length - 1][1] : null;
   }
-  function extractBridgeDesigns(text) {
-    const m = /<bridge-designs>([\s\S]*?)<\/bridge-designs>/.exec(text);
-    if (!m) return null;
-    const designs = [];
-    const re = /<design\s+id="(\d+)"(?:\s+name="([^"]*)")?\s*>([\s\S]*?)<\/design>/g;
-    let mm;
-    while ((mm = re.exec(m[1])) !== null) designs.push({ id: parseInt(mm[1], 10), name: (mm[2] || ('Design ' + mm[1])).trim(), html: mm[3].trim() });
-    return designs.length ? designs : null;
-  }
-  function extractBridgeQuestions(text) {
-    const qs = [];
-    const re = /<bridge-ask>([\s\S]*?)<\/bridge-ask>/g;
-    let m;
-    while ((m = re.exec(text)) !== null) {
-      const lines = m[1].trim().split('\n').map((l) => l.trim()).filter(Boolean);
-      if (!lines.length) continue;
-      const options = lines.slice(1).filter((l) => /^[-*]/.test(l)).map((l) => l.replace(/^[-*]\s*/, '').trim());
-      qs.push({ question: lines[0], options });
-    }
-    return qs;
-  }
   function looksLikeFreeQuestion(text) {
     const t = String(text || '').trim();
     if (!t) return false;
@@ -1541,20 +1495,11 @@
     const stripped = t.replace(/\bDONE\b/i, '').trim();
     return !!stripped && /\?\s*$/.test(stripped) && !/<bridge-/.test(stripped);
   }
-  function isEnvQuestion(question) {
-    const q = String(question || '').toLowerCase();
-    if (!q) return false;
-    const words = ['bridge environment', 'environment block', 'allowed dir', 'allowed path', 'which directory', 'what directory', 'which path', 'what path'];
-    if (words.some((w) => q.includes(w))) return true;
-    return q.includes('paste') && (q.includes('environment') || q.includes('bridge'));
-  }
   function buildEnvBlockString() {
     const env = __bridge.env || {};
     const allowed = Array.isArray(env.allowed_dirs) && env.allowed_dirs.length ? env.allowed_dirs.join(', ') : '(none)';
     const home = env.home || '(unknown)';
-    const cwd = env.cwd || home;
-    const user = env.user || (home ? home.split('/').filter(Boolean).pop() : '(unknown)');
-    return ['[Bridge environment]', `user=${user}`, `home=${home}`, `cwd=${cwd}`, `platform=${env.platform || '(unknown)'}`, `allowed_dirs=${allowed}`, `kdeConnect=${env.kde_connect_available ? 'true' : 'false'}`, __kdeCurrentDevice ? `currentKdeDevice=${__kdeCurrentDevice.id} name="${__kdeCurrentDevice.name}"` : '', '', `PATH RULE: every path must be absolute and start with ${home}/.`, 'CRITICAL:', '- Never paste code, CSS, HTML, or JS into visible reply. All file content goes inside <bridge-write> or <bridge-append> tags.', '- Always close your tags.', '- For long files, write the first chunk with <bridge-write>, then add the rest with <bridge-append>.'].filter(Boolean).join('\n');
+    return ['[Bridge environment]', `home=${home}`, `cwd=${env.cwd || home}`, `platform=${env.platform || '(unknown)'}`, `allowed_dirs=${allowed}`].join('\n');
   }
   function absBridgePath(p, home) {
     let s = String(p || '').trim().replace(/\\/g, '/');
@@ -1565,522 +1510,136 @@
     if (!s.startsWith('/')) return home + '/' + s;
     return s;
   }
-
-  async function kdeListDevices(availableOnly = false) {
-    if (!__bridge.connected) throw new Error('Bridge not connected');
-    const r = await bridgeCall('/kde/list', { available: !!availableOnly });
-    if (r && r.devices) { __kdeDevices = r.devices; __kdeAvailable = !!r.installed; renderKdeStatus(); }
-    return r;
-  }
-  function askDeviceChoice(devices) {
-    return new Promise((resolve) => {
-      const modal = $('#kdeModal'), grid = $('#kdeGrid');
-      if (!modal || !grid) { resolve(null); return; }
-      __kdeResolver = resolve;
-      grid.innerHTML = '';
-      if (!devices || !devices.length) grid.innerHTML = '<div class="kde-empty">No devices found.</div>';
-      else devices.forEach((d, i) => {
-        const card = document.createElement('div');
-        card.className = 'kde-device-card' + (d.reachable ? ' reachable' : '');
-        card.innerHTML = `
-          <div class="kde-device-card-head">
-            <div class="kde-device-card-icon"><i class="ri-smartphone-line"></i></div>
-            <div class="kde-device-card-meta"><div class="kde-device-card-name">${escapeHtml(d.name)}</div><div class="kde-device-card-id">${escapeHtml(d.id)}</div></div>
-            <div class="kde-device-card-num">${i + 1}</div>
-          </div>
-          <div class="kde-device-card-status ${d.reachable ? 'ok' : 'warn'}">${d.reachable ? '● reachable' : '○ not reachable'}</div>
-          <button class="planner-choose-btn" type="button"><i class="ri-check-line"></i> Choose</button>`;
-        grid.appendChild(card);
-        card.querySelector('.planner-choose-btn').addEventListener('click', () => {
-          __kdeCurrentDevice = { id: d.id, name: d.name };
-          saveKdeDevice(); renderKdeDeviceList(); closeKdeModal();
-          resolve({ id: d.id, name: d.name });
-        });
-      });
-      modal.classList.add('open');
-    });
-  }
-  function closeKdeModal() { $('#kdeModal')?.classList.remove('open'); }
-  function kdeSkip() { closeKdeModal(); if (__kdeResolver) { __kdeResolver(null); __kdeResolver = null; } }
-  async function refreshKdeDevices(showModal) {
-    if (!__bridge.connected) return null;
-    try { await bridgeCall('/kde/refresh', {}); } catch {}
-    let r;
-    try { r = await kdeListDevices(false); } catch { return null; }
-    if (!r || !r.ok) return null;
-    const devices = r.devices || [];
-    if (!showModal) { renderKdeDeviceList(); return devices; }
-    if (!devices.length) { await askDeviceChoice([]); return []; }
-    const reachable = devices.filter((d) => d.reachable);
-    if (reachable.length === 1) { __kdeCurrentDevice = { id: reachable[0].id, name: reachable[0].name }; saveKdeDevice(); renderKdeDeviceList(); toast(`Using ${reachable[0].name}`); return devices; }
-    const pick = await askDeviceChoice(devices);
-    return pick ? devices : null;
+  function sanitizeForChat(text) {
+    if (!text) return '';
+    let t = String(text);
+    t = t.replace(/<bridge-[a-z][a-z0-9-]*[^>]*>[\s\S]*?<\/bridge-[a-z][a-z0-9-]*>/g, '');
+    t = t.replace(/<bridge-[a-z][a-z0-9-]*\s+[^>]*\/>/g, '');
+    t = t.replace(/<\/?bridge-[a-z][a-z0-9-]*[^>]*>/g, '');
+    t = t.replace(/\bDONE\b/g, '');
+    return t.replace(/\n{3,}/g, '\n\n').trim();
   }
 
-  async function executeBridgeCommand(cmd) {
-    const home = __bridge.env?.home || '';
-    if (cmd.path) cmd.path = absBridgePath(cmd.path, home);
-    if (cmd.from) cmd.from = absBridgePath(cmd.from, home);
-    if (cmd.to) cmd.to = absBridgePath(cmd.to, home);
-    const t = cmd.type;
-    if (t.startsWith('kde-')) {
-      if (!__kdeAvailable) return { ok: false, error: 'kdeconnect-cli not installed', install_hint: 'sudo apt install kdeconnect' };
-      let deviceId = cmd.device || (__kdeCurrentDevice ? __kdeCurrentDevice.id : '');
-      if (!deviceId && !['kde-refresh', 'kde-list', 'kde-myid'].includes(t)) {
-        const devices = await kdeListDevices(false);
-        if (devices && devices.devices && devices.devices.length) { const pick = await askDeviceChoice(devices.devices); if (pick) deviceId = pick.id; }
-        if (!deviceId) return { ok: false, error: 'no device chosen', cancelled: true };
-      }
-      try {
-        if (t === 'kde-refresh') return await bridgeCall('/kde/refresh', {});
-        if (t === 'kde-list') { await bridgeCall('/kde/refresh', {}); const r = await kdeListDevices(!!cmd.available); if (r && r.devices && r.devices.length && !__kdeCurrentDevice) { const pick = await askDeviceChoice(r.devices); if (pick) return { ok: true, devices: r.devices, chosen: pick }; } return { ok: true, devices: r?.devices || [] }; }
-        if (t === 'kde-myid') return await bridgeCall('/kde/my-id', {});
-        if (t === 'kde-ping') return await bridgeCall('/kde/ping', { device: deviceId, message: cmd.message || '' });
-        if (t === 'kde-ring') return await bridgeCall('/kde/ring', { device: deviceId });
-        if (t === 'kde-share') return await bridgeCall('/kde/share', { device: deviceId, path: cmd.path });
-        if (t === 'kde-share-text') return await bridgeCall('/kde/share-text', { device: deviceId, text: cmd.text });
-        if (t === 'kde-sms') return await bridgeCall('/kde/sms', { device: deviceId, number: cmd.number, message: cmd.message });
-        if (t === 'kde-lock') return await bridgeCall('/kde/lock', { device: deviceId });
-        if (t === 'kde-notifications') return await bridgeCall('/kde/notifications', { device: deviceId });
-        if (t === 'kde-plugins') return await bridgeCall('/kde/plugins', { device: deviceId });
-        if (t === 'kde-photo') return await bridgeCall('/kde/photo', { device: deviceId, path: cmd.path });
-      } catch (e) { return { ok: false, error: e.message }; }
-      return { ok: false, error: 'unknown kde command' };
-    }
-    if (t === 'sudo') {
-      addBridgeSystemMsg(`Elevating for: ${cmd.command}`);
-      const sudo = await askSudo(cmd.command);
-      if (!sudo || !sudo.password) return { ok: false, error: 'cancelled', cancelled: true };
-      try { return await bridgeCall('/sudo-exec', { command: cmd.command, password: sudo.password, timeout: 120 }); }
-      catch (e) { return { ok: false, error: 'sudo failed: ' + e.message }; }
-    }
-    if (t === 'exec') {
-      const rawCmd = String(cmd.command || '').trim();
-      if (/(?:^|[\s&|;])sudo\b/.test(rawCmd) && !__sudoPassword) {
-        const sudo = await askSudo(rawCmd);
-        if (!sudo || !sudo.password) return { ok: false, error: 'cancelled', cancelled: true };
-        return bridgeCall('/sudo-exec', { command: rawCmd, password: sudo.password, timeout: 120 });
-      }
-      return bridgeCall('/exec', { command: cmd.command });
-    }
-    const map = {
-      write: ['/write', { path: cmd.path, content: cmd.content }],
-      append: ['/append', { path: cmd.path, content: cmd.content }],
-      delete: ['/delete', { path: cmd.path }],
-      move: ['/move', { from: cmd.from, to: cmd.to }],
-      copy: ['/copy', { from: cmd.from, to: cmd.to }],
-      read: ['/read', { path: cmd.path }],
-      list: ['/list', { path: cmd.path }],
-      sysinfo: ['/sysinfo', {}], syscheck: ['/syscheck', {}], processes: ['/processes', {}],
-      email: ['/email', { to: cmd.to, subject: cmd.subject, body: cmd.body }],
-      http: ['/http', { url: cmd.url, method: cmd.method, body: cmd.body }],
-      clipboard: ['/clipboard', { action: cmd.action, content: cmd.content }],
-      screenshot: ['/screenshot', { path: cmd.path }],
-      git: ['/git', { action: cmd.action, cwd: cmd.cwd, message: cmd.message }],
-      pkgs: ['/pkgs', { type: cmd.pkgType, cwd: cmd.cwd }],
-    };
-    if (map[t]) return bridgeCall(map[t][0], map[t][1]);
-    return { ok: false, error: 'Unknown command' };
-  }
-
-  function formatResultForAI(cmd, result) {
-    if (!result || !result.ok) {
-      const extra = result?.allowed_dirs ? `\nALLOWED: ${result.allowed_dirs.join(', ')}` : '';
-      const hint = result?.install_hint ? `\nHINT: ${result.install_hint}` : '';
-      return `[${cmd.type}] ERROR: ${(result && result.error) || 'unknown'}${extra}${hint}`;
-    }
-    const trunc = (s, n = 3000) => String(s || '').slice(0, n);
-    if (cmd.type.startsWith('kde-')) {
-      if (cmd.type === 'kde-list') { const list = (result.devices || []).map((d) => `${d.reachable ? '*' : ' '} ${d.name} (${d.id})`).join('\n'); return `[kde-list] ${result.devices?.length || 0} device(s)\n${list}`; }
-      return `[${cmd.type}] ok`;
-    }
-    switch (cmd.type) {
-      case 'sudo': case 'exec': return `[exec] exit=${result.exit_code}\nSTDOUT:\n${trunc(result.stdout)}\nSTDERR:\n${trunc(result.stderr, 1500)}`;
-      case 'write': return `[write] ok path=${result.path} bytes=${result.bytes}`;
-      case 'read': return `[read] path=${result.path}\n${trunc(result.content)}`;
-      case 'list': return `[list] path=${result.path}\n` + (result.items || []).map((i) => (i.is_dir ? 'D ' : 'F ') + i.name).join('\n');
-      default: return `[${cmd.type}] ok`;
-    }
-  }
-
-  function cmdSignature(cmd) {
-    const t = cmd.type;
-    if (t === 'exec' || t === 'sudo') return t + ':' + cmd.command.trim();
-    if (t === 'write' || t === 'append') return t + ':' + cmd.path + ':' + (cmd.content || '').length;
-    if (t === 'delete') return 'delete:' + cmd.path;
-    if (t === 'move' || t === 'copy') return t + ':' + cmd.from + '→' + cmd.to;
-    if (t === 'read' || t === 'list') return t + ':' + cmd.path;
-    if (t.startsWith('kde-')) return t + ':' + (cmd.device || '') + ':' + (cmd.path || cmd.text || cmd.number || '');
-    return t + ':' + (cmd.path || cmd.action || cmd.pkgType || '');
-  }
-  function shouldBlockSignature(sig) {
-    if (!bridgeTurn) return false;
-    if (bridgeTurn.failedSignatures.has(sig)) return true;
-    return (bridgeTurn.commandLog.get(sig) || 0) >= MAX_DUP_COMMANDS;
-  }
-
-  function showBridgeQuestionModal(q, index, total) {
-    return new Promise((resolve) => {
-      __bqResolver = resolve; __bqSelected = null;
-      const modal = $('#bridgeQuestionModal'); if (!modal) { resolve(''); return; }
-      $('#bqText').textContent = q.question || '';
-      $('#bqCounter').textContent = `Question ${index} of ${total}`;
-      $('#bqProgressFill').style.width = Math.round(((index - 1) / total) * 100) + '%';
-      const optsWrap = $('#bqOptions'), cw = $('#bqCustomWrap');
-      optsWrap.innerHTML = '';
-      if (q.options && q.options.length) {
-        cw.style.display = 'none';
-        q.options.forEach((opt) => {
-          const b = document.createElement('button');
-          b.type = 'button'; b.className = 'question-option'; b.textContent = opt;
-          b.onclick = () => { __bqSelected = opt; optsWrap.querySelectorAll('.question-option').forEach((x) => x.classList.remove('selected')); b.classList.add('selected'); $('#bqCustomInput').value = ''; };
-          optsWrap.appendChild(b);
-        });
-      } else cw.style.display = 'block';
-      const ci = $('#bqCustomInput'); ci.value = '';
-      ci.oninput = () => { if (ci.value.trim()) { __bqSelected = null; optsWrap.querySelectorAll('.question-option').forEach((x) => x.classList.remove('selected')); } };
-      modal.classList.add('open');
-    });
-  }
-  function closeBridgeQuestionModal() { $('#bridgeQuestionModal')?.classList.remove('open'); }
-  function submitBridgeQuestion() {
-    const answer = $('#bqCustomInput')?.value.trim() || __bqSelected || '';
-    if (!answer) return;
-    closeBridgeQuestionModal();
-    if (__bqResolver) { __bqResolver(answer); __bqResolver = null; }
-  }
-  function skipBridgeQuestion() { closeBridgeQuestionModal(); if (__bqResolver) { __bqResolver('[Skipped by user]'); __bqResolver = null; } }
-
-  function showPlannerModal(designs) {
-    return new Promise((resolve) => {
-      const modal = $('#plannerModal'), grid = $('#plannerGrid');
-      if (!modal || !grid) { resolve(null); return; }
-      grid.innerHTML = '';
-      designs.slice(0, 3).forEach((d) => {
-        const card = document.createElement('div');
-        card.className = 'planner-card';
-        const iframe = document.createElement('iframe');
-        iframe.className = 'planner-preview';
-        iframe.setAttribute('sandbox', 'allow-scripts');
-        iframe.setAttribute('loading', 'lazy');
-        iframe.srcdoc = '<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;height:100%;overflow:auto;font-family:system-ui,sans-serif;background:#fff;color:#111}</style></head><body>' + d.html + '</body></html>';
-        const footer = document.createElement('div');
-        footer.className = 'planner-card-footer';
-        footer.innerHTML = `<div class="planner-card-label"><span class="planner-card-dot"></span><span class="planner-card-name">${escapeHtml(d.name)}</span><span class="planner-card-id">Design ${d.id}</span></div><button class="planner-choose-btn" type="button"><i class="ri-check-line"></i> Choose</button>`;
-        card.appendChild(iframe); card.appendChild(footer); grid.appendChild(card);
-        footer.querySelector('.planner-choose-btn').addEventListener('click', () => { closePlannerModal(); resolve({ id: d.id, name: d.name }); });
-      });
-      modal.classList.add('open');
-    });
-  }
-  function closePlannerModal() { $('#plannerModal')?.classList.remove('open'); }
-  function showPlannerModalPromise(designs) {
-    return new Promise((resolve) => {
-      __plannerResolver = resolve;
-      showPlannerModal(designs).then((choice) => { if (__plannerResolver) { __plannerResolver(choice); __plannerResolver = null; } });
-    });
-  }
-  function plannerSkip() { closePlannerModal(); if (__plannerResolver) { __plannerResolver({ id: 0, name: 'Let Mirox decide' }); __plannerResolver = null; } }
-
-  async function buildVerificationTable(paths) {
-    const rows = [];
-    for (const p of paths) {
-      let exists = false, realPath = p, size = 0;
-      try { const res = await bridgeCall('/read', { path: p }); if (res && res.ok) { exists = true; realPath = res.path || p; size = (res.content || '').length; } } catch {}
-      rows.push({ path: p, exists, realPath, size });
-    }
-    return rows;
-  }
-  function renderVerificationTable(rows) {
-    const container = $('#bridgeMessages'); if (!container) return;
-    const okCount = rows.filter((r) => r.exists).length;
-    const allOk = okCount === rows.length;
-    const header = allOk ? `<i class="ri-checkbox-circle-fill"></i> Verified · ${okCount}/${rows.length} files exist` : `<i class="ri-error-warning-fill"></i> Verification · ${okCount}/${rows.length} found`;
-    const trs = rows.map((r, i) => `<tr class="${r.exists ? 'ok' : 'err'}"><td>${i + 1}</td><td><code>${escapeHtml(r.realPath)}</code></td><td>${r.exists ? '<span class="vt-ok">✓ exists</span>' : '<span class="vt-err">✗ missing</span>'}</td><td>${r.exists ? r.size + ' B' : '—'}</td></tr>`).join('');
-    const el = document.createElement('div');
-    el.className = 'bridge-msg ai';
-    el.innerHTML = `<div class="verify-card ${allOk ? 'ok' : 'err'}"><div class="verify-header">${header}</div><table class="verify-table"><thead><tr><th>#</th><th>File path</th><th>Status</th><th>Size</th></tr></thead><tbody>${trs}</tbody></table></div>`;
-    container.appendChild(el); scrollBridgeBottom();
-  }
-  function computeProjectRoot(paths, home) {
-    if (!paths.length) return home || '';
-    const norm = paths.map((p) => String(p).replace(/\\/g, '/'));
-    let prefix = norm[0].split('/');
-    for (const p of norm.slice(1)) { const parts = p.split('/'); let i = 0; while (i < prefix.length && i < parts.length && prefix[i] === parts[i]) i++; prefix = prefix.slice(0, i); }
-    const s = prefix.join('/');
-    return s.endsWith('/') ? s.slice(0, -1) : s;
-  }
-
-  async function fetchBridgeReply(history) {
-    const envBlock = buildEnvBlockString();
-    const lastMsg = history[history.length - 1];
-    const r = await netFetch('/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: `${envBlock}\n\n${lastMsg.content}`,
-        history: history.slice(0, -1).map((h) => ({ role: h.role, content: h.content })),
-        model: __bridge.model, stream: false,
-        bridge: { connected: true, name: __bridge.name, model: __bridge.model, mode: 'developer', env: __bridge.env || {}, kdeAvailable: __kdeAvailable, kdeDevice: __kdeCurrentDevice, filesWritten: bridgeTurn ? [...bridgeTurn.writtenFiles] : [], plannedFiles: bridgeTurn ? [...bridgeTurn.plannedFiles] : [], commandsRun: bridgeTurn ? bridgeTurn.commandsRun : 0 },
-      }),
-    }, 120000);
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(data.error?.message || `HTTP ${r.status}`);
-    return data.reply || '';
-  }
-  async function autoContinueAfterDelay(label = 'Auto-continuing') {
-    if (!__bridgeAutoRun) return;
-    addBridgeSystemMsg(`${label} in ${AUTO_CONTINUE_DELAY_MS / 1000}s…`);
-    setProgressText(`${label} in ${AUTO_CONTINUE_DELAY_MS / 1000}s…`);
-    await sleep(AUTO_CONTINUE_DELAY_MS);
-  }
-  function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
-
-  function describeReplyPlan(reply, cmds) {
-    const steps = [];
-    const files = [...new Set(cmds.filter((c) => c.type === 'write' || c.type === 'append').map((c) => getBaseName(c.path)))];
-    if (files.length) steps.push(`Writing ${files.length} file${files.length === 1 ? '' : 's'}: ${files.slice(0, 4).join(', ')}${files.length > 4 ? '…' : ''}`);
-    cmds.filter((c) => c.type === 'exec' || c.type === 'sudo').forEach((c) => { steps.push(`Running: ${(c.command || '').split(/\s+/).slice(0, 4).join(' ')}`); });
-    if (/\bDONE\b/i.test(reply)) steps.push('Verifying every planned file exists.');
-    return steps;
-  }
-  function newTurnState() { return { runs: 0, plannedFiles: new Set(), writtenFiles: new Set(), commandLog: new Map(), failedSignatures: new Set(), commandsRun: 0 }; }
-
-  async function runBridgeTurn(userText, isResume = false) {
-    if (!__bridge.connected) { setBwHint('Bridge is not connected.', 'err'); return; }
-    if (bridgeRunning) return;
-    bridgeRunning = true; bridgeAbort = false;
-    if (bridgeAutoTimer) { clearTimeout(bridgeAutoTimer); bridgeAutoTimer = null; }
-    updateBridgeSendBtn();
-    if (!isResume) {
-      bridgeQuestionCount = 0; bridgeTaskComplete = false; bridgeWaitingForUser = false;
-      bridgeTurn = newTurnState(); bridgeProgress = 0;
-      updateBridgeProgress(2, 'Starting…');
-      addBridgeUserMsg(userText);
-      __lastBuildWasMobile = /\b(phone|mobile|tablet|android|iphone|ipad|device)\b/i.test(userText);
-      const lang = detectLanguage(userText);
-      bridgeConversation.push({ role: 'user', content: `[System] Rules:\n1. NEVER paste code into visible text. All file content goes inside <bridge-write> or <bridge-append>.\n2. ALWAYS close tags.\n3. Long files: <bridge-write> first chunk, then <bridge-append> rest.\n4. Create projects inside <home>/<project-name>/.\n5. When done, reply DONE on its own line.\n\n${userText}` });
-    } else setProgressText('Continuing…');
-
-    let iter = 0, autoContinues = 0;
+  /* ── Markdown / code ── */
+  const HL_ALIASES = { html: 'xml', htm: 'xml', js: 'javascript', mjs: 'javascript', ts: 'typescript', py: 'python', python3: 'python', sh: 'bash', shell: 'bash', zsh: 'bash', yml: 'yaml', jsonc: 'json', cxx: 'cpp' };
+  function highlightCode(lang, code) {
+    const raw = String(code || '').replace(/\n$/, '');
     try {
-      while (iter++ < MAX_BRIDGE_ITER) {
-        if (bridgeAbort) { addBridgeSystemMsg('Stopped by user.'); break; }
-        bridgeTurn.runs++;
-        const lastUser = bridgeConversation.filter((h) => h.role === 'user').slice(-1)[0];
-        const userLast = lastUser?.content || '';
-        const thinking = addBridgeThinkingPanel(pickStatusLabel(userLast), buildThinkingSteps(userLast, []));
-        thinking?.setMood(pickMoodFor(userLast));
-        let reply = '';
-        try { reply = await fetchBridgeReply(bridgeConversation); thinking?.finish(); }
-        catch (e) { thinking?.fail('AI error: ' + e.message); addBridgeSystemMsg('AI error: ' + e.message); break; }
-        if (!reply || !reply.trim()) {
-          if (autoContinues < MAX_AUTO_CONTINUES && __bridgeAutoRun) { autoContinues++; await autoContinueAfterDelay('Empty response — continuing'); bridgeConversation.push({ role: 'user', content: '[System] Continue.' }); continue; }
-          break;
-        }
-        const designs = extractBridgeDesigns(reply);
-        if (designs && designs.length) {
-          const narration0 = sanitizeForChat(reply.replace(/<bridge-designs>[\s\S]*?<\/bridge-designs>/g, ''));
-          if (narration0) addBridgeAiMsg(narration0);
-          addBridgeSystemMsg('Showing 3 designs — pick one.');
-          bridgeConversation.push({ role: 'assistant', content: reply });
-          bridgeWaitingForUser = true;
-          setProgressText('Waiting for your design…');
-          const choice = await showPlannerModalPromise(designs);
-          if (!choice) break;
-          const choiceText = choice.id === 0 ? 'user_chosed(0)' : `user_chosed(${choice.id})  // ${choice.name}`;
-          addBridgeUserMsg(choiceText);
-          bridgeConversation.push({ role: 'user', content: choiceText });
-          bridgeWaitingForUser = false;
-          setProgressText('Building the chosen design…');
-          continue;
-        }
-        const cmdsInReply = extractBridgeCommands(reply);
-        const questionsInReply = extractBridgeQuestions(reply);
-        const saidDone = /\bDONE\b/i.test(reply);
-        const truncatedWrite = hasUnclosedWriteOrAppend(reply);
-        const lastPath = lastWriteOrAppendPath(reply);
-        const plan = describeReplyPlan(reply, cmdsInReply);
-        if (plan.length) addBridgeThinkingPanel('Plan', plan)?.finish();
-        if (!cmdsInReply.length && !questionsInReply.length && !saidDone && !truncatedWrite && looksLikeFreeQuestion(reply)) {
-          const narrationQ = sanitizeForChat(reply);
-          if (narrationQ) addBridgeAiMsg(narrationQ);
-          addBridgeSystemMsg('Mirox is waiting — type your reply below.');
-          bridgeConversation.push({ role: 'assistant', content: reply });
-          bridgeWaitingForUser = true; bridgeTaskComplete = true;
-          setProgressText('Waiting for your reply…');
-          updateBridgeSendBtn(); return;
-        }
-        const tp = bridgeTurn.plannedFiles.size, dc = bridgeTurn.writtenFiles.size;
-        if (tp > 0) updateBridgeProgress(2 + Math.round((dc / tp) * 93), `Files: ${dc} / ${tp}`);
-        else updateBridgeProgress(Math.min(90, 5 + iter * 3), `Working… (step ${iter})`);
-        const narration = sanitizeForChat(reply);
-        if (narration) addBridgeAiMsg(narration);
-        bridgeConversation.push({ role: 'assistant', content: reply });
-        if (questionsInReply.length > 0 && !truncatedWrite) {
-          const remaining = MAX_BRIDGE_QUESTIONS - bridgeQuestionCount;
-          const toAsk = questionsInReply.slice(0, Math.max(0, remaining));
-          for (let qi = 0; qi < toAsk.length; qi++) {
-            const q = toAsk[qi]; bridgeQuestionCount++;
-            if (isEnvQuestion(q.question)) { const envBlock = buildEnvBlockString(); addBridgeUserMsg(envBlock); bridgeConversation.push({ role: 'user', content: `[Answer]\n${envBlock}` }); continue; }
-            setProgressText('Waiting for your answer…');
-            const answer = await showBridgeQuestionModal(q, qi + 1, toAsk.length);
-            addBridgeUserMsg(answer);
-            bridgeConversation.push({ role: 'user', content: `[Answer to "${q.question}"] ${answer}` });
-          }
-          if (toAsk.length) { bridgeConversation.push({ role: 'user', content: '[System] User answered. Continue.' }); continue; }
-        }
-        if (cmdsInReply.length > 0) {
-          const resultLines = [];
-          for (const cmd of cmdsInReply) {
-            if (bridgeAbort) { resultLines.push('[abort] user stopped'); break; }
-            const sig = cmdSignature(cmd);
-            if (shouldBlockSignature(sig)) { resultLines.push(`[${cmd.type}] BLOCKED`); continue; }
-            bridgeTurn.commandLog.set(sig, (bridgeTurn.commandLog.get(sig) || 0) + 1);
-            bridgeTurn.commandsRun++;
-            if (cmd.type === 'write' || cmd.type === 'append') bridgeTurn.plannedFiles.add(cmd.path);
-            const bubble = addBridgeActionBubble(cmd);
-            let result;
-            try { result = await executeBridgeCommand(cmd); } catch (e) { result = { ok: false, error: e.message }; }
-            updateBridgeActionBubble(bubble, cmd, result);
-            if (result && result.ok) { if (cmd.type === 'write') bridgeTurn.writtenFiles.add(cmd.path); }
-            else bridgeTurn.failedSignatures.add(sig);
-            resultLines.push(formatResultForAI(cmd, result));
-          }
-          const tp2 = bridgeTurn.plannedFiles.size, dc2 = bridgeTurn.writtenFiles.size;
-          if (tp2 > 0) updateBridgeProgress(2 + Math.round((dc2 / tp2) * 93), `Files: ${dc2} / ${tp2}`);
-          const env = __bridge.env || {};
-          bridgeConversation.push({ role: 'user', content: ['[Bridge environment]', `home=${env.home || '?'}`, `cwd=${env.cwd || '?'}`, `platform=${env.platform || '?'}`, `allowed_dirs=${(env.allowed_dirs || []).join(', ') || '(none)'}`, '', `[Progress] ${dc2}/${tp2 || '?'} files`, '[Results]', resultLines.join('\n\n'), 'Write inside allowed_dirs only. If done, reply DONE. Otherwise continue.'].join('\n') });
-          if (truncatedWrite && lastPath) bridgeConversation.push({ role: 'user', content: `[System] Cut off mid-file (path="${lastPath}"). Continue with <bridge-append path="${lastPath}">.` });
-          continue;
-        }
-        if (truncatedWrite) {
-          if (__bridgeAutoRun && autoContinues < MAX_AUTO_CONTINUES) {
-            autoContinues++;
-            const p = lastPath || 'your file';
-            setProgressText('Continuing the truncated file…');
-            bridgeConversation.push({ role: 'user', content: `[System] Unclosed tag (path="${p}"). Continue with <bridge-append path="${p}">.` });
-            continue;
-          }
-          addBridgeSystemMsg('File truncated. Type "continue" to resume.');
-          bridgeWaitingForUser = true; updateBridgeSendBtn(); return;
-        }
-        const hasPlan = bridgeTurn.plannedFiles.size > 0;
-        const allFilesWritten = hasPlan && bridgeTurn.writtenFiles.size >= bridgeTurn.plannedFiles.size;
-        if (saidDone && (allFilesWritten || !hasPlan)) {
-          updateBridgeProgress(99, 'Verifying…');
-          const toVerify = [...bridgeTurn.writtenFiles];
-          if (toVerify.length) {
-            const rows = await buildVerificationTable(toVerify);
-            renderVerificationTable(rows);
-            const allOk = rows.every((r) => r.exists);
-            const projRoot = computeProjectRoot(rows.map((r) => r.realPath), __bridge.env?.home || '');
-            __lastBuildFolder = projRoot;
-            const previewFile = rows.find((r) => /(^|\/)index\.html?$/i.test(r.realPath));
-            __lastPreviewFile = previewFile ? previewFile.realPath : (rows[0]?.realPath || '');
-            updateBridgeProgress(100, allOk ? 'Complete' : 'Complete with warnings');
-            addBridgeSuccessMsg(allOk ? `Project complete · ${rows.length} file${rows.length === 1 ? '' : 's'} · ${projRoot}` : `Finished · ${rows.filter((r) => r.exists).length}/${rows.length} verified`, { folder: projRoot, previewPath: __lastPreviewFile || '' });
-            renderBuildStatus();
-            if (__lastBuildWasMobile && __kdeAvailable && projRoot) { const sent = await offerKdeSend(projRoot); if (sent) addBridgeSuccessMsg(`Sent to ${sent.name}`); }
-            if (__lastPreviewFile && /\.html?$/i.test(__lastPreviewFile)) setTimeout(() => openPreview(__lastPreviewFile), 400);
-          } else { updateBridgeProgress(100, 'Complete'); addBridgeSuccessMsg('Task complete'); }
-          bridgeTaskComplete = true; break;
-        }
-        if (saidDone && hasPlan && !allFilesWritten) {
-          const missing = [...bridgeTurn.plannedFiles].filter((f) => !bridgeTurn.writtenFiles.has(f));
-          bridgeConversation.push({ role: 'user', content: `[System] Missing: ${missing.join(', ')}. Write them now.` });
-          continue;
-        }
-        if (!saidDone) {
-          if (__bridgeAutoRun && autoContinues < MAX_AUTO_CONTINUES) { autoContinues++; await autoContinueAfterDelay('Auto-continuing'); bridgeConversation.push({ role: 'user', content: '[System] Continue.' }); continue; }
-          if (!__bridgeAutoRun) { bridgeWaitingForUser = true; addBridgeSystemMsg('Auto-Run off — click Send to continue.'); updateBridgeSendBtn(); break; }
-          addBridgeSystemMsg('Iteration limit reached.'); break;
-        }
+      if (window.hljs) {
+        const l = (HL_ALIASES[String(lang || '').toLowerCase()] || String(lang || '').toLowerCase()).trim();
+        if (l && hljs.getLanguage && hljs.getLanguage(l)) return hljs.highlight(raw, { language: l }).value;
+        return hljs.highlightAuto(raw).value;
       }
-    } catch (e) { addBridgeSystemMsg('Bridge error: ' + e.message); }
-    finally { bridgeRunning = false; updateBridgeSendBtn(); setProgressText(bridgeTaskComplete ? 'Done' : 'Paused'); }
+    } catch {}
+    return escapeHtml(raw);
   }
-
-  async function offerKdeSend(path) {
-    if (!__kdeAvailable) return null;
-    let device = __kdeCurrentDevice;
-    if (!device) {
-      const devices = await kdeListDevices(false);
-      const list = devices?.devices || [];
-      if (list.length === 1) { device = { id: list[0].id, name: list[0].name }; __kdeCurrentDevice = device; saveKdeDevice(); }
-      else if (list.length > 1) { const pick = await askDeviceChoice(list); if (!pick) return null; device = pick; }
-      else return null;
+  function renderMarkdown(rawText) {
+    if (!rawText) return '';
+    const src = sanitizeForChat(String(rawText));
+    if (!src) return '';
+    const parts = [];
+    const re = /```([a-zA-Z0-9+#._-]*)\n?([\s\S]*?)```/g;
+    let last = 0, m;
+    while ((m = re.exec(src)) !== null) {
+      if (m.index > last) parts.push({ type: 'text', content: src.slice(last, m.index) });
+      parts.push({ type: 'code', lang: (m[1] || '').trim(), content: m[2], closed: true });
+      last = re.lastIndex;
     }
-    const bubble = addBridgeActionBubble({ type: 'kde-share', path });
-    try { const r = await bridgeCall('/kde/share', { device: device.id, path }); updateBridgeActionBubble(bubble, { type: 'kde-share' }, r); return r.ok ? device : null; }
-    catch (e) { updateBridgeActionBubble(bubble, { type: 'kde-share' }, { ok: false, error: e.message }); return null; }
+    const rest = src.slice(last);
+    const openM = rest.match(/```([a-zA-Z0-9+#._-]*)\n?([\s\S]*)$/);
+    if (openM) {
+      const before = rest.slice(0, openM.index);
+      if (before) parts.push({ type: 'text', content: before });
+      parts.push({ type: 'code', lang: (openM[1] || '').trim(), content: openM[2], closed: false });
+    } else if (rest) parts.push({ type: 'text', content: rest });
+    return parts.map((p) => p.type === 'code' ? renderCode(p.lang, p.content, p.closed) : renderText(p.content)).join('');
   }
-
-  function handleBridgeSend() {
-    const inp = $('#bridgeInput'); if (!inp) return;
-    const text = inp.value.trim();
-    if (!text || bridgeRunning || !__bridge.connected) return;
-    if (bridgeWaitingForUser) { bridgeWaitingForUser = false; if (!bridgeTurn) bridgeTurn = newTurnState(); }
-    else { bridgeConversation = []; bridgeTaskComplete = true; if (bridgeAutoTimer) { clearTimeout(bridgeAutoTimer); bridgeAutoTimer = null; } bridgeTurn = null; }
-    inp.value = ''; inp.style.height = 'auto';
-    updateBridgeSendBtn();
-    runBridgeTurn(text, false);
+  function renderCode(lang, code, closed) {
+    const cleanLang = (lang || '').trim().toLowerCase();
+    const label = (cleanLang || 'CODE').toUpperCase();
+    const raw = String(code || '').replace(/\n$/, '');
+    const btn = closed
+      ? '<button class="code-action-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button>'
+      : '<span class="writing-tag"><i class="ri-loader-4-line spin"></i> writing…</span>';
+    return `<div class="code-block"><div class="code-block-header"><span class="code-lang-label">${escapeHtml(label)}</span>${btn}</div><pre><code class="hljs">${highlightCode(cleanLang, raw)}</code></pre></div>`;
   }
-
-  async function openPreview(pathOrEmpty) {
-    const modal = $('#bwPreviewModal'); if (!modal) return;
-    const frame = $('#bwPreviewFrame'), subtitle = $('#bwPreviewSubtitle'), pathInput = $('#bwPreviewPath');
-    modal.classList.add('open');
-    const targetPath = absBridgePath(pathOrEmpty || pathInput?.value.trim() || __lastPreviewFile || '', __bridge.env?.home || '');
-    if (pathInput) pathInput.value = targetPath;
-    if (!targetPath) {
-      if (subtitle) subtitle.textContent = 'No file path yet.';
-      if (frame) frame.srcdoc = '<html><body style="font-family:system-ui;padding:40px;color:#888;text-align:center"><h2>No preview</h2></body></html>';
-      return;
-    }
-    if (subtitle) subtitle.textContent = targetPath;
-    try {
-      const r = await bridgeCall('/read', { path: targetPath });
-      if (!r || !r.ok) throw new Error(r?.error || 'could not read file');
-      let html = r.content || '';
-      const baseDir = targetPath.replace(/\/[^/]*$/, '');
-      for (const m of [...html.matchAll(/<link\s+[^>]*href=["']([^"']+\.css[^"']*)["'][^>]*>/gi)]) {
-        if (/^https?:/i.test(m[1])) continue;
-        const cssPath = m[1].startsWith('/') ? m[1] : `${baseDir}/${m[1]}`.replace(/\/\.\//g, '/');
-        try { const cr = await bridgeCall('/read', { path: cssPath }); if (cr && cr.ok) html = html.replace(m[0], `<style>\n${cr.content}\n</style>`); } catch {}
+  function renderText(text) {
+    const lines = String(text).split('\n');
+    let out = '';
+    const buf = [];
+    const flush = () => { if (buf.length) { out += `<p>${inlineFmt(buf.join(' '))}</p>`; buf.length = 0; } };
+    const cells = (line) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((v) => v.trim());
+    for (let i = 0; i < lines.length; i++) {
+      const t = lines[i].trim();
+      if (!t) { flush(); continue; }
+      if (t.includes('|') && i + 1 < lines.length && /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[i + 1])) {
+        flush();
+        const headers = cells(t); i += 1;
+        let table = '<div class="md-table-wrap"><table class="md-table"><thead><tr>';
+        headers.forEach((c) => { table += `<th>${inlineFmt(c)}</th>`; });
+        table += '</tr></thead><tbody>';
+        while (i + 1 < lines.length && lines[i + 1].trim().includes('|') && lines[i + 1].trim() !== '') {
+          i++; const row = cells(lines[i]); table += '<tr>';
+          for (let j = 0; j < headers.length; j++) table += `<td>${inlineFmt(row[j] || '')}</td>`;
+          table += '</tr>';
+        }
+        out += table + '</tbody></table></div>';
+        continue;
       }
-      for (const m of [...html.matchAll(/<script\s+[^>]*src=["']([^"']+\.js[^"']*)["'][^>]*>\s*<\/script>/gi)]) {
-        if (/^https?:/i.test(m[1])) continue;
-        const jsPath = m[1].startsWith('/') ? m[1] : `${baseDir}/${m[1]}`.replace(/\/\.\//g, '/');
-        try { const jr = await bridgeCall('/read', { path: jsPath }); if (jr && jr.ok) html = html.replace(m[0], `<script>\n${jr.content}\n</script>`); } catch {}
-      }
-      if (frame) frame.srcdoc = html;
-    } catch (e) { if (frame) frame.srcdoc = `<html><body style="font-family:system-ui;padding:40px;color:#b91c1c"><h2>Preview failed</h2><p>${escapeHtml(e.message)}</p></body></html>`; }
-  }
-  function closePreview() { $('#bwPreviewModal')?.classList.remove('open'); }
-
-  async function openConversation(id) {
-    const convo = __conversations.find((c) => c.id === id);
-    if (!convo) return;
-    currentConversationId = id;
-    updateTokenUsage();
-    const t = $('#chatTitle'); if (t) t.textContent = convo.title || 'Chat';
-    const c = $('#chatMessages'); if (c) c.innerHTML = '';
-    let lastAiEl = null, lastAiMessage = null;
-    for (const m of convo.messages || []) {
-      const img = m.imageKey ? await idb.get(m.imageKey).catch(() => null) : null;
-      const rendered = addMessageToDOM(m.role, m.content, m.ts, m.id, m.files || [], img);
-      if (m.role === 'assistant') { lastAiEl = rendered; lastAiMessage = m; }
+      const hm = t.match(/^(#{1,4})\s+(.+)$/);
+      if (hm) { flush(); out += `<h${hm[1].length}>${inlineFmt(hm[2])}</h${hm[1].length}>`; continue; }
+      const um = t.match(/^[-*+]\s+(.+)$/);
+      if (um) { flush(); out += `<div class="md-li">• ${inlineFmt(um[1])}</div>`; continue; }
+      const om = t.match(/^(\d+)\.\s+(.+)$/);
+      if (om) { flush(); out += `<div class="md-li">${om[1]}. ${inlineFmt(om[2])}</div>`; continue; }
+      if (/^>\s?/.test(t)) { flush(); out += `<blockquote>${inlineFmt(t.replace(/^>\s?/, ''))}</blockquote>`; continue; }
+      buf.push(t);
     }
-    if (lastAiEl && lastAiMessage) {
-      const lastBubble = lastAiEl.querySelector('.bubble');
-      if (freeLimitReached(convo)) showLimitNote(lastBubble);
-      else if (lastBubble) attachContinueButton(lastAiEl, lastBubble, lastAiMessage);
-    }
-    renderHistory(); updateTokenUsage();
-    scrollToBottom(true);
+    flush();
+    return out;
+  }
+  function inlineFmt(t) {
+    t = escapeHtml(t);
+    t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
+    return t;
+  }
+  function wireCopyButtons(scope) {
+    (scope || document).querySelectorAll('.code-action-btn[data-copy]').forEach((btn) => {
+      if (btn.__wired) return; btn.__wired = true;
+      btn.onclick = async () => {
+        const code = btn.closest('.code-block')?.querySelector('pre code')?.textContent || '';
+        try {
+          await navigator.clipboard.writeText(code);
+          btn.innerHTML = '<i class="ri-check-line"></i> Copied';
+          setTimeout(() => { btn.innerHTML = '<i class="ri-file-copy-line"></i> Copy'; }, 1200);
+        } catch {}
+      };
+    });
   }
 
+  function openModal(id) { const el = document.getElementById(id); if (el) el.classList.add('open'); }
+  function closeModal(id) { const el = document.getElementById(id); if (el) el.classList.remove('open'); }
+  function openSidebar() { $('#sidebar')?.classList.add('open'); $('#sidebarScrim')?.classList.add('open'); }
+  function closeSidebar() { $('#sidebar')?.classList.remove('open'); $('#sidebarScrim')?.classList.remove('open'); }
+
+  function applyAppearance(prefs) {
+    const root = document.documentElement;
+    const mode = prefs.mode || 'light';
+    const theme = prefs.theme || 'default';
+    root.setAttribute('data-mode', mode);
+    root.setAttribute('data-theme', theme);
+    safeSet(APPEARANCE_KEY, { mode, theme });
+    $$('[data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
+    $$('.swatch').forEach((b) => b.classList.toggle('active', b.dataset.theme === theme));
+  }
+  function loadAppearance() {
+    const prefs = safeGet(APPEARANCE_KEY, {});
+    if (!prefs.mode && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) prefs.mode = 'dark';
+    applyAppearance(prefs);
+  }
+
+  /* ═══════════ Init ═══════════ */
   function wireAll() {
     on('#hamburgerBtn', 'click', openSidebar);
     on('#sidebarCloseBtn', 'click', closeSidebar);
@@ -2128,8 +1687,6 @@
       forceSearchNext = !forceSearchNext;
       $('#searchModeBtn')?.classList.toggle('active', forceSearchNext);
       toast(forceSearchNext ? 'Web search enabled for next message.' : 'Web search disabled.');
-      const ta = $('#messageInput');
-      if (ta) { ta.placeholder = forceSearchNext ? 'What should I search the web for?' : 'How can I help you today?'; ta.focus(); }
     });
     on('#imageModeBtn', 'click', () => { openModal('imageModal'); renderImageHistory(); });
     on('#plansModeBtn', 'click', () => { openModal('plansModal'); loadPlans(); });
@@ -2174,7 +1731,7 @@
     on('#bwToggleShowCode', 'click', () => { __bridgeShowCode = !__bridgeShowCode; saveBridgeOpts(); renderToggles(); toast(`Show Code ${__bridgeShowCode ? 'ON' : 'OFF'}`); });
     on('#bwPreviewBtn', 'click', () => openPreview(__lastPreviewFile || ''));
     on('#bwStopBtn', 'click', () => { bridgeAbort = true; toast('Stopping…'); });
-    on('#bwScanDevicesBtn', 'click', async () => { if (!__bridge.connected) { toast('Connect the bridge first.'); return; } toast('Scanning for devices…'); const devices = await refreshKdeDevices(false); toast(devices && devices.length ? `Found ${devices.length} device${devices.length === 1 ? '' : 's'}` : 'No devices found yet.'); });
+    on('#bwScanDevicesBtn', 'click', async () => { if (!__bridge.connected) { toast('Connect the bridge first.'); return; } toast('Scanning for devices…'); });
     on('#bwBuildOpenBtn', 'click', () => openPreview(__lastPreviewFile || ''));
     on('#bwBuildFolderBtn', 'click', async () => { if (!__lastBuildFolder) { toast('No project yet.'); return; } try { await navigator.clipboard.writeText(__lastBuildFolder); toast('Path copied.'); } catch {} });
     on('#bwPreviewCloseBtn', 'click', closePreview);
@@ -2185,31 +1742,21 @@
     on('#sudoCloseBtn', 'click', skipSudo);
     on('#sudoRevealBtn', 'click', () => { const pwd = $('#sudoPasswordInput'); if (!pwd) return; const rev = $('#sudoRevealBtn'); if (pwd.type === 'password') { pwd.type = 'text'; if (rev) rev.innerHTML = '<i class="ri-eye-off-line"></i>'; } else { pwd.type = 'password'; if (rev) rev.innerHTML = '<i class="ri-eye-line"></i>'; } });
     on('#sudoPasswordInput', 'keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitSudo(); } });
-    on('#plannerCloseBtn', 'click', plannerSkip);
-    on('#plannerSkipBtn', 'click', plannerSkip);
-    on('#kdeCloseBtn', 'click', kdeSkip);
-    on('#kdeSkipBtn', 'click', kdeSkip);
-    on('#kdeRefreshBtn', 'click', async () => { const sub = $('#kdeSubtitle'); if (sub) sub.textContent = 'Rescanning…'; await refreshKdeDevices(true); });
+    on('#plannerCloseBtn', 'click', () => { $('#plannerModal')?.classList.remove('open'); if (__plannerResolver) { __plannerResolver({ id: 0, name: 'auto' }); __plannerResolver = null; } });
+    on('#plannerSkipBtn', 'click', () => { $('#plannerModal')?.classList.remove('open'); if (__plannerResolver) { __plannerResolver({ id: 0, name: 'auto' }); __plannerResolver = null; } });
+    on('#kdeCloseBtn', 'click', () => { $('#kdeModal')?.classList.remove('open'); if (__kdeResolver) { __kdeResolver(null); __kdeResolver = null; } });
+    on('#kdeSkipBtn', 'click', () => { $('#kdeModal')?.classList.remove('open'); if (__kdeResolver) { __kdeResolver(null); __kdeResolver = null; } });
     const bwInp = $('#bridgeInput');
     if (bwInp) {
       bwInp.addEventListener('input', () => { bwInp.style.height = 'auto'; bwInp.style.height = Math.min(bwInp.scrollHeight, 140) + 'px'; updateBridgeSendBtn(); });
       bwInp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); handleBridgeSend(); } });
     }
     on('#bridgeSendBtn', 'click', handleBridgeSend);
-    $$('.bw-quick').forEach((btn) => { btn.onclick = () => { const inp2 = $('#bridgeInput'); if (inp2) { inp2.value = btn.dataset.q; updateBridgeSendBtn(); } handleBridgeSend(); }; });
-    on('#bqCustomToggle', 'click', () => { const cw = $('#bqCustomWrap'); if (!cw) return; cw.style.display = cw.style.display === 'none' ? 'block' : 'none'; if (cw.style.display === 'block') $('#bqCustomInput')?.focus(); });
-    on('#bqSubmit', 'click', submitBridgeQuestion);
-    on('#bqSkipOne', 'click', skipBridgeQuestion);
-    on('#bqCustomInput', 'keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitBridgeQuestion(); } });
     bindSuggestionClicks();
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         closeImageViewer(); closeModelPicker();
         if ($('#bwPreviewModal')?.classList.contains('open')) { closePreview(); return; }
-        if ($('#kdeModal')?.classList.contains('open')) { kdeSkip(); return; }
-        if ($('#plannerModal')?.classList.contains('open')) { plannerSkip(); return; }
-        if ($('#sudoModal')?.classList.contains('open')) { skipSudo(); return; }
-        if ($('#bridgeQuestionModal')?.classList.contains('open')) return;
         if ($('#bridgeWorkspace')?.classList.contains('open')) closeBridgeWorkspace();
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); $('#messageInput')?.focus(); }
@@ -2217,7 +1764,59 @@
     window.addEventListener('resize', () => { if (window.innerWidth > 860) { closeSidebar(); $('#bwPanel')?.classList.remove('side-open'); } });
   }
 
-  function init() {
+  async function openConversation(id) {
+    const convo = __conversations.find((c) => c.id === id);
+    if (!convo) return;
+    currentConversationId = id;
+    updateTokenUsage();
+    const t = $('#chatTitle'); if (t) t.textContent = convo.title || 'Chat';
+    const c = $('#chatMessages'); if (c) c.innerHTML = '';
+    let lastAiEl = null, lastAiMessage = null;
+    for (const m of convo.messages || []) {
+      const img = m.imageKey ? await idb.get(m.imageKey).catch(() => null) : null;
+      const rendered = addMessageToDOM(m.role, m.content, m.ts, m.id, m.files || [], img);
+      if (m.role === 'assistant') { lastAiEl = rendered; lastAiMessage = m; }
+    }
+    if (lastAiEl && lastAiMessage) {
+      const lastBubble = lastAiEl.querySelector('.bubble');
+      if (freeLimitReached(convo)) showLimitNote(lastBubble);
+      else if (lastBubble) attachContinueButton(lastAiEl, lastBubble, lastAiMessage);
+    }
+    renderHistory(); updateTokenUsage();
+    scrollToBottom(true);
+  }
+
+  function handleBridgeSend() {
+    const inp = $('#bridgeInput'); if (!inp) return;
+    const text = inp.value.trim();
+    if (!text || bridgeRunning || !__bridge.connected) return;
+    if (bridgeWaitingForUser) { bridgeWaitingForUser = false; if (!bridgeTurn) bridgeTurn = newTurnState(); }
+    else { bridgeConversation = []; bridgeTaskComplete = true; if (bridgeAutoTimer) { clearTimeout(bridgeAutoTimer); bridgeAutoTimer = null; } bridgeTurn = null; }
+    inp.value = ''; inp.style.height = 'auto';
+    updateBridgeSendBtn();
+    runBridgeTurn(text, false);
+  }
+  function newTurnState() { return { runs: 0, plannedFiles: new Set(), writtenFiles: new Set(), commandLog: new Map(), failedSignatures: new Set(), commandsRun: 0 }; }
+  async function runBridgeTurn(userText, isResume = false) {
+    if (!__bridge.connected) { setBwHint('Bridge is not connected.', 'err'); return; }
+    if (bridgeRunning) return;
+    bridgeRunning = true; bridgeAbort = false;
+    updateBridgeSendBtn();
+    bridgeTaskComplete = false;
+    addBridgeUserMsg(userText);
+    addBridgeSystemMsg('Bridge turn started (basic mode).');
+    bridgeRunning = false;
+    updateBridgeSendBtn();
+  }
+  function openPreview(path) {
+    const modal = $('#bwPreviewModal'); if (!modal) return;
+    modal.classList.add('open');
+    const frame = $('#bwPreviewFrame');
+    if (frame) frame.srcdoc = '<html><body style="font-family:system-ui;padding:40px;color:#888;text-align:center"><h2>Preview</h2><p>' + escapeHtml(path || 'No file') + '</p></body></html>';
+  }
+  function closePreview() { $('#bwPreviewModal')?.classList.remove('open'); }
+
+  async function init() {
     try {
       loadAppearance(); loadBridgeLS(); loadKdeDevice(); loadBridgeOpts(); loadChats(); wireAll();
       renderHistory(); renderModelPicker(); renderBridgeStatus(); renderKdeStatus(); renderBuildStatus(); startIdleMascot();
