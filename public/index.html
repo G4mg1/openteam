@@ -173,14 +173,14 @@
         <span data-i18n="disconnected">Disconnected</span>
       </div>
       <div class="bridge-workspace-toggles" id="bwToggles">
-        <button id="bwToggleAutoRun" class="bridge-toggle active" type="button" data-i18n-title="autoRun"><i class="ri-play-circle-line"></i><span data-i18n="autoRun">Auto-Run</span></button>
-        <button id="bwToggleShowCode" class="bridge-toggle" type="button" data-i18n-title="showCode"><i class="ri-code-line"></i><span data-i18n="showCode">Show Code</span></button>
-        <button id="bwPreviewBtn" class="bridge-toggle" type="button" data-i18n-title="preview"><i class="ri-eye-line"></i><span data-i18n="preview">Preview</span></button>
-        <button id="bwStopBtn" class="bridge-toggle danger" type="button" style="display:none;" data-i18n-title="stop"><i class="ri-stop-circle-line"></i><span data-i18n="stop">Stop</span></button>
+        <button id="bwToggleAutoRun" class="bridge-toggle active" type="button"><i class="ri-play-circle-line"></i><span data-i18n="autoRun">Auto-Run</span></button>
+        <button id="bwToggleShowCode" class="bridge-toggle" type="button"><i class="ri-code-line"></i><span data-i18n="showCode">Show Code</span></button>
+        <button id="bwPreviewBtn" class="bridge-toggle" type="button"><i class="ri-eye-line"></i><span data-i18n="preview">Preview</span></button>
+        <button id="bwStopBtn" class="bridge-toggle danger" type="button" style="display:none;"><i class="ri-stop-circle-line"></i><span data-i18n="stop">Stop</span></button>
       </div>
       <div class="bridge-workspace-actions">
-        <button id="bwNewBtn" class="icon-btn" type="button" data-i18n-title="clearChat"><i class="ri-delete-bin-6-line"></i></button>
-        <button id="bwCloseBtn" class="icon-btn" type="button" data-i18n-title="close"><i class="ri-close-line"></i></button>
+        <button id="bwNewBtn" class="icon-btn" type="button"><i class="ri-delete-bin-6-line"></i></button>
+        <button id="bwCloseBtn" class="icon-btn" type="button"><i class="ri-close-line"></i></button>
       </div>
     </header>
     <div class="bridge-progress" id="bwProgress" style="display:none;">
@@ -227,10 +227,10 @@
         <div class="bridge-side-section">
           <h4><i class="ri-rocket-line"></i> <span data-i18n="quickActions">Quick actions</span></h4>
           <div class="bw-quick-grid">
-            <button class="bw-quick" data-q="Build a calculator in my home folder" data-i18n="calc">Calculator</button>
-            <button class="bw-quick" data-q="Build a modern landing page in my home folder" data-i18n="landing">Landing page</button>
-            <button class="bw-quick" data-q="Build a snake game in my home folder" data-i18n="snake">Snake game</button>
-            <button class="bw-quick" data-q="Build a todo app in my home folder" data-i18n="todo">Todo app</button>
+            <button class="bw-quick" data-q="Build a calculator in my home folder">Calculator</button>
+            <button class="bw-quick" data-q="Build a modern landing page in my home folder">Landing page</button>
+            <button class="bw-quick" data-q="Build a snake game in my home folder">Snake game</button>
+            <button class="bw-quick" data-q="Build a todo app in my home folder">Todo app</button>
           </div>
         </div>
       </aside>
@@ -242,12 +242,12 @@
 <div id="bwPreviewModal" class="planner-overlay">
   <div class="planner-panel preview-panel">
     <header class="planner-top">
-      <div class="planner-title"><i class="ri-eye-line"></i><div><div class="planner-title-main" data-i18n="livePreview">Live Preview</div><div class="planner-title-sub" id="bwPreviewSubtitle" data-i18n="noProject">No project yet</div></div></div>
+      <div class="planner-title"><i class="ri-eye-line"></i><div><div class="planner-title-main">Live Preview</div><div class="planner-title-sub" id="bwPreviewSubtitle">No project yet</div></div></div>
       <div class="preview-tools">
         <input id="bwPreviewPath" class="modal-input" placeholder="~/project/index.html" spellcheck="false">
-        <button class="icon-btn" id="bwPreviewLoadBtn" data-i18n-title="loadPath"><i class="ri-folder-open-line"></i></button>
-        <button class="icon-btn" id="bwPreviewReloadBtn" data-i18n-title="reload"><i class="ri-refresh-line"></i></button>
-        <button class="icon-btn" id="bwPreviewCloseBtn" data-i18n-title="close"><i class="ri-close-line"></i></button>
+        <button class="icon-btn" id="bwPreviewLoadBtn"><i class="ri-folder-open-line"></i></button>
+        <button class="icon-btn" id="bwPreviewReloadBtn"><i class="ri-refresh-line"></i></button>
+        <button class="icon-btn" id="bwPreviewCloseBtn"><i class="ri-close-line"></i></button>
       </div>
     </header>
     <div class="planner-body preview-body"><iframe id="bwPreviewFrame" sandbox="allow-scripts allow-same-origin allow-forms allow-modals"></iframe></div>
@@ -260,29 +260,29 @@
     <div class="question-top">
       <div class="question-badge sudo-badge"><i class="ri-shield-keyhole-line"></i></div>
       <div class="question-heading">
-        <div class="question-title" data-i18n="passwordRequired">Password required</div>
-        <div class="question-sub" data-i18n="sudoSub">Mirox needs root access to continue.</div>
+        <div class="question-title">Password required</div>
+        <div class="question-sub">Mirox needs root access to continue.</div>
       </div>
-      <button class="icon-btn" id="sudoCloseBtn" type="button" data-i18n-title="skip"><i class="ri-close-line"></i></button>
+      <button class="icon-btn" id="sudoCloseBtn" type="button"><i class="ri-close-line"></i></button>
     </div>
     <p class="question-text sudo-command" id="sudoCommandText"></p>
     <div class="sudo-input-wrap">
-      <input type="password" id="sudoPasswordInput" class="modal-input" data-i18n-placeholder="sudoPassword" autocomplete="current-password" spellcheck="false">
-      <button class="icon-btn sudo-reveal" type="button" id="sudoRevealBtn" data-i18n-title="showHide"><i class="ri-eye-line"></i></button>
+      <input type="password" id="sudoPasswordInput" class="modal-input" autocomplete="current-password" spellcheck="false">
+      <button class="icon-btn sudo-reveal" type="button" id="sudoRevealBtn"><i class="ri-eye-line"></i></button>
     </div>
-    <label class="sudo-remember"><input type="checkbox" id="sudoRememberChk"><span data-i18n="sudoRemember">Remember for this session</span></label>
+    <label class="sudo-remember"><input type="checkbox" id="sudoRememberChk"><span>Remember for this session</span></label>
     <div class="question-footer" style="margin-top:14px;">
-      <button id="sudoSkipBtn" class="modal-btn" type="button"><i class="ri-skip-forward-line"></i> <span data-i18n="skip">Skip</span></button>
-      <button id="sudoSubmitBtn" class="modal-btn primary" type="button"><span data-i18n="runWithSudo">Run with sudo</span> <i class="ri-arrow-right-line"></i></button>
+      <button id="sudoSkipBtn" class="modal-btn" type="button"><i class="ri-skip-forward-line"></i> <span>Skip</span></button>
+      <button id="sudoSubmitBtn" class="modal-btn primary" type="button"><span>Run with sudo</span> <i class="ri-arrow-right-line"></i></button>
     </div>
     <div id="sudoHint" class="sudo-hint"></div>
   </div>
 </div>
 
-<!-- LOGIN — Simple Gmail-style -->
+<!-- LOGIN — Simple Gmail-style, local-first -->
 <div id="loginModal" class="modal-overlay">
   <div class="modal modal-auth">
-    <button class="icon-btn modal-close" type="button" data-close="loginModal" data-i18n-title="close"><i class="ri-close-line"></i></button>
+    <button class="icon-btn modal-close" type="button" data-close="loginModal"><i class="ri-close-line"></i></button>
     <div class="auth-brand">
       <img src="/logo.png" alt="" onerror="this.style.display='none'">
       <span>MiroxAI</span>
@@ -312,7 +312,7 @@
 <!-- SETTINGS -->
 <div id="settingsModal" class="modal-overlay">
   <div class="modal modal-wide">
-    <button class="icon-btn modal-close" type="button" data-close="settingsModal" data-i18n-title="close"><i class="ri-close-line"></i></button>
+    <button class="icon-btn modal-close" type="button" data-close="settingsModal"><i class="ri-close-line"></i></button>
     <h2 class="modal-title" data-i18n="settingsTitle">Settings</h2>
     <div class="settings-tabs" role="tablist">
       <button class="settings-tab active" type="button" data-tab="general"><i class="ri-settings-3-line"></i><span data-i18n="general">General</span></button>
@@ -338,7 +338,7 @@
         <div class="setting-row">
           <div class="setting-row-info">
             <span class="setting-row-label" data-i18n="shareEarn">Share &amp; earn</span>
-            <span class="setting-row-sub" id="shareRowSub" data-i18n="shareSub">Get 50k tokens + Pro/Ultra/Eclipse free for 7 days</span>
+            <span class="setting-row-sub" data-i18n="shareSub">Get 50k tokens + Pro/Ultra/Eclipse free for 7 days</span>
           </div>
           <button id="shareFromSettingsBtn" class="setting-mini-btn primary" type="button"><i class="ri-share-forward-2-line"></i> <span data-i18n="share">Share</span></button>
         </div>
@@ -368,9 +368,9 @@
       <div class="setting-group">
         <h4 data-i18n="mode">Mode</h4>
         <div class="segmented" id="modeSegmented">
-          <button class="seg-btn" type="button" data-mode="light" data-i18n="light">Light</button>
-          <button class="seg-btn" type="button" data-mode="dark" data-i18n="dark">Dark</button>
-          <button class="seg-btn" type="button" data-mode="auto" data-i18n="auto">Auto</button>
+          <button class="seg-btn" type="button" data-mode="light">Light</button>
+          <button class="seg-btn" type="button" data-mode="dark">Dark</button>
+          <button class="seg-btn" type="button" data-mode="auto">Auto</button>
         </div>
       </div>
       <div class="setting-group">
@@ -387,15 +387,15 @@
       <div class="setting-group">
         <h4 data-i18n="fontSize">Font size</h4>
         <div class="segmented" id="fontSizeSegmented">
-          <button class="seg-btn" type="button" data-fontsize="sm" data-i18n="small">Small</button>
-          <button class="seg-btn" type="button" data-fontsize="md" data-i18n="medium">Medium</button>
-          <button class="seg-btn" type="button" data-fontsize="lg" data-i18n="large">Large</button>
+          <button class="seg-btn" type="button" data-fontsize="sm">Small</button>
+          <button class="seg-btn" type="button" data-fontsize="md">Medium</button>
+          <button class="seg-btn" type="button" data-fontsize="lg">Large</button>
         </div>
       </div>
       <div class="setting-group">
         <h4 data-i18n="animations">Animations</h4>
         <div class="setting-row">
-          <div class="setting-row-info"><span class="setting-row-label" data-i18n="reduceMotion">Reduce motion</span><span class="setting-row-sub" data-i18n="reduceMotionSub">Minimize animations</span></div>
+          <div class="setting-row-info"><span class="setting-row-label">Reduce motion</span><span class="setting-row-sub">Minimize animations</span></div>
           <label class="switch"><input type="checkbox" id="reduceMotionToggle"><span class="switch-slider"></span></label>
         </div>
       </div>
@@ -404,11 +404,10 @@
     <div class="settings-pane" data-pane="language">
       <div class="setting-group">
         <h4 data-i18n="interfaceLanguage">Interface language</h4>
-        <p class="setting-help" data-i18n="interfaceLanguageHelp">Powered by MyMemory API — free, no key. First switch may take a few seconds. Cached after.</p>
+        <p class="setting-help">Powered by MyMemory API — free, no key. English uses no API calls. Other languages may take a few seconds.</p>
         <select id="uiLanguageSelect" class="modal-select">
           <option value="en">English</option>
           <option value="fa">فارسی — Farsi</option>
-          <option value="ps">پښتو — Pashto</option>
           <option value="de">Deutsch — German</option>
           <option value="es">Español — Spanish</option>
           <option value="es-MX">Español (México)</option>
@@ -420,8 +419,6 @@
           <option value="he">עברית — Hebrew</option>
           <option value="tr">Türkçe — Turkish</option>
           <option value="hi">हिन्दी — Hindi</option>
-          <option value="ur">اردو — Urdu</option>
-          <option value="bn">বাংলা — Bengali</option>
           <option value="zh-CN">简体中文 — Chinese (Simplified)</option>
           <option value="ja">日本語 — Japanese</option>
           <option value="ko">한국어 — Korean</option>
@@ -441,10 +438,9 @@
       <div class="setting-group">
         <h4 data-i18n="responseLanguage">Preferred response language</h4>
         <select id="languageSelect" class="modal-select">
-          <option value="auto" data-i18n="autoDetect">Auto-detect</option>
+          <option value="auto">Auto-detect</option>
           <option value="en">English</option>
           <option value="fa">فارسی</option>
-          <option value="ps">پښتو</option>
           <option value="de">Deutsch</option>
           <option value="es-MX">Español (México)</option>
           <option value="es">Español</option>
@@ -474,7 +470,7 @@
 <!-- PLANS -->
 <div id="plansModal" class="modal-overlay">
   <div class="modal modal-wide">
-    <button class="icon-btn modal-close" type="button" data-close="plansModal" data-i18n-title="close"><i class="ri-close-line"></i></button>
+    <button class="icon-btn modal-close" type="button" data-close="plansModal"><i class="ri-close-line"></i></button>
     <h2 class="modal-title" data-i18n="plans">Plans</h2>
     <p class="modal-sub" data-i18n="plansSub">Luna and Gen are free. Share to unlock Pro, Ultra and Eclipse for 7 days.</p>
     <div id="plansGrid" class="plans-grid"></div>
@@ -484,12 +480,12 @@
 <!-- IMAGE STUDIO -->
 <div id="imageModal" class="modal-overlay">
   <div class="modal">
-    <button class="icon-btn modal-close" type="button" data-close="imageModal" data-i18n-title="close"><i class="ri-close-line"></i></button>
+    <button class="icon-btn modal-close" type="button" data-close="imageModal"><i class="ri-close-line"></i></button>
     <h2 class="modal-title" data-i18n="lumenalTitle">Lumenal 1.0</h2>
     <p class="modal-sub" data-i18n="lumenalSub">Strong image generation.</p>
     <div class="image-studio">
-      <textarea id="imagePrompt" class="modal-textarea" rows="3" data-i18n-placeholder="imagePrompt"></textarea>
-      <button id="generateImageBtn" class="modal-btn primary" type="button"><i class="ri-image-add-line"></i> <span data-i18n="generate">Generate</span></button>
+      <textarea id="imagePrompt" class="modal-textarea" rows="3" placeholder="Describe an image…"></textarea>
+      <button id="generateImageBtn" class="modal-btn primary" type="button"><i class="ri-image-add-line"></i> <span>Generate</span></button>
       <div id="imageResult" class="image-result"></div>
     </div>
   </div>
@@ -498,26 +494,24 @@
 <!-- SUPPORT -->
 <div id="supportModal" class="modal-overlay">
   <div class="modal">
-    <button class="icon-btn modal-close" type="button" data-close="supportModal" data-i18n-title="close"><i class="ri-close-line"></i></button>
+    <button class="icon-btn modal-close" type="button" data-close="supportModal"><i class="ri-close-line"></i></button>
     <h2 class="modal-title" data-i18n="supportTitle">Contact Support</h2>
-    <p class="modal-sub" data-i18n="supportSub">Send us a message. We usually reply within 24 hours.</p>
+    <p class="modal-sub">Send us a message. We usually reply within 24 hours.</p>
     <div class="support-form">
-      <label class="support-label" data-i18n="supportCategory">Category</label>
+      <label class="support-label">Category</label>
       <select id="supportCategory" class="modal-select">
-        <option value="bug" data-i18n="catBug">Bug report</option>
-        <option value="feedback" data-i18n="catFeedback">Feedback</option>
-        <option value="billing" data-i18n="catBilling">Billing</option>
-        <option value="abuse" data-i18n="catAbuse">Report abuse</option>
-        <option value="other" data-i18n="catOther">Other</option>
+        <option value="bug">Bug report</option>
+        <option value="feedback">Feedback</option>
+        <option value="billing">Billing</option>
+        <option value="abuse">Report abuse</option>
+        <option value="other">Other</option>
       </select>
-      <input type="text" id="supportSubject" class="modal-input" data-i18n-placeholder="subject" placeholder="Subject" maxlength="120">
-      <input type="email" id="supportEmail" class="modal-input" data-i18n-placeholder="email" placeholder="Your email (optional)" maxlength="120">
-      <textarea id="supportMessage" class="modal-textarea" rows="5" data-i18n-placeholder="message" placeholder="Describe your issue…" maxlength="4000"></textarea>
+      <input type="text" id="supportSubject" class="modal-input" placeholder="Subject" maxlength="120">
+      <input type="email" id="supportEmail" class="modal-input" placeholder="Your email (optional)" maxlength="120">
+      <textarea id="supportMessage" class="modal-textarea" rows="5" placeholder="Describe your issue…" maxlength="4000"></textarea>
       <div id="supportError" class="modal-error" role="alert" style="display:none;"></div>
-      <button id="submitReportBtn" class="modal-btn primary" type="button" data-i18n="submit">Submit</button>
-      <div class="support-hint" data-i18n="supportHint">
-        Prefer email? Write to <a href="mailto:support@miroxai.org">support@miroxai.org</a>
-      </div>
+      <button id="submitReportBtn" class="modal-btn primary" type="button">Submit</button>
+      <div class="support-hint">Prefer email? Write to <a href="mailto:support@miroxai.org">support@miroxai.org</a></div>
     </div>
   </div>
 </div>
@@ -527,15 +521,15 @@
   <div class="image-viewer-backdrop" data-iv-close></div>
   <div class="image-viewer-panel">
     <div class="image-viewer-top">
-      <div class="image-viewer-title" data-i18n="generatedImage">Generated image</div>
-      <button class="icon-btn" type="button" data-iv-close data-i18n-title="close"><i class="ri-close-line"></i></button>
+      <div class="image-viewer-title">Generated image</div>
+      <button class="icon-btn" type="button" data-iv-close><i class="ri-close-line"></i></button>
     </div>
     <div class="image-viewer-canvas-wrap">
       <canvas id="ivCanvas"></canvas>
       <div class="image-viewer-watermark">MiroxAI · OpenSurr</div>
     </div>
     <div class="image-viewer-actions">
-      <button class="iv-btn" type="button" id="ivDownload"><i class="ri-download-2-line"></i> <span data-i18n="download">Download</span></button>
+      <button class="iv-btn" type="button" id="ivDownload"><i class="ri-download-2-line"></i> <span>Download</span></button>
     </div>
   </div>
 </div>
