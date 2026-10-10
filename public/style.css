@@ -1,5 +1,5 @@
 /* ════════════════════════════════════════════════════════════
-   MiroxAI — Styles v116 · Kimi-inspired · blob avatars on bubbles
+   MiroxAI — Styles v120 · Claude-Code-style robot mascot
    ════════════════════════════════════════════════════════════ */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -9,7 +9,8 @@
   --text:#0f1216;--text-muted:#4b5563;--text-faint:#9ca3af;
   --accent:#4d6bfe;--accent-hover:#3d5be8;--accent-soft:rgba(77,107,254,.08);--accent-soft-2:rgba(77,107,254,.14);--accent-glow:rgba(77,107,254,.18);
   --accent-gradient:linear-gradient(135deg,var(--accent),var(--accent-hover));
-  --blob-ink:#0a0a0a;
+  --blob-ink:#d97757;   /* Claude-ish coral orange */
+  --blob-eye:#ffffff;
   --code-bg:#282c34;--code-header:#21252b;--code-border:#181a1f;--code-text:#abb2bf;
   --danger:#dc2626;--success:#16a34a;--warn:#d97706;
   --radius:12px;--radius-lg:16px;--radius-xl:22px;
@@ -29,7 +30,8 @@
   --border:#262626;--border-strong:#383838;
   --text:#f0f0f0;--text-muted:#a0a0a0;--text-faint:#6b6b6b;
   --accent:#7c8aff;--accent-hover:#96a1ff;--accent-soft:rgba(124,138,255,.12);--accent-soft-2:rgba(124,138,255,.20);--accent-glow:rgba(124,138,255,.22);
-  --blob-ink:#f5f5f5;
+  --blob-ink:#e88a68;
+  --blob-eye:#0a0a0a;
   --code-bg:#1a1a1a;--code-header:#141414;--code-border:#0f0f0f;--code-text:#e0e0e0;
   --shadow-sm:0 1px 2px rgba(0,0,0,.5);--shadow-md:0 4px 12px rgba(0,0,0,.6);--shadow-lg:0 12px 40px rgba(0,0,0,.7);
 }
@@ -90,59 +92,150 @@ code { font-family: var(--font-mono); }
 .brand-logo { width: 28px; height: 28px; border-radius: 8px; object-fit: contain; }
 .bridge-logo { width: 26px; height: 26px; border-radius: 7px; object-fit: contain; }
 
-/* ═══════════ BLOB MASCOT ═══════════ */
-.mascot { --ms:40px; position: relative; display: inline-grid; place-items: center; width: var(--ms); height: var(--ms); flex: 0 0 auto; color: var(--blob-ink); }
+/* ═══════════════════════════════════════════════════════════
+   CLAUDE-CODE STYLE ROBOT MASCOT
+   Body: rounded rect, 4 legs, 2 vertical-pill eyes.
+   Animation style mimics Claude Code's bouncy terminal mascot.
+   ═══════════════════════════════════════════════════════════ */
+.mascot {
+  --ms:40px;
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: var(--ms);
+  height: var(--ms);
+  flex: 0 0 auto;
+  color: var(--blob-ink);
+}
 .mascot-lg { --ms:96px; }
 .mascot-md { --ms:52px; }
 .mascot-sm { --ms:36px; }
 .mascot-xs { --ms:26px; }
+
 .mascot .blob-svg { width: 100%; height: 100%; display: block; overflow: visible; }
-.mascot .blob-float { transform-box: fill-box; transform-origin: 50% 55%; animation: blobFloat 5.5s ease-in-out infinite; }
-.mascot .blob-body { fill: currentColor; }
 
-.mascot .eye { transform-box: fill-box; transform-origin: center; transition: transform .25s var(--ease-spring), opacity .2s, ry .2s; }
-.mascot .eye-left { transform-origin: 78px 88px; }
-.mascot .eye-right { transform-origin: 122px 85px; }
-
-.mascot .blob-glasses { opacity: 0; transition: opacity .3s; }
-
-@keyframes blobFloat {
-  0%,100% { transform: translateY(0) rotate(-1deg) scale(1); }
-  33%     { transform: translateY(-3px) rotate(1deg) scale(1.015); }
-  66%     { transform: translateY(1.5px) rotate(-.5deg) scale(.992); }
+/* Root wrapper animates the bounce / squash / shake etc. */
+.mascot .blob-float {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: ccIdle 3.2s ease-in-out infinite;
 }
-.mascot.m-idle .blob-float { animation-duration: 6s; }
-.mascot.m-happy .blob-float { animation-duration: 3.2s; }
-.mascot.m-thinking .blob-float { animation: blobThink 2.8s ease-in-out infinite; }
-@keyframes blobThink { 0%,100% { transform: translateY(0) rotate(-1deg); } 50% { transform: translateY(-4px) rotate(1deg); } }
-.mascot.m-coding .eye { transform: scaleY(.7); }
-.mascot.m-coding .blob-float { animation: blobCode .6s ease-in-out infinite alternate; }
-@keyframes blobCode { to { transform: translateY(-2px); } }
-.mascot.m-wink .eye-right { animation: blobWink 2.6s ease-in-out infinite; }
-@keyframes blobWink { 0%, 25%, 55%, 100% { transform: scaleY(1); } 35%, 45% { transform: scaleY(.08); } }
+
+/* Body + legs share fill via currentColor */
+.mascot .blob-body,
+.mascot .leg { fill: currentColor; }
+
+/* Eyes are "punched out" using the background color to look like Claude Code's white eyes */
+.mascot .eye {
+  fill: var(--blob-eye);
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform .22s var(--ease-spring), ry .15s, opacity .18s;
+}
+.mascot .eye-left { transform-origin: 72px 80px; }
+.mascot .eye-right { transform-origin: 128px 80px; }
+
+/* Legs each have their own subtle wiggle origin */
+.mascot .leg { transform-box: fill-box; transform-origin: top center; }
+
+.mascot .blob-glasses { opacity: 0; transition: opacity .25s; }
+
+/* ═══════ Idle: gentle breathe ═══════ */
+@keyframes ccIdle {
+  0%, 100% { transform: translateY(0) scale(1, 1); }
+  50%      { transform: translateY(-2px) scale(1.015, .985); }
+}
+
+/* ═══════ Happy: bouncy hops with squash and stretch ═══════ */
+.mascot.m-happy .blob-float { animation: ccHop .9s cubic-bezier(.4,0,.6,1) infinite; }
+@keyframes ccHop {
+  0%   { transform: translateY(0)    scale(1, 1); }
+  15%  { transform: translateY(2px)  scale(1.08, .92); }
+  40%  { transform: translateY(-9px) scale(.94, 1.06); }
+  55%  { transform: translateY(-12px) scale(.96, 1.04); }
+  85%  { transform: translateY(2px)  scale(1.08, .92); }
+  100% { transform: translateY(0)    scale(1, 1); }
+}
+
+/* ═══════ Thinking: tilt + slow bob ═══════ */
+.mascot.m-thinking .blob-float { animation: ccThink 2.4s ease-in-out infinite; }
+@keyframes ccThink {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50%      { transform: translateY(-3px) rotate(2deg); }
+}
+.mascot.m-thinking .eye-left  { transform: translate(2px, -3px); }
+.mascot.m-thinking .eye-right { transform: translate(-2px, -3px); }
+
+/* ═══════ Coding: rapid micro-bounce, squint ═══════ */
+.mascot.m-coding .blob-float { animation: ccCode .35s ease-in-out infinite alternate; }
+@keyframes ccCode { from { transform: translateY(0); } to { transform: translateY(-2px); } }
+.mascot.m-coding .eye { transform: scaleY(.75); }
+
+/* ═══════ Winking: brief eye close on the right ═══════ */
+.mascot.m-wink .eye-right { animation: ccWink 2.4s ease-in-out infinite; }
+@keyframes ccWink {
+  0%, 30%, 60%, 100% { transform: scaleY(1); }
+  40%, 50%           { transform: scaleY(.05); }
+}
+
+/* ═══════ Searching: eyes sweep L→R ═══════ */
+.mascot.m-searching .eye-left,
+.mascot.m-searching .eye-right { animation: ccSweep 2.4s ease-in-out infinite; }
+@keyframes ccSweep {
+  0%, 100% { transform: translateX(-3px); }
+  50%      { transform: translateX(4px); }
+}
+.mascot.m-searching .blob-float { animation: ccSearchBody 2.4s ease-in-out infinite; }
+@keyframes ccSearchBody {
+  0%, 100% { transform: rotate(-2deg) translateY(0); }
+  50%      { transform: rotate(2deg) translateY(-2px); }
+}
+
+/* ═══════ Study: glasses on, eyes look down ═══════ */
 .mascot.m-study .blob-glasses { opacity: 1; }
-.mascot.m-study .eye { transform: translateY(4px) scaleY(.72); }
-.mascot.m-study .blob-float { animation: blobStudy 3.4s ease-in-out infinite; }
-@keyframes blobStudy { 0%,100% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-2px) rotate(.5deg); } }
-.mascot.m-searching .eye-left { animation: blobSearchL 2.4s ease-in-out infinite; }
-.mascot.m-searching .eye-right { animation: blobSearchR 2.4s ease-in-out infinite; }
-.mascot.m-searching .blob-float { animation: blobSearchBody 2.4s ease-in-out infinite; }
-@keyframes blobSearchL { 0%,100% { transform: translateX(-4px); } 50% { transform: translateX(6px); } }
-@keyframes blobSearchR { 0%,100% { transform: translateX(-4px); } 50% { transform: translateX(6px); } }
-@keyframes blobSearchBody { 0%,100% { transform: rotate(-2deg) translateY(0); } 50% { transform: rotate(2deg) translateY(-2px); } }
+.mascot.m-study .eye { transform: translateY(6px) scaleY(.7); }
+.mascot.m-study .blob-float { animation: ccIdle 3.6s ease-in-out infinite; }
+
+/* ═══════ Reading: glasses on, slow bob ═══════ */
 .mascot.m-reading .blob-glasses { opacity: 1; }
-.mascot.m-reading .eye { transform: translateY(3px) scaleY(.68); }
-.mascot.m-reading .blob-float { animation: blobStudy 4.2s ease-in-out infinite; }
+.mascot.m-reading .eye { transform: translateY(5px) scaleY(.65); }
+.mascot.m-reading .blob-float { animation: ccIdle 4.5s ease-in-out infinite; }
+
+/* ═══════ Learning: glasses on, happy bob ═══════ */
 .mascot.m-learning .blob-glasses { opacity: 1; }
-.mascot.m-learning .blob-float { animation: blobFloat 3.6s ease-in-out infinite; }
-.mascot.m-celebrate .blob-float { animation: blobPop .7s ease-in-out infinite; }
-@keyframes blobPop { 0%,100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-6px) scale(1.06); } }
-.mascot.m-error .blob-float { animation: blobShake .4s ease-in-out 3; }
+.mascot.m-learning .blob-float { animation: ccHop 1.6s ease-in-out infinite; }
+
+/* ═══════ Celebrate: big jumps + squash ═══════ */
+.mascot.m-celebrate .blob-float { animation: ccCelebrate 1s cubic-bezier(.4,0,.6,1) infinite; }
+@keyframes ccCelebrate {
+  0%   { transform: translateY(0)    scale(1, 1)      rotate(0deg); }
+  20%  { transform: translateY(3px)  scale(1.1, .88)  rotate(-3deg); }
+  50%  { transform: translateY(-14px) scale(.92, 1.08) rotate(3deg); }
+  80%  { transform: translateY(3px)  scale(1.1, .88)  rotate(-2deg); }
+  100% { transform: translateY(0)    scale(1, 1)      rotate(0deg); }
+}
+
+/* ═══════ Error: shake + squint ═══════ */
+.mascot.m-error .blob-float { animation: ccShake .35s ease-in-out 4; }
+@keyframes ccShake {
+  0%, 100% { transform: translateX(0); }
+  25%      { transform: translateX(-3px); }
+  75%      { transform: translateX(3px); }
+}
 .mascot.m-error .eye { transform: scaleY(.5); }
-@keyframes blobShake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
+
+/* Legs wiggle while animating (only when active moods) */
+.mascot.m-happy .leg-1,
+.mascot.m-happy .leg-3 { animation: legStep 1s ease-in-out infinite; }
+.mascot.m-happy .leg-2,
+.mascot.m-happy .leg-4 { animation: legStep 1s ease-in-out infinite reverse; }
+@keyframes legStep { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+
+.mascot.m-coding .leg { animation: legTappy .18s linear infinite alternate; }
+@keyframes legTappy { from { transform: translateY(0); } to { transform: translateY(-1px); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .mascot .blob-float, .mascot .eye, .mascot .blob-glasses { animation: none !important; }
+  .mascot .blob-float, .mascot .eye, .mascot .leg, .mascot .blob-glasses { animation: none !important; }
 }
 
 .welcome-mascot { position: relative; display: grid; place-items: center; margin-bottom: 20px; }
@@ -272,7 +365,7 @@ code { font-family: var(--font-mono); }
 .suggestion-card i { font-size: 18px; color: var(--accent); flex-shrink: 0; }
 .suggestion-card span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ═══════════ MESSAGE (Kimi-like, with blob avatar) ═══════════ */
+/* ═══════════ MESSAGE with avatar ═══════════ */
 .message {
   max-width: var(--content-max);
   margin: 0 auto 22px;
@@ -285,17 +378,18 @@ code { font-family: var(--font-mono); }
 .message.user { justify-content: flex-end; }
 .message-avatar {
   flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   display: grid;
   place-items: center;
-  border-radius: 50%;
+  border-radius: 12px;
   background: var(--panel-2);
   border: 1px solid var(--border);
   overflow: hidden;
   transition: background .25s;
 }
-.message.ai .message-avatar { background: var(--accent-soft); border-color: var(--accent); }
+.message.ai .message-avatar { background: rgba(217,119,87,.10); border-color: rgba(217,119,87,.30); }
+:root[data-mode="dark"] .message.ai .message-avatar { background: rgba(232,138,104,.12); border-color: rgba(232,138,104,.30); }
 .message-body { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; max-width: 100%; flex: 1; }
 .message.user .message-body { align-items: flex-end; }
 
@@ -416,27 +510,22 @@ code { font-family: var(--font-mono); }
 .send-btn:not(.is-disabled):hover { transform: scale(1.07); }
 .send-btn.is-disabled { opacity: .35; cursor: not-allowed; box-shadow: none; }
 .stop-btn { color: var(--danger); }
-
-/* Voice button */
 .voice-btn { color: var(--text-muted); transition: background .15s, color .15s, transform .15s; }
 .voice-btn:hover { background: var(--panel-2); color: var(--accent); }
-.voice-btn.listening {
-  color: #fff;
-  background: var(--danger);
-  animation: voicePulse 1.2s ease-in-out infinite;
-}
+.voice-btn.listening { color: #fff; background: var(--danger); animation: voicePulse 1.2s ease-in-out infinite; }
 .voice-btn.listening:hover { background: #b91c1c; color: #fff; }
 @keyframes voicePulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(220,38,38,.45); }
   50%      { box-shadow: 0 0 0 10px rgba(220,38,38,0); }
 }
-
 .composer-note { text-align: center; font-size: 11px; color: var(--text-faint); margin-top: 8px; }
 .attachment-preview { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--panel-2); margin-bottom: 10px; }
 .attachment-list { display: flex; gap: 8px; flex-wrap: wrap; flex: 1; min-width: 0; }
 
 .mirox-toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); max-width: min(560px,calc(100vw - 32px)); text-align: center; background: var(--panel); color: var(--text); border: 1px solid var(--border); padding: 10px 16px; border-radius: 12px; font-size: 13px; box-shadow: var(--shadow-lg); z-index: 99999; transition: opacity .3s; }
 .mirox-toast.out { opacity: 0; }
+.mirox-toast.ok { border-color: var(--success); color: var(--success); }
+.mirox-toast.err { border-color: var(--danger); color: var(--danger); }
 
 /* MODALS */
 .modal-overlay { position: fixed; inset: 0; z-index: 200; background: rgba(15,18,22,.42); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; padding: 20px; opacity: 0; visibility: hidden; transition: .22s; }
@@ -457,6 +546,9 @@ code { font-family: var(--font-mono); }
 .modal-btn:hover { background: var(--panel-3); }
 .modal-btn.primary { background: var(--accent-gradient); color: #fff; border-color: transparent; box-shadow: var(--shadow-accent); }
 .modal-btn.danger { color: #dc2626; border-color: rgba(220,38,38,.3); }
+.modal-btn[disabled] { opacity: .55; cursor: not-allowed; }
+.modal-error { padding: 10px 12px; border-radius: 10px; background: rgba(220,38,38,.08); border: 1px solid rgba(220,38,38,.25); color: var(--danger); font-size: 13px; line-height: 1.5; }
+.modal-error.ok { background: rgba(22,163,74,.08); border-color: rgba(22,163,74,.25); color: var(--success); }
 
 /* SETTINGS */
 .settings-tabs { display: flex; gap: 4px; margin-bottom: 22px; border-bottom: 1px solid var(--border); padding-bottom: 4px; overflow-x: auto; scrollbar-width: none; }
@@ -496,6 +588,7 @@ code { font-family: var(--font-mono); }
 .translate-status { font-size: 12px; color: var(--accent); font-weight: 600; min-height: 16px; margin-top: 8px; display: block; }
 .translate-status:empty { display: none; }
 
+/* PLANS */
 .plans-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(200px,1fr)); gap: 14px; }
 .plan-card { padding: 22px; border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--panel-2); }
 .plan-card.current { border-color: var(--accent); background: var(--accent-soft); }
@@ -506,8 +599,13 @@ code { font-family: var(--font-mono); }
 .image-result img { border-radius: var(--radius); border: 1px solid var(--border); width: 100%; cursor: zoom-in; }
 .studio-empty { padding: 16px; text-align: center; font-size: 13px; color: var(--text-faint); }
 .studio-error { font-size: 13px; color: var(--danger); }
+
+/* SUPPORT */
 .support-form { display: flex; flex-direction: column; gap: 10px; }
 .support-form .modal-btn { margin-top: 0; }
+.support-label { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+.support-hint { font-size: 12px; color: var(--text-faint); text-align: center; margin-top: 6px; }
+.support-hint a { color: var(--accent); text-decoration: underline; }
 
 /* SHARE AD */
 .share-ad-overlay { position: fixed; inset: 0; z-index: 4000; background: rgba(10,10,10,.55); backdrop-filter: blur(10px); display: none; align-items: center; justify-content: center; padding: 20px; }
@@ -709,10 +807,8 @@ code { font-family: var(--font-mono); }
   .token-usage { padding: 5px 8px; font-size: 10.5px; }
   .scroll-bottom-btn { bottom: 128px; }
   .settings-tab span { display: none; }
-
-  /* On mobile: hide the avatar ring for tighter layout, keep blob */
-  .message-avatar { width: 30px; height: 30px; }
-  .message-avatar .mascot { --ms: 26px; }
+  .message-avatar { width: 32px; height: 32px; }
+  .message-avatar .mascot { --ms: 28px; }
 }
 @media (max-width: 640px) {
   :root { --base-font: 14.5px; --sidebar-width: 265px; }
