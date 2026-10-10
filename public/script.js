@@ -21,8 +21,6 @@
   const $$ = (s) => document.querySelectorAll(s);
   const on = (sel, ev, fn) => { const el = $(sel); if (el) el.addEventListener(ev, fn); };
 
-  /* ═══════════ MODELS ═══════════ */
-  // tier: free = anyone | pro = Pro or higher | ultimate = Ultimate or BONUS
   const FALLBACK_MODELS = [
     { id: 'mirox-luna-1.2', label: 'Luna', tier: 'free', tagline: 'Fast, unlimited', icon: 'ri-moon-line' },
     { id: 'mirox-gen-1', label: 'Gen', tier: 'free', tagline: 'Concise, unlimited', icon: 'ri-flashlight-line' },
@@ -32,11 +30,14 @@
   ];
   const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
 
-  const LS_KEY = 'miroxai_conversations_v33';
+  const LS_KEY = 'miroxai_conversations_v34';
   const TOKEN_KEY = 'mirox_token';
-  const APPEARANCE_KEY = 'miroxai_appearance_v33';
-  const SHARE_KEY = 'miroxai_share_v4';
-  const BONUS_KEY = 'miroxai_bonus_v4';
+  const GUEST_KEY = 'miroxai_guest_id_v1';
+  const APPEARANCE_KEY = 'miroxai_appearance_v34';
+  const SHARE_KEY = 'miroxai_share_v5';
+  const BONUS_KEY = 'miroxai_bonus_v5';
+  const PREFS_KEY = 'miroxai_prefs_v1';
+  const MCP_KEY = 'miroxai_mcp_v1';
   const PASTE_ATTACH_THRESHOLD = 1024;
   const NET_TIMEOUT_MS = 15000;
   const STREAM_TIMEOUT_MS = 120000;
@@ -56,6 +57,8 @@
   let __shareState = { claimed: false, claimedAt: 0, dismissedAt: 0 };
   let __bonusTimer = null;
   let __lastBonusActive = false;
+  let __prefs = {};
+  let __mcpServers = [];
 
   const uid = () => 'c_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
   const escapeHtml = (s) => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
@@ -65,17 +68,53 @@
   function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
   function setToken(t) { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch {} }
 
+  /* ═══════════ GUEST IDENTITY ═══════════ */
+  function getGuestId() {
+    let id = null;
+    try { id = localStorage.getItem(GUEST_KEY); } catch {}
+    if (!id || id.length < 8) {
+      id = 'g_' + Math.random().toString(36).slice(2, 14) + Date.now().toString(36).slice(-6);
+      try { localStorage.setItem(GUEST_KEY, id); } catch {}
+    }
+    return id;
+  }
+  function resetGuestId() {
+    const id = 'g_' + Math.random().toString(36).slice(2, 14) + Date.now().toString(36).slice(-6);
+    try { localStorage.setItem(GUEST_KEY, id); } catch {}
+    return id;
+  }
+
+  /* ═══════════ AUTH + BONUS PROOF HEADERS ═══════════ */
+  function bonusProofHeaders() {
+    const b = loadBonusRaw();
+    if (!b || !isBonusValid(b)) return {};
+    return {
+      'X-Mirox-Guest': getGuestId(),
+      'X-Mirox-Bonus-Tokens': String(b.tokens),
+      'X-Mirox-Bonus-Expires': String(b.expiresAt),
+      'X-Mirox-Bonus-Granted': String(b.grantedAt || 0),
+    };
+  }
   function authHeaders(extra) {
     const h = { 'Content-Type': 'application/json', ...(extra || {}) };
     const t = getToken();
     if (t) h.Authorization = 'Bearer ' + t;
+    // Always attach bonus proof (server can ignore if user is authenticated)
+    Object.assign(h, bonusProofHeaders());
+    // Attach language pref
+    if (__prefs.responseLanguage && __prefs.responseLanguage !== 'auto') {
+      h['X-Mirox-Lang'] = __prefs.responseLanguage;
+    }
+    if (__prefs.translateComments) h['X-Mirox-Translate-Comments'] = '1';
     return h;
   }
   async function netFetch(url, opts = {}, ms = NET_TIMEOUT_MS) {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), ms);
-    try { return await fetch(url, { ...opts, signal: ctrl.signal, credentials: 'same-origin', cache: 'no-store' }); }
-    finally { clearTimeout(timer); }
+    try {
+      if (opts.signal) opts.signal.addEventListener('abort', () => ctrl.abort());
+      return await fetch(url, { ...opts, signal: ctrl.signal, credentials: 'same-origin', cache: 'no-store' });
+    } finally { clearTimeout(timer); }
   }
   async function jsonOr(url, opts = {}, fallback = null, ms = NET_TIMEOUT_MS) {
     try {
@@ -129,7 +168,7 @@
       newTokens = tokens;
       newExpiry = now + BONUS_MS;
     }
-    const bonus = { tokens: newTokens, expiresAt: newExpiry, grantedAt: now };
+    const bonus = { tokens: newTokens, expiresAt: newExpiry, grantedAt: now, guest: getGuestId() };
     saveBonusRaw(bonus);
     return bonus;
   }
@@ -145,16 +184,92 @@
     return mins + 'm';
   }
 
-  /* ═══════════ MODEL ACCESS — bonus unlocks Pro/Ultra/Eclipse ═══════════ */
-  // Rules:
-  //   Free tier WITHOUT bonus → only Luna, Gen
-  //   Free tier WITH bonus   → everything unlocked for the bonus period
-  //   Pro tier               → Luna, Gen, Pro, Ultra (no Eclipse)
-  //   Ultimate tier          → everything
+  /* ═══════════ PREFERENCES ═══════════ */
+  function loadPrefs() {
+    __prefs = safeGet(PREFS_KEY, {
+      autoScroll: true, enterSend: true, showThinking: true, compact: false,
+      reduceMotion: false, fontSize: 'md',
+      responseLanguage: 'auto', uiLanguage: 'en', translateComments: false,
+      desktopNotify: false, sound: true, bonusReminder: true,
+      verboseLog: false,
+      persona: '',
+    });
+  }
+  function savePrefs() { safeSet(PREFS_KEY, __prefs); }
+  function applyPrefs() {
+    document.documentElement.setAttribute('data-fontsize', __prefs.fontSize || 'md');
+    document.documentElement.classList.toggle('reduce-motion', !!__prefs.reduceMotion);
+    document.documentElement.classList.toggle('compact-mode', !!__prefs.compact);
+    // Sync toggles
+    const setChk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = !!val; };
+    setChk('autoScrollToggle', __prefs.autoScroll);
+    setChk('enterSendToggle', __prefs.enterSend);
+    setChk('showThinkingToggle', __prefs.showThinking);
+    setChk('compactToggle', __prefs.compact);
+    setChk('reduceMotionToggle', __prefs.reduceMotion);
+    setChk('desktopNotifyToggle', __prefs.desktopNotify);
+    setChk('soundToggle', __prefs.sound);
+    setChk('bonusReminderToggle', __prefs.bonusReminder);
+    setChk('verboseLogToggle', __prefs.verboseLog);
+    setChk('translateCommentsToggle', __prefs.translateComments);
+    const langSel = document.getElementById('languageSelect');
+    if (langSel) langSel.value = __prefs.responseLanguage || 'auto';
+    const uiSel = document.getElementById('uiLanguageSelect');
+    if (uiSel) uiSel.value = __prefs.uiLanguage || 'en';
+    const pInp = document.getElementById('personaInput');
+    if (pInp && __prefs.persona) pInp.value = __prefs.persona;
+  }
+
+  /* ═══════════ MCP SERVERS ═══════════ */
+  function loadMcp() {
+    __mcpServers = safeGet(MCP_KEY, []);
+    if (!Array.isArray(__mcpServers)) __mcpServers = [];
+    const en = safeGet(MCP_KEY + '_enabled', false);
+    const t = document.getElementById('mcpEnableToggle');
+    if (t) t.checked = !!en;
+  }
+  function saveMcp() { safeSet(MCP_KEY, __mcpServers); }
+  function renderMcpList() {
+    const wrap = document.getElementById('mcpServerList');
+    if (!wrap) return;
+    if (!__mcpServers.length) { wrap.innerHTML = '<div class="mcp-empty">No MCP servers configured.</div>'; return; }
+    wrap.innerHTML = __mcpServers.map((s, i) => `
+      <div class="mcp-row" data-idx="${i}">
+        <div class="mcp-row-icon"><i class="ri-server-line"></i></div>
+        <div class="mcp-row-info">
+          <div class="mcp-row-name">${escapeHtml(s.name)}</div>
+          <div class="mcp-row-url">${escapeHtml(s.url)}</div>
+        </div>
+        <div class="mcp-row-actions">
+          <button class="icon-btn mcp-test" data-idx="${i}" title="Test"><i class="ri-flashlight-line"></i></button>
+          <button class="icon-btn mcp-remove" data-idx="${i}" title="Remove"><i class="ri-delete-bin-line"></i></button>
+        </div>
+      </div>`).join('');
+    wrap.querySelectorAll('.mcp-remove').forEach((b) => {
+      b.onclick = () => {
+        const i = parseInt(b.dataset.idx, 10);
+        __mcpServers.splice(i, 1);
+        saveMcp(); renderMcpList();
+        toast('Server removed');
+      };
+    });
+    wrap.querySelectorAll('.mcp-test').forEach((b) => {
+      b.onclick = async () => {
+        const i = parseInt(b.dataset.idx, 10);
+        const s = __mcpServers[i];
+        if (!s) return;
+        toast(`Testing ${s.name}…`);
+        try {
+          const r = await netFetch(s.url, { method: 'GET', headers: s.key ? { Authorization: 'Bearer ' + s.key } : {} }, 5000);
+          toast(r.ok ? `✓ ${s.name} is reachable` : `✗ ${s.name} returned ${r.status}`);
+        } catch (e) { toast(`✗ ${s.name} unreachable`); }
+      };
+    });
+  }
+
+  /* ═══════════ MODEL ACCESS ═══════════ */
   function canUseModel(tier) {
-    // Bonus unlocks everything for free users
     if (__tier === 'free' && isBonusActive()) return true;
-    // Standard tier access
     if (tier === 'free') return true;
     if (__tier === 'ultimate') return true;
     if (__tier === 'pro' && tier === 'pro') return true;
@@ -174,43 +289,23 @@
     return tier.toUpperCase();
   }
 
-  const idb = (() => {
-    let p = null;
-    const open = () => p || (p = new Promise((res, rej) => {
-      if (!('indexedDB' in window)) return rej(new Error('no idb'));
-      const r = indexedDB.open('mirox', 1);
-      r.onupgradeneeded = () => r.result.createObjectStore('kv');
-      r.onsuccess = () => res(r.result);
-      r.onerror = () => rej(r.error);
-    }));
-    return {
-      async set(k, v) { const db = await open(); return new Promise((res, rej) => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = () => res(true); t.onerror = () => rej(t.error); }); },
-      async get(k) { const db = await open(); return new Promise((res, rej) => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result || null); q.onerror = () => rej(q.error); }); },
-    };
-  })();
-
   /* ═══════════ CONFETTI ═══════════ */
   function launchConfetti(opts) {
+    if (__prefs.reduceMotion) return;
     const o = opts || {};
     const duration = o.duration || 4200;
     const count = o.count || 200;
     const canvas = document.createElement('canvas');
     canvas.className = 'confetti-canvas';
-    canvas.setAttribute('aria-hidden', 'true');
     document.body.appendChild(canvas);
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const W = window.innerWidth, H = window.innerHeight;
     canvas.width = W * dpr; canvas.height = H * dpr;
     canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
-    const ctx = canvas.getContext('2d');
-    ctx.scale(dpr, dpr);
-    const colors = ['#4d6bfe', '#7c8aff', '#16a34a', '#4ade80', '#f59e0b', '#fbbf24', '#ec4899', '#f472b6', '#06b6d4', '#22d3ee', '#a855f7', '#c084fc', '#ef4444', '#f87171', '#facc15'];
+    const ctx = canvas.getContext('2d'); ctx.scale(dpr, dpr);
+    const colors = ['#4d6bfe','#7c8aff','#16a34a','#4ade80','#f59e0b','#fbbf24','#ec4899','#f472b6','#06b6d4','#22d3ee','#a855f7','#c084fc','#ef4444','#f87171','#facc15'];
     const particles = [];
-    const origins = [
-      { x: W * 0.15, y: H * 0.25 },
-      { x: W * 0.85, y: H * 0.25 },
-      { x: W * 0.5, y: H * 0.2 },
-    ];
+    const origins = [{ x: W*0.15, y: H*0.25 }, { x: W*0.85, y: H*0.25 }, { x: W*0.5, y: H*0.2 }];
     for (let i = 0; i < count; i++) {
       const origin = origins[i % origins.length];
       const angle = (Math.random() - 0.5) * Math.PI * 1.4 - Math.PI / 2;
@@ -220,20 +315,17 @@
         y: origin.y + (Math.random() - 0.5) * 40,
         vx: Math.cos(angle) * speed * (0.7 + Math.random() * 0.6),
         vy: Math.sin(angle) * speed - 4 - Math.random() * 3,
-        gravity: 0.28 + Math.random() * 0.14,
-        drag: 0.988,
+        gravity: 0.28 + Math.random() * 0.14, drag: 0.988,
         size: 6 + Math.random() * 8,
         color: colors[Math.floor(Math.random() * colors.length)],
         rotation: Math.random() * Math.PI * 2,
         rotationSpeed: (Math.random() - 0.5) * 0.34,
         shape: Math.random() < 0.55 ? 'rect' : (Math.random() < 0.5 ? 'circle' : 'ribbon'),
-        swayAmp: 0.5 + Math.random() * 1.8,
-        swayFreq: 0.02 + Math.random() * 0.03,
+        swayAmp: 0.5 + Math.random() * 1.8, swayFreq: 0.02 + Math.random() * 0.03,
         swayPhase: Math.random() * Math.PI * 2,
       });
     }
-    const start = performance.now();
-    let raf = null, stopped = false;
+    const start = performance.now(); let raf = null, stopped = false;
     function frame(now) {
       if (stopped) return;
       const t = (now - start) / duration;
@@ -246,11 +338,10 @@
         p.x += p.vx + Math.sin(p.swayPhase) * p.swayAmp * 0.4;
         p.y += p.vy; p.rotation += p.rotationSpeed;
         if (p.y > H + 40) continue;
-        ctx.save();
-        ctx.translate(p.x, p.y); ctx.rotate(p.rotation); ctx.fillStyle = p.color;
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rotation); ctx.fillStyle = p.color;
         if (p.shape === 'circle') { ctx.beginPath(); ctx.arc(0, 0, p.size / 2, 0, Math.PI * 2); ctx.fill(); }
-        else if (p.shape === 'ribbon') { const flip = Math.sin(p.rotation * 2); ctx.fillRect(-p.size / 2, -p.size / 8, p.size, Math.abs(flip) * p.size * 0.4 + 1.5); }
-        else { ctx.fillRect(-p.size / 2, -p.size / 3, p.size, p.size * 0.7); }
+        else if (p.shape === 'ribbon') { const flip = Math.sin(p.rotation * 2); ctx.fillRect(-p.size/2, -p.size/8, p.size, Math.abs(flip) * p.size * 0.4 + 1.5); }
+        else { ctx.fillRect(-p.size/2, -p.size/3, p.size, p.size * 0.7); }
         ctx.restore();
       }
       if (t < 1) raf = requestAnimationFrame(frame);
@@ -260,7 +351,7 @@
     setTimeout(() => { stopped = true; if (raf) cancelAnimationFrame(raf); if (canvas.parentNode) canvas.remove(); }, duration + 2000);
   }
 
-  /* ═══════════ Mascot ═══════════ */
+  /* ═══════════ MASCOT ═══════════ */
   const MOODS = ['idle','happy','thinking','coding','celebrate','error','learning'];
   const BLOB_PATH = 'M100 20 C126 20 144 32 154 54 C178 56 194 76 194 102 C194 128 178 148 154 152 C144 174 126 186 100 186 C74 186 56 174 46 152 C22 148 6 128 6 102 C6 76 22 56 46 54 C56 32 74 20 100 20 Z';
   const BLOB_SVG = `<svg class="blob-svg" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mirox avatar"><g class="blob-float"><path class="blob-body" d="${BLOB_PATH}" fill="currentColor"/><g class="blob-eyes" fill="var(--bg)"><ellipse cx="88" cy="82" rx="4.5" ry="13" transform="rotate(18 88 82)"/><ellipse cx="110" cy="78" rx="4.5" ry="13" transform="rotate(18 110 78)"/></g></g></svg>`;
@@ -339,8 +430,7 @@
     if (Array.isArray(steps)) steps.forEach((s) => addNarration(s));
     function close(finalLabel, mood) {
       if (done) return;
-      done = true;
-      clearInterval(timer);
+      done = true; clearInterval(timer);
       timerEl.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
       labelEl.textContent = finalLabel;
       headIcon.className = 'ri-checkbox-circle-line';
@@ -450,7 +540,7 @@
   function atChatBottom(c = $('#chatMessages')) { return !c || c.scrollHeight - c.scrollTop - c.clientHeight < 100; }
   function scrollToBottom(force = false) {
     const c = $('#chatMessages'); if (!c) return;
-    if (force || (autoScrollEnabled && userIsAtBottom)) c.scrollTop = c.scrollHeight;
+    if (force || (autoScrollEnabled && userIsAtBottom && __prefs.autoScroll !== false)) c.scrollTop = c.scrollHeight;
     updateScrollButton();
   }
   function updateScrollButton() {
@@ -736,7 +826,7 @@
     }
   }
 
-  /* ═══════════ API ═══════════ */
+  /* ═══════════ API — with bonus proof so premium models work for guests ═══════════ */
   async function sendToAPI(text, files, forceSearch, continuation = null) {
     const isContinuation = !!(continuation && continuation.continuation);
     const convoAtStart = currentConvo();
@@ -795,17 +885,33 @@
     const streamTimeout = setTimeout(() => { try { activeStreamController?.abort(); } catch {} }, STREAM_TIMEOUT_MS);
 
     try {
+      const reqBody = {
+        message: text, history, model, stream: true, files, search: !!forceSearch,
+        guest_id: getGuestId(),
+        bonus_active: isBonusActive(),
+        bonus_tokens: getActiveBonus(),
+        bonus_expires: (loadBonusRaw() || {}).expiresAt || 0,
+        mcp_servers: __mcpServers,
+        mcp_enabled: !!document.getElementById('mcpEnableToggle')?.checked,
+        persona: __prefs.persona || '',
+        language: __prefs.responseLanguage || 'auto',
+      };
+      if (__prefs.verboseLog) console.log('[Mirox] Request:', reqBody, authHeaders());
       const res = await fetch('/v1/chat/completions', {
         method: 'POST',
         headers: authHeaders(),
         credentials: 'same-origin',
-        body: JSON.stringify({ message: text, history, model, stream: true, files, search: !!forceSearch }),
+        body: JSON.stringify(reqBody),
         signal: activeStreamController.signal,
       });
       if (!res.ok) {
         let detail = `HTTP ${res.status}`;
         try { const d = await res.json(); detail = d.error?.message || d.error || d.message || detail; } catch {}
-        if (res.status === 401 || res.status === 403) throw new Error('Not signed in.');
+        // Special handling: guest users with valid bonus should be allowed
+        if ((res.status === 401 || res.status === 403) && isBonusActive()) {
+          throw new Error('Bonus verified locally but server rejected guest access. Try refreshing or signing in — your 50k bonus is saved.');
+        }
+        if (res.status === 401 || res.status === 403) throw new Error('Not signed in. Sign in or refresh the page.');
         if (res.status === 404) throw new Error('Endpoint /v1/chat/completions not found.');
         if (res.status >= 500) throw new Error(`Server error (${res.status}).`);
         throw new Error(detail);
@@ -888,6 +994,9 @@
       timeEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       if (savedMsg && shouldShowContinue(full, convo, streamComplete)) {
         attachContinueButton(msgEl, bubble, savedMsg);
+      }
+      if (__prefs.desktopNotify && document.hidden) {
+        try { new Notification('Mirox replied', { body: 'Tap to view the answer', icon: '/logo.png' }); } catch {}
       }
     } catch (e) {
       clearTimeout(streamTimeout);
@@ -1002,7 +1111,7 @@
     setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 350); }, ms || 1800);
   }
 
-  /* ═══════════ Share popup ═══════════ */
+  /* ═══════════ Share ═══════════ */
   function loadShareState() { __shareState = safeGet(SHARE_KEY, { claimed: false, claimedAt: 0, dismissedAt: 0 }); }
   function saveShareState() { safeSet(SHARE_KEY, __shareState); }
   function shouldShowShareAd() {
@@ -1043,7 +1152,7 @@
     __shareState.dismissedAt = 0;
     saveShareState();
     updateTokenUsage();
-    renderModelPicker(); // Refresh lock states
+    renderModelPicker();
     celebrateReward();
     const days = Math.round((bonus.expiresAt - Date.now()) / 86400000);
     toast(`🎉 ${BONUS_TOKENS.toLocaleString()} bonus tokens + Pro/Ultra/Eclipse unlocked for ${days} days!`, 6500);
@@ -1053,7 +1162,7 @@
     try {
       await jsonOr('/api/share/reward', {
         method: 'POST',
-        body: JSON.stringify({ bonus_tokens: BONUS_TOKENS, valid_days: 7, verified: true, verified_at: Date.now() }),
+        body: JSON.stringify({ bonus_tokens: BONUS_TOKENS, valid_days: 7, verified: true, verified_at: Date.now(), guest_id: getGuestId() }),
       }, null);
     } catch {}
     try { if (__user) await refreshUsage(); } catch {}
@@ -1063,7 +1172,7 @@
     const shareData = {
       title: 'MiroxAI — Free unlimited AI chat',
       text: 'I\'m using MiroxAI for free AI chats. Get 50k tokens + Pro/Ultra/Eclipse free for a week!',
-      url: location.origin + '/?ref=share',
+      url: location.origin + '/?ref=share&g=' + getGuestId(),
     };
     if (btn) btn.disabled = true;
     if (navigator.share) {
@@ -1124,7 +1233,7 @@
   }
   function closeImageViewer() { $('#imageViewer')?.classList.remove('open'); }
 
-  /* ═══════════ MODELS — new picker with tier badges & bonus banner ═══════════ */
+  /* ═══════════ Model picker ═══════════ */
   function getModelsList() { return __config?.models?.length ? __config.models : FALLBACK_MODELS; }
   function renderModelPicker() {
     const menu = $('#modelPickerMenu'); if (!menu) return;
@@ -1159,8 +1268,7 @@
           <span class="model-option-top">
             <span class="model-option-name">${escapeHtml(m.label)}</span>
             <span class="model-tier-badge ${tierClass}">${tierLbl}</span>
-            ${bonusCrown}
-            ${lockIcon}
+            ${bonusCrown}${lockIcon}
           </span>
           <span class="model-option-tagline">${escapeHtml(m.tagline || '')}</span>
         </span>
@@ -1193,14 +1301,11 @@
       };
     });
     const cta = menu.querySelector('#modelPickerShareCta');
-    if (cta) {
-      cta.onclick = (e) => { e.stopPropagation(); closeModelPicker(); setTimeout(() => openShareAd(), 200); };
-    }
+    if (cta) cta.onclick = (e) => { e.stopPropagation(); closeModelPicker(); setTimeout(() => openShareAd(), 200); };
 
     const c = models.find((m) => m.id === cur);
     if (c) { const lbl = $('#currentModelLabel'); if (lbl) lbl.textContent = c.label; }
 
-    // Add a subtle "crown" badge on the model picker button when bonus is active
     const btn = $('#modelPickerBtn');
     if (btn) {
       btn.classList.toggle('has-bonus', bonusActive);
@@ -1217,13 +1322,8 @@
     const m = getModelsList().find((x) => x.id === id);
     if (!m) return;
     if (!canUseModel(m.tier)) {
-      if (__tier === 'free') {
-        toast('Share to unlock this model free for 7 days', 3500);
-        closeModelPicker();
-        setTimeout(() => openShareAd(), 400);
-      } else {
-        toast('Upgrade to use this model');
-      }
+      if (__tier === 'free') { toast('Share to unlock this model free for 7 days', 3500); closeModelPicker(); setTimeout(() => openShareAd(), 400); }
+      else toast('Upgrade to use this model');
       return;
     }
     __model = id;
@@ -1240,6 +1340,8 @@
       __user = null; __usage = null; __tier = 'free';
       const chip = $('#userChip');
       if (chip) { chip.querySelector('.user-name').textContent = 'Guest mode'; chip.querySelector('.user-sub').textContent = 'Sign in to save chats'; }
+      const sb = $('#signInFromSettingsBtn'); if (sb) sb.style.display = '';
+      const lo = $('#logoutBtn'); if (lo) lo.style.display = 'none';
       renderModelPicker(); updateTokenUsage(); return;
     }
     __user = res.user;
@@ -1250,6 +1352,8 @@
       chip.querySelector('.user-name').textContent = res.user.name || res.user.email;
       chip.querySelector('.user-sub').textContent = (__tier.charAt(0).toUpperCase() + __tier.slice(1)) + ' plan';
     }
+    const sb = $('#signInFromSettingsBtn'); if (sb) sb.style.display = 'none';
+    const lo = $('#logoutBtn'); if (lo) lo.style.display = '';
     renderModelPicker(); updateTokenUsage();
   }
   async function loadConfig() {
@@ -1290,7 +1394,7 @@
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line spin"></i> Generating…'; }
     if (result) result.innerHTML = '<div class="studio-empty"><i class="ri-loader-4-line spin"></i> Painting…</div>';
     try {
-      const res = await netFetch('/v1/images/generations', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ prompt }) }, 90000);
+      const res = await netFetch('/v1/images/generations', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ prompt, guest_id: getGuestId() }) }, 90000);
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok && data.image) {
         if (result) { result.innerHTML = `<img src="${data.image}" alt="${escapeHtml(prompt)}">`; result.querySelector('img').onclick = () => openImageViewer(data.image); }
@@ -1305,15 +1409,23 @@
     }
   }
 
-  /* ═══════════ Bridge status ═══════════ */
-  function renderBridgeStatus() {
-    [['#bridgeStatus']].forEach(([sel]) => {
-      const wrap = document.querySelector(sel); if (!wrap) return;
-      const dot = wrap.querySelector('.bridge-status-dot');
-      const txt = wrap.querySelector('span');
-      if (dot) { dot.classList.toggle('online', false); dot.classList.toggle('offline', true); }
-      if (txt) txt.textContent = 'Disconnected';
-    });
+  /* ═══════════ Bonus watcher ═══════════ */
+  function startBonusWatcher() {
+    if (__bonusTimer) clearInterval(__bonusTimer);
+    __bonusTimer = setInterval(() => {
+      const active = isBonusActive();
+      if (active !== __lastBonusActive) {
+        __lastBonusActive = active;
+        updateTokenUsage(); renderModelPicker();
+        if (!active && __model && !canUseModel(getModelsList().find((m) => m.id === __model)?.tier || 'free')) {
+          __model = 'mirox-luna-1.2';
+          const lbl = $('#currentModelLabel'); if (lbl) lbl.textContent = 'Luna';
+          toast('Bonus expired — switched back to Luna. Share again to renew!', 5000);
+        } else if (active) {
+          toast('🎉 Bonus active — Pro, Ultra & Eclipse unlocked!', 4500);
+        }
+      } else if (active) updateTokenUsage();
+    }, BONUS_CHECK_MS);
   }
 
   /* ═══════════ Modals ═══════════ */
@@ -1321,43 +1433,25 @@
   function closeModal(id) { const el = document.getElementById(id); if (el) el.classList.remove('open'); }
   function openSidebar() { $('#sidebar')?.classList.add('open'); $('#sidebarScrim')?.classList.add('open'); }
   function closeSidebar() { $('#sidebar')?.classList.remove('open'); $('#sidebarScrim')?.classList.remove('open'); }
+
   function applyAppearance(prefs) {
     const root = document.documentElement;
-    const mode = prefs.mode || 'light';
+    let mode = prefs.mode || 'light';
+    if (mode === 'auto') {
+      mode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
     const theme = prefs.theme || 'default';
     root.setAttribute('data-mode', mode);
     root.setAttribute('data-theme', theme);
-    safeSet(APPEARANCE_KEY, { mode, theme });
-    $$('[data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
+    if (prefs.mode === 'auto') root.setAttribute('data-mode-auto', '1'); else root.removeAttribute('data-mode-auto');
+    safeSet(APPEARANCE_KEY, { mode: prefs.mode || 'light', theme });
+    $$('[data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === (prefs.mode || 'light')));
     $$('.swatch').forEach((b) => b.classList.toggle('active', b.dataset.theme === theme));
   }
   function loadAppearance() {
     const prefs = safeGet(APPEARANCE_KEY, {});
     if (!prefs.mode && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) prefs.mode = 'dark';
     applyAppearance(prefs);
-  }
-
-  /* ═══════════ Bonus watcher — also refreshes model lock state ═══════════ */
-  function startBonusWatcher() {
-    if (__bonusTimer) clearInterval(__bonusTimer);
-    __bonusTimer = setInterval(() => {
-      const active = isBonusActive();
-      if (active !== __lastBonusActive) {
-        __lastBonusActive = active;
-        updateTokenUsage();
-        renderModelPicker();
-        if (!active && __model && !canUseModel(getModelsList().find((m) => m.id === __model)?.tier || 'free')) {
-          // Downgrade to Luna if the currently-selected model is now locked
-          __model = 'mirox-luna-1.2';
-          const lbl = $('#currentModelLabel'); if (lbl) lbl.textContent = 'Luna';
-          toast('Bonus expired — switched back to Luna. Share again to renew!', 5000);
-        } else if (active) {
-          toast('🎉 Bonus active — Pro, Ultra & Eclipse unlocked!', 4500);
-        }
-      } else if (active) {
-        updateTokenUsage();
-      }
-    }, BONUS_CHECK_MS);
   }
 
   /* ═══════════ Wiring ═══════════ */
@@ -1390,7 +1484,10 @@
     const inp = $('#messageInput');
     if (inp) {
       inp.addEventListener('input', () => { inp.style.height = 'auto'; inp.style.height = Math.min(inp.scrollHeight, 180) + 'px'; updateSendButtonState(); });
-      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); handleSend(); } });
+      inp.addEventListener('keydown', (e) => {
+        const enterSend = __prefs.enterSend !== false;
+        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && enterSend) { e.preventDefault(); handleSend(); }
+      });
       inp.addEventListener('paste', (e) => { const text = e.clipboardData?.getData('text/plain') || ''; if (text.length > PASTE_ATTACH_THRESHOLD) { e.preventDefault(); addTextAttachment(text); } });
     }
     on('#sendBtn', 'click', handleSend);
@@ -1414,9 +1511,12 @@
     on('#supportModeBtn2', 'click', () => openModal('supportModal'));
     on('#generateImageBtn', 'click', genImage);
     on('#submitReportBtn', 'click', () => { toast('Ticket submitted!'); closeModal('supportModal'); });
-    on('#settingsBtn', 'click', (e) => { e.preventDefault(); openModal('settingsModal'); });
+    on('#settingsBtn', 'click', (e) => { e.preventDefault(); openSettingsModal(); });
     on('#logoutBtn', 'click', doLogout);
     on('#loginmentBtn', 'click', doLoginment);
+    on('#signInFromSettingsBtn', 'click', () => { closeModal('settingsModal'); openModal('loginModal'); });
+
+    // Settings tabs
     $$('.settings-tab').forEach((tab) => {
       tab.onclick = () => {
         const t = tab.dataset.tab;
@@ -1424,8 +1524,129 @@
         $$('.settings-pane').forEach((p) => p.classList.toggle('active', p.dataset.pane === t));
       };
     });
+
+    // Appearance
     $$('[data-mode]').forEach((b) => { b.onclick = () => applyAppearance({ mode: b.dataset.mode, theme: document.documentElement.getAttribute('data-theme') || 'default' }); });
-    $$('.swatch').forEach((b) => { b.onclick = () => applyAppearance({ mode: document.documentElement.getAttribute('data-mode') || 'light', theme: b.dataset.theme }); });
+    $$('.swatch').forEach((b) => { b.onclick = () => applyAppearance({ mode: (safeGet(APPEARANCE_KEY, {}).mode || 'light'), theme: b.dataset.theme }); });
+    $$('[data-fontsize]').forEach((b) => { b.onclick = () => { __prefs.fontSize = b.dataset.fontsize; savePrefs(); applyPrefs(); $$('[data-fontsize]').forEach((x) => x.classList.toggle('active', x.dataset.fontsize === __prefs.fontSize)); }; });
+
+    // Toggles
+    const bindToggle = (id, key, cb) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('change', () => {
+        __prefs[key] = el.checked;
+        savePrefs();
+        applyPrefs();
+        if (cb) cb(el.checked);
+      });
+    };
+    bindToggle('autoScrollToggle', 'autoScroll');
+    bindToggle('enterSendToggle', 'enterSend');
+    bindToggle('showThinkingToggle', 'showThinking');
+    bindToggle('compactToggle', 'compact');
+    bindToggle('reduceMotionToggle', 'reduceMotion');
+    bindToggle('desktopNotifyToggle', 'desktopNotify', (v) => {
+      if (v && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+    });
+    bindToggle('soundToggle', 'sound');
+    bindToggle('bonusReminderToggle', 'bonusReminder');
+    bindToggle('verboseLogToggle', 'verboseLog');
+    bindToggle('translateCommentsToggle', 'translateComments');
+
+    // Persona
+    on('#savePersonaBtn', 'click', () => {
+      const inp = $('#personaInput'); if (!inp) return;
+      __prefs.persona = inp.value.trim();
+      savePrefs();
+      const st = $('#personaStatus'); if (st) { st.textContent = 'Saved ✓'; st.className = 'persona-status ok'; setTimeout(() => { st.textContent = ''; }, 2000); }
+      toast('Persona saved');
+    });
+    on('#clearPersonaBtn', 'click', () => {
+      const inp = $('#personaInput'); if (inp) inp.value = '';
+      __prefs.persona = ''; savePrefs();
+      const st = $('#personaStatus'); if (st) { st.textContent = 'Cleared'; st.className = 'persona-status'; setTimeout(() => { st.textContent = ''; }, 2000); }
+    });
+    $$('.persona-preset').forEach((b) => {
+      b.onclick = () => {
+        const inp = $('#personaInput'); if (inp) inp.value = b.dataset.persona;
+        toast('Preset applied — click Save to persist');
+      };
+    });
+
+    // MCP
+    on('#mcpEnableToggle', 'change', (e) => { safeSet(MCP_KEY + '_enabled', e.target.checked); toast(`MCP ${e.target.checked ? 'enabled' : 'disabled'}`); });
+    on('#mcpAddBtn', 'click', () => {
+      const name = $('#mcpNameInput')?.value.trim();
+      const url = $('#mcpUrlInput')?.value.trim();
+      const key = $('#mcpKeyInput')?.value.trim();
+      if (!name || !url) { toast('Name and URL are required'); return; }
+      __mcpServers.push({ name, url, key });
+      saveMcp(); renderMcpList();
+      $('#mcpNameInput').value = ''; $('#mcpUrlInput').value = ''; $('#mcpKeyInput').value = '';
+      toast(`Added server: ${name}`);
+    });
+
+    // Language
+    on('#languageSelect', 'change', (e) => { __prefs.responseLanguage = e.target.value; savePrefs(); toast('Response language updated'); });
+    on('#uiLanguageSelect', 'change', (e) => { __prefs.uiLanguage = e.target.value; savePrefs(); toast('UI language preference saved (requires reload)'); });
+
+    // Data
+    on('#exportChatsBtn', 'click', () => {
+      const blob = new Blob([JSON.stringify(__conversations, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `mirox-chats-${Date.now()}.json`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      toast('Chats exported');
+    });
+    on('#importChatsBtn', 'click', () => $('#importChatsInput')?.click());
+    on('#importChatsInput', 'change', (e) => {
+      const file = e.target.files?.[0]; if (!file) return;
+      const r = new FileReader();
+      r.onload = () => {
+        try {
+          const arr = JSON.parse(String(r.result));
+          if (!Array.isArray(arr)) throw new Error('not an array');
+          __conversations = arr.concat(__conversations);
+          saveChats(); renderHistory();
+          toast(`Imported ${arr.length} chats`);
+        } catch { toast('Invalid file'); }
+      };
+      r.readAsText(file);
+      e.target.value = '';
+    });
+    on('#clearChatsBtn', 'click', () => {
+      if (!confirm('Delete all chats? This cannot be undone.')) return;
+      __conversations = []; saveChats(); startNewChat();
+      toast('All chats cleared');
+    });
+    on('#clearAllDataBtn', 'click', () => {
+      if (!confirm('Reset everything? Chats, settings and bonus will be erased.')) return;
+      ['miroxai_conversations_v34','miroxai_appearance_v34','miroxai_share_v5','miroxai_bonus_v5','miroxai_prefs_v1','miroxai_mcp_v1','mirox_token','miroxai_guest_id_v1'].forEach((k) => { try { localStorage.removeItem(k); } catch {} });
+      toast('All local data cleared — reloading…');
+      setTimeout(() => location.reload(), 900);
+    });
+
+    // Developer
+    on('#copyDiagBtn', 'click', async () => {
+      const diag = {
+        ua: navigator.userAgent, url: location.href, ts: Date.now(),
+        tier: __tier, guestId: getGuestId(),
+        bonus: loadBonusRaw(),
+        model: __model,
+        mcpServers: __mcpServers.length,
+      };
+      try { await navigator.clipboard.writeText(JSON.stringify(diag, null, 2)); toast('Diagnostics copied'); } catch {}
+    });
+    on('#resetGuestBtn', 'click', () => {
+      if (!confirm('Reset guest ID? You will need to re-share to earn a new bonus.')) return;
+      const newId = resetGuestId();
+      const lbl = $('#guestIdLabel'); if (lbl) lbl.textContent = newId;
+      toast('Guest ID reset');
+    });
+
+    // Generic close
     document.addEventListener('click', (e) => {
       const cb = e.target.closest('[data-close]');
       if (cb) { closeModal(cb.dataset.close); return; }
@@ -1448,6 +1669,13 @@
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); $('#messageInput')?.focus(); }
     });
     window.addEventListener('resize', () => { if (window.innerWidth > 860) closeSidebar(); });
+  }
+
+  function openSettingsModal() {
+    // Refresh guest ID display
+    const lbl = $('#guestIdLabel'); if (lbl) lbl.textContent = getGuestId();
+    renderMcpList();
+    openModal('settingsModal');
   }
 
   async function openConversation(id) {
@@ -1475,11 +1703,18 @@
 
   async function init() {
     try {
-      loadAppearance(); loadShareState(); loadChats(); wireAll();
+      loadAppearance(); loadPrefs(); applyPrefs(); loadShareState(); loadChats(); loadMcp(); wireAll();
       __lastBonusActive = isBonusActive();
-      renderHistory(); renderModelPicker(); renderBridgeStatus(); startIdleMascot();
-      updateTokenUsage();
+      renderHistory(); renderModelPicker(); startIdleMascot();
+      updateTokenUsage(); renderMcpList();
       startBonusWatcher();
+      // Auto-detect OS theme change if mode === 'auto'
+      if (window.matchMedia) {
+        try { window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+          const p = safeGet(APPEARANCE_KEY, {});
+          if (p.mode === 'auto') applyAppearance(p);
+        }); } catch {}
+      }
     } catch (e) { console.error('[Mirox init]', e); }
     finally { killLoader(); }
     loadConfig().catch(() => {});
