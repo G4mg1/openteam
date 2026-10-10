@@ -60,7 +60,6 @@
       <div class="bridge-status" id="bridgeStatus"><div class="bridge-status-dot offline"></div><span>Disconnected</span></div>
       <p class="bridge-hint">Give Mirox direct control of your laptop.</p>
       <button id="bridgeOpenBtn" class="modal-btn primary" type="button"><i class="ri-terminal-box-line"></i> Open Bridge Workspace</button>
-      <button id="bridgeDownloadBtn" class="modal-btn" type="button"><i class="ri-download-2-line"></i> Download client</button>
     </div>
   </div>
 
@@ -93,7 +92,7 @@
     <button id="hamburgerBtn" class="icon-btn hamburger" type="button" aria-label="Open sidebar"><i class="ri-menu-line"></i></button>
     <h2 id="chatTitle" class="chat-title">New chat</h2>
     <div class="chat-header-actions">
-      <div id="tokenUsage" class="token-usage" title="Estimated tokens used in this conversation"><i class="ri-cpu-line"></i><span>0 / 10k</span></div>
+      <div id="tokenUsage" class="token-usage" title="Token budget"><i class="ri-cpu-line"></i><span>0 / 10k</span></div>
       <div id="modelPicker" class="model-picker-wrap">
         <button id="modelPickerBtn" class="model-picker-btn" type="button">
           <i class="ri-sparkling-2-line"></i>
@@ -111,7 +110,7 @@
         <div class="mascot mascot-lg" id="welcomeMascot" data-mood="idle"></div>
       </div>
       <h1 class="welcome-title">Hi, I'm Mirox</h1>
-      <p class="welcome-sub">Luna and Gen are unlimited and free. Ask me to write code, generate images, search the web, or build a project.</p>
+      <p class="welcome-sub">Luna and Gen are unlimited and free. Share to unlock <strong>Pro, Ultra &amp; Eclipse</strong> free for 7 days.</p>
       <div class="suggestion-grid">
         <button class="suggestion-card" type="button" data-prompt="Show me a simple Lua script that prints numbers 1 to 5"><i class="ri-code-box-line"></i><span>Write a Lua script</span></button>
         <button class="suggestion-card" type="button" data-prompt="Show me an HTML example with a table"><i class="ri-html5-line"></i><span>Show an HTML table</span></button>
@@ -131,7 +130,6 @@
     <div class="tools-row">
       <button id="searchModeBtn" class="tool-btn" type="button"><i class="ri-global-line"></i><span>Search</span></button>
       <button id="imageModeBtn" class="tool-btn" type="button"><i class="ri-image-line"></i><span>Lumenal</span></button>
-      <button id="bridgeModeBtn" class="tool-btn" type="button"><i class="ri-link"></i><span>Bridge</span></button>
       <button id="plansModeBtn" class="tool-btn" type="button"><i class="ri-vip-crown-line"></i><span>Plans</span></button>
       <button id="supportModeBtn2" class="tool-btn" type="button"><i class="ri-question-line"></i><span>Help</span></button>
     </div>
@@ -152,11 +150,11 @@
     <button class="icon-btn share-ad-close" type="button" id="shareAdCloseBtn" aria-label="Close"><i class="ri-close-line"></i></button>
     <div class="share-ad-icon"><i class="ri-gift-2-line"></i></div>
     <h2 class="share-ad-title">Share our site, get 50k tokens</h2>
-    <p class="share-ad-sub">Get <strong>50k tokens for 1 week</strong> and also try our <strong>Ultimate and Pro models</strong>. Share MiroxAI on social media — free for all free-plan users.</p>
+    <p class="share-ad-sub">Get <strong>50k tokens for 1 week</strong> and unlock <strong>Pro, Ultra &amp; Eclipse</strong> models free.</p>
     <ul class="share-ad-perks">
       <li><i class="ri-check-line"></i> 50,000 bonus tokens</li>
       <li><i class="ri-check-line"></i> Valid for 7 days</li>
-      <li><i class="ri-check-line"></i> Try Ultimate &amp; Pro models</li>
+      <li><i class="ri-vip-crown-fill"></i> Pro · Ultra · Eclipse unlocked</li>
     </ul>
     <div class="share-ad-actions">
       <button class="share-ad-btn primary" type="button" id="shareAdShareBtn"><i class="ri-share-forward-2-line"></i> <span>Share now</span></button>
@@ -164,52 +162,6 @@
     </div>
     <div class="share-ad-status" id="shareAdStatus"></div>
     <div class="share-ad-hint">We verify shares through your device's native share sheet.</div>
-  </div>
-</div>
-
-<!-- BRIDGE WORKSPACE -->
-<div id="bridgeWorkspace" class="bridge-workspace-overlay">
-  <div class="bridge-workspace-panel" id="bwPanel">
-    <header class="bridge-workspace-top">
-      <div class="bridge-workspace-title"><img class="bridge-logo" src="/logo.png" alt="" onerror="this.style.display='none'"><span>Bridge</span></div>
-      <div class="bridge-workspace-status" id="bwStatusPill"><div class="bridge-status-dot offline"></div><span>Disconnected</span></div>
-      <div class="bridge-workspace-toggles" id="bwToggles">
-        <button id="bwToggleAutoRun" class="bridge-toggle active" type="button"><i class="ri-play-circle-line"></i><span>Auto-Run</span></button>
-        <button id="bwPreviewBtn" class="bridge-toggle" type="button"><i class="ri-eye-line"></i><span>Preview</span></button>
-      </div>
-      <div class="bridge-workspace-actions">
-        <button id="bwNewBtn" class="icon-btn" type="button" title="Clear chat"><i class="ri-delete-bin-6-line"></i></button>
-        <button id="bwCloseBtn" class="icon-btn" type="button" title="Close"><i class="ri-close-line"></i></button>
-      </div>
-    </header>
-    <div class="bridge-workspace-body">
-      <div class="bridge-workspace-main">
-        <div class="bridge-messages" id="bridgeMessages">
-          <div class="bridge-empty" id="bridgeEmpty">
-            <div class="mascot mascot-md" data-mood="idle"></div>
-            <h3>Bridge Workspace</h3>
-            <p>Tell Mirox what to build. It writes files into <code>~/&lt;project&gt;/</code>, verifies them, and shows you a live preview.</p>
-          </div>
-        </div>
-        <div class="bridge-input-row">
-          <textarea id="bridgeInput" placeholder="e.g. Build a calculator in my home folder" rows="1"></textarea>
-          <button id="bridgeSendBtn" class="send-btn is-disabled" type="button" aria-disabled="true"><i class="ri-arrow-up-line"></i></button>
-        </div>
-      </div>
-      <aside class="bridge-workspace-side">
-        <div class="bridge-side-section">
-          <h4><i class="ri-plug-line"></i> Connection</h4>
-          <div id="bwStatusBox" class="bw-status-box"><div class="bridge-status-dot offline"></div><span>Disconnected</span></div>
-          <label class="bw-label" for="bwNameInput">Name</label>
-          <input id="bwNameInput" class="modal-input" type="text" placeholder="My Laptop" maxlength="60">
-          <label class="bw-label" for="bwPortInput">Port</label>
-          <input id="bwPortInput" class="modal-input" type="number" value="8765" min="1024" max="65535">
-          <button id="bwConnectBtn" class="modal-btn primary" type="button"><i class="ri-link"></i> Connect</button>
-          <button id="bwDisconnectBtn" class="modal-btn danger" type="button" style="display:none;"><i class="ri-link-unlink"></i> Disconnect</button>
-          <div id="bwConnectHint" class="bw-hint"></div>
-        </div>
-      </aside>
-    </div>
   </div>
 </div>
 
@@ -240,11 +192,9 @@
     <div class="settings-tabs">
       <button class="settings-tab active" type="button" data-tab="general">General</button>
       <button class="settings-tab" type="button" data-tab="appearance">Appearance</button>
-      <button class="settings-tab" type="button" data-tab="personal">Personal</button>
     </div>
     <div class="settings-pane active" data-pane="general">
       <div class="setting-group"><h4>Session</h4><button id="logoutBtn" class="modal-btn danger" type="button">Sign out</button></div>
-      <div class="setting-group"><h4>Developer</h4><a href="/developers/" class="modal-btn link-btn"><i class="ri-code-s-slash-line"></i> Open Developer Console</a></div>
     </div>
     <div class="settings-pane" data-pane="appearance">
       <div class="setting-group"><h4>Mode</h4>
@@ -263,16 +213,6 @@
         </div>
       </div>
     </div>
-    <div class="settings-pane" data-pane="personal">
-      <div class="setting-group">
-        <h4>Custom character</h4>
-        <textarea id="personaInput" class="modal-textarea" rows="3" placeholder="Describe how Mirox should behave…"></textarea>
-        <div class="persona-actions">
-          <button id="savePersonaBtn" class="modal-btn primary" type="button"><i class="ri-save-line"></i> Save</button>
-          <span id="personaStatus" class="persona-status"></span>
-        </div>
-      </div>
-    </div>
   </div>
 </div>
 
@@ -281,7 +221,7 @@
   <div class="modal modal-wide">
     <button class="icon-btn modal-close" type="button" data-close="plansModal" aria-label="Close"><i class="ri-close-line"></i></button>
     <h2 class="modal-title">Plans</h2>
-    <p class="modal-sub">Luna and Gen are free and unlimited. Bridge is free.</p>
+    <p class="modal-sub">Luna and Gen are free and unlimited. Share to unlock Pro, Ultra and Eclipse for 7 days.</p>
     <div id="plansGrid" class="plans-grid"></div>
   </div>
 </div>
@@ -296,8 +236,6 @@
       <textarea id="imagePrompt" class="modal-textarea" rows="3" placeholder="Describe the image you want…"></textarea>
       <button id="generateImageBtn" class="modal-btn primary" type="button"><i class="ri-image-add-line"></i> Generate</button>
       <div id="imageResult" class="image-result"></div>
-      <h4 class="studio-heading">Recent images</h4>
-      <div id="imageHistory" class="studio-grid"></div>
     </div>
   </div>
 </div>
