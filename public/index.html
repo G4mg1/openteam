@@ -279,21 +279,33 @@
   </div>
 </div>
 
-<!-- LOGIN -->
+<!-- LOGIN — Simple Gmail-style -->
 <div id="loginModal" class="modal-overlay">
-  <div class="modal">
+  <div class="modal modal-auth">
     <button class="icon-btn modal-close" type="button" data-close="loginModal" data-i18n-title="close"><i class="ri-close-line"></i></button>
-    <div class="modal-mascot"><div class="mascot mascot-md" data-mood="idle"></div></div>
-    <h2 class="modal-title" data-i18n="signIn">Sign in</h2>
-    <p class="modal-sub" data-i18n="signInSub">Enter your name and email to continue.</p>
-    <div id="emailLoginWrap">
-      <form id="simpleLoginForm" class="modal-form" autocomplete="on">
-        <input type="text" id="loginName" class="modal-input" data-i18n-placeholder="name" placeholder="Your name" required maxlength="60" autocomplete="name">
-        <input type="email" id="loginEmail" class="modal-input" data-i18n-placeholder="email" placeholder="you@example.com" required autocomplete="email">
-        <div id="loginError" class="modal-error" role="alert" style="display:none;"></div>
-        <button type="submit" class="modal-btn primary" id="loginSubmitBtn" data-i18n="continue">Continue</button>
-      </form>
+    <div class="auth-brand">
+      <img src="/logo.png" alt="" onerror="this.style.display='none'">
+      <span>MiroxAI</span>
     </div>
+    <h2 class="auth-title" data-i18n="signIn">Sign in</h2>
+    <p class="auth-sub" data-i18n="signInSub">Continue with your name and email.</p>
+
+    <form id="simpleLoginForm" class="auth-form" autocomplete="on" novalidate>
+      <div class="auth-field">
+        <label for="loginName" data-i18n="name">Name</label>
+        <input type="text" id="loginName" class="auth-input" placeholder="Your name" required maxlength="60" autocomplete="name" spellcheck="false">
+      </div>
+      <div class="auth-field">
+        <label for="loginEmail" data-i18n="email">Email</label>
+        <input type="email" id="loginEmail" class="auth-input" placeholder="you@gmail.com" required autocomplete="email" spellcheck="false">
+      </div>
+      <div id="loginError" class="auth-error" role="alert" style="display:none;"></div>
+      <button type="submit" class="auth-btn" id="loginSubmitBtn">
+        <span data-i18n="continue">Continue</span>
+        <i class="ri-arrow-right-line"></i>
+      </button>
+      <div class="auth-hint" data-i18n="loginHint">By continuing you agree to our terms and privacy policy.</div>
+    </form>
   </div>
 </div>
 
@@ -364,11 +376,11 @@
       <div class="setting-group">
         <h4 data-i18n="accent">Accent color</h4>
         <div class="swatch-grid" id="accentSwatches">
-          <button class="swatch" type="button" data-theme="default" style="--sw:#4d6bfe"></button>
+          <button class="swatch" type="button" data-theme="default" style="--sw:#d97757"></button>
+          <button class="swatch" type="button" data-theme="blue" style="--sw:#4d6bfe"></button>
           <button class="swatch" type="button" data-theme="sage" style="--sw:#16a34a"></button>
           <button class="swatch" type="button" data-theme="sky" style="--sw:#0284c7"></button>
           <button class="swatch" type="button" data-theme="plum" style="--sw:#9333ea"></button>
-          <button class="swatch" type="button" data-theme="amber" style="--sw:#ea580c"></button>
           <button class="swatch" type="button" data-theme="rose" style="--sw:#e11d48"></button>
         </div>
       </div>
