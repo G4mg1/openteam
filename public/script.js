@@ -30,15 +30,18 @@
     { id: 'mirox-eclipse-2.0', label: 'Eclipse', tier: 'ultimate' },
   ];
   const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
-  const LS_KEY = 'miroxai_conversations_v30';
+  const LS_KEY = 'miroxai_conversations_v31';
   const TOKEN_KEY = 'mirox_token';
-  const APPEARANCE_KEY = 'miroxai_appearance_v30';
-  const SHARE_KEY = 'miroxai_share_v1';
-  const BRIDGE_KEY = 'miroxai_bridge_v30';
+  const APPEARANCE_KEY = 'miroxai_appearance_v31';
+  const SHARE_KEY = 'miroxai_share_v2';
+  const BONUS_KEY = 'miroxai_bonus_v2';
+  const BRIDGE_KEY = 'miroxai_bridge_v31';
   const PASTE_ATTACH_THRESHOLD = 1024;
   const NET_TIMEOUT_MS = 15000;
   const STREAM_TIMEOUT_MS = 120000;
-  const FREE_CONVO_TOKEN_LIMIT = 10000;
+  const BASE_FREE_LIMIT = 10000;
+  const BONUS_TOKENS = 50000;
+  const BONUS_MS = 7 * 24 * 60 * 60 * 1000;
   const MAX_IMAGE_DIM = 1280;
 
   let __config = null, __user = null, __tier = 'free', __model = 'mirox-luna-1.2';
@@ -47,15 +50,16 @@
   let autoScrollEnabled = true;
   let __conversations = [], pendingFiles = [], activeStreamController = null, __usage = null;
   let __bridge = { name: 'My Laptop', model: 'mirox-luna-1.2', port: 8765, connected: false, baseUrl: null, env: null };
-  let bridgeConversation = [], bridgeRunning = false, bridgeAbort = false;
+  let bridgeRunning = false;
   let forceSearchNext = false, __historyQuery = '';
   let __ivDataUrl = '';
-  let __shareState = { claimed: false, claimedAt: 0 };
+  let __shareState = { claimed: false, claimedAt: 0, dismissedAt: 0 };
 
   const uid = () => 'c_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
   const escapeHtml = (s) => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
   function safeGet(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } }
   function safeSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } }
+  function safeRemove(k) { try { localStorage.removeItem(k); } catch {} }
   function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
   function setToken(t) { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch {} }
 
@@ -85,6 +89,33 @@
     } catch { return fallback; }
   }
 
+  /* ═══════════ Bonus token system ═══════════ */
+  function loadBonus() { return safeGet(BONUS_KEY, null); }
+  function saveBonus(b) { b ? safeSet(BONUS_KEY, b) : safeRemove(BONUS_KEY); }
+  function getActiveBonus() {
+    const b = loadBonus();
+    if (!b || !b.tokens || !b.expiresAt) return 0;
+    if (Date.now() >= b.expiresAt) { saveBonus(null); return 0; }
+    return b.tokens;
+  }
+  function getBonusExpiryMs() {
+    const b = loadBonus();
+    if (!b || !b.expiresAt) return 0;
+    if (Date.now() >= b.expiresAt) return 0;
+    return b.expiresAt - Date.now();
+  }
+  function grantLocalBonus(tokens) {
+    const prev = loadBonus();
+    const now = Date.now();
+    const baseExpiry = (prev && prev.expiresAt > now) ? prev.expiresAt : now;
+    const newExpiry = Math.max(baseExpiry, now + BONUS_MS);
+    const newTokens = (prev && prev.expiresAt > now ? (prev.tokens || 0) : 0) + tokens;
+    const bonus = { tokens: newTokens, expiresAt: newExpiry, grantedAt: now };
+    saveBonus(bonus);
+    return bonus;
+  }
+  function getFreeLimit() { return BASE_FREE_LIMIT + getActiveBonus(); }
+
   const idb = (() => {
     let p = null;
     const open = () => p || (p = new Promise((res, rej) => {
@@ -100,7 +131,7 @@
     };
   })();
 
-  /* ═══════════ Blob mascot ═══════════ */
+  /* ═══════════ Mascot ═══════════ */
   const MOODS = ['idle','happy','thinking','reasoning','searching','coding','celebrate','error','learning'];
   const BLOB_PATH = 'M100 20 C126 20 144 32 154 54 C178 56 194 76 194 102 C194 128 178 148 154 152 C144 174 126 186 100 186 C74 186 56 174 46 152 C22 148 6 128 6 102 C6 76 22 56 46 54 C56 32 74 20 100 20 Z';
   const BLOB_SVG = `<svg class="blob-svg" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mirox avatar"><g class="blob-float"><path class="blob-body" d="${BLOB_PATH}" fill="currentColor"/><g class="blob-eyes" fill="var(--bg)"><ellipse cx="88" cy="82" rx="4.5" ry="13" transform="rotate(18 88 82)"/><ellipse cx="110" cy="78" rx="4.5" ry="13" transform="rotate(18 110 78)"/></g></g></svg>`;
@@ -198,14 +229,7 @@
       el,
       addStep(text) { addNarration(text); },
       addNarration,
-      addTool(name, opts) {
-        const o = opts || {};
-        const row = document.createElement('div');
-        row.className = 'think-tool';
-        row.innerHTML = `<div class="think-tool-head"><span class="think-tool-icon"><i class="ri-tools-line"></i></span><span class="think-tool-name">${escapeHtml(o.label || name)}</span></div>`;
-        body.appendChild(row);
-        return { setStatus() {}, addResult() {}, addCode() {} };
-      },
+      addTool() { return { setStatus() {}, addResult() {}, addCode() {} }; },
       setMood(mood) { setMascotMood(mood, el); },
       markWriting() { addNarration('Writing the answer…'); },
       finish() { addNarration('Thinking complete'); close('Thought for a moment', 'happy'); },
@@ -278,12 +302,32 @@
     if (!convo) return 0;
     return (convo.messages || []).reduce((sum, m) => sum + estimateTokens(m.content || ''), 0);
   }
+  function formatK(n) {
+    if (n >= 1000) return (n / 1000).toFixed(n % 1000 === 0 ? 0 : 1) + 'k';
+    return String(n);
+  }
   function updateTokenUsage() {
     const el = $('#tokenUsage'); if (!el) return;
     const used = conversationTokenUsage();
-    const limit = __tier === 'free' ? FREE_CONVO_TOKEN_LIMIT : null;
+    const bonus = getActiveBonus();
+    const limit = __tier === 'free' ? (BASE_FREE_LIMIT + bonus) : null;
     const span = el.querySelector('span');
-    if (span) span.textContent = limit ? `${Math.min(used, limit).toLocaleString()} / 10k tokens` : `${used.toLocaleString()} tokens`;
+    if (span) {
+      if (limit) {
+        span.textContent = `${formatK(Math.min(used, limit))} / ${formatK(limit)}`;
+      } else {
+        span.textContent = `${formatK(used)} tokens`;
+      }
+    }
+    // Bonus indicator
+    const hasBonus = bonus > 0 && __tier === 'free';
+    el.classList.toggle('has-bonus', hasBonus);
+    if (hasBonus) {
+      const daysLeft = Math.ceil(getBonusExpiryMs() / 86400000);
+      el.title = `+${bonus.toLocaleString()} bonus tokens active · expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`;
+    } else {
+      el.title = limit ? `Estimated conversation usage. Free limit: ${limit.toLocaleString()} tokens.` : 'Estimated tokens used';
+    }
   }
   function atChatBottom(c = $('#chatMessages')) { return !c || c.scrollHeight - c.scrollTop - c.clientHeight < 100; }
   function scrollToBottom(force = false) {
@@ -295,7 +339,10 @@
     const c = $('#chatMessages'), b = $('#scrollBottomBtn'); if (!c || !b) return;
     b.classList.toggle('visible', !atChatBottom(c));
   }
-  function freeLimitReached(convo = currentConvo()) { return __tier === 'free' && conversationTokenUsage(convo) >= FREE_CONVO_TOKEN_LIMIT; }
+  function freeLimitReached(convo = currentConvo()) {
+    if (__tier !== 'free') return false;
+    return conversationTokenUsage(convo) >= getFreeLimit();
+  }
   function fmtSize(n) {
     if (n == null) return '';
     if (n < 1024) return n + ' B';
@@ -304,7 +351,7 @@
   }
   function fileIconHTML() { return '<span class="file-glyph" aria-hidden="true"><i class="ri-file-text-line"></i></span>'; }
 
-  /* ═══════════ Language icons + code highlighting ═══════════ */
+  /* ═══════════ Language meta ═══════════ */
   const LANG_META = {
     lua:        { label: 'LUA',  icon: 'devicon-lua-plain colored',        hljs: 'lua' },
     python:     { label: 'PY',   icon: 'devicon-python-plain colored',     hljs: 'python' },
@@ -316,7 +363,6 @@
     html:       { label: 'HTML', icon: 'devicon-html5-plain colored',      hljs: 'xml' },
     xml:        { label: 'XML',  icon: 'devicon-html5-plain colored',      hljs: 'xml' },
     css:        { label: 'CSS',  icon: 'devicon-css3-plain colored',       hljs: 'css' },
-    scss:       { label: 'SCSS', icon: 'devicon-sass-original colored',    hljs: 'scss' },
     json:       { label: 'JSON', icon: 'devicon-json-plain colored',       hljs: 'json' },
     bash:       { label: 'SH',   icon: 'devicon-bash-plain colored',       hljs: 'bash' },
     sh:         { label: 'SH',   icon: 'devicon-bash-plain colored',       hljs: 'bash' },
@@ -334,8 +380,6 @@
     yml:        { label: 'YAML', icon: 'ri-file-list-2-line',              hljs: 'yaml' },
     markdown:   { label: 'MD',   icon: 'ri-markdown-line',                 hljs: 'markdown' },
     md:         { label: 'MD',   icon: 'ri-markdown-line',                 hljs: 'markdown' },
-    kotlin:     { label: 'KT',   icon: 'devicon-kotlin-plain colored',     hljs: 'kotlin' },
-    swift:      { label: 'SWIFT',icon: 'devicon-swift-plain colored',      hljs: 'swift' },
   };
   function langMeta(lang) {
     const key = String(lang || '').toLowerCase().trim();
@@ -345,10 +389,7 @@
     const raw = String(code || '').replace(/\n$/, '');
     const meta = langMeta(lang);
     try {
-      if (window.hljs && hljs.getLanguage && hljs.getLanguage(meta.hljs)) {
-        return hljs.highlight(raw, { language: meta.hljs }).value;
-      }
-      // fallback: auto-detect
+      if (window.hljs && hljs.getLanguage && hljs.getLanguage(meta.hljs)) return hljs.highlight(raw, { language: meta.hljs }).value;
       if (window.hljs) return hljs.highlightAuto(raw).value;
     } catch {}
     return escapeHtml(raw);
@@ -368,7 +409,7 @@
     </div>`;
   }
 
-  /* ═══════════ Rich-text markdown (tables, lists, headings, inline) ═══════════ */
+  /* ═══════════ Rich text markdown ═══════════ */
   function renderMarkdown(rawText) {
     if (!rawText) return '';
     const src = String(rawText);
@@ -403,14 +444,13 @@
     const isSepRow = (line) => /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
 
     for (let i = 0; i < lines.length; i++) {
-      const raw = lines[i], t = raw.trim();
+      const t = lines[i].trim();
       if (!t) { flush(); continue; }
 
-      // Table detection
       if (t.includes('|') && i + 1 < lines.length && isSepRow(lines[i + 1])) {
         flush();
         const headers = splitRow(t);
-        i += 1; // consume separator
+        i += 1;
         let table = '<div class="md-table-wrap"><table class="md-table"><thead><tr>';
         headers.forEach((c) => { table += `<th>${inlineFmt(c)}</th>`; });
         table += '</tr></thead><tbody>';
@@ -446,7 +486,6 @@
   }
   function inlineFmt(t) {
     let s = escapeHtml(t);
-    // inline code first (protect from other regexes)
     const codes = [];
     s = s.replace(/`([^`]+)`/g, (_, c) => { codes.push(c); return `\u0000C${codes.length - 1}\u0000`; });
     s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
@@ -552,7 +591,7 @@
     const inp = $('#messageInput'); if (!inp) return;
     const text = inp.value.trim();
     if (!text && !pendingFiles.length) return;
-    if (freeLimitReached()) { toast('Max tokens reached — try new chat or share for more.', 5000); return; }
+    if (freeLimitReached()) { toast('Max tokens reached — share for more or upgrade.', 5000); return; }
     const files = pendingFiles.slice();
     const searchFlag = forceSearchNext;
     forceSearchNext = false;
@@ -571,20 +610,15 @@
     sendToAPI(text, files, searchFlag);
   }
 
-  /* ═══════════ Continue-button logic ═══════════ */
+  /* ═══════════ Continue button logic ═══════════ */
   function shouldShowContinue(full, convo, streamComplete) {
     if (!full) return false;
-    // Hit free token limit → user may want to continue
     if (freeLimitReached(convo)) return true;
-    // Stream was aborted / didn't finish
     if (!streamComplete) return true;
-    // Unclosed code fence
     const fences = (full.match(/```/g) || []).length;
     if (fences % 2 === 1) return true;
-    // Trail-off markers
     const trimmed = full.trim();
     if (/(\.\.\.|…|,|\bto be continued\b|\bcontinue\b|\bnext part\b)$/i.test(trimmed)) return true;
-    // Ends mid-word inside a code block? checked above via fences
     return false;
   }
   function attachContinueButton(msgEl, bubble, messageObj) {
@@ -607,7 +641,7 @@
     }
   }
 
-  /* ═══════════ Send to API ═══════════ */
+  /* ═══════════ API ═══════════ */
   async function sendToAPI(text, files, forceSearch, continuation = null) {
     const isContinuation = !!(continuation && continuation.continuation);
     const convoAtStart = currentConvo();
@@ -709,7 +743,8 @@
           buf = buf.slice(idx + 1);
           if (!line.startsWith('data:')) continue;
           const pl = line.slice(5).trim();
-          if (!pl || pl === '[DONE]') { if (pl === '[DONE]') streamComplete = true; continue; }
+          if (!pl) continue;
+          if (pl === '[DONE]') { streamComplete = true; continue; }
           let o;
           try { o = JSON.parse(pl); } catch { continue; }
 
@@ -726,8 +761,9 @@
           }
           if (o.d) {
             full += o.d;
-            if (__tier === 'free' && convo && conversationTokenUsage(convo) + estimateTokens(full) >= FREE_CONVO_TOKEN_LIMIT) {
-              full = full.slice(0, Math.max(0, (FREE_CONVO_TOKEN_LIMIT - conversationTokenUsage(convo)) * 4));
+            const limit = getFreeLimit();
+            if (__tier === 'free' && convo && conversationTokenUsage(convo) + estimateTokens(full) >= limit) {
+              full = full.slice(0, Math.max(0, (limit - conversationTokenUsage(convo)) * 4));
               limitHit = true;
               if (!gotToken) { gotToken = true; ensureBubble(); bubble.innerHTML = '<div class="bubble-text"></div>'; bubbleText = bubble.querySelector('.bubble-text'); }
               if (bubbleText) bubbleText.innerHTML = renderMarkdown(full);
@@ -769,7 +805,6 @@
       }
       saveChats(); updateTokenUsage();
       timeEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      // Only show Continue when needed
       if (savedMsg && shouldShowContinue(full, convo, streamComplete)) {
         attachContinueButton(msgEl, bubble, savedMsg);
       }
@@ -890,27 +925,27 @@
   /* ═══════════ Share popup + verification ═══════════ */
   function loadShareState() { __shareState = safeGet(SHARE_KEY, { claimed: false, claimedAt: 0, dismissedAt: 0 }); }
   function saveShareState() { safeSet(SHARE_KEY, __shareState); }
+  function shareActive() {
+    if (__shareState.claimed) {
+      const bonus = loadBonus();
+      if (bonus && bonus.expiresAt > Date.now()) return true;
+    }
+    return false;
+  }
   function shouldShowShareAd() {
     if (__tier !== 'free') return false;
-    if (__shareState.claimed) {
-      // Still valid for 7 days after claim
-      if (Date.now() - __shareState.claimedAt < 7 * 24 * 3600 * 1000) return false;
-    }
-    // Don't nag if dismissed in last 6 hours
+    if (shareActive()) return false;
     if (__shareState.dismissedAt && Date.now() - __shareState.dismissedAt < 6 * 3600 * 1000) return false;
     return true;
   }
   function openShareAd() {
     if (!shouldShowShareAd()) return;
-    setTimeout(() => $('#shareAdModal')?.classList.add('open'), 1500);
+    setTimeout(() => $('#shareAdModal')?.classList.add('open'), 1800);
   }
   function closeShareAd(dismiss) {
     const modal = $('#shareAdModal');
     if (modal) modal.classList.remove('open');
-    if (dismiss) {
-      __shareState.dismissedAt = Date.now();
-      saveShareState();
-    }
+    if (dismiss) { __shareState.dismissedAt = Date.now(); saveShareState(); }
   }
   function setShareStatus(text, cls) {
     const el = $('#shareAdStatus');
@@ -918,84 +953,82 @@
     el.textContent = text;
     el.className = 'share-ad-status' + (cls ? ' ' + cls : '');
   }
-  async function grantShareReward() {
-    // Grant 50k tokens for a week via backend (best effort)
-    const res = await jsonOr('/api/share/reward', {
-      method: 'POST',
-      body: JSON.stringify({ bonus_tokens: 50000, valid_days: 7, verified: true, verified_at: Date.now() }),
-    }, null);
+  function grantShareRewardLocal() {
+    // Grant locally — user sees tokens immediately, regardless of backend
+    grantLocalBonus(BONUS_TOKENS);
     __shareState.claimed = true;
     __shareState.claimedAt = Date.now();
     saveShareState();
-    // Reflect locally too
-    if (__usage) {
-      __usage.bonus_tokens = (__usage.bonus_tokens || 0) + 50000;
-      __usage.bonus_expires = Date.now() + 7 * 24 * 3600 * 1000;
-    }
-    return res;
+    updateTokenUsage();
+    toast(`🎉 ${BONUS_TOKENS.toLocaleString()} bonus tokens added for 7 days!`, 5000);
+  }
+  async function grantShareReward() {
+    // Grant locally first (always works)
+    grantShareRewardLocal();
+    // Then try to sync with backend (best effort)
+    try {
+      await jsonOr('/api/share/reward', {
+        method: 'POST',
+        body: JSON.stringify({ bonus_tokens: BONUS_TOKENS, valid_days: 7, verified: true, verified_at: Date.now() }),
+      }, null);
+    } catch {}
+    try { if (__user) await refreshUsage(); } catch {}
   }
   async function attemptShare() {
     const btn = $('#shareAdShareBtn');
     const shareData = {
       title: 'MiroxAI — Free unlimited AI chat',
-      text: 'I\'m using MiroxAI for free AI chats. Try it!',
+      text: 'I\'m using MiroxAI for free AI chats. Get 50k bonus tokens for a week!',
       url: location.origin + '/?ref=share',
     };
 
-    // Primary: native Web Share API — the promise resolves only after a successful share.
+    if (btn) btn.disabled = true;
+
+    // Primary: native Web Share — resolves only on actual share
     if (navigator.share) {
       try {
         setShareStatus('Opening share sheet…', '');
-        if (btn) btn.disabled = true;
         await navigator.share(shareData);
         setShareStatus('Share confirmed! Adding 50,000 tokens…', 'ok');
         await grantShareReward();
-        if (__user) await refreshUsage();
-        updateTokenUsage();
-        toast('🎉 50,000 tokens added for 7 days!', 4500);
-        setTimeout(() => closeShareAd(false), 1600);
+        setTimeout(() => closeShareAd(false), 1800);
         return;
       } catch (e) {
-        if (btn) btn.disabled = false;
         if (e && e.name === 'AbortError') {
           setShareStatus('Share cancelled. Try again when you\'re ready.', 'warn');
+          if (btn) btn.disabled = false;
           return;
         }
-        // otherwise fall through to fallback
+        // fall through to fallback
       }
     }
 
-    // Fallback: open a social share URL and require the user to confirm.
+    // Fallback: open Twitter share + detect return via focus
     const shareText = encodeURIComponent(shareData.text + ' ' + shareData.url);
     const url = `https://twitter.com/intent/tweet?text=${shareText}`;
-    const win = window.open(url, '_blank', 'noopener,width=600,height=500');
+    window.open(url, '_blank', 'noopener,width=600,height=500');
 
-    // Wait for window focus to come back — the user probably shared
-    setShareStatus('Waiting for you to share…', '');
+    setShareStatus('Complete the share in the new window…', '');
     let resolved = false;
-    const focusHandler = async () => {
+    const focusHandler = () => {
       if (resolved) return;
       resolved = true;
       window.removeEventListener('focus', focusHandler);
-      // Slight delay to let the share complete
       setTimeout(async () => {
         setShareStatus('Share detected! Adding 50,000 tokens…', 'ok');
         await grantShareReward();
-        if (__user) await refreshUsage();
-        updateTokenUsage();
-        toast('🎉 50,000 tokens added for 7 days!', 4500);
-        setTimeout(() => closeShareAd(false), 1600);
-      }, 900);
+        setTimeout(() => closeShareAd(false), 1800);
+      }, 800);
     };
     window.addEventListener('focus', focusHandler);
-    // If they never come back (closed popup blocked?), give up after 60s
     setTimeout(() => {
       if (!resolved) {
         resolved = true;
         window.removeEventListener('focus', focusHandler);
-        setShareStatus('Didn\'t detect a share. Try again?', 'warn');
+        setShareStatus('No share detected. Try again?', 'warn');
+        if (btn) btn.disabled = false;
       }
-    }, 60000);
+    }, 90000);
   }
 
   /* ═══════════ Image viewer ═══════════ */
@@ -1013,7 +1046,6 @@
     img.src = url;
   }
   function closeImageViewer() { $('#imageViewer')?.classList.remove('open'); }
-
   async function fetchImageHistory() {
     const data = await jsonOr('/api/images/history', {}, null);
     return (data && Array.isArray(data.images)) ? data.images : [];
@@ -1079,7 +1111,7 @@
       __user = null; __usage = null; __tier = 'free';
       const chip = $('#userChip');
       if (chip) { chip.querySelector('.user-name').textContent = 'Guest mode'; chip.querySelector('.user-sub').textContent = 'Sign in to save chats'; }
-      renderModelPicker(); return;
+      renderModelPicker(); updateTokenUsage(); return;
     }
     __user = res.user;
     __tier = res.user.tier || 'free';
@@ -1176,12 +1208,6 @@
     btn.classList.toggle('is-disabled', !enabled);
     btn.setAttribute('aria-disabled', String(!enabled));
   }
-  async function bridgeCall(endpoint, payload) {
-    if (!__bridge.connected || !__bridge.baseUrl) throw new Error('Bridge not connected');
-    const r = await netFetch(__bridge.baseUrl + endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}), credentials: 'omit' }, 130000);
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return await r.json();
-  }
   async function startBridge() {
     const name = ($('#bwNameInput')?.value || __bridge.name).trim() || 'My Laptop';
     const port = parseInt($('#bwPortInput')?.value || __bridge.port, 10) || 8765;
@@ -1190,11 +1216,7 @@
       const r = await netFetch(`http://localhost:${port}/ping`, { mode: 'cors' }, 4000);
       if (r.ok) {
         const d = await r.json();
-        if (d && d.ok) {
-          __bridge.connected = true; __bridge.baseUrl = `http://localhost:${port}`;
-          renderBridgeStatus();
-          toast('Bridge connected', 2500);
-        }
+        if (d && d.ok) { __bridge.connected = true; __bridge.baseUrl = `http://localhost:${port}`; renderBridgeStatus(); toast('Bridge connected', 2500); }
       }
     } catch { toast('Bridge not reachable', 2500); }
   }
@@ -1305,12 +1327,9 @@
     on('#bwCloseBtn', 'click', closeBridgeWorkspace);
     on('#bwConnectBtn', 'click', startBridge);
     on('#bwDisconnectBtn', 'click', stopBridge);
-
-    // Share modal
     on('#shareAdShareBtn', 'click', attemptShare);
     on('#shareAdIgnoreBtn', 'click', () => closeShareAd(true));
     on('#shareAdCloseBtn', 'click', () => closeShareAd(true));
-
     bindSuggestionClicks();
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
@@ -1351,13 +1370,11 @@
     try {
       loadAppearance(); loadShareState(); loadChats(); wireAll();
       renderHistory(); renderModelPicker(); renderBridgeStatus(); startIdleMascot();
+      updateTokenUsage();
     } catch (e) { console.error('[Mirox init]', e); }
     finally { killLoader(); }
     loadConfig().catch(() => {});
-    refreshUsage().then(() => {
-      // Show share ad only to free users, only once per claim / dismissal window
-      openShareAd();
-    }).catch(() => {});
+    refreshUsage().then(() => openShareAd()).catch(() => {});
     renderSidebarImageHistory().catch(() => {});
   }
 
