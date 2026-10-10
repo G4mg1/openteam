@@ -2,11 +2,22 @@
   'use strict';
 
   /* ═══════════════════════════════════════════════════════════
-     i18n — MyMemory API (translation only, not storage)
+     i18n — MyMemory API. NOTE: we never send 'auto' / 'default'.
+     Only real BCP-47 codes get translated.
      ═══════════════════════════════════════════════════════════ */
-  const I18N_CACHE_KEY = 'miroxai_i18n_cache_v2';
+  const I18N_CACHE_KEY = 'miroxai_i18n_cache_v3';
   const RTL_LANGS = ['fa','ps','ar','he','ur'];
   const TRANSLATE_CONCURRENCY = 3;
+  // MyMemory rejects 'auto', 'default', '' etc. Whitelist real codes only.
+  const VALID_LANG_RE = /^[a-z]{2}(-[A-Za-z]{2,4})?$/;
+
+  function isTranslatable(code) {
+    if (!code || typeof code !== 'string') return false;
+    const c = code.trim();
+    if (!c) return false;
+    if (c === 'auto' || c === 'default' || c === 'en' || c === 'und') return false;
+    return VALID_LANG_RE.test(c);
+  }
 
   let __i18nCache = {};
   let __translationQueue = [];
@@ -27,25 +38,40 @@
   }
 
   async function translateString(text, targetLang) {
-    if (!text || !targetLang || targetLang === 'en') return text;
+    // Hard guard: never call MyMemory with an invalid language.
+    if (!text || !isTranslatable(targetLang)) return text;
     const key = targetLang + ':' + text;
     if (__i18nCache[key]) return __i18nCache[key];
-    const chunk = text.length > 400 ? text.slice(0, 400) : text;
+
+    // MyMemory limits query length. Chunk safely.
+    const chunk = text.length > 380 ? text.slice(0, 380) : text;
+    // Force source = English (MyMemory rejects auto-detect codes like "auto").
+    const url = 'https://api.mymemory.translated.net/get?q=' + encodeURIComponent(chunk) + '&langpair=en|' + encodeURIComponent(targetLang);
     try {
-      const url = 'https://api.mymemory.translated.net/get?q=' + encodeURIComponent(chunk) + '&langpair=en|' + encodeURIComponent(targetLang);
-      const r = await fetch(url, { method: 'GET' });
+      const r = await fetch(url, { method: 'GET', mode: 'cors' });
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const d = await r.json();
-      const out = (d && d.responseData && d.responseData.translatedText) || chunk;
+      // MyMemory returns { responseStatus: 200 | 403 | ..., responseData: { translatedText } }
+      const status = d && d.responseStatus;
+      const out = (d && d.responseData && d.responseData.translatedText) || '';
+      if (status && Number(status) !== 200) throw new Error('mymemory_' + status);
       let clean = String(out).trim();
       if (clean.startsWith('"') && clean.endsWith('"')) clean = clean.slice(1, -1);
+      // MyMemory sometimes echoes the source or returns "INVALID LANGUAGE PAIR".
+      if (!clean || /^invalid\s+language\s+pair/i.test(clean) || clean === chunk) throw new Error('mymemory_bad');
       __i18nCache[key] = clean;
       saveI18nCache();
       return clean;
-    } catch { return text; }
+    } catch (e) {
+      // Cache the fallback so we don't spam the API.
+      __i18nCache[key] = text;
+      saveI18nCache();
+      return text;
+    }
   }
 
   function enqueueTranslation(element, sourceText, targetLang, mode) {
+    if (!isTranslatable(targetLang)) return;
     __translationQueue.push({ element, sourceText, targetLang, mode });
     processQueue();
   }
@@ -99,7 +125,7 @@
       }
       const src = el.dataset.i18nEn;
       if (!src) return;
-      if (lang === 'en') {
+      if (!isTranslatable(lang)) {
         if (el.children.length === 0) el.textContent = src;
         else for (const node of el.childNodes) {
           if (node.nodeType === 3 && node.textContent.trim()) { node.textContent = src; break; }
@@ -122,7 +148,7 @@
       const tmp = document.createElement('div');
       tmp.innerHTML = srcHtml;
       const plain = tmp.textContent.trim();
-      if (lang === 'en') { el.innerHTML = srcHtml; return; }
+      if (!isTranslatable(lang)) { el.innerHTML = srcHtml; return; }
       const cacheKey = lang + ':html:' + plain;
       if (__i18nCache[cacheKey]) el.textContent = __i18nCache[cacheKey];
       else enqueueTranslation(el, plain, lang, 'html');
@@ -132,7 +158,7 @@
       if (!el.dataset.i18nPhEn) el.dataset.i18nPhEn = el.placeholder || '';
       const src = el.dataset.i18nPhEn;
       if (!src) return;
-      if (lang === 'en') { el.placeholder = src; return; }
+      if (!isTranslatable(lang)) { el.placeholder = src; return; }
       const cacheKey = lang + ':ph:' + src;
       if (__i18nCache[cacheKey]) el.placeholder = __i18nCache[cacheKey];
       else enqueueTranslation(el, src, lang, 'placeholder');
@@ -142,7 +168,7 @@
       if (!el.dataset.i18nTitleEn) el.dataset.i18nTitleEn = el.title || '';
       const src = el.dataset.i18nTitleEn;
       if (!src) return;
-      if (lang === 'en') { el.title = src; return; }
+      if (!isTranslatable(lang)) { el.title = src; return; }
       const cacheKey = lang + ':title:' + src;
       if (__i18nCache[cacheKey]) el.title = __i18nCache[cacheKey];
       else enqueueTranslation(el, src, lang, 'title');
@@ -170,7 +196,6 @@
   const $$ = (s) => document.querySelectorAll(s);
   const on = (sel, ev, fn) => { const el = $(sel); if (el) el.addEventListener(ev, fn); };
 
-  /* ═══════════ Platform detection (Bridge is PC-only) ═══════════ */
   const IS_PC = (() => {
     const ua = navigator.userAgent || '';
     const mobile = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|Mobile/i.test(ua);
@@ -185,14 +210,13 @@
     { id: 'mirox-ultra-10', label: 'Ultra', tier: 'pro', tagline: 'Long context', icon: 'ri-rocket-2-line' },
     { id: 'mirox-eclipse-2.0', label: 'Eclipse', tier: 'ultimate', tagline: 'Most powerful', icon: 'ri-sun-fill' },
   ];
-  const LS_KEY = 'miroxai_conversations_v42';
+  const LS_KEY = 'miroxai_conversations_v44';
   const TOKEN_KEY = 'mirox_token';
   const GUEST_KEY = 'miroxai_guest_id_v1';
-  const APPEARANCE_KEY = 'miroxai_appearance_v42';
-  const SHARE_KEY = 'miroxai_share_v12';
-  const BONUS_KEY = 'miroxai_bonus_v12';
-  const PREFS_KEY = 'miroxai_prefs_v7';
-  const BRIDGE_KEY = 'miroxai_bridge_v1';
+  const APPEARANCE_KEY = 'miroxai_appearance_v44';
+  const SHARE_KEY = 'miroxai_share_v13';
+  const BONUS_KEY = 'miroxai_bonus_v13';
+  const PREFS_KEY = 'miroxai_prefs_v8';
   const BRIDGE_OPTS_KEY = 'miroxai_bridge_opts_v1';
   const PASTE_ATTACH_THRESHOLD = 1024;
   const NET_TIMEOUT_MS = 15000;
@@ -305,7 +329,13 @@
   }
 
   /* ═══════════ PREFS ═══════════ */
-  const DEFAULT_PREFS = { autoScroll: true, enterSend: true, vision: true, compact: false, reduceMotion: false, fontSize: 'md', mode: 'light', theme: 'default', responseLanguage: 'auto', uiLanguage: 'en' };
+  const DEFAULT_PREFS = {
+    autoScroll: true, enterSend: true, vision: true, compact: false, reduceMotion: false,
+    fontSize: 'md', mode: 'light',
+    theme: 'default',                 // 'default' now = coral orange
+    responseLanguage: 'auto',
+    uiLanguage: 'en',                 // 'en' = no translation calls at all
+  };
   function loadPrefs() {
     __prefs = Object.assign({}, DEFAULT_PREFS, safeGet(PREFS_KEY, {}));
     const app = safeGet(APPEARANCE_KEY, {});
@@ -345,28 +375,23 @@
   }
 
   /* ═══════════════════════════════════════════════════════════
-     CLAUDE-CODE STYLE ROBOT MASCOT (new SVG)
-     Body: rounded rectangle, 4 legs, 2 vertical-pill eyes.
-     The animation style mimics Claude Code's bouncy terminal mascot.
+     MASCOT — Claude-Code style robot.
+     Ink = var(--accent) via currentColor → follows accent changes.
      ═══════════════════════════════════════════════════════════ */
   const MOODS = ['idle','happy','thinking','coding','celebrate','error','learning','wink','study','searching','reading'];
 
   function blobSvg() {
     return `<svg class="blob-svg" viewBox="0 0 200 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mirox avatar">
       <g class="blob-float">
-        <!-- Legs -->
         <rect class="leg leg-1" x="46" y="126" width="14" height="32" rx="7"/>
         <rect class="leg leg-2" x="76" y="126" width="14" height="32" rx="7"/>
         <rect class="leg leg-3" x="110" y="126" width="14" height="32" rx="7"/>
         <rect class="leg leg-4" x="140" y="126" width="14" height="32" rx="7"/>
-        <!-- Body -->
         <rect class="blob-body" x="20" y="30" width="160" height="110" rx="26"/>
-        <!-- Eyes -->
         <g class="blob-eyes">
           <rect class="eye eye-left" x="62" y="64" width="18" height="34" rx="9"/>
           <rect class="eye eye-right" x="120" y="64" width="18" height="34" rx="9"/>
         </g>
-        <!-- Glasses (study / reading modes) -->
         <g class="blob-glasses" fill="none" stroke="var(--blob-eye)" stroke-width="4" stroke-linecap="round">
           <rect x="50" y="52" width="44" height="46" rx="12"/>
           <rect x="106" y="52" width="44" height="46" rx="12"/>
@@ -670,7 +695,7 @@
     });
   }
 
-  /* ═══════════ MESSAGE DOM (with robot avatar) ═══════════ */
+  /* ═══════════ MESSAGE DOM ═══════════ */
   function addMessageToDOM(role, content, ts, msgId, files, image) {
     const container = $('#chatMessages'); if (!container) return null;
     container.querySelector('.welcome-screen')?.remove();
@@ -679,6 +704,7 @@
     el.className = 'message ' + (role === 'user' ? 'user' : 'ai');
     el.dataset.msgId = id; el.dataset.role = role;
 
+    // Free-floating mascot avatar — no pill, no circle background.
     let avatar = '';
     if (role === 'ai') {
       avatar = `<div class="message-avatar" data-mood="idle">
@@ -955,7 +981,7 @@
         if (!savedMsg && convo) { savedMsg = { id: aiMsgId, role: 'assistant', content: full, ts: Date.now() }; convo.messages.push(savedMsg); }
         if (savedMsg) { savedMsg.content = full; saveChats(); attachContinueButton(msgEl, bubble, savedMsg); }
       } else bubble.textContent = aborted ? '(stopped)' : 'Error: ' + msg;
-      toast(msg, 5000); updateTokenUsage();
+      toast(msg, 5000, 'err'); updateTokenUsage();
     } finally {
       clearTimeout(streamTimeout);
       panel.destroy();
@@ -980,7 +1006,7 @@
     setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 350); }, ms || 2200);
   }
 
-  /* ═══════════ VOICE INPUT (Web Speech API) ═══════════ */
+  /* ═══════════ VOICE INPUT ═══════════ */
   function setupVoice() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     const btn = document.getElementById('voiceBtn');
@@ -1013,7 +1039,6 @@
         else interim += r[0].transcript;
       }
       const base = inp.dataset.voiceBase || inp.value || '';
-      const combined = (base + (base && (final || interim) ? ' ' : '') + (final || interim)).trim();
       if (final) {
         inp.value = (inp.dataset.voiceBase || '').trim() ? (inp.dataset.voiceBase + ' ' + final).trim() : final.trim();
         inp.dataset.voiceBase = inp.value;
@@ -1087,7 +1112,7 @@
     canvas.width = W * dpr; canvas.height = H * dpr;
     canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
     const ctx = canvas.getContext('2d'); ctx.scale(dpr, dpr);
-    const colors = ['#4d6bfe','#7c8aff','#d97757','#e88a68','#16a34a','#f59e0b','#ec4899','#06b6d4','#a855f7'];
+    const colors = ['#d97757','#e88a68','#4d6bfe','#7c8aff','#16a34a','#f59e0b','#ec4899','#06b6d4','#a855f7'];
     const particles = [];
     const origins = [{ x: W*0.15, y: H*0.25 }, { x: W*0.85, y: H*0.25 }, { x: W*0.5, y: H*0.2 }];
     for (let i = 0; i < 180; i++) {
@@ -1277,7 +1302,7 @@
   }
 
   /* ═══════════════════════════════════════════════════════════
-     LOGIN — now shows real errors and cannot silently fail
+     LOGIN — simple Gmail-style. No Loginment.
      ═══════════════════════════════════════════════════════════ */
   function setLoginError(msg, kind) {
     const el = $('#loginError');
@@ -1296,9 +1321,9 @@
     const btn = $('#loginSubmitBtn');
 
     if (!name) { setLoginError('Please enter your name.'); $('#loginName')?.focus(); return; }
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setLoginError('Please enter a valid email.'); $('#loginEmail')?.focus(); return; }
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setLoginError('Please enter a valid email address.'); $('#loginEmail')?.focus(); return; }
 
-    if (btn) { btn.disabled = true; btn.textContent = 'Signing in…'; }
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line spin"></i> Signing in…'; }
     try {
       const r = await netFetch('/api/auth/simple-login', {
         method: 'POST',
@@ -1312,31 +1337,30 @@
       if (r.ok && data && data.ok) {
         setToken(data.token || '');
         setLoginError('Signed in!', 'ok');
-        if (btn) btn.textContent = '✓ Welcome';
+        if (btn) btn.innerHTML = '<i class="ri-check-line"></i> Welcome';
         setTimeout(async () => {
           closeModal('loginModal');
           await refreshUsage();
           toast('Welcome, ' + name + '!', 2400, 'ok');
           setLoginError('');
-          if (btn) { btn.disabled = false; btn.textContent = 'Continue'; }
+          if (btn) { btn.disabled = false; btn.innerHTML = '<span data-i18n="continue">Continue</span><i class="ri-arrow-right-line"></i>'; }
         }, 600);
         return;
       }
 
-      // Map backend messages to friendlier ones
       const raw = (data && (data.error || data.message)) || ('Sign-in failed (HTTP ' + r.status + ')');
       if (r.status === 403 && /disabled/i.test(raw)) {
-        setLoginError('Email sign-in is disabled on this server. Ask the admin to set ALLOW_EMAIL_LOGIN=1 or configure Loginment.');
+        setLoginError('Email sign-in is disabled on this server. Ask your admin to set ALLOW_EMAIL_LOGIN=1, or use Loginment.');
       } else if (r.status === 503) {
         setLoginError('The server cannot save your account right now. Please try again shortly.');
       } else {
         setLoginError(raw);
       }
-      if (btn) { btn.disabled = false; btn.textContent = 'Continue'; }
+      if (btn) { btn.disabled = false; btn.innerHTML = '<span data-i18n="continue">Continue</span><i class="ri-arrow-right-line"></i>'; }
     } catch (err) {
       const msg = err.name === 'AbortError' ? 'Request timed out. Please try again.' : 'Network error: ' + err.message;
       setLoginError(msg);
-      if (btn) { btn.disabled = false; btn.textContent = 'Continue'; }
+      if (btn) { btn.disabled = false; btn.innerHTML = '<span data-i18n="continue">Continue</span><i class="ri-arrow-right-line"></i>'; }
     }
   }
 
@@ -1370,9 +1394,7 @@
     finally { if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-image-add-line"></i> Generate'; } }
   }
 
-  /* ═══════════════════════════════════════════════════════════
-     SUPPORT — now actually sends to backend with mailto fallback
-     ═══════════════════════════════════════════════════════════ */
+  /* ═══════════ SUPPORT ═══════════ */
   function setSupportError(msg, kind) {
     const el = $('#supportError');
     if (!el) return;
@@ -1381,7 +1403,6 @@
     el.textContent = msg;
     el.classList.toggle('ok', kind === 'ok');
   }
-
   async function submitSupport() {
     setSupportError('');
     const category = ($('#supportCategory')?.value || 'other').trim();
@@ -1397,13 +1418,7 @@
 
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line spin"></i> Sending…'; }
 
-    const payload = {
-      category, subject, message, email,
-      guest_id: getGuestId(),
-      url: location.href,
-      ua: navigator.userAgent,
-      ts: Date.now(),
-    };
+    const payload = { category, subject, message, email, guest_id: getGuestId(), url: location.href, ua: navigator.userAgent, ts: Date.now() };
 
     let ok = false;
     try {
@@ -1414,22 +1429,15 @@
       }, 15000);
       const data = await r.json().catch(() => null);
       if (r.ok && data && data.ok !== false) ok = true;
-      else if (r.status === 404) ok = false; // fallback
-      else if (!r.ok) {
-        setSupportError((data && (data.error || data.message)) || ('Server error (HTTP ' + r.status + ')'));
-      } else ok = true;
-    } catch (e) {
-      // Network error — fall through to mailto
-    }
+      else if (r.status === 404) ok = false;
+      else if (!r.ok) setSupportError((data && (data.error || data.message)) || ('Server error (HTTP ' + r.status + ')'));
+      else ok = true;
+    } catch (e) { /* fall through to mailto */ }
 
-    if (!ok && !$('#supportError')?.textContent) {
-      // Fallback: open a mailto: link so the user can still reach us
+    if (!ok && !($('#supportError')?.textContent)) {
       const mailSubject = encodeURIComponent(`[MiroxAI ${category}] ${subject}`);
-      const mailBody = encodeURIComponent(
-        `${message}\n\n— — —\nCategory: ${category}\nFrom: ${email || '(not provided)'}\nURL: ${location.href}\nGuest: ${getGuestId()}\nUA: ${navigator.userAgent}`
-      );
-      const mailto = `mailto:support@miroxai.org?subject=${mailSubject}&body=${mailBody}`;
-      window.location.href = mailto;
+      const mailBody = encodeURIComponent(`${message}\n\n— — —\nCategory: ${category}\nFrom: ${email || '(not provided)'}\nURL: ${location.href}\nGuest: ${getGuestId()}\nUA: ${navigator.userAgent}`);
+      window.location.href = `mailto:support@miroxai.org?subject=${mailSubject}&body=${mailBody}`;
       setSupportError('Opening your email client… (backend /api/support is not available)', 'ok');
       if (btn) { btn.disabled = false; btn.innerHTML = 'Submit'; }
       return;
@@ -1635,7 +1643,6 @@
           if (autoContinues < MAX_AUTO_CONTINUES && __bridgeAutoRun) { autoContinues++; await sleep(600); bridgeConversation.push({ role: 'user', content: '[System] Continue.' }); continue; }
           break;
         }
-
         const fp = fingerprintReply(reply);
         if (fp && fp === bridgeTurn.lastReplyFingerprint) {
           bridgeTurn.lastReplyCount++;
@@ -1644,10 +1651,7 @@
             bridgeTaskComplete = true;
             break;
           }
-        } else {
-          bridgeTurn.lastReplyFingerprint = fp;
-          bridgeTurn.lastReplyCount = 1;
-        }
+        } else { bridgeTurn.lastReplyFingerprint = fp; bridgeTurn.lastReplyCount = 1; }
 
         const cmdsInReply = extractBridgeCommands(reply);
         const saidDone = /\bDONE\b/i.test(reply);
@@ -1790,11 +1794,7 @@
     on('#logoutBtn', 'click', doLogout);
     on('#signInFromSettingsBtn', 'click', () => { closeModal('settingsModal'); setLoginError(''); openModal('loginModal'); });
     on('#shareFromSettingsBtn', 'click', () => { closeModal('settingsModal'); setTimeout(() => openShareAd(), 100); });
-
-    // Support form Ctrl+Enter to submit
-    $('#supportMessage')?.addEventListener('keydown', (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); submitSupport(); }
-    });
+    $('#supportMessage')?.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); submitSupport(); } });
 
     $$('.settings-tab').forEach((tab) => {
       tab.onclick = () => {
@@ -1814,7 +1814,12 @@
     bindToggle('compactToggle', 'compact');
     bindToggle('reduceMotionToggle', 'reduceMotion');
 
-    on('#uiLanguageSelect', 'change', (e) => { __prefs.uiLanguage = e.target.value; savePrefs(); applyTranslations(); toast('Translating interface… this may take a moment'); });
+    on('#uiLanguageSelect', 'change', (e) => {
+      __prefs.uiLanguage = e.target.value;
+      savePrefs();
+      if (isTranslatable(__prefs.uiLanguage)) toast('Translating interface… this may take a moment');
+      applyTranslations();
+    });
     on('#languageSelect', 'change', (e) => { __prefs.responseLanguage = e.target.value; savePrefs(); });
 
     on('#exportChatsBtn', 'click', () => {
