@@ -1,6 +1,6 @@
 /* ============================================================
-   MiroxAI Backend v95 — boot-safe rebuild
-   Matches the v25 frontend (index.html, script.js, style.css)
+   MiroxAI Backend v96 — boot-safe rebuild
+   Matches the v26 frontend (index.html, script.js, style.css)
    ============================================================ */
 import express from 'express';
 import cors from 'cors';
@@ -38,7 +38,7 @@ const LM_DOMAIN = env('LOGINMENT_DOMAIN', 'https://logint.lovable.app').replace(
 const KV_URL = env('UPSTASH_REDIS_REST_URL').replace(/\/+$/, '');
 const KV_TOKEN = env('UPSTASH_REDIS_REST_TOKEN');
 const KV_ON = !!(KV_URL && KV_TOKEN);
-const KV_DB_KEY = 'mirox:db:v1'; // same key as before, so accounts and plans survive
+const KV_DB_KEY = 'mirox:db:v1';
 
 const SECRET = env('SECRET_KEY') || crypto.randomBytes(32).toString('hex');
 if (!env('SECRET_KEY')) console.warn('[Mirox] SECRET_KEY not set: sessions reset on every cold start.');
@@ -89,6 +89,7 @@ RULE 2 — Always close tags.
 RULE 3 — Long files: write the first chunk with <bridge-write>, then add the rest with <bridge-append>.
 RULE 4 — Never ask the user to confirm small steps. Keep building.
 RULE 5 — Prefer portable relative paths such as ".", "./src/app.js", or "~/project/file.js". The local bridge safely resolves these aliases under the configured home directory. Do not reveal or repeat the user's real absolute home path unless explicitly needed.
+RULE 6 — Do NOT repeat the same sentence, tool call or file write more than once. If a step succeeded, move on.
 
 When finished, reply DONE on its own line plus a one-line summary.
 
@@ -151,10 +152,6 @@ function extractReplyText(data) {
 
 /* ============================================================
    DATABASE
-   Small JSON document: users, key index, chat log, events.
-   Images are NOT stored here; they live in blob storage.
-   Writes are disabled if the last load failed, so a read error
-   can never overwrite real accounts with an empty database.
    ============================================================ */
 let db = null;
 let dbOk = false;
@@ -165,7 +162,7 @@ const emptyDb = () => ({ users: {}, keys: {}, chats: [], events: [] });
 
 function normalize(raw) {
   const d = Object.assign(emptyDb(), raw && typeof raw === 'object' ? raw : {});
-  delete d.images;     // legacy base64 images from the old backend
+  delete d.images;
   delete d.apiKeys;
   delete d.counters;
   if (!d.users || typeof d.users !== 'object') d.users = {};
@@ -221,7 +218,6 @@ async function loadDb() {
   return dbLoading;
 }
 
-/* Writes run one after another. Resolves true only if the save landed. */
 function persist() {
   if (!db || !dbOk) return Promise.resolve(false);
   const snap = JSON.stringify(db);
@@ -350,7 +346,6 @@ function clearSessionCookie(req, res) {
   res.append('Set-Cookie', `mirox_sess=; ${cookieAttrs(req, 0)}`);
 }
 
-/* ---------- Per-request DB + user lookup ---------- */
 async function ensureDb(req) {
   if (req && req.__dbReady) return;
   await loadDb();
@@ -365,7 +360,6 @@ async function currentUser(req) {
   return userFor(s.uid);
 }
 
-/* API key or session cookie, used by /v1 routes */
 async function authFromRequest(req) {
   const h = String(req.headers.authorization || '');
   if (!h) return { user: await currentUser(req), viaKey: false };
@@ -566,7 +560,6 @@ function textToSSEStream(text) {
   });
 }
 
-/* Tries HF, then Pollinations, then AIroute. Throws only when all fail. */
 async function miroxChatChain({ messages, cfg, stream, vision }) {
   const tries = [];
   if (vision) {
@@ -600,7 +593,6 @@ async function miroxChatChain({ messages, cfg, stream, vision }) {
   throw new Error(GENERIC_ERR);
 }
 
-/* Reads an SSE body from a provider and calls onDelta for each token. */
 async function pipeProviderStream(body, onDelta, isClosed, onLimit = () => {}) {
   const reader = body.getReader();
   const dec = new TextDecoder();
@@ -631,7 +623,6 @@ async function pipeProviderStream(body, onDelta, isClosed, onLimit = () => {}) {
   }
 }
 
-/* ---------- Image generation ---------- */
 async function generateImage(prompt) {
   const deadline = Date.now() + 55000;
   for (const mid of PL_IMG_MODELS) {
@@ -663,7 +654,6 @@ async function generateImage(prompt) {
   throw new Error(GENERIC_ERR);
 }
 
-/* ---------- SSE helpers ---------- */
 function sseInit(res) {
   res.status(200);
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -681,14 +671,12 @@ function sseDone(res) {
   try { res.write('data: [DONE]\n\n'); } catch {}
 }
 
-/* ---------- Prompt builder ---------- */
 function buildSystemPrompt(cfg, bridge, searchUsed, persona) {
   let p = IDENTITY_GUARD + '\n\n' + cfg.basePrompt;
   if (searchUsed) p += '\n\nWEB SEARCH MODE: live results follow in a system message. Use them and cite sources as [1], [2] when relevant.';
   if (persona) p += `\n\nUser preference: ${persona}`;
   if (bridge) {
     const env = bridge.env || {};
-    const allowed = Array.isArray(env.allowed_dirs) && env.allowed_dirs.length ? env.allowed_dirs.join(', ') : '(not provided)';
     p += '\n\n' + BRIDGE_PROMPT;
     p += `\n\n=== [Bridge environment] ===\nuser=${env.user || '(unknown)'}\nhome=~\ncwd=.\nplatform=${env.platform || '(unknown)'}\nallowed_dirs=home and explicitly configured project folders\nkdeConnect=${env.kde_connect_available ? 'true' : 'false'}`;
   }
@@ -731,10 +719,9 @@ const publicUser = (u) => {
 };
 const publicKey = (k) => ({ id: k.id, name: k.name, key: k.key, created: k.created, last_used: k.last_used || 0, revoked: !!k.revoked });
 
-/* ---------- Health ---------- */
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
   res.json({
-    ok: true, app: 'MiroxAI', version: 'v95',
+    ok: true, app: 'MiroxAI', version: 'v96',
     providers: { hf: !!HF_API_KEY, pl: !!PL_KEY, airoute: !!AIROUTE_KEY },
     db: { durable: KV_ON, writable: dbOk },
     time: nowS(),
@@ -750,12 +737,11 @@ app.get('/api/web/status', async (req, res) => {
   res.json({ ok: true, duckduckgo: ddg, wikipedia: wiki, ms: Date.now() - t0 });
 });
 
-/* ---------- Config & plans ---------- */
 app.get(['/api/config', '/config'], (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tier: m.tier }));
   res.json({
-    app: { name: 'MiroxAI', version: 'v95' },
+    app: { name: 'MiroxAI', version: 'v96' },
     models, default_model: models[0].id, plans: PLANS,
     tts_available: !!F_API,
     search_available: true, vision_available: true, image_intent: true,
@@ -869,7 +855,6 @@ app.get(['/api/me', '/me'], async (req, res) => {
   }
 });
 
-/* ---------- Persona ---------- */
 app.get('/api/persona', async (req, res) => {
   const u = await currentUser(req);
   res.json({ ok: true, persona: u?.persona || '' });
@@ -991,7 +976,7 @@ app.post('/v1/images/generations', async (req, res) => {
     const dataUrl = await generateImage(prompt);
     u.image_used += 1;
     await saveImage(u, prompt, dataUrl);
-    logEvent({ email: u.email, event: 'image_generated' });
+    logEvent({ email: u.email, event: 'image_generated', prompt: prompt.slice(0, 300) });
     await persist();
     res.json({ ok: true, image: dataUrl });
   } catch {
@@ -1001,7 +986,6 @@ app.post('/v1/images/generations', async (req, res) => {
 
 /* ============================================================
    CHAT COMPLETIONS
-   Web app: session cookie. API: Authorization: Bearer mxk_live_...
    ============================================================ */
 app.post('/v1/chat/completions', async (req, res) => {
   const t0 = Date.now();
@@ -1020,7 +1004,6 @@ app.post('/v1/chat/completions', async (req, res) => {
 
   const fail = (code, message) => res.status(code).json({ error: { message } });
 
-  /* Replies with a fixed message (used for guest image requests, limits, etc.) */
   const fixedReply = (message) => {
     if (!wantStream) return res.json({ reply: message, _ms: Date.now() - t0, provider: 'mirox' });
     sseInit(res);
@@ -1050,7 +1033,6 @@ app.post('/v1/chat/completions', async (req, res) => {
     }
     if (!text && !files.length) return fail(400, 'Empty message');
 
-    /* Image request in chat */
     const imagePrompt = files.length ? null : detectImageIntent(text);
     if (imagePrompt) {
       if (!u) return fixedReply('Sign in to generate images. Your daily image allowance is tied to your account.');
@@ -1059,7 +1041,7 @@ app.post('/v1/chat/completions', async (req, res) => {
         const dataUrl = await generateImage(imagePrompt);
         u.image_used += 1;
         await saveImage(u, imagePrompt, dataUrl);
-        logEvent({ email: u.email, event: 'image_generated_chat' });
+        logEvent({ email: u.email, event: 'image_generated_chat', prompt: imagePrompt.slice(0, 300) });
         await persist();
         if (!wantStream) return res.json({ reply: '', image: dataUrl, _ms: Date.now() - t0 });
         sseInit(res);
@@ -1075,7 +1057,6 @@ app.post('/v1/chat/completions', async (req, res) => {
     const searchQuery = forceSearch ? text : detectSearchIntent(text);
     if (wantStream) sseInit(res);
 
-    /* Message list: system prompt, earlier turns, then the new message */
     const msgs = [{ role: 'system', content: buildSystemPrompt(cfg, bridge, !!searchQuery, u?.persona || '') }];
     for (const h of history) {
       const role = h && h.role;
@@ -1097,7 +1078,6 @@ app.post('/v1/chat/completions', async (req, res) => {
     }
     msgs.push({ role: 'user', content: visionParts.length ? [{ type: 'text', text: userText }, ...visionParts] : userText });
 
-    /* Web search, streamed as events when the client asked for a stream */
     let searchData = null;
     if (searchQuery) {
       if (wantStream) sseWrite(res, { search: { query: searchQuery } });
@@ -1182,18 +1162,30 @@ app.post(['/api/admin/auth', '/admin/auth'], (req, res) => {
 app.get(['/api/admin/stats', '/admin/stats'], requireAdmin, async (req, res) => {
   await ensureDb(req);
   const users = Object.values(db.users);
+
+  // image-related events (both API and chat) with prompts
+  const imgEvents = db.events
+    .filter((e) => e.event === 'image_generated' || e.event === 'image_generated_chat')
+    .slice(-60)
+    .reverse()
+    .map((e) => ({ ts: e.ts, email: e.email || '—', prompt: e.prompt || '' }));
+
   res.json({
     ok: true,
     durable: KV_ON,
     db_writable: dbOk,
     warning: KV_ON ? null : 'No durable store configured. Plans can reset on serverless cold starts. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.',
     users: users.length,
+    chats: db.chats.length,
+    events: db.events.length,
+    images: imgEvents.length,
     users_data: Object.fromEntries(users.map((u) => [u.email, {
       name: u.name, tier: u.tier, daily_used: u.daily_used, image_used: u.image_used,
       eclipse_used: u.eclipse_used, last_login: u.last_login,
     }])),
     chats_data: db.chats.slice(-100).reverse(),
     events_data: db.events.slice(-100).reverse(),
+    images_data: imgEvents,
   });
 });
 
@@ -1213,7 +1205,6 @@ app.post(['/api/admin/set-tier', '/admin/set-tier'], requireAdmin, async (req, r
 
 /* ============================================================
    BRIDGE CLIENT DOWNLOAD
-   Needs: npm i archiver, and api/mirox_client_bridge/runner.py in the deploy.
    ============================================================ */
 app.get('/api/bridge/download', async (req, res) => {
   let archiver;
@@ -1222,7 +1213,7 @@ app.get('/api/bridge/download', async (req, res) => {
 
   let runner;
   try { runner = await fs.readFile(path.join(__dirname, 'mirox_client_bridge', 'runner.py'), 'utf8'); }
-  catch { return res.status(500).json({ ok: false, error: 'runner.py is missing from the deployment. Add it to includeFiles in vercel.json.' }); }
+  catch { return res.status(500).json({ ok: false, error: 'runner.py is missing from the deployment.' }); }
 
   const name = safeStr(req.query.name, 60).trim() || 'My Laptop';
   const port = Number(req.query.port) || 8765;
@@ -1262,12 +1253,7 @@ app.use((err, req, res, next) => {
   if (!res.headersSent) res.status(500).json({ ok: false, error: GENERIC_ERR });
 });
 
-/* ============================================================
-   START
-   Nothing heavy runs at import time. The database loads on the
-   first request. On Vercel the app is exported; elsewhere it listens.
-   ============================================================ */
-console.log('[Mirox] v95 · durable store:', KV_ON, '· providers:', { hf: !!HF_API_KEY, pl: !!PL_KEY, airoute: !!AIROUTE_KEY });
+console.log('[Mirox] v96 · durable store:', KV_ON, '· providers:', { hf: !!HF_API_KEY, pl: !!PL_KEY, airoute: !!AIROUTE_KEY });
 
 if (!process.env.VERCEL) {
   app.listen(PORT, () => console.log('[Mirox] Server at http://localhost:' + PORT));
