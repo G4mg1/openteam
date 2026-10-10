@@ -3,13 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5.0">
-<meta name="theme-color" content="#faf9f5">
+<meta name="theme-color" content="#ffffff">
 <title>MiroxAI — by OpenSurr</title>
 <link rel="icon" href="/logo.png" type="image/png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/remixicon@4.9.0/fonts/remixicon.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/devicon.min.css" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -157,6 +158,28 @@
   </div>
 </main>
 
+<!-- SHARE AD POPUP -->
+<div id="shareAdModal" class="share-ad-overlay">
+  <div class="share-ad-panel">
+    <button class="icon-btn share-ad-close" type="button" id="shareAdCloseBtn" aria-label="Close"><i class="ri-close-line"></i></button>
+    <div class="share-ad-icon"><i class="ri-gift-2-line"></i></div>
+    <h2 class="share-ad-title">Share our site, get 50k tokens</h2>
+    <p class="share-ad-sub">Share MiroxAI on social media and we'll top up your account with <strong>50,000 tokens free for a week</strong>. Available to all free users.</p>
+    <ul class="share-ad-perks">
+      <li><i class="ri-check-line"></i> 50,000 extra tokens</li>
+      <li><i class="ri-check-line"></i> Valid for 7 days</li>
+      <li><i class="ri-check-line"></i> Stacks on top of free plan</li>
+    </ul>
+    <div class="share-ad-actions">
+      <button class="share-ad-btn primary" type="button" id="shareAdShareBtn"><i class="ri-share-forward-2-line"></i> <span>Share now</span></button>
+      <button class="share-ad-btn" type="button" id="shareAdIgnoreBtn">Ignore</button>
+    </div>
+    <div class="share-ad-status" id="shareAdStatus"></div>
+    <div class="share-ad-hint">We verify shares through your device's native share sheet.</div>
+  </div>
+</div>
+
+<!-- BRIDGE WORKSPACE -->
 <div id="bridgeWorkspace" class="bridge-workspace-overlay">
   <div class="bridge-workspace-panel" id="bwPanel">
     <header class="bridge-workspace-top">
@@ -169,7 +192,7 @@
         <span>Disconnected</span>
       </div>
       <div class="bridge-workspace-toggles" id="bwToggles">
-        <button id="bwSideToggle" class="bridge-toggle only-mobile" type="button" title="Connection panel"><i class="ri-layout-column-line"></i><span>Panel</span></button>
+        <button id="bwSideToggle" class="bridge-toggle only-mobile" type="button"><i class="ri-layout-column-line"></i><span>Panel</span></button>
         <button id="bwToggleAutoRun" class="bridge-toggle active" type="button"><i class="ri-play-circle-line"></i><span>Auto-Run</span></button>
         <button id="bwToggleShowCode" class="bridge-toggle" type="button"><i class="ri-code-line"></i><span>Show Code</span></button>
         <button id="bwPreviewBtn" class="bridge-toggle" type="button"><i class="ri-eye-line"></i><span>Preview</span></button>
@@ -181,12 +204,6 @@
         <button id="bwCloseBtn" class="icon-btn" type="button" title="Close"><i class="ri-close-line"></i></button>
       </div>
     </header>
-
-    <div class="bridge-progress" id="bwProgress" style="display:none;">
-      <div class="bridge-progress-track"><div class="bridge-progress-fill" id="bwProgressFill" style="width:0%;"></div></div>
-      <div class="bridge-progress-label"><span id="bwProgressPct">0%</span><span id="bwProgressText">Starting…</span></div>
-    </div>
-
     <div class="bridge-workspace-body">
       <div class="bridge-workspace-main">
         <div class="bridge-messages" id="bridgeMessages">
@@ -194,11 +211,6 @@
             <div class="mascot mascot-md" data-mood="idle"></div>
             <h3>Bridge Workspace</h3>
             <p>Tell Mirox what to build. It writes files into <code>~/&lt;project&gt;/</code>, verifies them, and shows you a live preview.</p>
-            <ol class="bridge-empty-steps">
-              <li>Download the client → extract → <code>pip install aiohttp</code> → <code>python runner.py</code>.</li>
-              <li>Optional: <code>sudo apt install kdeconnect</code> for phone control.</li>
-              <li>Click <strong>Connect</strong>. Try: <em>"build a calculator in my home folder"</em>.</li>
-            </ol>
           </div>
         </div>
         <div class="bridge-input-row">
@@ -206,56 +218,24 @@
           <button id="bridgeSendBtn" class="send-btn is-disabled" type="button" aria-disabled="true" aria-label="Send"><i class="ri-arrow-up-line"></i></button>
         </div>
       </div>
-
       <aside class="bridge-workspace-side">
         <div class="bridge-side-section">
           <h4><i class="ri-plug-line"></i> Connection</h4>
           <div id="bwStatusBox" class="bw-status-box"><div class="bridge-status-dot offline"></div><span>Disconnected</span></div>
           <label class="bw-label" for="bwNameInput">Name</label>
           <input id="bwNameInput" class="modal-input" type="text" placeholder="My Laptop" maxlength="60">
-          <label class="bw-label" for="bwModelSelect">Model</label>
-          <select id="bwModelSelect" class="modal-select">
-            <option value="mirox-luna-1.2">Luna (fast, unlimited)</option>
-            <option value="mirox-gen-1">Gen (concise, unlimited)</option>
-            <option value="mirox-pro-5">Pro (deeper)</option>
-          </select>
           <label class="bw-label" for="bwPortInput">Port</label>
           <input id="bwPortInput" class="modal-input" type="number" value="8765" min="1024" max="65535">
           <button id="bwConnectBtn" class="modal-btn primary" type="button"><i class="ri-link"></i> Connect</button>
           <button id="bwDisconnectBtn" class="modal-btn danger" type="button" style="display:none;"><i class="ri-link-unlink"></i> Disconnect</button>
           <div id="bwConnectHint" class="bw-hint"></div>
         </div>
-
-        <div class="bridge-side-section">
-          <h4><i class="ri-smartphone-line"></i> Phone &amp; Devices</h4>
-          <div class="bw-status-box" id="bwKdeBox"><i class="ri-smartphone-line"></i><span id="bwKdeStatus">KDE Connect: checking…</span></div>
-          <button id="bwScanDevicesBtn" class="modal-btn" type="button"><i class="ri-radar-line"></i> Scan for devices</button>
-          <div id="bwDeviceList" class="bw-device-list"></div>
-        </div>
-
-        <div class="bridge-side-section">
-          <h4><i class="ri-hammer-line"></i> Build</h4>
-          <div class="bw-status-box" id="bwBuildBox"><i class="ri-folder-3-line"></i><span id="bwBuildStatus">No project yet</span></div>
-          <button id="bwBuildOpenBtn" class="modal-btn" type="button"><i class="ri-eye-line"></i> Open live preview</button>
-          <button id="bwBuildFolderBtn" class="modal-btn" type="button"><i class="ri-folder-open-line"></i> Copy folder path</button>
-        </div>
-
-        <div class="bridge-side-section">
-          <h4><i class="ri-shield-keyhole-line"></i> Sudo</h4>
-          <div class="bw-status-box" id="bwSudoBox"><i class="ri-shield-keyhole-line"></i><span id="bwSudoStatus">No password saved</span></div>
-          <button id="bwSudoForgetBtn" class="modal-btn" type="button"><i class="ri-forbid-2-line"></i> Forget password</button>
-        </div>
-
         <div class="bridge-side-section">
           <h4><i class="ri-rocket-line"></i> Quick actions</h4>
           <div class="bw-quick-grid">
             <button class="bw-quick" data-q="Build a calculator in my home folder">Calculator</button>
-            <button class="bw-quick" data-q="Build a modern landing page for a coffee shop in my home folder">Landing page</button>
+            <button class="bw-quick" data-q="Build a landing page in my home folder">Landing page</button>
             <button class="bw-quick" data-q="Build a snake game in my home folder">Snake game</button>
-            <button class="bw-quick" data-q="Build a todo app in my home folder">Todo app</button>
-            <button class="bw-quick" data-q="Build a personal portfolio in my home folder">Portfolio</button>
-            <button class="bw-quick" data-q="Scan my devices and show me what's available.">Scan devices</button>
-            <button class="bw-quick" data-q="Build a small todo app for my phone, then send it to my phone.">Build + send to phone</button>
           </div>
         </div>
       </aside>
@@ -263,106 +243,7 @@
   </div>
 </div>
 
-<div id="bwPreviewModal" class="planner-overlay">
-  <div class="planner-panel preview-panel">
-    <header class="planner-top">
-      <div class="planner-title">
-        <i class="ri-eye-line"></i>
-        <div><div class="planner-title-main">Live Preview</div><div class="planner-title-sub" id="bwPreviewSubtitle">No project yet</div></div>
-      </div>
-      <div class="preview-tools">
-        <input id="bwPreviewPath" class="modal-input" placeholder="~/project/index.html" spellcheck="false">
-        <button class="icon-btn" id="bwPreviewLoadBtn" title="Load path"><i class="ri-folder-open-line"></i></button>
-        <button class="icon-btn" id="bwPreviewReloadBtn" title="Reload"><i class="ri-refresh-line"></i></button>
-        <button class="icon-btn" id="bwPreviewCloseBtn" title="Close"><i class="ri-close-line"></i></button>
-      </div>
-    </header>
-    <div class="planner-body preview-body"><iframe id="bwPreviewFrame" sandbox="allow-scripts allow-same-origin allow-forms allow-modals"></iframe></div>
-  </div>
-</div>
-
-<div id="kdeModal" class="planner-overlay">
-  <div class="planner-panel kde-panel">
-    <header class="planner-top">
-      <div class="planner-title">
-        <i class="ri-smartphone-line"></i>
-        <div><div class="planner-title-main">KDE Connect · Devices</div><div class="planner-title-sub" id="kdeSubtitle">Pick a device for Mirox to work with</div></div>
-      </div>
-      <button class="icon-btn" id="kdeCloseBtn" type="button"><i class="ri-close-line"></i></button>
-    </header>
-    <div class="planner-body kde-body"><div id="kdeGrid" class="kde-device-grid"></div></div>
-    <footer class="planner-footer">
-      <span class="planner-hint"><i class="ri-information-line"></i> Devices marked <b>reachable</b> are on the same Wi-Fi and paired.</span>
-      <button id="kdeRefreshBtn" class="modal-btn" type="button"><i class="ri-refresh-line"></i> Rescan</button>
-      <button id="kdeSkipBtn" class="modal-btn" type="button"><i class="ri-skip-forward-line"></i> Skip</button>
-    </footer>
-  </div>
-</div>
-
-<div id="plannerModal" class="planner-overlay">
-  <div class="planner-panel">
-    <header class="planner-top">
-      <div class="planner-title">
-        <i class="ri-layout-masonry-line"></i>
-        <div><div class="planner-title-main">Mirox Planner</div><div class="planner-title-sub" id="plannerSubtitle">Pick a design — Mirox will build it for you</div></div>
-      </div>
-      <button class="icon-btn" id="plannerCloseBtn" type="button"><i class="ri-close-line"></i></button>
-    </header>
-    <div class="planner-body"><div id="plannerGrid" class="planner-grid"></div></div>
-    <footer class="planner-footer">
-      <span class="planner-hint"><i class="ri-information-line"></i> Live demos — pick your favorite.</span>
-      <button id="plannerSkipBtn" class="modal-btn" type="button"><i class="ri-skip-forward-line"></i> Let Mirox decide</button>
-    </footer>
-  </div>
-</div>
-
-<div id="sudoModal" class="question-overlay">
-  <div class="question-panel sudo-panel">
-    <div class="question-top">
-      <div class="question-badge sudo-badge"><i class="ri-shield-keyhole-line"></i></div>
-      <div class="question-heading">
-        <div class="question-title">Password required</div>
-        <div class="question-sub" id="sudoReason">Mirox needs root access to continue.</div>
-      </div>
-      <button class="icon-btn" id="sudoCloseBtn" type="button" title="Skip"><i class="ri-close-line"></i></button>
-    </div>
-    <p class="question-text sudo-command" id="sudoCommandText"></p>
-    <div class="sudo-input-wrap">
-      <input type="password" id="sudoPasswordInput" class="modal-input" placeholder="Your sudo password" autocomplete="current-password" spellcheck="false">
-      <button class="icon-btn sudo-reveal" type="button" id="sudoRevealBtn" title="Show / hide"><i class="ri-eye-line"></i></button>
-    </div>
-    <label class="sudo-remember"><input type="checkbox" id="sudoRememberChk"><span>Remember for this session (kept in memory only)</span></label>
-    <div class="question-footer" style="margin-top:14px;">
-      <button id="sudoSkipBtn" class="modal-btn" type="button"><i class="ri-skip-forward-line"></i> Skip</button>
-      <button id="sudoSubmitBtn" class="modal-btn primary" type="button">Run with sudo <i class="ri-arrow-right-line"></i></button>
-    </div>
-    <div id="sudoHint" class="sudo-hint"></div>
-  </div>
-</div>
-
-<div id="bridgeQuestionModal" class="question-overlay">
-  <div class="question-panel">
-    <div class="question-top">
-      <div class="question-badge"><i class="ri-question-line"></i></div>
-      <div class="question-heading">
-        <div class="question-title">Mirox needs your input</div>
-        <div class="question-sub" id="bqCounter">Question 1 of 1</div>
-      </div>
-      <button class="icon-btn" id="bqSkipOne" type="button" title="Skip"><i class="ri-skip-forward-line"></i></button>
-    </div>
-    <div class="question-progress"><div class="question-progress-fill" id="bqProgressFill" style="width:0%;"></div></div>
-    <p class="question-text" id="bqText"></p>
-    <div class="question-options" id="bqOptions"></div>
-    <div class="question-custom" id="bqCustomWrap" style="display:none;">
-      <input type="text" id="bqCustomInput" class="modal-input" placeholder="Or type your own answer…">
-    </div>
-    <div class="question-footer">
-      <button id="bqCustomToggle" class="modal-btn" type="button"><i class="ri-edit-line"></i> Custom</button>
-      <button id="bqSubmit" class="modal-btn primary" type="button">Submit &amp; continue <i class="ri-arrow-right-line"></i></button>
-    </div>
-  </div>
-</div>
-
+<!-- LOGIN -->
 <div id="loginModal" class="modal-overlay">
   <div class="modal">
     <button class="icon-btn modal-close" type="button" data-close="loginModal" aria-label="Close"><i class="ri-close-line"></i></button>
@@ -381,6 +262,7 @@
   </div>
 </div>
 
+<!-- SETTINGS -->
 <div id="settingsModal" class="modal-overlay">
   <div class="modal modal-wide">
     <button class="icon-btn modal-close" type="button" data-close="settingsModal" aria-label="Close"><i class="ri-close-line"></i></button>
@@ -424,6 +306,7 @@
   </div>
 </div>
 
+<!-- PLANS -->
 <div id="plansModal" class="modal-overlay">
   <div class="modal modal-wide">
     <button class="icon-btn modal-close" type="button" data-close="plansModal" aria-label="Close"><i class="ri-close-line"></i></button>
@@ -433,6 +316,7 @@
   </div>
 </div>
 
+<!-- IMAGE STUDIO -->
 <div id="imageModal" class="modal-overlay">
   <div class="modal">
     <button class="icon-btn modal-close" type="button" data-close="imageModal" aria-label="Close"><i class="ri-close-line"></i></button>
@@ -448,6 +332,7 @@
   </div>
 </div>
 
+<!-- SUPPORT -->
 <div id="supportModal" class="modal-overlay">
   <div class="modal">
     <button class="icon-btn modal-close" type="button" data-close="supportModal" aria-label="Close"><i class="ri-close-line"></i></button>
@@ -456,11 +341,11 @@
       <input type="text" id="supportSubject" class="modal-input" placeholder="Subject">
       <textarea id="supportMessage" class="modal-textarea" rows="4" placeholder="Message"></textarea>
       <button id="submitReportBtn" class="modal-btn primary" type="button">Submit</button>
-      <a href="/developers/" class="modal-btn link-btn"><i class="ri-code-s-slash-line"></i> Developers</a>
     </div>
   </div>
 </div>
 
+<!-- IMAGE VIEWER -->
 <div id="imageViewer" class="image-viewer">
   <div class="image-viewer-backdrop" data-iv-close></div>
   <div class="image-viewer-panel">
@@ -478,7 +363,6 @@
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="/script.js" defer></script>
 </body>
 </html>
