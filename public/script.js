@@ -1,7 +1,6 @@
 (function () {
   'use strict';
 
-  /* ═══════════ Loader ═══════════ */
   let __loaderGone = false;
   function killLoader() {
     if (__loaderGone) return;
@@ -22,26 +21,29 @@
   const $$ = (s) => document.querySelectorAll(s);
   const on = (sel, ev, fn) => { const el = $(sel); if (el) el.addEventListener(ev, fn); };
 
+  /* ═══════════ MODELS ═══════════ */
+  // tier: free = anyone | pro = Pro or higher | ultimate = Ultimate or BONUS
   const FALLBACK_MODELS = [
-    { id: 'mirox-luna-1.2', label: 'Luna', tier: 'free' },
-    { id: 'mirox-gen-1', label: 'Gen', tier: 'free' },
-    { id: 'mirox-pro-5', label: 'Pro', tier: 'pro' },
-    { id: 'mirox-ultra-10', label: 'Ultra', tier: 'pro' },
-    { id: 'mirox-eclipse-2.0', label: 'Eclipse', tier: 'ultimate' },
+    { id: 'mirox-luna-1.2', label: 'Luna', tier: 'free', tagline: 'Fast, unlimited', icon: 'ri-moon-line' },
+    { id: 'mirox-gen-1', label: 'Gen', tier: 'free', tagline: 'Concise, unlimited', icon: 'ri-flashlight-line' },
+    { id: 'mirox-pro-5', label: 'Pro', tier: 'pro', tagline: 'Deeper reasoning', icon: 'ri-vip-diamond-line' },
+    { id: 'mirox-ultra-10', label: 'Ultra', tier: 'pro', tagline: 'Long context', icon: 'ri-rocket-2-line' },
+    { id: 'mirox-eclipse-2.0', label: 'Eclipse', tier: 'ultimate', tagline: 'Most powerful', icon: 'ri-sun-fill' },
   ];
   const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
-  const LS_KEY = 'miroxai_conversations_v32';
+
+  const LS_KEY = 'miroxai_conversations_v33';
   const TOKEN_KEY = 'mirox_token';
-  const APPEARANCE_KEY = 'miroxai_appearance_v32';
-  const SHARE_KEY = 'miroxai_share_v3';
-  const BONUS_KEY = 'miroxai_bonus_v3';
+  const APPEARANCE_KEY = 'miroxai_appearance_v33';
+  const SHARE_KEY = 'miroxai_share_v4';
+  const BONUS_KEY = 'miroxai_bonus_v4';
   const PASTE_ATTACH_THRESHOLD = 1024;
   const NET_TIMEOUT_MS = 15000;
   const STREAM_TIMEOUT_MS = 120000;
   const BASE_FREE_LIMIT = 10000;
   const BONUS_TOKENS = 50000;
   const BONUS_MS = 7 * 24 * 60 * 60 * 1000;
-  const BONUS_CHECK_MS = 30 * 1000; // periodic bonus-expiry checker
+  const BONUS_CHECK_MS = 30 * 1000;
   const MAX_IMAGE_DIM = 1280;
 
   let __config = null, __user = null, __tier = 'free', __model = 'mirox-luna-1.2';
@@ -49,12 +51,11 @@
   let continuationBusy = false, streamRenderAt = 0, userIsAtBottom = true;
   let autoScrollEnabled = true;
   let __conversations = [], pendingFiles = [], activeStreamController = null, __usage = null;
-  let __bridge = { name: 'My Laptop', port: 8765, connected: false, baseUrl: null };
-  let bridgeRunning = false;
   let forceSearchNext = false, __historyQuery = '';
   let __ivDataUrl = '';
   let __shareState = { claimed: false, claimedAt: 0, dismissedAt: 0 };
   let __bonusTimer = null;
+  let __lastBonusActive = false;
 
   const uid = () => 'c_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
   const escapeHtml = (s) => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
@@ -86,7 +87,7 @@
     } catch { return fallback; }
   }
 
-  /* ═══════════ BONUS SYSTEM — bulletproof 7-day validation ═══════════ */
+  /* ═══════════ BONUS SYSTEM ═══════════ */
   function loadBonusRaw() {
     const b = safeGet(BONUS_KEY, null);
     if (!b || typeof b !== 'object') return null;
@@ -105,12 +106,8 @@
     const b = loadBonusRaw();
     if (!b) return 0;
     if (!isBonusValid(b)) {
-      // Expired or invalid → wipe and reset share state so user can re-claim
       saveBonusRaw(null);
-      if (__shareState.claimed) {
-        __shareState.claimed = false;
-        saveShareState();
-      }
+      if (__shareState.claimed) { __shareState.claimed = false; saveShareState(); }
       return 0;
     }
     return b.tokens;
@@ -120,21 +117,15 @@
     if (!isBonusValid(b)) return 0;
     return b.expiresAt - Date.now();
   }
-  function getBonusExpiryDate() {
-    const b = loadBonusRaw();
-    if (!isBonusValid(b)) return null;
-    return new Date(b.expiresAt);
-  }
+  function isBonusActive() { return getActiveBonus() > 0; }
   function grantLocalBonus(tokens) {
     const prev = loadBonusRaw();
     const now = Date.now();
     let newTokens, newExpiry;
     if (isBonusValid(prev)) {
-      // Stack on top of active bonus
       newTokens = (prev.tokens || 0) + tokens;
       newExpiry = Math.max(prev.expiresAt, now + BONUS_MS);
     } else {
-      // Fresh grant
       newTokens = tokens;
       newExpiry = now + BONUS_MS;
     }
@@ -143,7 +134,6 @@
     return bonus;
   }
   function getFreeLimit() { return BASE_FREE_LIMIT + getActiveBonus(); }
-
   function formatBonusRemaining() {
     const ms = getBonusExpiryMs();
     if (ms <= 0) return '';
@@ -155,23 +145,33 @@
     return mins + 'm';
   }
 
-  // Periodic expiry checker — updates UI when bonus expires mid-session
-  function startBonusWatcher() {
-    if (__bonusTimer) clearInterval(__bonusTimer);
-    __bonusTimer = setInterval(() => {
-      const before = loadBonusRaw();
-      const wasValid = isBonusValid(before);
-      const nowTokens = getActiveBonus(); // this may clear expired bonus
-      const isValidNow = nowTokens > 0;
-      if (wasValid && !isValidNow) {
-        // Just expired
-        updateTokenUsage();
-        toast('Your 50k bonus tokens have expired. Share again to renew!', 4500);
-      } else if (isValidNow) {
-        // Refresh countdown display
-        updateTokenUsage();
-      }
-    }, BONUS_CHECK_MS);
+  /* ═══════════ MODEL ACCESS — bonus unlocks Pro/Ultra/Eclipse ═══════════ */
+  // Rules:
+  //   Free tier WITHOUT bonus → only Luna, Gen
+  //   Free tier WITH bonus   → everything unlocked for the bonus period
+  //   Pro tier               → Luna, Gen, Pro, Ultra (no Eclipse)
+  //   Ultimate tier          → everything
+  function canUseModel(tier) {
+    // Bonus unlocks everything for free users
+    if (__tier === 'free' && isBonusActive()) return true;
+    // Standard tier access
+    if (tier === 'free') return true;
+    if (__tier === 'ultimate') return true;
+    if (__tier === 'pro' && tier === 'pro') return true;
+    return false;
+  }
+  function modelAccessReason(tier) {
+    if (__tier === 'free' && isBonusActive() && tier !== 'free') return 'bonus';
+    if (tier === 'free') return 'free';
+    if (__tier === 'ultimate') return 'tier';
+    if (__tier === 'pro' && tier === 'pro') return 'tier';
+    return 'locked';
+  }
+  function tierLabel(tier) {
+    if (tier === 'free') return 'FREE';
+    if (tier === 'pro') return 'PRO';
+    if (tier === 'ultimate') return 'ULT';
+    return tier.toUpperCase();
   }
 
   const idb = (() => {
@@ -189,35 +189,28 @@
     };
   })();
 
-  /* ═══════════ CONFETTI ANIMATION ═══════════ */
+  /* ═══════════ CONFETTI ═══════════ */
   function launchConfetti(opts) {
     const o = opts || {};
     const duration = o.duration || 4200;
-    const count = o.count || 180;
+    const count = o.count || 200;
     const canvas = document.createElement('canvas');
     canvas.className = 'confetti-canvas';
     canvas.setAttribute('aria-hidden', 'true');
     document.body.appendChild(canvas);
-
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const W = window.innerWidth, H = window.innerHeight;
-    canvas.width = W * dpr;
-    canvas.height = H * dpr;
-    canvas.style.width = W + 'px';
-    canvas.style.height = H + 'px';
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
     const ctx = canvas.getContext('2d');
     ctx.scale(dpr, dpr);
-
-    const colors = ['#4d6bfe', '#7c8aff', '#16a34a', '#4ade80', '#f59e0b', '#fbbf24', '#ec4899', '#f472b6', '#06b6d4', '#22d3ee', '#a855f7', '#c084fc', '#ef4444', '#f87171'];
+    const colors = ['#4d6bfe', '#7c8aff', '#16a34a', '#4ade80', '#f59e0b', '#fbbf24', '#ec4899', '#f472b6', '#06b6d4', '#22d3ee', '#a855f7', '#c084fc', '#ef4444', '#f87171', '#facc15'];
     const particles = [];
-
-    // Two burst origins — left and right of screen top, plus wide falling field
     const origins = [
       { x: W * 0.15, y: H * 0.25 },
       { x: W * 0.85, y: H * 0.25 },
       { x: W * 0.5, y: H * 0.2 },
     ];
-
     for (let i = 0; i < count; i++) {
       const origin = origins[i % origins.length];
       const angle = (Math.random() - 0.5) * Math.PI * 1.4 - Math.PI / 2;
@@ -237,85 +230,45 @@
         swayAmp: 0.5 + Math.random() * 1.8,
         swayFreq: 0.02 + Math.random() * 0.03,
         swayPhase: Math.random() * Math.PI * 2,
-        life: 1,
       });
     }
-
     const start = performance.now();
-    let raf = null;
-    let stopped = false;
-
+    let raf = null, stopped = false;
     function frame(now) {
       if (stopped) return;
-      const elapsed = now - start;
-      const t = elapsed / duration;
-
+      const t = (now - start) / duration;
       ctx.clearRect(0, 0, W, H);
-
       const fadeStart = 0.7;
-      const globalAlpha = t > fadeStart ? Math.max(0, 1 - (t - fadeStart) / (1 - fadeStart)) : 1;
-      ctx.globalAlpha = globalAlpha;
-
+      ctx.globalAlpha = t > fadeStart ? Math.max(0, 1 - (t - fadeStart) / (1 - fadeStart)) : 1;
       for (const p of particles) {
-        p.vy += p.gravity;
-        p.vx *= p.drag;
-        p.vy *= p.drag;
+        p.vy += p.gravity; p.vx *= p.drag; p.vy *= p.drag;
         p.swayPhase += p.swayFreq;
-        const swayX = Math.sin(p.swayPhase) * p.swayAmp * 0.4;
-        p.x += p.vx + swayX;
-        p.y += p.vy;
-        p.rotation += p.rotationSpeed;
-
+        p.x += p.vx + Math.sin(p.swayPhase) * p.swayAmp * 0.4;
+        p.y += p.vy; p.rotation += p.rotationSpeed;
         if (p.y > H + 40) continue;
-
         ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.rotate(p.rotation);
-        ctx.fillStyle = p.color;
-
-        if (p.shape === 'circle') {
-          ctx.beginPath();
-          ctx.arc(0, 0, p.size / 2, 0, Math.PI * 2);
-          ctx.fill();
-        } else if (p.shape === 'ribbon') {
-          // Ribbon: thin elongated rect that flips
-          const flip = Math.sin(p.rotation * 2);
-          ctx.fillRect(-p.size / 2, -p.size / 8, p.size, Math.abs(flip) * p.size * 0.4 + 1.5);
-        } else {
-          // Rect (classic confetti)
-          ctx.fillRect(-p.size / 2, -p.size / 3, p.size, p.size * 0.7);
-        }
+        ctx.translate(p.x, p.y); ctx.rotate(p.rotation); ctx.fillStyle = p.color;
+        if (p.shape === 'circle') { ctx.beginPath(); ctx.arc(0, 0, p.size / 2, 0, Math.PI * 2); ctx.fill(); }
+        else if (p.shape === 'ribbon') { const flip = Math.sin(p.rotation * 2); ctx.fillRect(-p.size / 2, -p.size / 8, p.size, Math.abs(flip) * p.size * 0.4 + 1.5); }
+        else { ctx.fillRect(-p.size / 2, -p.size / 3, p.size, p.size * 0.7); }
         ctx.restore();
       }
-
-      if (t < 1) {
-        raf = requestAnimationFrame(frame);
-      } else {
-        stopped = true;
-        ctx.clearRect(0, 0, W, H);
-        canvas.remove();
-      }
+      if (t < 1) raf = requestAnimationFrame(frame);
+      else { stopped = true; ctx.clearRect(0, 0, W, H); canvas.remove(); }
     }
     raf = requestAnimationFrame(frame);
-
-    // Safety cleanup if something goes wrong
-    setTimeout(() => {
-      stopped = true;
-      if (raf) cancelAnimationFrame(raf);
-      if (canvas.parentNode) canvas.remove();
-    }, duration + 2000);
+    setTimeout(() => { stopped = true; if (raf) cancelAnimationFrame(raf); if (canvas.parentNode) canvas.remove(); }, duration + 2000);
   }
 
   /* ═══════════ Mascot ═══════════ */
-  const MOODS = ['idle','happy','thinking','reasoning','searching','coding','celebrate','error','learning'];
+  const MOODS = ['idle','happy','thinking','coding','celebrate','error','learning'];
   const BLOB_PATH = 'M100 20 C126 20 144 32 154 54 C178 56 194 76 194 102 C194 128 178 148 154 152 C144 174 126 186 100 186 C74 186 56 174 46 152 C22 148 6 128 6 102 C6 76 22 56 46 54 C56 32 74 20 100 20 Z';
   const BLOB_SVG = `<svg class="blob-svg" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mirox avatar"><g class="blob-float"><path class="blob-body" d="${BLOB_PATH}" fill="currentColor"/><g class="blob-eyes" fill="var(--bg)"><ellipse cx="88" cy="82" rx="4.5" ry="13" transform="rotate(18 88 82)"/><ellipse cx="110" cy="78" rx="4.5" ry="13" transform="rotate(18 110 78)"/></g></g></svg>`;
   function blobSvg() { return BLOB_SVG; }
   function upgradeStaticMascots(scope = document) {
     scope.querySelectorAll('.mascot:not([data-blob-ready])').forEach((el) => {
       const m = MOODS.includes(el.dataset.mood) ? el.dataset.mood : 'idle';
-      el.innerHTML = blobSvg();
-      el.dataset.mood = m; el.classList.add('m-' + m); el.dataset.blobReady = '1';
+      el.innerHTML = blobSvg(); el.dataset.mood = m; el.classList.add('m-' + m); el.dataset.blobReady = '1';
     });
   }
   function setMascotMood(mood, scope) {
@@ -335,7 +288,6 @@
     if (/\b(search|look up|google|latest|news|find)\b/.test(t)) return 'searching';
     if (/\b(build|code|script|fix|bug|function|debug|lua|python|javascript|html|css)\b/.test(t)) return 'coding';
     if (/\b(explain|teach|learn|how does|why|what is)\b/.test(t)) return 'learning';
-    if (t.length > 300) return 'reasoning';
     return 'thinking';
   }
   function startIdleMascot() {
@@ -426,7 +378,7 @@
     return `<div class="welcome-screen">
       <div class="welcome-mascot"><div class="mascot mascot-lg m-idle" id="welcomeMascot" data-mood="idle"></div></div>
       <h1 class="welcome-title">Hi, I'm Mirox</h1>
-      <p class="welcome-sub">Luna and Gen are unlimited and free. Ask me to write code, generate images, search the web, or build a project.</p>
+      <p class="welcome-sub">Luna and Gen are unlimited and free. Share to unlock <strong>Pro, Ultra &amp; Eclipse</strong> free for 7 days.</p>
       <div class="suggestion-grid">
         <button class="suggestion-card" type="button" data-prompt="Show me a simple Lua script that prints numbers 1 to 5"><i class="ri-code-box-line"></i><span>Write a Lua script</span></button>
         <button class="suggestion-card" type="button" data-prompt="Show me an HTML example with a table"><i class="ri-html5-line"></i><span>Show an HTML table</span></button>
@@ -487,17 +439,12 @@
     }
     const hasBonus = bonus > 0 && __tier === 'free';
     el.classList.toggle('has-bonus', hasBonus);
-    // Remove any old bonus badge
     el.querySelector('.token-bonus-badge')?.remove();
     if (hasBonus) {
       const badge = document.createElement('span');
       badge.className = 'token-bonus-badge';
-      badge.innerHTML = `<i class="ri-gift-fill"></i>+${formatK(bonus)} · ${formatBonusRemaining()}`;
+      badge.innerHTML = `<i class="ri-vip-crown-fill"></i>+${formatK(bonus)} · ${formatBonusRemaining()}`;
       el.appendChild(badge);
-      const expiry = getBonusExpiryDate();
-      el.title = `+${bonus.toLocaleString()} bonus tokens active${expiry ? ' · expires ' + expiry.toLocaleString() : ''}`;
-    } else {
-      el.title = limit ? `Free limit: ${limit.toLocaleString()} tokens` : 'Estimated tokens used';
     }
   }
   function atChatBottom(c = $('#chatMessages')) { return !c || c.scrollHeight - c.scrollTop - c.clientHeight < 100; }
@@ -532,14 +479,12 @@
     typescript: { label: 'TS', icon: 'devicon-typescript-plain colored', hljs: 'typescript' },
     ts: { label: 'TS', icon: 'devicon-typescript-plain colored', hljs: 'typescript' },
     html: { label: 'HTML', icon: 'devicon-html5-plain colored', hljs: 'xml' },
-    xml: { label: 'XML', icon: 'devicon-html5-plain colored', hljs: 'xml' },
     css: { label: 'CSS', icon: 'devicon-css3-plain colored', hljs: 'css' },
     json: { label: 'JSON', icon: 'devicon-json-plain colored', hljs: 'json' },
     bash: { label: 'SH', icon: 'devicon-bash-plain colored', hljs: 'bash' },
     sh: { label: 'SH', icon: 'devicon-bash-plain colored', hljs: 'bash' },
     java: { label: 'JAVA', icon: 'devicon-java-plain colored', hljs: 'java' },
     cpp: { label: 'C++', icon: 'devicon-cplusplus-plain colored', hljs: 'cpp' },
-    'c++': { label: 'C++', icon: 'devicon-cplusplus-plain colored', hljs: 'cpp' },
     c: { label: 'C', icon: 'devicon-c-plain colored', hljs: 'c' },
     go: { label: 'GO', icon: 'devicon-go-plain colored', hljs: 'go' },
     rust: { label: 'RUST', icon: 'devicon-rust-plain colored', hljs: 'rust' },
@@ -605,27 +550,20 @@
     let out = '';
     const buf = [];
     const flush = () => { if (buf.length) { out += `<p>${inlineFmt(buf.join(' '))}</p>`; buf.length = 0; } };
-    const splitRow = (line) => {
-      let s = line.trim();
-      if (s.startsWith('|')) s = s.slice(1);
-      if (s.endsWith('|')) s = s.slice(0, -1);
-      return s.split('|').map((v) => v.trim());
-    };
+    const splitRow = (line) => { let s = line.trim(); if (s.startsWith('|')) s = s.slice(1); if (s.endsWith('|')) s = s.slice(0, -1); return s.split('|').map((v) => v.trim()); };
     const isSepRow = (line) => /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
     for (let i = 0; i < lines.length; i++) {
       const t = lines[i].trim();
       if (!t) { flush(); continue; }
       if (t.includes('|') && i + 1 < lines.length && isSepRow(lines[i + 1])) {
         flush();
-        const headers = splitRow(t);
-        i += 1;
+        const headers = splitRow(t); i += 1;
         let table = '<div class="md-table-wrap"><table class="md-table"><thead><tr>';
         headers.forEach((c) => { table += `<th>${inlineFmt(c)}</th>`; });
         table += '</tr></thead><tbody>';
         while (i + 1 < lines.length && lines[i + 1].includes('|') && lines[i + 1].trim() !== '') {
           i++;
-          const row = splitRow(lines[i]);
-          table += '<tr>';
+          const row = splitRow(lines[i]); table += '<tr>';
           for (let j = 0; j < headers.length; j++) table += `<td>${inlineFmt(row[j] || '')}</td>`;
           table += '</tr>';
         }
@@ -678,8 +616,7 @@
     const id = msgId || uid();
     const el = document.createElement('div');
     el.className = 'message ' + (role === 'user' ? 'user' : 'ai');
-    el.dataset.msgId = id;
-    el.dataset.role = role;
+    el.dataset.msgId = id; el.dataset.role = role;
     let inner = '';
     if (role === 'user' && files && files.length) {
       inner += '<div class="attach-row">';
@@ -969,7 +906,7 @@
       toast(msg, 5000);
       updateTokenUsage();
     } finally {
-      clearTimeout(STREAM_TIMEOUT_MS);
+      clearTimeout(streamTimeout);
       panel.destroy();
       isReplying = false;
       activeStreamController = null;
@@ -1065,16 +1002,12 @@
     setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 350); }, ms || 1800);
   }
 
-  /* ═══════════ Share popup + verification ═══════════ */
+  /* ═══════════ Share popup ═══════════ */
   function loadShareState() { __shareState = safeGet(SHARE_KEY, { claimed: false, claimedAt: 0, dismissedAt: 0 }); }
   function saveShareState() { safeSet(SHARE_KEY, __shareState); }
-  function shareActive() {
-    // Valid only if there's a currently-valid bonus
-    return getActiveBonus() > 0;
-  }
   function shouldShowShareAd() {
     if (__tier !== 'free') return false;
-    if (shareActive()) return false;
+    if (isBonusActive()) return false;
     if (__shareState.dismissedAt && Date.now() - __shareState.dismissedAt < 6 * 3600 * 1000) return false;
     return true;
   }
@@ -1093,25 +1026,16 @@
     el.textContent = text;
     el.className = 'share-ad-status' + (cls ? ' ' + cls : '');
   }
-
-  /* Confetti + reward on successful share */
   function celebrateReward() {
-    // Fire confetti from two origins
-    launchConfetti({ duration: 4200, count: 200 });
-    // Pulse the token chip
+    launchConfetti({ duration: 4500, count: 240 });
     const chip = $('#tokenUsage');
-    if (chip) {
-      chip.classList.add('pulse');
-      setTimeout(() => chip.classList.remove('pulse'), 1200);
-    }
-    // Celebrate mascot on welcome screen if visible
+    if (chip) { chip.classList.add('pulse'); setTimeout(() => chip.classList.remove('pulse'), 1200); }
     const wm = document.getElementById('welcomeMascot');
     if (wm) {
       setMascotMood('celebrate', wm.parentElement);
       setTimeout(() => setMascotMood('happy', wm.parentElement), 2000);
     }
   }
-
   function grantShareRewardLocal() {
     const bonus = grantLocalBonus(BONUS_TOKENS);
     __shareState.claimed = true;
@@ -1119,14 +1043,13 @@
     __shareState.dismissedAt = 0;
     saveShareState();
     updateTokenUsage();
+    renderModelPicker(); // Refresh lock states
     celebrateReward();
     const days = Math.round((bonus.expiresAt - Date.now()) / 86400000);
-    toast(`🎉 ${BONUS_TOKENS.toLocaleString()} bonus tokens added — valid for ${days} days!`, 6000);
+    toast(`🎉 ${BONUS_TOKENS.toLocaleString()} bonus tokens + Pro/Ultra/Eclipse unlocked for ${days} days!`, 6500);
   }
   async function grantShareReward() {
-    // Local grant FIRST — always succeeds
     grantShareRewardLocal();
-    // Backend sync (best effort)
     try {
       await jsonOr('/api/share/reward', {
         method: 'POST',
@@ -1139,18 +1062,17 @@
     const btn = $('#shareAdShareBtn');
     const shareData = {
       title: 'MiroxAI — Free unlimited AI chat',
-      text: 'I\'m using MiroxAI for free AI chats. Get 50k bonus tokens for a week!',
+      text: 'I\'m using MiroxAI for free AI chats. Get 50k tokens + Pro/Ultra/Eclipse free for a week!',
       url: location.origin + '/?ref=share',
     };
     if (btn) btn.disabled = true;
-
     if (navigator.share) {
       try {
         setShareStatus('Opening share sheet…', '');
         await navigator.share(shareData);
-        setShareStatus('Share confirmed! Adding 50,000 tokens…', 'ok');
+        setShareStatus('Share confirmed! Adding reward…', 'ok');
         await grantShareReward();
-        setTimeout(() => closeShareAd(false), 2200);
+        setTimeout(() => closeShareAd(false), 2400);
         return;
       } catch (e) {
         if (e && e.name === 'AbortError') {
@@ -1160,7 +1082,6 @@
         }
       }
     }
-
     const shareText = encodeURIComponent(shareData.text + ' ' + shareData.url);
     const url = `https://twitter.com/intent/tweet?text=${shareText}`;
     window.open(url, '_blank', 'noopener,width=600,height=500');
@@ -1171,9 +1092,9 @@
       resolved = true;
       window.removeEventListener('focus', focusHandler);
       setTimeout(async () => {
-        setShareStatus('Share detected! Adding 50,000 tokens…', 'ok');
+        setShareStatus('Share detected! Adding reward…', 'ok');
         await grantShareReward();
-        setTimeout(() => closeShareAd(false), 2200);
+        setTimeout(() => closeShareAd(false), 2400);
       }, 800);
     };
     window.addEventListener('focus', focusHandler);
@@ -1202,54 +1123,117 @@
     img.src = url;
   }
   function closeImageViewer() { $('#imageViewer')?.classList.remove('open'); }
-  async function fetchImageHistory() {
-    const data = await jsonOr('/api/images/history', {}, null);
-    return (data && Array.isArray(data.images)) ? data.images : [];
-  }
-  async function renderImageHistory() {
-    const wrap = $('#imageHistory'); if (!wrap) return;
-    wrap.innerHTML = '<div class="studio-empty">Loading…</div>';
-    const items = await fetchImageHistory();
-    if (!items.length) { wrap.innerHTML = '<div class="studio-empty">No images yet.</div>'; return; }
-    wrap.innerHTML = items.map((it, i) => `<div class="image-history-item" data-idx="${i}"><img src="${it.image}" alt="" loading="lazy"><div class="image-history-prompt">${escapeHtml(it.prompt || '')}</div></div>`).join('');
-    wrap.querySelectorAll('.image-history-item').forEach((el) => { el.onclick = () => { const it = items[parseInt(el.dataset.idx, 10)]; if (it) openImageViewer(it.image); }; });
-  }
-  async function renderSidebarImageHistory() {
-    const wrap = $('#sidebarImageHistory'); if (!wrap) return;
-    wrap.innerHTML = '<div class="sidebar-empty">Loading…</div>';
-    const items = await fetchImageHistory();
-    if (!items.length) { wrap.innerHTML = '<div class="sidebar-empty">No images yet.</div>'; return; }
-    wrap.innerHTML = items.map((it, i) => `<div class="sidebar-image-item" data-idx="${i}" title="${escapeHtml(it.prompt || '')}"><img src="${it.image}" alt="" loading="lazy"></div>`).join('');
-    wrap.querySelectorAll('.sidebar-image-item').forEach((el) => { el.onclick = () => { const it = items[parseInt(el.dataset.idx, 10)]; if (it) openImageViewer(it.image); }; });
-  }
 
-  /* ═══════════ Models ═══════════ */
+  /* ═══════════ MODELS — new picker with tier badges & bonus banner ═══════════ */
   function getModelsList() { return __config?.models?.length ? __config.models : FALLBACK_MODELS; }
-  function canUseModel(tier) { if (tier === 'free' || tier === 'ultimate') return true; return TIER_RANK[__tier] >= TIER_RANK[tier]; }
   function renderModelPicker() {
     const menu = $('#modelPickerMenu'); if (!menu) return;
     const models = getModelsList();
     const cur = __model || models[0].id;
-    menu.innerHTML = models.map((m) => {
+    const bonusActive = __tier === 'free' && isBonusActive();
+
+    let html = '';
+    if (bonusActive) {
+      html += `<div class="model-picker-banner">
+        <i class="ri-vip-crown-fill"></i>
+        <div class="model-picker-banner-text">
+          <strong>All models unlocked</strong>
+          <span>Bonus active · ${formatBonusRemaining()} left</span>
+        </div>
+      </div>`;
+    }
+
+    html += models.map((m) => {
       const usable = canUseModel(m.tier);
-      return `<div class="model-option${m.id === cur ? ' active' : ''}${usable ? '' : ' locked'}" data-model-id="${m.id}" data-usable="${usable}"><span class="model-option-label"><span class="dot"></span>${escapeHtml(m.label)}</span></div>`;
+      const reason = modelAccessReason(m.tier);
+      const isActive = m.id === cur;
+      const tierLbl = tierLabel(m.tier);
+      const tierClass = 'tier-' + m.tier;
+      const reasonClass = usable ? (reason === 'bonus' ? 'via-bonus' : 'via-tier') : 'locked';
+      const lockIcon = usable ? '' : '<i class="ri-lock-2-line model-option-lock"></i>';
+      const bonusCrown = reason === 'bonus' ? '<i class="ri-vip-crown-fill model-option-crown"></i>' : '';
+      const modelIcon = m.icon || 'ri-sparkling-2-line';
+      return `<div class="model-option${isActive ? ' active' : ''}${usable ? '' : ' locked'} ${reasonClass}" data-model-id="${m.id}" data-usable="${usable}" data-tier="${m.tier}">
+        <span class="model-option-icon"><i class="${modelIcon}"></i></span>
+        <span class="model-option-body">
+          <span class="model-option-top">
+            <span class="model-option-name">${escapeHtml(m.label)}</span>
+            <span class="model-tier-badge ${tierClass}">${tierLbl}</span>
+            ${bonusCrown}
+            ${lockIcon}
+          </span>
+          <span class="model-option-tagline">${escapeHtml(m.tagline || '')}</span>
+        </span>
+      </div>`;
     }).join('');
+
+    if (!bonusActive && __tier === 'free') {
+      html += `<div class="model-picker-cta" id="modelPickerShareCta">
+        <i class="ri-gift-2-line"></i>
+        <span>Share to unlock <strong>Pro, Ultra &amp; Eclipse</strong> free for 7 days</span>
+      </div>`;
+    }
+
+    menu.innerHTML = html;
+
     menu.querySelectorAll('.model-option').forEach((opt) => {
-      opt.onclick = (e) => { e.stopPropagation(); if (opt.dataset.usable === 'false') { toast('Upgrade to use this model'); return; } selectModel(opt.dataset.modelId); };
+      opt.onclick = (e) => {
+        e.stopPropagation();
+        if (opt.dataset.usable === 'false') {
+          if (__tier === 'free') {
+            toast('Share to unlock this model free for 7 days', 3500);
+            closeModelPicker();
+            setTimeout(() => openShareAd(), 400);
+          } else {
+            toast('Upgrade to use this model');
+          }
+          return;
+        }
+        selectModel(opt.dataset.modelId);
+      };
     });
+    const cta = menu.querySelector('#modelPickerShareCta');
+    if (cta) {
+      cta.onclick = (e) => { e.stopPropagation(); closeModelPicker(); setTimeout(() => openShareAd(), 200); };
+    }
+
     const c = models.find((m) => m.id === cur);
     if (c) { const lbl = $('#currentModelLabel'); if (lbl) lbl.textContent = c.label; }
+
+    // Add a subtle "crown" badge on the model picker button when bonus is active
+    const btn = $('#modelPickerBtn');
+    if (btn) {
+      btn.classList.toggle('has-bonus', bonusActive);
+      btn.querySelector('.model-picker-crown')?.remove();
+      if (bonusActive) {
+        const crown = document.createElement('i');
+        crown.className = 'ri-vip-crown-fill model-picker-crown';
+        btn.appendChild(crown);
+      }
+    }
   }
   function selectModel(id) {
     if (!id) return;
-    __model = id;
     const m = getModelsList().find((x) => x.id === id);
-    if (m) { const lbl = $('#currentModelLabel'); if (lbl) lbl.textContent = m.label; }
+    if (!m) return;
+    if (!canUseModel(m.tier)) {
+      if (__tier === 'free') {
+        toast('Share to unlock this model free for 7 days', 3500);
+        closeModelPicker();
+        setTimeout(() => openShareAd(), 400);
+      } else {
+        toast('Upgrade to use this model');
+      }
+      return;
+    }
+    __model = id;
+    const lbl = $('#currentModelLabel'); if (lbl) lbl.textContent = m.label;
     renderModelPicker(); closeModelPicker();
   }
-  function openModelPicker() { $('#modelPicker')?.classList.add('open'); $('#modelPickerMenu')?.classList.add('open'); }
+  function openModelPicker() { $('#modelPicker')?.classList.add('open'); $('#modelPickerMenu')?.classList.add('open'); renderModelPicker(); }
   function closeModelPicker() { $('#modelPicker')?.classList.remove('open'); $('#modelPickerMenu')?.classList.remove('open'); }
 
+  /* ═══════════ Usage / auth ═══════════ */
   async function refreshUsage() {
     const res = await jsonOr('/api/me', {}, null, 7000);
     if (!res || !res.user) {
@@ -1299,17 +1283,6 @@
       return `<div class="plan-card${isCurrent ? ' current' : ''}"><div class="plan-name">${escapeHtml(p.label)}</div><div class="plan-tagline">${escapeHtml(p.tagline || '')}</div>${price}<ul class="plan-perks">${(p.perks || []).map((x) => `<li>✓ ${escapeHtml(x)}</li>`).join('')}</ul></div>`;
     }).join('');
   }
-  async function loadPersona() { if (!__user) return; const res = await jsonOr('/api/persona', {}, null); const inp = $('#personaInput'); if (inp && res?.persona) inp.value = res.persona; }
-  async function savePersona() {
-    const status = $('#personaStatus');
-    const set = (t, c) => { if (status) { status.textContent = t; status.className = 'persona-status ' + (c || ''); } };
-    if (!__user) return set('Sign in first.', 'err');
-    const inp = $('#personaInput'); if (!inp) return;
-    set('Saving…');
-    const res = await jsonOr('/api/persona', { method: 'POST', body: JSON.stringify({ persona: inp.value.trim() }) }, null);
-    if (res && res.ok) { set('Saved ✓', 'ok'); setTimeout(() => set(''), 2000); }
-    else set('Failed.', 'err');
-  }
   async function genImage() {
     const prompt = $('#imagePrompt')?.value.trim();
     if (!prompt) { toast('Describe the image first.'); return; }
@@ -1321,31 +1294,27 @@
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok && data.image) {
         if (result) { result.innerHTML = `<img src="${data.image}" alt="${escapeHtml(prompt)}">`; result.querySelector('img').onclick = () => openImageViewer(data.image); }
-        refreshUsage(); renderImageHistory(); renderSidebarImageHistory();
       } else {
         const errMsg = data.error?.message || data.error || data.message || `HTTP ${res.status}`;
         if (result) result.innerHTML = `<div class="studio-error">Failed: ${escapeHtml(errMsg)}</div>`;
       }
     } catch (e) {
-      const msg = e.name === 'AbortError' ? 'Timed out.' : e.message;
-      if (result) result.innerHTML = `<div class="studio-error">Error: ${escapeHtml(msg)}</div>`;
+      if (result) result.innerHTML = `<div class="studio-error">Error: ${escapeHtml(e.message)}</div>`;
     } finally {
       if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-image-add-line"></i> Generate'; }
     }
   }
 
-  /* ═══════════ Bridge ═══════════ */
+  /* ═══════════ Bridge status ═══════════ */
   function renderBridgeStatus() {
-    [['#bridgeStatus'], ['#bwStatusPill'], ['#bwStatusBox']].forEach(([sel]) => {
+    [['#bridgeStatus']].forEach(([sel]) => {
       const wrap = document.querySelector(sel); if (!wrap) return;
       const dot = wrap.querySelector('.bridge-status-dot');
       const txt = wrap.querySelector('span');
-      if (dot) { dot.classList.toggle('online', __bridge.connected); dot.classList.toggle('offline', !__bridge.connected); }
-      if (txt) txt.textContent = __bridge.connected ? 'Connected' : 'Disconnected';
+      if (dot) { dot.classList.toggle('online', false); dot.classList.toggle('offline', true); }
+      if (txt) txt.textContent = 'Disconnected';
     });
   }
-  function openBridgeWorkspace() { $('#bridgeWorkspace')?.classList.add('open'); document.body.style.overflow = 'hidden'; }
-  function closeBridgeWorkspace() { $('#bridgeWorkspace')?.classList.remove('open'); document.body.style.overflow = ''; }
 
   /* ═══════════ Modals ═══════════ */
   function openModal(id) { const el = document.getElementById(id); if (el) el.classList.add('open'); }
@@ -1368,6 +1337,29 @@
     applyAppearance(prefs);
   }
 
+  /* ═══════════ Bonus watcher — also refreshes model lock state ═══════════ */
+  function startBonusWatcher() {
+    if (__bonusTimer) clearInterval(__bonusTimer);
+    __bonusTimer = setInterval(() => {
+      const active = isBonusActive();
+      if (active !== __lastBonusActive) {
+        __lastBonusActive = active;
+        updateTokenUsage();
+        renderModelPicker();
+        if (!active && __model && !canUseModel(getModelsList().find((m) => m.id === __model)?.tier || 'free')) {
+          // Downgrade to Luna if the currently-selected model is now locked
+          __model = 'mirox-luna-1.2';
+          const lbl = $('#currentModelLabel'); if (lbl) lbl.textContent = 'Luna';
+          toast('Bonus expired — switched back to Luna. Share again to renew!', 5000);
+        } else if (active) {
+          toast('🎉 Bonus active — Pro, Ultra & Eclipse unlocked!', 4500);
+        }
+      } else if (active) {
+        updateTokenUsage();
+      }
+    }, BONUS_CHECK_MS);
+  }
+
   /* ═══════════ Wiring ═══════════ */
   function wireAll() {
     on('#hamburgerBtn', 'click', openSidebar);
@@ -1380,7 +1372,6 @@
         const t = tab.dataset.tab;
         $$('.sidebar-tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === t));
         $$('.sidebar-section').forEach((s) => { s.style.display = s.dataset.pane === t ? '' : 'none'; });
-        if (t === 'images') renderSidebarImageHistory();
       };
     });
     on('#historyList', 'click', (e) => {
@@ -1417,17 +1408,14 @@
       $('#searchModeBtn')?.classList.toggle('active', forceSearchNext);
       toast(forceSearchNext ? 'Web search enabled' : 'Web search disabled');
     });
-    on('#imageModeBtn', 'click', () => { openModal('imageModal'); renderImageHistory(); });
+    on('#imageModeBtn', 'click', () => openModal('imageModal'));
     on('#plansModeBtn', 'click', () => { openModal('plansModal'); loadPlans(); });
     on('#supportModeBtn', 'click', (e) => { e.preventDefault(); openModal('supportModal'); });
     on('#supportModeBtn2', 'click', () => openModal('supportModal'));
-    on('#bridgeModeBtn', 'click', openBridgeWorkspace);
-    on('#bridgeOpenBtn', 'click', openBridgeWorkspace);
     on('#generateImageBtn', 'click', genImage);
     on('#submitReportBtn', 'click', () => { toast('Ticket submitted!'); closeModal('supportModal'); });
-    on('#settingsBtn', 'click', (e) => { e.preventDefault(); openModal('settingsModal'); loadPersona(); });
+    on('#settingsBtn', 'click', (e) => { e.preventDefault(); openModal('settingsModal'); });
     on('#logoutBtn', 'click', doLogout);
-    on('#savePersonaBtn', 'click', savePersona);
     on('#loginmentBtn', 'click', doLoginment);
     $$('.settings-tab').forEach((tab) => {
       tab.onclick = () => {
@@ -1448,8 +1436,6 @@
     on('#upgradeBtn', 'click', (e) => { e.stopPropagation(); if (!__user) openModal('loginModal'); else { openModal('plansModal'); loadPlans(); } });
     on('#simpleLoginForm', 'submit', doLogin);
     on('#ivDownload', 'click', () => { if (!__ivDataUrl) return; const a = document.createElement('a'); a.href = __ivDataUrl; a.download = `mirox-${Date.now()}.png`; document.body.appendChild(a); a.click(); document.body.removeChild(a); });
-    on('#bwCloseBtn', 'click', closeBridgeWorkspace);
-    on('#bwNewBtn', 'click', () => { const m = $('#bridgeMessages'); if (m) m.innerHTML = ''; });
     on('#shareAdShareBtn', 'click', attemptShare);
     on('#shareAdIgnoreBtn', 'click', () => closeShareAd(true));
     on('#shareAdCloseBtn', 'click', () => closeShareAd(true));
@@ -1458,7 +1444,6 @@
       if (e.key === 'Escape') {
         closeImageViewer(); closeModelPicker();
         if ($('#shareAdModal')?.classList.contains('open')) { closeShareAd(true); return; }
-        if ($('#bridgeWorkspace')?.classList.contains('open')) closeBridgeWorkspace();
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); $('#messageInput')?.focus(); }
     });
@@ -1488,10 +1473,10 @@
     scrollToBottom(true);
   }
 
-  /* ═══════════ Init ═══════════ */
   async function init() {
     try {
       loadAppearance(); loadShareState(); loadChats(); wireAll();
+      __lastBonusActive = isBonusActive();
       renderHistory(); renderModelPicker(); renderBridgeStatus(); startIdleMascot();
       updateTokenUsage();
       startBonusWatcher();
@@ -1499,7 +1484,6 @@
     finally { killLoader(); }
     loadConfig().catch(() => {});
     refreshUsage().then(() => openShareAd()).catch(() => {});
-    renderSidebarImageHistory().catch(() => {});
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
