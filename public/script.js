@@ -4,7 +4,7 @@
   /* ═══════════════════════════════════════════════════════════
      i18n — MyMemory API (translation only, not storage)
      ═══════════════════════════════════════════════════════════ */
-  const I18N_CACHE_KEY = 'miroxai_i18n_cache_v1';
+  const I18N_CACHE_KEY = 'miroxai_i18n_cache_v2';
   const RTL_LANGS = ['fa','ps','ar','he','ur'];
   const TRANSLATE_CONCURRENCY = 3;
 
@@ -42,9 +42,7 @@
       __i18nCache[key] = clean;
       saveI18nCache();
       return clean;
-    } catch {
-      return text;
-    }
+    } catch { return text; }
   }
 
   function enqueueTranslation(element, sourceText, targetLang, mode) {
@@ -67,10 +65,8 @@
         if (typeof translated !== 'string' || !translated) return;
         if (job.mode === 'text') {
           if (job.element.children.length === 0) job.element.textContent = translated;
-          else {
-            for (const node of job.element.childNodes) {
-              if (node.nodeType === 3 && node.textContent.trim()) { node.textContent = translated; break; }
-            }
+          else for (const node of job.element.childNodes) {
+            if (node.nodeType === 3 && node.textContent.trim()) { node.textContent = translated; break; }
           }
         } else if (job.mode === 'placeholder') job.element.placeholder = translated;
         else if (job.mode === 'title') job.element.title = translated;
@@ -105,20 +101,16 @@
       if (!src) return;
       if (lang === 'en') {
         if (el.children.length === 0) el.textContent = src;
-        else {
-          for (const node of el.childNodes) {
-            if (node.nodeType === 3 && node.textContent.trim()) { node.textContent = src; break; }
-          }
+        else for (const node of el.childNodes) {
+          if (node.nodeType === 3 && node.textContent.trim()) { node.textContent = src; break; }
         }
         return;
       }
       const cacheKey = lang + ':' + src;
       if (__i18nCache[cacheKey]) {
         if (el.children.length === 0) el.textContent = __i18nCache[cacheKey];
-        else {
-          for (const node of el.childNodes) {
-            if (node.nodeType === 3 && node.textContent.trim()) { node.textContent = __i18nCache[cacheKey]; break; }
-          }
+        else for (const node of el.childNodes) {
+          if (node.nodeType === 3 && node.textContent.trim()) { node.textContent = __i18nCache[cacheKey]; break; }
         }
       } else enqueueTranslation(el, src, lang, 'text');
     });
@@ -193,14 +185,13 @@
     { id: 'mirox-ultra-10', label: 'Ultra', tier: 'pro', tagline: 'Long context', icon: 'ri-rocket-2-line' },
     { id: 'mirox-eclipse-2.0', label: 'Eclipse', tier: 'ultimate', tagline: 'Most powerful', icon: 'ri-sun-fill' },
   ];
-  const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
-  const LS_KEY = 'miroxai_conversations_v40';
+  const LS_KEY = 'miroxai_conversations_v42';
   const TOKEN_KEY = 'mirox_token';
   const GUEST_KEY = 'miroxai_guest_id_v1';
-  const APPEARANCE_KEY = 'miroxai_appearance_v40';
-  const SHARE_KEY = 'miroxai_share_v10';
-  const BONUS_KEY = 'miroxai_bonus_v10';
-  const PREFS_KEY = 'miroxai_prefs_v6';
+  const APPEARANCE_KEY = 'miroxai_appearance_v42';
+  const SHARE_KEY = 'miroxai_share_v12';
+  const BONUS_KEY = 'miroxai_bonus_v12';
+  const PREFS_KEY = 'miroxai_prefs_v7';
   const BRIDGE_KEY = 'miroxai_bridge_v1';
   const BRIDGE_OPTS_KEY = 'miroxai_bridge_opts_v1';
   const PASTE_ATTACH_THRESHOLD = 1024;
@@ -210,10 +201,10 @@
   const BONUS_TOKENS = 50000;
   const BONUS_MS = 7 * 24 * 60 * 60 * 1000;
   const MAX_IMAGE_DIM = 1600;
-  const MAX_BRIDGE_ITER = 40;                 // reduced
-  const MAX_AUTO_CONTINUES = 6;               // reduced
-  const MAX_DUP_COMMANDS = 3;                 // reduced from 40
-  const MAX_DUP_REPLIES = 2;                  // new: repeated AI replies → stop
+  const MAX_BRIDGE_ITER = 40;
+  const MAX_AUTO_CONTINUES = 6;
+  const MAX_DUP_COMMANDS = 3;
+  const MAX_DUP_REPLIES = 2;
 
   let __config = null, __user = null, __tier = 'free', __model = 'mirox-luna-1.2';
   let currentConversationId = null, isReplying = false;
@@ -231,8 +222,6 @@
   let __lastBuildFolder = null, __lastPreviewFile = null;
   let __sudoPassword = '', __sudoRemember = false, __sudoResolver = null;
   let __bridgeAutoRun = true, __bridgeShowCode = false;
-
-  // Voice input
   let __voiceRecognition = null;
   let __voiceListening = false;
 
@@ -355,23 +344,33 @@
     root.setAttribute('data-theme', __prefs.theme || 'default');
   }
 
-  /* ═══════════ BLOB MASCOT ═══════════ */
+  /* ═══════════════════════════════════════════════════════════
+     CLAUDE-CODE STYLE ROBOT MASCOT (new SVG)
+     Body: rounded rectangle, 4 legs, 2 vertical-pill eyes.
+     The animation style mimics Claude Code's bouncy terminal mascot.
+     ═══════════════════════════════════════════════════════════ */
   const MOODS = ['idle','happy','thinking','coding','celebrate','error','learning','wink','study','searching','reading'];
 
-  const BLOB_PATH = 'M100 20 C126 20 144 32 154 54 C178 56 194 76 194 102 C194 128 178 148 154 152 C144 174 126 186 100 186 C74 186 56 174 46 152 C22 148 6 128 6 102 C6 76 22 56 46 54 C56 32 74 20 100 20 Z';
-
   function blobSvg() {
-    return `<svg class="blob-svg" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mirox avatar">
+    return `<svg class="blob-svg" viewBox="0 0 200 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mirox avatar">
       <g class="blob-float">
-        <path class="blob-body" d="${BLOB_PATH}" fill="currentColor"/>
+        <!-- Legs -->
+        <rect class="leg leg-1" x="46" y="126" width="14" height="32" rx="7"/>
+        <rect class="leg leg-2" x="76" y="126" width="14" height="32" rx="7"/>
+        <rect class="leg leg-3" x="110" y="126" width="14" height="32" rx="7"/>
+        <rect class="leg leg-4" x="140" y="126" width="14" height="32" rx="7"/>
+        <!-- Body -->
+        <rect class="blob-body" x="20" y="30" width="160" height="110" rx="26"/>
+        <!-- Eyes -->
         <g class="blob-eyes">
-          <ellipse class="eye eye-left" cx="78" cy="88" rx="6.5" ry="15" transform="rotate(14 78 88)" fill="var(--bg)"/>
-          <ellipse class="eye eye-right" cx="122" cy="85" rx="6.5" ry="15" transform="rotate(14 122 85)" fill="var(--bg)"/>
+          <rect class="eye eye-left" x="62" y="64" width="18" height="34" rx="9"/>
+          <rect class="eye eye-right" x="120" y="64" width="18" height="34" rx="9"/>
         </g>
-        <g class="blob-glasses" fill="none" stroke="var(--bg)" stroke-width="4" stroke-linecap="round">
-          <rect x="58" y="66" width="40" height="36" rx="11"/>
-          <rect x="102" y="63" width="40" height="36" rx="11"/>
-          <path d="M98 82 Q100 76 102 80"/>
+        <!-- Glasses (study / reading modes) -->
+        <g class="blob-glasses" fill="none" stroke="var(--blob-eye)" stroke-width="4" stroke-linecap="round">
+          <rect x="50" y="52" width="44" height="46" rx="12"/>
+          <rect x="106" y="52" width="44" height="46" rx="12"/>
+          <path d="M94 72 Q100 68 106 72"/>
         </g>
       </g>
     </svg>`;
@@ -671,7 +670,7 @@
     });
   }
 
-  /* ═══════════ MESSAGE DOM (with blob avatar) ═══════════ */
+  /* ═══════════ MESSAGE DOM (with robot avatar) ═══════════ */
   function addMessageToDOM(role, content, ts, msgId, files, image) {
     const container = $('#chatMessages'); if (!container) return null;
     container.querySelector('.welcome-screen')?.remove();
@@ -680,7 +679,6 @@
     el.className = 'message ' + (role === 'user' ? 'user' : 'ai');
     el.dataset.msgId = id; el.dataset.role = role;
 
-    // Blob avatar (only for AI messages in the LEFT column)
     let avatar = '';
     if (role === 'ai') {
       avatar = `<div class="message-avatar" data-mood="idle">
@@ -815,14 +813,14 @@
     const container = $('#chatMessages');
     container?.querySelector('.welcome-screen')?.remove();
 
-    let msgEl, bubble, bubbleText, timeEl, panel, avatarEl;
+    let msgEl, bubble, bubbleText, timeEl, panel, avatarMascot;
     const aiMsgId = isContinuation ? continuation.messageObj.id : uid();
     if (isContinuation) {
       msgEl = continuation.existingMsgEl;
       bubble = continuation.existingBubble;
       bubbleText = bubble.querySelector('.bubble-text');
       timeEl = msgEl.querySelector('.message-time');
-      avatarEl = msgEl.querySelector('.message-avatar .mascot');
+      avatarMascot = msgEl.querySelector('.message-avatar .mascot');
       bubble.querySelector('[data-continue]')?.remove();
       panel = { el: document.createElement('span'), addStep() {}, addNarration() {}, addTool() { return { setStatus() {}, addResult() {}, addCode() {} }; }, setMood() {}, markWriting() {}, finish() {}, fail() {}, destroy() {} };
       const prev = String(continuation.messageObj.content || '');
@@ -834,11 +832,11 @@
       msgEl.dataset.role = 'ai';
       panel = createThinkPanel(pickStatusLabel(text), [], text);
       panel.setMood(pickMoodFor(text));
-      // Avatar column
       const avatar = document.createElement('div');
       avatar.className = 'message-avatar';
-      avatar.innerHTML = `<div class="mascot mascot-sm m-${pickMoodFor(text)}" data-mood="${pickMoodFor(text)}">${blobSvg()}</div>`;
-      avatarEl = avatar.querySelector('.mascot');
+      const initialMood = pickMoodFor(text);
+      avatar.innerHTML = `<div class="mascot mascot-sm m-${initialMood}" data-mood="${initialMood}">${blobSvg()}</div>`;
+      avatarMascot = avatar.querySelector('.mascot');
       msgEl.appendChild(avatar);
       const body = document.createElement('div');
       body.className = 'message-body';
@@ -864,12 +862,6 @@
     const scheduleRender = () => { const now = performance.now(); if (renderTimer) return; renderTimer = setTimeout(renderStreamText, Math.max(50, 120 - (now - streamRenderAt))); streamRenderAt = now; };
     const streamTimeout = setTimeout(() => { try { activeStreamController?.abort(); } catch {} }, STREAM_TIMEOUT_MS);
 
-    // swap avatar to "thinking/coding/searching" mood
-    if (avatarEl) {
-      const mood = pickMoodFor(text);
-      setMascotMood(mood, avatarEl.parentElement);
-    }
-
     try {
       const reqBody = { message: text, history, model, stream: true, search: !!forceSearch, files: files.map((f) => ({ name: f.name, size: f.size, type: f.type, mime: f.mime, width: f.width, height: f.height, dataUrl: f.dataUrl, base64: f.base64 || null, svgText: f.svgText || null, vision: !!f.vision })), content_parts: contentParts.length ? contentParts : null, guest_id: getGuestId(), bonus_active: isBonusActive(), language: __prefs.responseLanguage || 'auto' };
       const res = await fetch('/v1/chat/completions', { method: 'POST', headers: authHeaders(), credentials: 'same-origin', body: JSON.stringify(reqBody), signal: activeStreamController.signal });
@@ -883,11 +875,7 @@
       let buf = '';
       const bodyEl = msgEl.querySelector('.message-body');
       const ensureBubble = () => {
-        if (!bubble) {
-          bubble = document.createElement('div');
-          bubble.className = 'bubble';
-          bodyEl.insertBefore(bubble, timeEl);
-        }
+        if (!bubble) { bubble = document.createElement('div'); bubble.className = 'bubble'; bodyEl.insertBefore(bubble, timeEl); }
       };
       while (true) {
         const { value, done } = await reader.read();
@@ -903,7 +891,7 @@
           if (o.n) panel.addNarration(o.n);
           if (o.img) {
             generatedImage = o.img; panel.markWriting();
-            if (avatarEl) setMascotMood('celebrate', avatarEl.parentElement);
+            if (avatarMascot) setMascotMood('celebrate', avatarMascot.parentElement.parentElement);
             ensureBubble();
             bubble.innerHTML = `<div class="gen-image"><img src="${o.img}" draggable="false" alt=""></div><div class="bubble-text"></div>`;
             bubbleText = bubble.querySelector('.bubble-text');
@@ -924,7 +912,7 @@
             if (!gotToken) {
               gotToken = true;
               panel.markWriting();
-              if (avatarEl) setMascotMood('learning', avatarEl.parentElement);
+              if (avatarMascot) setMascotMood('coding', avatarMascot.parentElement.parentElement);
               ensureBubble();
               bubble.innerHTML = '<div class="bubble-text"></div>';
               bubbleText = bubble.querySelector('.bubble-text');
@@ -937,7 +925,7 @@
       }
       clearTimeout(streamTimeout);
       panel.finish();
-      if (avatarEl) setMascotMood('happy', avatarEl.parentElement);
+      if (avatarMascot) setMascotMood('happy', avatarMascot.parentElement.parentElement);
       if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
       if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); wireCopyButtons(bubbleText); }
       wireMessageActions(msgEl);
@@ -956,7 +944,7 @@
       const aborted = e.name === 'AbortError';
       const msg = aborted ? 'Stopped.' : (e.message || 'Something went wrong.');
       panel.fail(msg);
-      if (avatarEl) setMascotMood('error', avatarEl.parentElement);
+      if (avatarMascot) setMascotMood('error', avatarMascot.parentElement.parentElement);
       const bodyEl = msgEl.querySelector('.message-body');
       if (!bubble) { bubble = document.createElement('div'); bubble.className = 'bubble'; bodyEl.insertBefore(bubble, timeEl); }
       if (full) {
@@ -984,12 +972,12 @@
     updateSendButtonState();
   }
 
-  function toast(msg, ms) {
+  function toast(msg, ms, kind) {
     const el = document.createElement('div');
-    el.className = 'mirox-toast';
+    el.className = 'mirox-toast' + (kind ? ' ' + kind : '');
     el.textContent = typeof msg === 'string' ? msg : '';
     document.body.appendChild(el);
-    setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 350); }, ms || 1800);
+    setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 350); }, ms || 2200);
   }
 
   /* ═══════════ VOICE INPUT (Web Speech API) ═══════════ */
@@ -997,34 +985,22 @@
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     const btn = document.getElementById('voiceBtn');
     if (!SR || !btn) {
-      if (btn) {
-        btn.disabled = true;
-        btn.title = 'Voice input is not supported in this browser';
-        btn.style.opacity = '0.4';
-      }
+      if (btn) { btn.disabled = true; btn.title = 'Voice input is not supported in this browser'; btn.style.opacity = '0.4'; }
       return;
     }
     const recog = new SR();
     recog.continuous = false;
     recog.interimResults = true;
     recog.lang = (navigator.language || 'en-US');
-    recog.onstart = () => {
-      __voiceListening = true;
-      btn.classList.add('listening');
-      btn.innerHTML = '<i class="ri-mic-fill"></i>';
-    };
-    recog.onend = () => {
-      __voiceListening = false;
-      btn.classList.remove('listening');
-      btn.innerHTML = '<i class="ri-mic-line"></i>';
-    };
+    recog.onstart = () => { __voiceListening = true; btn.classList.add('listening'); btn.innerHTML = '<i class="ri-mic-fill"></i>'; };
+    recog.onend = () => { __voiceListening = false; btn.classList.remove('listening'); btn.innerHTML = '<i class="ri-mic-line"></i>'; };
     recog.onerror = (e) => {
       __voiceListening = false;
       btn.classList.remove('listening');
       btn.innerHTML = '<i class="ri-mic-line"></i>';
-      if (e.error === 'not-allowed') toast('Microphone permission denied.');
+      if (e.error === 'not-allowed') toast('Microphone permission denied.', 3000, 'err');
       else if (e.error === 'no-speech') { /* silent */ }
-      else toast('Voice error: ' + e.error);
+      else toast('Voice error: ' + e.error, 3000, 'err');
     };
     recog.onresult = (event) => {
       const inp = document.getElementById('messageInput');
@@ -1039,9 +1015,7 @@
       const base = inp.dataset.voiceBase || inp.value || '';
       const combined = (base + (base && (final || interim) ? ' ' : '') + (final || interim)).trim();
       if (final) {
-        inp.value = (inp.dataset.voiceBase || '').trim()
-          ? (inp.dataset.voiceBase + ' ' + final).trim()
-          : final.trim();
+        inp.value = (inp.dataset.voiceBase || '').trim() ? (inp.dataset.voiceBase + ' ' + final).trim() : final.trim();
         inp.dataset.voiceBase = inp.value;
       } else {
         inp.value = base ? (base + ' ' + interim).trim() : interim;
@@ -1054,12 +1028,9 @@
     btn.addEventListener('click', () => {
       const inp = document.getElementById('messageInput');
       if (!inp) return;
-      if (__voiceListening) {
-        try { recog.stop(); } catch {}
-        return;
-      }
+      if (__voiceListening) { try { recog.stop(); } catch {} return; }
       inp.dataset.voiceBase = inp.value || '';
-      try { recog.start(); } catch (e) { toast('Could not start voice: ' + e.message); }
+      try { recog.start(); } catch (e) { toast('Could not start voice: ' + e.message, 3000, 'err'); }
     });
   }
 
@@ -1081,7 +1052,7 @@
     __shareState.claimed = true; __shareState.claimedAt = Date.now(); __shareState.dismissedAt = 0;
     saveShareState(); updateTokenUsage(); renderModelPicker(); celebrateReward();
     const days = Math.round((bonus.expiresAt - Date.now()) / 86400000);
-    toast(`🎉 ${BONUS_TOKENS.toLocaleString()} bonus tokens for ${days} days!`, 6500);
+    toast(`🎉 ${BONUS_TOKENS.toLocaleString()} bonus tokens for ${days} days!`, 6500, 'ok');
   }
   async function grantShareReward() {
     grantShareRewardLocal();
@@ -1116,7 +1087,7 @@
     canvas.width = W * dpr; canvas.height = H * dpr;
     canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
     const ctx = canvas.getContext('2d'); ctx.scale(dpr, dpr);
-    const colors = ['#4d6bfe','#7c8aff','#16a34a','#4ade80','#f59e0b','#fbbf24','#ec4899','#f472b6','#06b6d4','#22d3ee','#a855f7','#c084fc'];
+    const colors = ['#4d6bfe','#7c8aff','#d97757','#e88a68','#16a34a','#f59e0b','#ec4899','#06b6d4','#a855f7'];
     const particles = [];
     const origins = [{ x: W*0.15, y: H*0.25 }, { x: W*0.85, y: H*0.25 }, { x: W*0.5, y: H*0.2 }];
     for (let i = 0; i < 180; i++) {
@@ -1286,12 +1257,14 @@
     if (!res || !res.user) {
       __user = null; __tier = 'free';
       const label = $('#accountLabel'); if (label) label.textContent = 'Guest mode';
+      const sub = $('#accountSub'); if (sub) sub.textContent = 'Chats saved locally in this browser';
       const sb = $('#signInFromSettingsBtn'); if (sb) sb.style.display = '';
       const lo = $('#logoutBtn'); if (lo) lo.style.display = 'none';
       renderModelPicker(); updateTokenUsage(); return;
     }
     __user = res.user; __tier = res.user.tier || 'free';
     const label = $('#accountLabel'); if (label) label.textContent = res.user.name || res.user.email;
+    const sub = $('#accountSub'); if (sub) sub.textContent = res.user.email || '';
     const sb = $('#signInFromSettingsBtn'); if (sb) sb.style.display = 'none';
     const lo = $('#logoutBtn'); if (lo) lo.style.display = '';
     renderModelPicker(); updateTokenUsage();
@@ -1302,8 +1275,79 @@
     if (!__config) __config = { models: FALLBACK_MODELS };
     __model = getModelsList()[0].id; renderModelPicker();
   }
-  async function doLogin(e) { if (e) e.preventDefault(); const name = $('#loginName')?.value.trim(); const email = $('#loginEmail')?.value.trim().toLowerCase(); if (!name || !email) return; const res = await jsonOr('/api/auth/simple-login', { method: 'POST', body: JSON.stringify({ name, email }) }, null); if (res && res.ok) { setToken(res.token || ''); closeModal('loginModal'); await refreshUsage(); toast('Welcome, ' + name + '!'); } }
-  async function doLogout() { await jsonOr('/api/logout', { method: 'POST' }, null); setToken(''); await refreshUsage(); closeModal('settingsModal'); toast('Signed out'); }
+
+  /* ═══════════════════════════════════════════════════════════
+     LOGIN — now shows real errors and cannot silently fail
+     ═══════════════════════════════════════════════════════════ */
+  function setLoginError(msg, kind) {
+    const el = $('#loginError');
+    if (!el) return;
+    if (!msg) { el.style.display = 'none'; el.textContent = ''; el.classList.remove('ok'); return; }
+    el.style.display = 'block';
+    el.textContent = msg;
+    el.classList.toggle('ok', kind === 'ok');
+  }
+
+  async function doLogin(e) {
+    if (e) e.preventDefault();
+    setLoginError('');
+    const name = ($('#loginName')?.value || '').trim();
+    const email = ($('#loginEmail')?.value || '').trim().toLowerCase();
+    const btn = $('#loginSubmitBtn');
+
+    if (!name) { setLoginError('Please enter your name.'); $('#loginName')?.focus(); return; }
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setLoginError('Please enter a valid email.'); $('#loginEmail')?.focus(); return; }
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Signing in…'; }
+    try {
+      const r = await netFetch('/api/auth/simple-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email }),
+      }, 12000);
+
+      let data = null;
+      try { data = await r.json(); } catch {}
+
+      if (r.ok && data && data.ok) {
+        setToken(data.token || '');
+        setLoginError('Signed in!', 'ok');
+        if (btn) btn.textContent = '✓ Welcome';
+        setTimeout(async () => {
+          closeModal('loginModal');
+          await refreshUsage();
+          toast('Welcome, ' + name + '!', 2400, 'ok');
+          setLoginError('');
+          if (btn) { btn.disabled = false; btn.textContent = 'Continue'; }
+        }, 600);
+        return;
+      }
+
+      // Map backend messages to friendlier ones
+      const raw = (data && (data.error || data.message)) || ('Sign-in failed (HTTP ' + r.status + ')');
+      if (r.status === 403 && /disabled/i.test(raw)) {
+        setLoginError('Email sign-in is disabled on this server. Ask the admin to set ALLOW_EMAIL_LOGIN=1 or configure Loginment.');
+      } else if (r.status === 503) {
+        setLoginError('The server cannot save your account right now. Please try again shortly.');
+      } else {
+        setLoginError(raw);
+      }
+      if (btn) { btn.disabled = false; btn.textContent = 'Continue'; }
+    } catch (err) {
+      const msg = err.name === 'AbortError' ? 'Request timed out. Please try again.' : 'Network error: ' + err.message;
+      setLoginError(msg);
+      if (btn) { btn.disabled = false; btn.textContent = 'Continue'; }
+    }
+  }
+
+  async function doLogout() {
+    try { await jsonOr('/api/logout', { method: 'POST' }, null, 5000); } catch {}
+    setToken('');
+    await refreshUsage();
+    closeModal('settingsModal');
+    toast('Signed out', 1800, 'ok');
+  }
+
   async function loadPlans() {
     const grid = $('#plansGrid'); if (!grid) return;
     grid.innerHTML = '<div class="studio-empty">Loading…</div>';
@@ -1311,6 +1355,7 @@
     if (!res || !Array.isArray(res.plans)) { grid.innerHTML = '<div class="studio-empty">Could not load plans.</div>'; return; }
     grid.innerHTML = res.plans.map((p) => { const price = p.id === 'free' ? '<div class="plan-price">Free</div>' : `<div class="plan-price">$${Number(p.price_usd).toFixed(2)}</div>`; return `<div class="plan-card${p.id === __tier ? ' current' : ''}"><div class="plan-name">${escapeHtml(p.label)}</div>${price}<ul class="plan-perks">${(p.perks || []).map((x) => `<li>✓ ${escapeHtml(x)}</li>`).join('')}</ul></div>`; }).join('');
   }
+
   async function genImage() {
     const prompt = $('#imagePrompt')?.value.trim(); if (!prompt) return;
     const btn = $('#generateImageBtn'), result = $('#imageResult');
@@ -1323,6 +1368,87 @@
       else { if (result) result.innerHTML = `<div class="studio-error">Failed</div>`; }
     } catch (e) { if (result) result.innerHTML = `<div class="studio-error">Error</div>`; }
     finally { if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-image-add-line"></i> Generate'; } }
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     SUPPORT — now actually sends to backend with mailto fallback
+     ═══════════════════════════════════════════════════════════ */
+  function setSupportError(msg, kind) {
+    const el = $('#supportError');
+    if (!el) return;
+    if (!msg) { el.style.display = 'none'; el.textContent = ''; el.classList.remove('ok'); return; }
+    el.style.display = 'block';
+    el.textContent = msg;
+    el.classList.toggle('ok', kind === 'ok');
+  }
+
+  async function submitSupport() {
+    setSupportError('');
+    const category = ($('#supportCategory')?.value || 'other').trim();
+    const subject = ($('#supportSubject')?.value || '').trim();
+    const message = ($('#supportMessage')?.value || '').trim();
+    const emailInput = ($('#supportEmail')?.value || '').trim().toLowerCase();
+    const userEmail = (__user && __user.email) || '';
+    const email = emailInput || userEmail || '';
+    const btn = $('#submitReportBtn');
+
+    if (!subject) { setSupportError('Please enter a subject.'); $('#supportSubject')?.focus(); return; }
+    if (!message || message.length < 5) { setSupportError('Please describe your issue (at least 5 characters).'); $('#supportMessage')?.focus(); return; }
+
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line spin"></i> Sending…'; }
+
+    const payload = {
+      category, subject, message, email,
+      guest_id: getGuestId(),
+      url: location.href,
+      ua: navigator.userAgent,
+      ts: Date.now(),
+    };
+
+    let ok = false;
+    try {
+      const r = await netFetch('/api/support', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }, 15000);
+      const data = await r.json().catch(() => null);
+      if (r.ok && data && data.ok !== false) ok = true;
+      else if (r.status === 404) ok = false; // fallback
+      else if (!r.ok) {
+        setSupportError((data && (data.error || data.message)) || ('Server error (HTTP ' + r.status + ')'));
+      } else ok = true;
+    } catch (e) {
+      // Network error — fall through to mailto
+    }
+
+    if (!ok && !$('#supportError')?.textContent) {
+      // Fallback: open a mailto: link so the user can still reach us
+      const mailSubject = encodeURIComponent(`[MiroxAI ${category}] ${subject}`);
+      const mailBody = encodeURIComponent(
+        `${message}\n\n— — —\nCategory: ${category}\nFrom: ${email || '(not provided)'}\nURL: ${location.href}\nGuest: ${getGuestId()}\nUA: ${navigator.userAgent}`
+      );
+      const mailto = `mailto:support@miroxai.org?subject=${mailSubject}&body=${mailBody}`;
+      window.location.href = mailto;
+      setSupportError('Opening your email client… (backend /api/support is not available)', 'ok');
+      if (btn) { btn.disabled = false; btn.innerHTML = 'Submit'; }
+      return;
+    }
+
+    if (ok) {
+      setSupportError('Thanks! Your message was sent.', 'ok');
+      if (btn) btn.innerHTML = '✓ Sent';
+      setTimeout(() => {
+        closeModal('supportModal');
+        $('#supportSubject').value = '';
+        $('#supportMessage').value = '';
+        setSupportError('');
+        if (btn) { btn.disabled = false; btn.innerHTML = 'Submit'; }
+      }, 1500);
+      toast('Message sent. We will reply soon.', 2600, 'ok');
+    } else {
+      if (btn) { btn.disabled = false; btn.innerHTML = 'Submit'; }
+    }
   }
 
   /* ═══════════ BRIDGE ═══════════ */
@@ -1345,6 +1471,7 @@
   async function testBridge(port) { for (const host of ['localhost', '127.0.0.1']) { try { const r = await netFetch(`http://${host}:${port}/ping`, { mode: 'cors' }, 4000); if (r.ok) { const d = await r.json(); if (d && d.ok) return { ok: true, base: `http://${host}:${port}` }; } } catch {} } return { ok: false }; }
   async function fetchEnv(base) { try { const r = await netFetch(`${base}/env`, { mode: 'cors' }, 5000); if (!r.ok) return null; const d = await r.json(); return d && d.ok ? d : null; } catch { return null; } }
   async function startBridge() {
+    if (!IS_PC) { toast('Bridge is only available on desktop computers.', 2600, 'err'); return; }
     const name = ($('#bwNameInput')?.value || __bridge.name).trim() || 'My Laptop';
     const port = parseInt($('#bwPortInput')?.value || __bridge.port, 10) || 8765;
     __bridge.name = name; __bridge.port = port;
@@ -1363,7 +1490,7 @@
   function setBwHint(text, cls = '') { const el = $('#bwConnectHint'); if (!el) return; el.textContent = text; el.className = 'bw-hint' + (cls ? ' ' + cls : ''); }
   function updateBridgeSendBtn() { const btn = $('#bridgeSendBtn'), inp = $('#bridgeInput'); if (!btn || !inp) return; const enabled = __bridge.connected && !bridgeRunning && inp.value.trim().length > 0; btn.classList.toggle('is-disabled', !enabled); btn.setAttribute('aria-disabled', String(!enabled)); renderToggles(); }
   function openBridgeWorkspace() {
-    if (!IS_PC) { toast('Bridge is only available on desktop computers.'); return; }
+    if (!IS_PC) { toast('Bridge is only available on desktop computers.', 2600, 'err'); return; }
     $('#bridgeWorkspace')?.classList.add('open');
     document.body.style.overflow = 'hidden';
     if (!__bridge.connected) setTimeout(() => startBridge(), 50);
@@ -1466,7 +1593,6 @@
   function cmdSignature(cmd) { const t2 = cmd.type; if (t2 === 'exec' || t2 === 'sudo') return t2 + ':' + (cmd.command || '').trim(); if (t2 === 'write' || t2 === 'append') return t2 + ':' + cmd.path + ':' + (cmd.content || '').length; return t2 + ':' + (cmd.path || ''); }
   function shouldBlockSignature(sig) { if (!bridgeTurn) return false; if (bridgeTurn.failedSignatures.has(sig)) return true; return (bridgeTurn.commandLog.get(sig) || 0) >= MAX_DUP_COMMANDS; }
   function fingerprintReply(text) {
-    // normalize whitespace + strip tags + cap size for a stable fingerprint
     return String(text || '')
       .replace(/<bridge-[^>]+>[\s\S]*?<\/bridge-[^>]+>/g, '')
       .replace(/<bridge-[^>]+\s+[^>]*\/>/g, '')
@@ -1484,7 +1610,7 @@
   }
   function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
   async function runBridgeTurn(userText, isResume = false) {
-    if (!__bridge.connected) return;
+    if (!__bridge.connected || !IS_PC) return;
     if (bridgeRunning) return;
     bridgeRunning = true; bridgeAbort = false; updateBridgeSendBtn();
     if (!isResume) {
@@ -1510,7 +1636,6 @@
           break;
         }
 
-        // ═══ REPETITION GUARD ═══
         const fp = fingerprintReply(reply);
         if (fp && fp === bridgeTurn.lastReplyFingerprint) {
           bridgeTurn.lastReplyCount++;
@@ -1583,7 +1708,7 @@
     finally { bridgeRunning = false; updateBridgeSendBtn(); setProgressText(bridgeTaskComplete ? 'Done' : 'Paused'); }
   }
   function handleBridgeSend() {
-    if (!IS_PC) { toast('Bridge is only available on desktop computers.'); return; }
+    if (!IS_PC) { toast('Bridge is only available on desktop computers.', 2600, 'err'); return; }
     const inp = $('#bridgeInput'); if (!inp) return;
     const text = inp.value.trim();
     if (!text || bridgeRunning || !__bridge.connected) return;
@@ -1655,16 +1780,21 @@
     on('#searchModeBtn', 'click', (e) => { e.preventDefault(); forceSearchNext = !forceSearchNext; $('#searchModeBtn')?.classList.toggle('active', forceSearchNext); });
     on('#imageModeBtn', 'click', () => openModal('imageModal'));
     on('#plansModeBtn', 'click', () => { openModal('plansModal'); loadPlans(); });
-    on('#supportModeBtn', 'click', (e) => { e.preventDefault(); openModal('supportModal'); });
-    on('#supportModeBtn2', 'click', () => openModal('supportModal'));
+    on('#supportModeBtn', 'click', (e) => { e.preventDefault(); setSupportError(''); openModal('supportModal'); });
+    on('#supportModeBtn2', 'click', () => { setSupportError(''); openModal('supportModal'); });
     on('#bridgeModeBtn', 'click', openBridgeWorkspace);
     on('#bridgeOpenBtn', 'click', openBridgeWorkspace);
     on('#generateImageBtn', 'click', genImage);
-    on('#submitReportBtn', 'click', () => { toast('Submitted!'); closeModal('supportModal'); });
+    on('#submitReportBtn', 'click', submitSupport);
     on('#settingsBtn', 'click', (e) => { e.preventDefault(); openSettingsModal(); });
     on('#logoutBtn', 'click', doLogout);
-    on('#signInFromSettingsBtn', 'click', () => { closeModal('settingsModal'); openModal('loginModal'); });
+    on('#signInFromSettingsBtn', 'click', () => { closeModal('settingsModal'); setLoginError(''); openModal('loginModal'); });
     on('#shareFromSettingsBtn', 'click', () => { closeModal('settingsModal'); setTimeout(() => openShareAd(), 100); });
+
+    // Support form Ctrl+Enter to submit
+    $('#supportMessage')?.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); submitSupport(); }
+    });
 
     $$('.settings-tab').forEach((tab) => {
       tab.onclick = () => {
@@ -1725,8 +1855,8 @@
       if (e.target.classList.contains('modal-overlay')) e.target.classList.remove('open');
       if (e.target.closest('[data-iv-close]')) closeImageViewer();
     });
-    on('#userChip', 'click', () => { if (!__user) openModal('loginModal'); });
-    on('#upgradeBtn', 'click', (e) => { e.stopPropagation(); if (!__user) openModal('loginModal'); else { openModal('plansModal'); loadPlans(); } });
+    on('#userChip', 'click', () => { if (!__user) { setLoginError(''); openModal('loginModal'); } });
+    on('#upgradeBtn', 'click', (e) => { e.stopPropagation(); if (!__user) { setLoginError(''); openModal('loginModal'); } else { openModal('plansModal'); loadPlans(); } });
     on('#simpleLoginForm', 'submit', doLogin);
     on('#ivDownload', 'click', () => { if (!__ivDataUrl) return; const a = document.createElement('a'); a.href = __ivDataUrl; a.download = `mirox-${Date.now()}.png`; document.body.appendChild(a); a.click(); document.body.removeChild(a); });
     on('#shareAdShareBtn', 'click', attemptShare);
@@ -1744,13 +1874,8 @@
     });
     window.addEventListener('resize', () => { if (window.innerWidth > 860) closeSidebar(); });
 
-    // PC-only: hide Bridge button in sidebar + composer
     if (!IS_PC) {
-      document.querySelectorAll('#bridgeModeBtn, #bridgeOpenBtn, [data-pane="bridge"]').forEach((el) => {
-        el.style.display = 'none';
-      });
-      // also hide the bridge sidebar tab
-      document.querySelectorAll('.sidebar-tab[data-tab="bridge"]').forEach((el) => el.style.display = 'none');
+      document.querySelectorAll('#bridgeModeBtn, #bridgeOpenBtn, [data-pane="bridge"], .sidebar-tab[data-tab="bridge"]').forEach((el) => { el.style.display = 'none'; });
     }
   }
 
