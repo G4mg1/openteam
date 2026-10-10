@@ -23,7 +23,7 @@
   <div class="loading-blob" id="loadingBlob"></div>
   <div class="loading-brand">Mirox</div>
   <div class="loading-line"><div class="loading-line-fill"></div></div>
-  <div class="loading-tip" id="loadingTip" data-i18n="loadingTip">Waking up Luna…</div>
+  <div class="loading-tip" id="loadingTip">Waking up Luna…</div>
 </div>
 
 <div id="sidebarScrim" class="sidebar-scrim"></div>
@@ -32,61 +32,62 @@
   <div class="sidebar-header">
     <a href="#" id="brandLogo" class="brand">
       <img class="brand-logo" src="/logo.png" alt="" onerror="this.style.display='none'">
-      <span class="brand-text" data-i18n="brand">MiroxAI</span>
+      <span class="brand-text">MiroxAI</span>
     </a>
-    <button id="sidebarCloseBtn" class="icon-btn sidebar-close" type="button" data-i18n-title="close"><i class="ri-close-line"></i></button>
+    <button id="sidebarCloseBtn" class="icon-btn sidebar-close" type="button" title="Close"><i class="ri-close-line"></i></button>
   </div>
-  <button id="newChatBtn" class="new-chat-btn" type="button"><i class="ri-add-line"></i><span data-i18n="newChat">New chat</span></button>
+  <button id="newChatBtn" class="new-chat-btn" type="button"><i class="ri-add-line"></i><span>New chat</span></button>
   <div class="sidebar-tabs" role="tablist">
-    <button class="sidebar-tab active" type="button" data-tab="chats"><i class="ri-chat-3-line"></i> <span data-i18n="tabChats">Chats</span></button>
-    <button class="sidebar-tab" type="button" data-tab="bridge"><i class="ri-link"></i> <span data-i18n="tabBridge">Bridge</span></button>
-    <button class="sidebar-tab" type="button" data-tab="images"><i class="ri-image-line"></i> <span data-i18n="tabImages">Images</span></button>
+    <button class="sidebar-tab active" type="button" data-tab="chats"><i class="ri-chat-3-line"></i> <span>Chats</span></button>
+    <button class="sidebar-tab" type="button" data-tab="bridge"><i class="ri-link"></i> <span>Bridge</span></button>
+    <button class="sidebar-tab" type="button" data-tab="images"><i class="ri-image-line"></i> <span>Images</span></button>
   </div>
   <div class="sidebar-section" data-pane="chats">
     <div class="history-search">
       <i class="ri-search-line"></i>
-      <input id="historySearch" type="search" data-i18n-placeholder="searchChats" placeholder="Search chats…" autocomplete="off" spellcheck="false">
+      <input id="historySearch" type="search" placeholder="Search chats…" autocomplete="off" spellcheck="false">
     </div>
-    <ul id="historyList" class="history-list"><li class="history-empty" data-i18n="noChats">No conversations yet</li></ul>
+    <ul id="historyList" class="history-list"><li class="history-empty">No conversations yet</li></ul>
   </div>
   <div class="sidebar-section" data-pane="bridge" style="display:none;">
     <div class="bridge-panel">
       <div class="bridge-status" id="bridgeStatus">
         <div class="bridge-status-dot offline"></div>
-        <span data-i18n="disconnected">Disconnected</span>
+        <span>Disconnected</span>
       </div>
-      <p class="bridge-hint" data-i18n="bridgeHint">Give Mirox direct control of your laptop.</p>
-      <button id="bridgeOpenBtn" class="modal-btn primary" type="button"><i class="ri-terminal-box-line"></i> <span data-i18n="openBridge">Open Bridge Workspace</span></button>
+      <p class="bridge-hint">Give Mirox direct control of your laptop.</p>
+      <button id="bridgeOpenBtn" class="modal-btn primary" type="button"><i class="ri-terminal-box-line"></i> <span>Open Bridge Workspace</span></button>
     </div>
   </div>
   <div class="sidebar-section" data-pane="images" style="display:none;">
     <div class="sidebar-images-panel">
-      <div id="sidebarImageHistory" class="sidebar-image-grid"><div class="sidebar-empty" data-i18n="noImages">No images yet.</div></div>
+      <div id="sidebarImageHistory" class="sidebar-image-grid"><div class="sidebar-empty">No images yet.</div></div>
     </div>
   </div>
   <div class="sidebar-footer">
+    <!-- ▲▼ FIXED: proper IDs so the script can update this chip -->
     <div id="userChip" class="user-chip">
-      <div class="user-avatar"><i class="ri-user-line"></i></div>
+      <div class="user-avatar" id="userAvatar"><i class="ri-user-line"></i></div>
       <div class="user-info">
-        <span class="user-name" data-i18n="guestMode">Guest mode</span>
-        <span class="user-sub" data-i18n="signInHint">Sign in to save chats</span>
+        <span class="user-name" id="accountLabel">Guest mode</span>
+        <span class="user-sub" id="accountSub">Sign in to save chats</span>
       </div>
-      <button id="upgradeBtn" class="upgrade-btn" type="button" data-i18n-title="plans"><i class="ri-vip-crown-line"></i></button>
+      <button id="upgradeBtn" class="upgrade-btn" type="button" title="Plans"><i class="ri-vip-crown-line"></i></button>
     </div>
     <div class="sidebar-links">
-      <a href="#" id="settingsBtn" class="sidebar-link"><i class="ri-settings-3-line"></i> <span data-i18n="settings">Settings</span></a>
-      <a href="#" id="supportModeBtn" class="sidebar-link"><i class="ri-customer-service-2-line"></i> <span data-i18n="support">Support</span></a>
+      <a href="#" id="settingsBtn" class="sidebar-link"><i class="ri-settings-3-line"></i> <span>Settings</span></a>
+      <a href="#" id="supportModeBtn" class="sidebar-link"><i class="ri-customer-service-2-line"></i> <span>Support</span></a>
     </div>
-    <div class="made-by" data-i18n="madeBy">Made by OpenSurr</div>
+    <div class="made-by">Made by OpenSurr</div>
   </div>
 </aside>
 
 <main class="main">
   <header class="chat-header">
-    <button id="hamburgerBtn" class="icon-btn hamburger" type="button" data-i18n-title="openMenu"><i class="ri-menu-line"></i></button>
-    <h2 id="chatTitle" class="chat-title" data-i18n="newChat">New chat</h2>
+    <button id="hamburgerBtn" class="icon-btn hamburger" type="button" title="Menu"><i class="ri-menu-line"></i></button>
+    <h2 id="chatTitle" class="chat-title">New chat</h2>
     <div class="chat-header-actions">
-      <div id="tokenUsage" class="token-usage" data-i18n-title="tokenBudget"><i class="ri-cpu-line"></i><span>0 / 10k</span></div>
+      <div id="tokenUsage" class="token-usage"><i class="ri-cpu-line"></i><span>0 / 10k</span></div>
       <div id="modelPicker" class="model-picker-wrap">
         <button id="modelPickerBtn" class="model-picker-btn" type="button">
           <i class="ri-sparkling-2-line"></i>
@@ -101,61 +102,61 @@
   <div id="chatMessages" class="chat-messages">
     <div class="welcome-screen">
       <div class="welcome-mascot"><div class="mascot mascot-lg" id="welcomeMascot" data-mood="idle"></div></div>
-      <h1 class="welcome-title" data-i18n="welcomeTitle">Hi, I'm Mirox</h1>
-      <p class="welcome-sub" data-i18n-html="welcomeSub">Luna and Gen are unlimited and free. Share to unlock <strong>Pro, Ultra &amp; Eclipse</strong> free for 7 days.</p>
+      <h1 class="welcome-title">Hi, I'm Mirox</h1>
+      <p class="welcome-sub">Luna and Gen are unlimited and free. Share to unlock <strong>Pro, Ultra &amp; Eclipse</strong> free for 7 days.</p>
       <div class="suggestion-grid">
-        <button class="suggestion-card" type="button" data-prompt="Show me a simple Lua script that prints numbers 1 to 5"><i class="ri-code-box-line"></i><span data-i18n="suggestLua">Write a Lua script</span></button>
-        <button class="suggestion-card" type="button" data-prompt="Show me an HTML example with a table"><i class="ri-html5-line"></i><span data-i18n="suggestHtml">Show an HTML table</span></button>
-        <button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span data-i18n="suggestImage">Generate an image</span></button>
-        <button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span data-i18n="suggestExplain">Explain a concept</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Show me a simple Lua script that prints numbers 1 to 5"><i class="ri-code-box-line"></i><span>Write a Lua script</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Show me an HTML example with a table"><i class="ri-html5-line"></i><span>Show an HTML table</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span>Generate an image</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span>Explain a concept</span></button>
       </div>
     </div>
   </div>
 
-  <button id="scrollBottomBtn" class="scroll-bottom-btn" type="button" data-i18n-title="scrollLatest"><i class="ri-arrow-down-line"></i><span data-i18n="latest">Latest</span></button>
+  <button id="scrollBottomBtn" class="scroll-bottom-btn" type="button"><i class="ri-arrow-down-line"></i><span>Latest</span></button>
 
   <div class="composer-wrap">
     <div id="attachmentPreview" class="attachment-preview" style="display:none;">
       <div id="attachmentList" class="attachment-list"></div>
-      <button id="removeAttachmentBtn" class="icon-btn" type="button" data-i18n-title="removeAttach"><i class="ri-close-line"></i></button>
+      <button id="removeAttachmentBtn" class="icon-btn" type="button" title="Remove"><i class="ri-close-line"></i></button>
     </div>
     <div class="tools-row">
-      <button id="searchModeBtn" class="tool-btn" type="button"><i class="ri-global-line"></i><span data-i18n="search">Search</span></button>
-      <button id="imageModeBtn" class="tool-btn" type="button"><i class="ri-image-line"></i><span data-i18n="lumenal">Lumenal</span></button>
-      <button id="bridgeModeBtn" class="tool-btn pc-only" type="button"><i class="ri-link"></i><span data-i18n="bridge">Bridge</span></button>
-      <button id="plansModeBtn" class="tool-btn" type="button"><i class="ri-vip-crown-line"></i><span data-i18n="plans">Plans</span></button>
-      <button id="supportModeBtn2" class="tool-btn" type="button"><i class="ri-question-line"></i><span data-i18n="help">Help</span></button>
+      <button id="searchModeBtn" class="tool-btn" type="button"><i class="ri-global-line"></i><span>Search</span></button>
+      <button id="imageModeBtn" class="tool-btn" type="button"><i class="ri-image-line"></i><span>Lumenal</span></button>
+      <button id="bridgeModeBtn" class="tool-btn pc-only" type="button"><i class="ri-link"></i><span>Bridge</span></button>
+      <button id="plansModeBtn" class="tool-btn" type="button"><i class="ri-vip-crown-line"></i><span>Plans</span></button>
+      <button id="supportModeBtn2" class="tool-btn" type="button"><i class="ri-question-line"></i><span>Help</span></button>
     </div>
     <div class="composer">
-      <button type="button" id="attachBtn" class="icon-btn attach-btn" data-i18n-title="attachFiles"><i class="ri-attachment-2"></i></button>
+      <button type="button" id="attachBtn" class="icon-btn attach-btn" title="Attach"><i class="ri-attachment-2"></i></button>
       <input type="file" id="fileInput" multiple hidden accept="image/*,.txt,.md,.json,.csv,.log,.py,.js,.ts,.html,.css,.yml,.yaml,.xml,.sh,.sql,.java,.c,.cpp,.go,.rs,.rb,.php,.lua,.zip">
-      <textarea id="messageInput" class="message-input" data-i18n-placeholder="composerPlaceholder" rows="1" placeholder="How can I help you today?"></textarea>
-      <button type="button" id="voiceBtn" class="icon-btn voice-btn" data-i18n-title="voiceInput" title="Voice input"><i class="ri-mic-line"></i></button>
-      <button type="button" id="stopBtn" class="icon-btn stop-btn" style="display:none;" data-i18n-title="stop"><i class="ri-stop-circle-line"></i></button>
-      <button type="button" id="sendBtn" class="send-btn is-disabled" aria-disabled="true" data-i18n-title="send"><i class="ri-arrow-up-line"></i></button>
+      <textarea id="messageInput" class="message-input" rows="1" placeholder="How can I help you today?"></textarea>
+      <button type="button" id="voiceBtn" class="icon-btn voice-btn" title="Voice input"><i class="ri-mic-line"></i></button>
+      <button type="button" id="stopBtn" class="icon-btn stop-btn" style="display:none;" title="Stop"><i class="ri-stop-circle-line"></i></button>
+      <button type="button" id="sendBtn" class="send-btn is-disabled" aria-disabled="true" title="Send"><i class="ri-arrow-up-line"></i></button>
     </div>
-    <div class="composer-note" data-i18n="composerNote">Mirox can make mistakes — double-check important info.</div>
+    <div class="composer-note">Mirox can make mistakes — double-check important info.</div>
   </div>
 </main>
 
 <!-- SHARE AD -->
 <div id="shareAdModal" class="share-ad-overlay">
   <div class="share-ad-panel">
-    <button class="icon-btn share-ad-close" type="button" id="shareAdCloseBtn" data-i18n-title="close"><i class="ri-close-line"></i></button>
+    <button class="icon-btn share-ad-close" type="button" id="shareAdCloseBtn"><i class="ri-close-line"></i></button>
     <div class="share-ad-icon"><i class="ri-gift-2-line"></i></div>
-    <h2 class="share-ad-title" data-i18n="shareTitle">Share our site, get 50k tokens</h2>
-    <p class="share-ad-sub" data-i18n-html="shareSub">Get <strong>50k tokens for 1 week</strong> and unlock <strong>Pro, Ultra &amp; Eclipse</strong> models free.</p>
+    <h2 class="share-ad-title">Share our site, get 50k tokens</h2>
+    <p class="share-ad-sub">Get <strong>50k tokens for 1 week</strong> and unlock <strong>Pro, Ultra &amp; Eclipse</strong> models free.</p>
     <ul class="share-ad-perks">
-      <li><i class="ri-check-line"></i> <span data-i18n="sharePerk1">50,000 bonus tokens</span></li>
-      <li><i class="ri-check-line"></i> <span data-i18n="sharePerk2">Valid for 7 days</span></li>
-      <li><i class="ri-vip-crown-fill"></i> <span data-i18n="sharePerk3">Pro · Ultra · Eclipse unlocked</span></li>
+      <li><i class="ri-check-line"></i> <span>50,000 bonus tokens</span></li>
+      <li><i class="ri-check-line"></i> <span>Valid for 7 days</span></li>
+      <li><i class="ri-vip-crown-fill"></i> <span>Pro · Ultra · Eclipse unlocked</span></li>
     </ul>
     <div class="share-ad-actions">
-      <button class="share-ad-btn primary" type="button" id="shareAdShareBtn"><i class="ri-share-forward-2-line"></i> <span data-i18n="shareNow">Share now</span></button>
-      <button class="share-ad-btn" type="button" id="shareAdIgnoreBtn" data-i18n="shareIgnore">Ignore</button>
+      <button class="share-ad-btn primary" type="button" id="shareAdShareBtn"><i class="ri-share-forward-2-line"></i> <span>Share now</span></button>
+      <button class="share-ad-btn" type="button" id="shareAdIgnoreBtn">Ignore</button>
     </div>
     <div class="share-ad-status" id="shareAdStatus"></div>
-    <div class="share-ad-hint" data-i18n="shareHint">We verify shares through your device's native share sheet.</div>
+    <div class="share-ad-hint">We verify shares through your device's native share sheet.</div>
   </div>
 </div>
 
@@ -165,18 +166,18 @@
     <header class="bridge-workspace-top">
       <div class="bridge-workspace-title">
         <img class="bridge-logo" src="/logo.png" alt="" onerror="this.style.display='none'">
-        <span data-i18n="bridge">Bridge</span>
+        <span>Bridge</span>
         <span class="bridge-beta-tag">BETA</span>
       </div>
       <div class="bridge-workspace-status" id="bwStatusPill">
         <div class="bridge-status-dot offline"></div>
-        <span data-i18n="disconnected">Disconnected</span>
+        <span>Disconnected</span>
       </div>
       <div class="bridge-workspace-toggles" id="bwToggles">
-        <button id="bwToggleAutoRun" class="bridge-toggle active" type="button"><i class="ri-play-circle-line"></i><span data-i18n="autoRun">Auto-Run</span></button>
-        <button id="bwToggleShowCode" class="bridge-toggle" type="button"><i class="ri-code-line"></i><span data-i18n="showCode">Show Code</span></button>
-        <button id="bwPreviewBtn" class="bridge-toggle" type="button"><i class="ri-eye-line"></i><span data-i18n="preview">Preview</span></button>
-        <button id="bwStopBtn" class="bridge-toggle danger" type="button" style="display:none;"><i class="ri-stop-circle-line"></i><span data-i18n="stop">Stop</span></button>
+        <button id="bwToggleAutoRun" class="bridge-toggle active" type="button"><i class="ri-play-circle-line"></i><span>Auto-Run</span></button>
+        <button id="bwToggleShowCode" class="bridge-toggle" type="button"><i class="ri-code-line"></i><span>Show Code</span></button>
+        <button id="bwPreviewBtn" class="bridge-toggle" type="button"><i class="ri-eye-line"></i><span>Preview</span></button>
+        <button id="bwStopBtn" class="bridge-toggle danger" type="button" style="display:none;"><i class="ri-stop-circle-line"></i><span>Stop</span></button>
       </div>
       <div class="bridge-workspace-actions">
         <button id="bwNewBtn" class="icon-btn" type="button"><i class="ri-delete-bin-6-line"></i></button>
@@ -185,47 +186,47 @@
     </header>
     <div class="bridge-progress" id="bwProgress" style="display:none;">
       <div class="bridge-progress-track"><div class="bridge-progress-fill" id="bwProgressFill" style="width:0%;"></div></div>
-      <div class="bridge-progress-label"><span id="bwProgressPct">0%</span><span id="bwProgressText" data-i18n="starting">Starting…</span></div>
+      <div class="bridge-progress-label"><span id="bwProgressPct">0%</span><span id="bwProgressText">Starting…</span></div>
     </div>
     <div class="bridge-workspace-body">
       <div class="bridge-workspace-main">
         <div class="bridge-messages" id="bridgeMessages">
           <div class="bridge-empty" id="bridgeEmpty">
             <div class="mascot mascot-md" data-mood="idle"></div>
-            <h3 data-i18n="bridgeWorkspace">Bridge Workspace</h3>
-            <p data-i18n-html="bridgeEmptyBody">Tell Mirox what to build. It writes files into <code>~/&lt;project&gt;/</code>, verifies them, and shows you a live preview.</p>
+            <h3>Bridge Workspace</h3>
+            <p>Tell Mirox what to build. It writes files into <code>~/&lt;project&gt;/</code>, verifies them, and shows you a live preview.</p>
           </div>
         </div>
         <div class="bridge-input-row">
-          <textarea id="bridgeInput" data-i18n-placeholder="bridgeInputPlaceholder" rows="1" placeholder="e.g. Build a calculator in my home folder"></textarea>
-          <button id="bridgeSendBtn" class="send-btn is-disabled" type="button" aria-disabled="true" data-i18n-title="send"><i class="ri-arrow-up-line"></i></button>
+          <textarea id="bridgeInput" rows="1" placeholder="e.g. Build a calculator in my home folder"></textarea>
+          <button id="bridgeSendBtn" class="send-btn is-disabled" type="button" aria-disabled="true"><i class="ri-arrow-up-line"></i></button>
         </div>
       </div>
       <aside class="bridge-workspace-side">
         <div class="bridge-side-section">
-          <h4><i class="ri-plug-line"></i> <span data-i18n="connection">Connection</span></h4>
-          <div id="bwStatusBox" class="bw-status-box"><div class="bridge-status-dot offline"></div><span data-i18n="disconnected">Disconnected</span></div>
-          <label class="bw-label" data-i18n="name">Name</label>
+          <h4><i class="ri-plug-line"></i> <span>Connection</span></h4>
+          <div id="bwStatusBox" class="bw-status-box"><div class="bridge-status-dot offline"></div><span>Disconnected</span></div>
+          <label class="bw-label">Name</label>
           <input id="bwNameInput" class="modal-input" type="text" placeholder="My Laptop" maxlength="60">
-          <label class="bw-label" data-i18n="port">Port</label>
+          <label class="bw-label">Port</label>
           <input id="bwPortInput" class="modal-input" type="number" value="8765" min="1024" max="65535">
-          <button id="bwConnectBtn" class="modal-btn primary" type="button"><i class="ri-link"></i> <span data-i18n="connect">Connect</span></button>
-          <button id="bwDisconnectBtn" class="modal-btn danger" type="button" style="display:none;"><i class="ri-link-unlink"></i> <span data-i18n="disconnect">Disconnect</span></button>
+          <button id="bwConnectBtn" class="modal-btn primary" type="button"><i class="ri-link"></i> <span>Connect</span></button>
+          <button id="bwDisconnectBtn" class="modal-btn danger" type="button" style="display:none;"><i class="ri-link-unlink"></i> <span>Disconnect</span></button>
           <div id="bwConnectHint" class="bw-hint"></div>
         </div>
         <div class="bridge-side-section">
-          <h4><i class="ri-hammer-line"></i> <span data-i18n="build">Build</span></h4>
-          <div class="bw-status-box" id="bwBuildBox"><i class="ri-folder-3-line"></i><span id="bwBuildStatus" data-i18n="noProject">No project yet</span></div>
-          <button id="bwBuildOpenBtn" class="modal-btn" type="button"><i class="ri-eye-line"></i> <span data-i18n="openPreview">Open live preview</span></button>
-          <button id="bwBuildFolderBtn" class="modal-btn" type="button"><i class="ri-folder-open-line"></i> <span data-i18n="copyPath">Copy folder path</span></button>
+          <h4><i class="ri-hammer-line"></i> <span>Build</span></h4>
+          <div class="bw-status-box" id="bwBuildBox"><i class="ri-folder-3-line"></i><span id="bwBuildStatus">No project yet</span></div>
+          <button id="bwBuildOpenBtn" class="modal-btn" type="button"><i class="ri-eye-line"></i> <span>Open live preview</span></button>
+          <button id="bwBuildFolderBtn" class="modal-btn" type="button"><i class="ri-folder-open-line"></i> <span>Copy folder path</span></button>
         </div>
         <div class="bridge-side-section">
-          <h4><i class="ri-shield-keyhole-line"></i> <span data-i18n="sudo">Sudo</span></h4>
-          <div class="bw-status-box" id="bwSudoBox"><i class="ri-shield-keyhole-line"></i><span id="bwSudoStatus" data-i18n="noPassword">No password saved</span></div>
-          <button id="bwSudoForgetBtn" class="modal-btn" type="button"><i class="ri-forbid-2-line"></i> <span data-i18n="forgetPassword">Forget password</span></button>
+          <h4><i class="ri-shield-keyhole-line"></i> <span>Sudo</span></h4>
+          <div class="bw-status-box" id="bwSudoBox"><i class="ri-shield-keyhole-line"></i><span id="bwSudoStatus">No password saved</span></div>
+          <button id="bwSudoForgetBtn" class="modal-btn" type="button"><i class="ri-forbid-2-line"></i> <span>Forget password</span></button>
         </div>
         <div class="bridge-side-section">
-          <h4><i class="ri-rocket-line"></i> <span data-i18n="quickActions">Quick actions</span></h4>
+          <h4><i class="ri-rocket-line"></i> <span>Quick actions</span></h4>
           <div class="bw-quick-grid">
             <button class="bw-quick" data-q="Build a calculator in my home folder">Calculator</button>
             <button class="bw-quick" data-q="Build a modern landing page in my home folder">Landing page</button>
@@ -279,7 +280,7 @@
   </div>
 </div>
 
-<!-- LOGIN — Simple Gmail-style, local-first -->
+<!-- LOGIN -->
 <div id="loginModal" class="modal-overlay">
   <div class="modal modal-auth">
     <button class="icon-btn modal-close" type="button" data-close="loginModal"><i class="ri-close-line"></i></button>
@@ -287,24 +288,24 @@
       <img src="/logo.png" alt="" onerror="this.style.display='none'">
       <span>MiroxAI</span>
     </div>
-    <h2 class="auth-title" data-i18n="signIn">Sign in</h2>
-    <p class="auth-sub" data-i18n="signInSub">Continue with your name and email.</p>
+    <h2 class="auth-title">Sign in</h2>
+    <p class="auth-sub">Continue with your name and email.</p>
 
     <form id="simpleLoginForm" class="auth-form" autocomplete="on" novalidate>
       <div class="auth-field">
-        <label for="loginName" data-i18n="name">Name</label>
+        <label for="loginName">Name</label>
         <input type="text" id="loginName" class="auth-input" placeholder="Your name" required maxlength="60" autocomplete="name" spellcheck="false">
       </div>
       <div class="auth-field">
-        <label for="loginEmail" data-i18n="email">Email</label>
+        <label for="loginEmail">Email</label>
         <input type="email" id="loginEmail" class="auth-input" placeholder="you@gmail.com" required autocomplete="email" spellcheck="false">
       </div>
       <div id="loginError" class="auth-error" role="alert" style="display:none;"></div>
       <button type="submit" class="auth-btn" id="loginSubmitBtn">
-        <span data-i18n="continue">Continue</span>
+        <span>Continue</span>
         <i class="ri-arrow-right-line"></i>
       </button>
-      <div class="auth-hint" data-i18n="loginHint">By continuing you agree to our terms and privacy policy.</div>
+      <div class="auth-hint">By continuing you agree to our terms and privacy policy.</div>
     </form>
   </div>
 </div>
@@ -313,52 +314,52 @@
 <div id="settingsModal" class="modal-overlay">
   <div class="modal modal-wide">
     <button class="icon-btn modal-close" type="button" data-close="settingsModal"><i class="ri-close-line"></i></button>
-    <h2 class="modal-title" data-i18n="settingsTitle">Settings</h2>
+    <h2 class="modal-title">Settings</h2>
     <div class="settings-tabs" role="tablist">
-      <button class="settings-tab active" type="button" data-tab="general"><i class="ri-settings-3-line"></i><span data-i18n="general">General</span></button>
-      <button class="settings-tab" type="button" data-tab="appearance"><i class="ri-palette-line"></i><span data-i18n="appearance">Appearance</span></button>
-      <button class="settings-tab" type="button" data-tab="language"><i class="ri-translate-2"></i><span data-i18n="language">Language</span></button>
-      <button class="settings-tab" type="button" data-tab="data"><i class="ri-database-2-line"></i><span data-i18n="data">Data</span></button>
+      <button class="settings-tab active" type="button" data-tab="general"><i class="ri-settings-3-line"></i><span>General</span></button>
+      <button class="settings-tab" type="button" data-tab="appearance"><i class="ri-palette-line"></i><span>Appearance</span></button>
+      <button class="settings-tab" type="button" data-tab="language"><i class="ri-translate-2"></i><span>Language</span></button>
+      <button class="settings-tab" type="button" data-tab="data"><i class="ri-database-2-line"></i><span>Data</span></button>
     </div>
 
     <div class="settings-pane active" data-pane="general">
       <div class="setting-group">
-        <h4 data-i18n="account">Account</h4>
+        <h4>Account</h4>
         <div class="setting-row">
           <div class="setting-row-info">
-            <span class="setting-row-label" id="accountLabel" data-i18n="guestMode">Guest mode</span>
-            <span class="setting-row-sub" id="accountSub" data-i18n="accountSub">Chats saved locally in this browser</span>
+            <span class="setting-row-label" id="settingsAccountLabel">Guest mode</span>
+            <span class="setting-row-sub" id="settingsAccountSub">Chats saved locally in this browser</span>
           </div>
-          <button id="signInFromSettingsBtn" class="setting-mini-btn primary" type="button" data-i18n="signIn">Sign in</button>
+          <button id="signInFromSettingsBtn" class="setting-mini-btn primary" type="button">Sign in</button>
         </div>
-        <button id="logoutBtn" class="modal-btn danger" type="button" style="display:none;margin-top:10px;" data-i18n="signOut">Sign out</button>
+        <button id="logoutBtn" class="modal-btn danger" type="button" style="display:none;margin-top:10px;">Sign out</button>
       </div>
       <div class="setting-group">
-        <h4 data-i18n="rewards">Rewards</h4>
+        <h4>Rewards</h4>
         <div class="setting-row">
           <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="shareEarn">Share &amp; earn</span>
-            <span class="setting-row-sub" data-i18n="shareSub">Get 50k tokens + Pro/Ultra/Eclipse free for 7 days</span>
+            <span class="setting-row-label">Share &amp; earn</span>
+            <span class="setting-row-sub">Get 50k tokens + Pro/Ultra/Eclipse free for 7 days</span>
           </div>
-          <button id="shareFromSettingsBtn" class="setting-mini-btn primary" type="button"><i class="ri-share-forward-2-line"></i> <span data-i18n="share">Share</span></button>
+          <button id="shareFromSettingsBtn" class="setting-mini-btn primary" type="button"><i class="ri-share-forward-2-line"></i> <span>Share</span></button>
         </div>
       </div>
       <div class="setting-group">
-        <h4 data-i18n="behavior">Behavior</h4>
+        <h4>Behavior</h4>
         <div class="setting-row">
-          <div class="setting-row-info"><span class="setting-row-label" data-i18n="autoScroll">Auto-scroll</span><span class="setting-row-sub" data-i18n="autoScrollSub">Follow new messages</span></div>
+          <div class="setting-row-info"><span class="setting-row-label">Auto-scroll</span><span class="setting-row-sub">Follow new messages</span></div>
           <label class="switch"><input type="checkbox" id="autoScrollToggle" checked><span class="switch-slider"></span></label>
         </div>
         <div class="setting-row">
-          <div class="setting-row-info"><span class="setting-row-label" data-i18n="enterSend">Send with Enter</span><span class="setting-row-sub" data-i18n="enterSendSub">Use Shift+Enter for new line</span></div>
+          <div class="setting-row-info"><span class="setting-row-label">Send with Enter</span><span class="setting-row-sub">Use Shift+Enter for new line</span></div>
           <label class="switch"><input type="checkbox" id="enterSendToggle" checked><span class="switch-slider"></span></label>
         </div>
         <div class="setting-row">
-          <div class="setting-row-info"><span class="setting-row-label" data-i18n="vision">Vision for images</span><span class="setting-row-sub" data-i18n="visionSub">Send images to AI (base64)</span></div>
+          <div class="setting-row-info"><span class="setting-row-label">Vision for images</span><span class="setting-row-sub">Send images to AI (base64)</span></div>
           <label class="switch"><input type="checkbox" id="visionToggle" checked><span class="switch-slider"></span></label>
         </div>
         <div class="setting-row">
-          <div class="setting-row-info"><span class="setting-row-label" data-i18n="compact">Compact mode</span><span class="setting-row-sub" data-i18n="compactSub">Tighter spacing</span></div>
+          <div class="setting-row-info"><span class="setting-row-label">Compact mode</span><span class="setting-row-sub">Tighter spacing</span></div>
           <label class="switch"><input type="checkbox" id="compactToggle"><span class="switch-slider"></span></label>
         </div>
       </div>
@@ -366,7 +367,7 @@
 
     <div class="settings-pane" data-pane="appearance">
       <div class="setting-group">
-        <h4 data-i18n="mode">Mode</h4>
+        <h4>Mode</h4>
         <div class="segmented" id="modeSegmented">
           <button class="seg-btn" type="button" data-mode="light">Light</button>
           <button class="seg-btn" type="button" data-mode="dark">Dark</button>
@@ -374,7 +375,7 @@
         </div>
       </div>
       <div class="setting-group">
-        <h4 data-i18n="accent">Accent color</h4>
+        <h4>Accent color</h4>
         <div class="swatch-grid" id="accentSwatches">
           <button class="swatch" type="button" data-theme="default" style="--sw:#d97757"></button>
           <button class="swatch" type="button" data-theme="blue" style="--sw:#4d6bfe"></button>
@@ -385,7 +386,7 @@
         </div>
       </div>
       <div class="setting-group">
-        <h4 data-i18n="fontSize">Font size</h4>
+        <h4>Font size</h4>
         <div class="segmented" id="fontSizeSegmented">
           <button class="seg-btn" type="button" data-fontsize="sm">Small</button>
           <button class="seg-btn" type="button" data-fontsize="md">Medium</button>
@@ -393,7 +394,7 @@
         </div>
       </div>
       <div class="setting-group">
-        <h4 data-i18n="animations">Animations</h4>
+        <h4>Animations</h4>
         <div class="setting-row">
           <div class="setting-row-info"><span class="setting-row-label">Reduce motion</span><span class="setting-row-sub">Minimize animations</span></div>
           <label class="switch"><input type="checkbox" id="reduceMotionToggle"><span class="switch-slider"></span></label>
@@ -403,8 +404,8 @@
 
     <div class="settings-pane" data-pane="language">
       <div class="setting-group">
-        <h4 data-i18n="interfaceLanguage">Interface language</h4>
-        <p class="setting-help">Powered by MyMemory API — free, no key. English uses no API calls. Other languages may take a few seconds.</p>
+        <h4>Interface language</h4>
+        <p class="setting-help">English uses no API calls. Other languages use the free MyMemory API.</p>
         <select id="uiLanguageSelect" class="modal-select">
           <option value="en">English</option>
           <option value="fa">فارسی — Farsi</option>
@@ -436,7 +437,7 @@
         <div id="translateStatus" class="translate-status"></div>
       </div>
       <div class="setting-group">
-        <h4 data-i18n="responseLanguage">Preferred response language</h4>
+        <h4>Preferred response language</h4>
         <select id="languageSelect" class="modal-select">
           <option value="auto">Auto-detect</option>
           <option value="en">English</option>
@@ -455,13 +456,13 @@
 
     <div class="settings-pane" data-pane="data">
       <div class="setting-group">
-        <h4 data-i18n="chats">Chats</h4>
-        <button id="exportChatsBtn" class="modal-btn" type="button"><i class="ri-download-2-line"></i> <span data-i18n="exportChats">Export all chats (JSON)</span></button>
-        <button id="clearChatsBtn" class="modal-btn danger" type="button"><i class="ri-delete-bin-6-line"></i> <span data-i18n="clearChats">Clear all chats</span></button>
+        <h4>Chats</h4>
+        <button id="exportChatsBtn" class="modal-btn" type="button"><i class="ri-download-2-line"></i> <span>Export all chats (JSON)</span></button>
+        <button id="clearChatsBtn" class="modal-btn danger" type="button"><i class="ri-delete-bin-6-line"></i> <span>Clear all chats</span></button>
       </div>
       <div class="setting-group">
-        <h4 data-i18n="translationCache">Translation cache</h4>
-        <button id="clearI18nCacheBtn" class="modal-btn" type="button"><i class="ri-eraser-line"></i> <span data-i18n="clearI18nCache">Clear translation cache</span></button>
+        <h4>Translation cache</h4>
+        <button id="clearI18nCacheBtn" class="modal-btn" type="button"><i class="ri-eraser-line"></i> <span>Clear translation cache</span></button>
       </div>
     </div>
   </div>
@@ -471,8 +472,8 @@
 <div id="plansModal" class="modal-overlay">
   <div class="modal modal-wide">
     <button class="icon-btn modal-close" type="button" data-close="plansModal"><i class="ri-close-line"></i></button>
-    <h2 class="modal-title" data-i18n="plans">Plans</h2>
-    <p class="modal-sub" data-i18n="plansSub">Luna and Gen are free. Share to unlock Pro, Ultra and Eclipse for 7 days.</p>
+    <h2 class="modal-title">Plans</h2>
+    <p class="modal-sub">Luna and Gen are free. Share to unlock Pro, Ultra and Eclipse for 7 days.</p>
     <div id="plansGrid" class="plans-grid"></div>
   </div>
 </div>
@@ -481,8 +482,8 @@
 <div id="imageModal" class="modal-overlay">
   <div class="modal">
     <button class="icon-btn modal-close" type="button" data-close="imageModal"><i class="ri-close-line"></i></button>
-    <h2 class="modal-title" data-i18n="lumenalTitle">Lumenal 1.0</h2>
-    <p class="modal-sub" data-i18n="lumenalSub">Strong image generation.</p>
+    <h2 class="modal-title">Lumenal 1.0</h2>
+    <p class="modal-sub">Strong image generation.</p>
     <div class="image-studio">
       <textarea id="imagePrompt" class="modal-textarea" rows="3" placeholder="Describe an image…"></textarea>
       <button id="generateImageBtn" class="modal-btn primary" type="button"><i class="ri-image-add-line"></i> <span>Generate</span></button>
@@ -495,7 +496,7 @@
 <div id="supportModal" class="modal-overlay">
   <div class="modal">
     <button class="icon-btn modal-close" type="button" data-close="supportModal"><i class="ri-close-line"></i></button>
-    <h2 class="modal-title" data-i18n="supportTitle">Contact Support</h2>
+    <h2 class="modal-title">Contact Support</h2>
     <p class="modal-sub">Send us a message. We usually reply within 24 hours.</p>
     <div class="support-form">
       <label class="support-label">Category</label>
