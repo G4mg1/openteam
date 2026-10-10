@@ -203,6 +203,11 @@
   function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
   function setToken(tk) { try { tk ? localStorage.setItem(TOKEN_KEY, tk) : localStorage.removeItem(TOKEN_KEY); } catch {} }
 
+  // ⚠ Only REAL API keys (mxk_live_...) are sent as Bearer tokens.
+  //    Session logins rely on the HttpOnly cookie, which the browser
+  //    sends automatically because of credentials: 'same-origin'.
+  function isApiKey(tk) { return typeof tk === 'string' && /^mxk_live_/.test(tk); }
+
   function getLocalUser() {
     const u = safeGet(LOCAL_USER_KEY, null);
     if (u && u.email && u.name && u.signedIn) return u;
@@ -226,7 +231,9 @@
   }
   function authHeaders(extra) {
     const h = { 'Content-Type': 'application/json', ...(extra || {}) };
-    const tk = getToken(); if (tk) h.Authorization = 'Bearer ' + tk;
+    const tk = getToken();
+    // Only attach Authorization for real API keys. Session cookies go automatically.
+    if (isApiKey(tk)) h.Authorization = 'Bearer ' + tk;
     Object.assign(h, bonusProofHeaders());
     if (__prefs.responseLanguage && __prefs.responseLanguage !== 'auto') h['X-Mirox-Lang'] = __prefs.responseLanguage;
     return h;
@@ -1170,9 +1177,7 @@
   function openModelPicker() { $('#modelPicker')?.classList.add('open'); $('#modelPickerMenu')?.classList.add('open'); renderModelPicker(); }
   function closeModelPicker() { $('#modelPicker')?.classList.remove('open'); $('#modelPickerMenu')?.classList.remove('open'); }
 
-  /* ═══════════════════════════════════════════════════════════
-     ACCOUNT UI — the fix
-     ═══════════════════════════════════════════════════════════ */
+  /* ═══════════ ACCOUNT UI ═══════════ */
   function updateAccountUI() {
     const signedIn = !!__user;
 
@@ -1243,9 +1248,7 @@
     __model = getModelsList()[0].id; renderModelPicker();
   }
 
-  /* ═══════════════════════════════════════════════════════════
-     LOGIN — local-first, UI updates immediately
-     ═══════════════════════════════════════════════════════════ */
+  /* ═══════════ LOGIN ═══════════ */
   function setLoginError(msg, kind) {
     const el = $('#loginError');
     if (!el) return;
@@ -1267,26 +1270,25 @@
 
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line spin"></i> Signing in…'; }
 
-    // Step 1: local sign-in (always succeeds, updates UI immediately)
+    // Step 1 — local sign-in, updates UI immediately
     setLocalUser({ name, email, signedIn: true, ts: Date.now() });
     __user = { name, email, tier: 'free', local: true };
     __tier = 'free';
     updateAccountUI();
 
-    // Step 2: try server quietly (best-effort, never blocks)
+    // Step 2 — try the server (best-effort). Do NOT save the returned token —
+    //          it's a session-cookie value, not an API key. The server already
+    //          set the HttpOnly cookie automatically, and credentials:
+    //          'same-origin' will send it on future requests.
     try {
-      const r = await netFetch('/api/auth/simple-login', {
+      await netFetch('/api/auth/simple-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email }),
       }, 10000);
-      if (r.ok) {
-        const data = await r.json().catch(() => null);
-        if (data && data.ok && data.token) setToken(data.token);
-      }
-    } catch { /* ignore */ }
+    } catch { /* ignore — local sign-in stands */ }
 
-    // Step 3: done
+    // Step 3 — done
     setLoginError('Signed in!', 'ok');
     if (btn) btn.innerHTML = '<i class="ri-check-line"></i> Welcome';
     setTimeout(async () => {
@@ -1300,7 +1302,7 @@
 
   async function doLogout() {
     try { await jsonOr('/api/logout', { method: 'POST' }, null, 4000); } catch {}
-    setToken('');
+    setToken('');                 // clear any old mxk_live_ token
     setLocalUser(null);
     __user = null;
     __tier = 'free';
@@ -1827,6 +1829,14 @@
 
   async function init() {
     try {
+      // ── Cleanup: if a stale non-API-key value is in mirox_token, drop it.
+      //    Older versions saved the session cookie there by mistake; that's
+      //    what caused "Invalid API key".
+      try {
+        const t = localStorage.getItem('mirox_token');
+        if (t && !isApiKey(t)) localStorage.removeItem('mirox_token');
+      } catch {}
+
       loadPrefs();
       loadI18nCache();
       applyAppearanceFromPrefs();
