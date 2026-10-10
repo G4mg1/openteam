@@ -29,15 +29,14 @@
     { id: 'mirox-eclipse-2.0', label: 'Eclipse', tier: 'ultimate', tagline: 'Most powerful', icon: 'ri-sun-fill' },
   ];
   const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
-
-  const LS_KEY = 'miroxai_conversations_v34';
+  const LS_KEY = 'miroxai_conversations_v35';
   const TOKEN_KEY = 'mirox_token';
   const GUEST_KEY = 'miroxai_guest_id_v1';
-  const APPEARANCE_KEY = 'miroxai_appearance_v34';
-  const SHARE_KEY = 'miroxai_share_v5';
-  const BONUS_KEY = 'miroxai_bonus_v5';
-  const PREFS_KEY = 'miroxai_prefs_v1';
-  const MCP_KEY = 'miroxai_mcp_v1';
+  const APPEARANCE_KEY = 'miroxai_appearance_v35';
+  const SHARE_KEY = 'miroxai_share_v6';
+  const BONUS_KEY = 'miroxai_bonus_v6';
+  const PREFS_KEY = 'miroxai_prefs_v2';
+  const MCP_KEY = 'miroxai_mcp_v2';
   const PASTE_ATTACH_THRESHOLD = 1024;
   const NET_TIMEOUT_MS = 15000;
   const STREAM_TIMEOUT_MS = 120000;
@@ -45,13 +44,13 @@
   const BONUS_TOKENS = 50000;
   const BONUS_MS = 7 * 24 * 60 * 60 * 1000;
   const BONUS_CHECK_MS = 30 * 1000;
-  const MAX_IMAGE_DIM = 1280;
+  const MAX_IMAGE_DIM = 1600;
 
   let __config = null, __user = null, __tier = 'free', __model = 'mirox-luna-1.2';
   let currentConversationId = null, isReplying = false;
   let continuationBusy = false, streamRenderAt = 0, userIsAtBottom = true;
   let autoScrollEnabled = true;
-  let __conversations = [], pendingFiles = [], activeStreamController = null, __usage = null;
+  let __conversations = [], pendingFiles = [], activeStreamController = null;
   let forceSearchNext = false, __historyQuery = '';
   let __ivDataUrl = '';
   let __shareState = { claimed: false, claimedAt: 0, dismissedAt: 0 };
@@ -59,6 +58,7 @@
   let __lastBonusActive = false;
   let __prefs = {};
   let __mcpServers = [];
+  let __lastBonusWarnDay = null;
 
   const uid = () => 'c_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
   const escapeHtml = (s) => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
@@ -84,7 +84,7 @@
     return id;
   }
 
-  /* ═══════════ AUTH + BONUS PROOF HEADERS ═══════════ */
+  /* ═══════════ HEADERS ═══════════ */
   function bonusProofHeaders() {
     const b = loadBonusRaw();
     if (!b || !isBonusValid(b)) return {};
@@ -99,22 +99,17 @@
     const h = { 'Content-Type': 'application/json', ...(extra || {}) };
     const t = getToken();
     if (t) h.Authorization = 'Bearer ' + t;
-    // Always attach bonus proof (server can ignore if user is authenticated)
     Object.assign(h, bonusProofHeaders());
-    // Attach language pref
-    if (__prefs.responseLanguage && __prefs.responseLanguage !== 'auto') {
-      h['X-Mirox-Lang'] = __prefs.responseLanguage;
-    }
+    if (__prefs.responseLanguage && __prefs.responseLanguage !== 'auto') h['X-Mirox-Lang'] = __prefs.responseLanguage;
     if (__prefs.translateComments) h['X-Mirox-Translate-Comments'] = '1';
+    if (__prefs.persona) h['X-Mirox-Persona'] = encodeURIComponent(__prefs.persona.slice(0, 500));
     return h;
   }
   async function netFetch(url, opts = {}, ms = NET_TIMEOUT_MS) {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), ms);
-    try {
-      if (opts.signal) opts.signal.addEventListener('abort', () => ctrl.abort());
-      return await fetch(url, { ...opts, signal: ctrl.signal, credentials: 'same-origin', cache: 'no-store' });
-    } finally { clearTimeout(timer); }
+    try { return await fetch(url, { ...opts, signal: ctrl.signal, credentials: 'same-origin', cache: 'no-store' }); }
+    finally { clearTimeout(timer); }
   }
   async function jsonOr(url, opts = {}, fallback = null, ms = NET_TIMEOUT_MS) {
     try {
@@ -126,19 +121,14 @@
     } catch { return fallback; }
   }
 
-  /* ═══════════ BONUS SYSTEM ═══════════ */
-  function loadBonusRaw() {
-    const b = safeGet(BONUS_KEY, null);
-    if (!b || typeof b !== 'object') return null;
-    return b;
-  }
+  /* ═══════════ BONUS ═══════════ */
+  function loadBonusRaw() { const b = safeGet(BONUS_KEY, null); if (!b || typeof b !== 'object') return null; return b; }
   function saveBonusRaw(b) { b ? safeSet(BONUS_KEY, b) : safeRemove(BONUS_KEY); }
   function isBonusValid(b) {
     if (!b) return false;
     const tokens = parseInt(b.tokens, 10) || 0;
     const expiresAt = parseInt(b.expiresAt, 10) || 0;
-    if (tokens <= 0) return false;
-    if (expiresAt <= 0) return false;
+    if (tokens <= 0 || expiresAt <= 0) return false;
     return Date.now() < expiresAt;
   }
   function getActiveBonus() {
@@ -151,11 +141,7 @@
     }
     return b.tokens;
   }
-  function getBonusExpiryMs() {
-    const b = loadBonusRaw();
-    if (!isBonusValid(b)) return 0;
-    return b.expiresAt - Date.now();
-  }
+  function getBonusExpiryMs() { const b = loadBonusRaw(); if (!isBonusValid(b)) return 0; return b.expiresAt - Date.now(); }
   function isBonusActive() { return getActiveBonus() > 0; }
   function grantLocalBonus(tokens) {
     const prev = loadBonusRaw();
@@ -184,117 +170,267 @@
     return mins + 'm';
   }
 
-  /* ═══════════ PREFERENCES ═══════════ */
+  /* ═══════════ PREFS — with fully synced UI ═══════════ */
+  const DEFAULT_PREFS = {
+    autoScroll: true, enterSend: true, showThinking: true, vision: true, compact: false,
+    reduceMotion: false, fontSize: 'md', mode: 'light', theme: 'default',
+    responseLanguage: 'auto', uiLanguage: 'en', translateComments: false,
+    desktopNotify: false, sound: true, bonusReminder: true,
+    verboseLog: false, persona: '',
+    mcpEnabled: false,
+  };
   function loadPrefs() {
-    __prefs = safeGet(PREFS_KEY, {
-      autoScroll: true, enterSend: true, showThinking: true, compact: false,
-      reduceMotion: false, fontSize: 'md',
-      responseLanguage: 'auto', uiLanguage: 'en', translateComments: false,
-      desktopNotify: false, sound: true, bonusReminder: true,
-      verboseLog: false,
-      persona: '',
-    });
+    __prefs = Object.assign({}, DEFAULT_PREFS, safeGet(PREFS_KEY, {}));
+    // Legacy: also read appearance key for mode/theme
+    const app = safeGet(APPEARANCE_KEY, {});
+    if (app.mode) __prefs.mode = app.mode;
+    if (app.theme) __prefs.theme = app.theme;
   }
-  function savePrefs() { safeSet(PREFS_KEY, __prefs); }
+  function savePrefs() {
+    safeSet(PREFS_KEY, __prefs);
+    safeSet(APPEARANCE_KEY, { mode: __prefs.mode, theme: __prefs.theme });
+  }
+
   function applyPrefs() {
-    document.documentElement.setAttribute('data-fontsize', __prefs.fontSize || 'md');
-    document.documentElement.classList.toggle('reduce-motion', !!__prefs.reduceMotion);
-    document.documentElement.classList.toggle('compact-mode', !!__prefs.compact);
-    // Sync toggles
-    const setChk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = !!val; };
-    setChk('autoScrollToggle', __prefs.autoScroll);
-    setChk('enterSendToggle', __prefs.enterSend);
-    setChk('showThinkingToggle', __prefs.showThinking);
-    setChk('compactToggle', __prefs.compact);
-    setChk('reduceMotionToggle', __prefs.reduceMotion);
-    setChk('desktopNotifyToggle', __prefs.desktopNotify);
-    setChk('soundToggle', __prefs.sound);
-    setChk('bonusReminderToggle', __prefs.bonusReminder);
-    setChk('verboseLogToggle', __prefs.verboseLog);
-    setChk('translateCommentsToggle', __prefs.translateComments);
+    const root = document.documentElement;
+    // Font size
+    root.setAttribute('data-fontsize', __prefs.fontSize || 'md');
+    // Reduce motion + compact
+    root.classList.toggle('reduce-motion', !!__prefs.reduceMotion);
+    root.classList.toggle('compact-mode', !!__prefs.compact);
+    // Auto scroll
+    autoScrollEnabled = __prefs.autoScroll !== false;
+
+    // ── Sync ALL checkbox toggles ──
+    const syncChk = (id, val) => { const el = document.getElementById(id); if (el && el.checked !== !!val) el.checked = !!val; };
+    syncChk('autoScrollToggle', __prefs.autoScroll);
+    syncChk('enterSendToggle', __prefs.enterSend);
+    syncChk('showThinkingToggle', __prefs.showThinking);
+    syncChk('visionToggle', __prefs.vision);
+    syncChk('compactToggle', __prefs.compact);
+    syncChk('reduceMotionToggle', __prefs.reduceMotion);
+    syncChk('desktopNotifyToggle', __prefs.desktopNotify);
+    syncChk('soundToggle', __prefs.sound);
+    syncChk('bonusReminderToggle', __prefs.bonusReminder);
+    syncChk('verboseLogToggle', __prefs.verboseLog);
+    syncChk('translateCommentsToggle', __prefs.translateComments);
+    syncChk('mcpEnableToggle', __prefs.mcpEnabled);
+
+    // ── Sync SELECT dropdowns ──
     const langSel = document.getElementById('languageSelect');
-    if (langSel) langSel.value = __prefs.responseLanguage || 'auto';
+    if (langSel) {
+      const want = __prefs.responseLanguage || 'auto';
+      if (langSel.value !== want) langSel.value = want;
+    }
     const uiSel = document.getElementById('uiLanguageSelect');
-    if (uiSel) uiSel.value = __prefs.uiLanguage || 'en';
+    if (uiSel) {
+      const want = __prefs.uiLanguage || 'en';
+      if (uiSel.value !== want) uiSel.value = want;
+    }
+
+    // ── Sync segmented mode buttons ──
+    const mode = __prefs.mode || 'light';
+    $$('#modeSegmented .seg-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
+
+    // ── Sync font size segmented buttons ──
+    const fs = __prefs.fontSize || 'md';
+    $$('#fontSizeSegmented .seg-btn').forEach((b) => b.classList.toggle('active', b.dataset.fontsize === fs));
+
+    // ── Sync accent swatches ──
+    const theme = __prefs.theme || 'default';
+    $$('#accentSwatches .swatch').forEach((b) => b.classList.toggle('active', b.dataset.theme === theme));
+
+    // ── Persona textarea ──
     const pInp = document.getElementById('personaInput');
-    if (pInp && __prefs.persona) pInp.value = __prefs.persona;
+    if (pInp) pInp.value = __prefs.persona || '';
+
+    // ── Vision indicator in composer ──
+    const attachBtn = document.getElementById('attachBtn');
+    if (attachBtn) attachBtn.title = __prefs.vision ? 'Attach files (vision enabled)' : 'Attach files';
   }
 
-  /* ═══════════ MCP SERVERS ═══════════ */
-  function loadMcp() {
-    __mcpServers = safeGet(MCP_KEY, []);
-    if (!Array.isArray(__mcpServers)) __mcpServers = [];
-    const en = safeGet(MCP_KEY + '_enabled', false);
-    const t = document.getElementById('mcpEnableToggle');
-    if (t) t.checked = !!en;
+  function applyAppearanceFromPrefs() {
+    const root = document.documentElement;
+    let mode = __prefs.mode || 'light';
+    if (mode === 'auto') mode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    root.setAttribute('data-mode', mode);
+    root.setAttribute('data-theme', __prefs.theme || 'default');
   }
-  function saveMcp() { safeSet(MCP_KEY, __mcpServers); }
-  function renderMcpList() {
-    const wrap = document.getElementById('mcpServerList');
-    if (!wrap) return;
-    if (!__mcpServers.length) { wrap.innerHTML = '<div class="mcp-empty">No MCP servers configured.</div>'; return; }
-    wrap.innerHTML = __mcpServers.map((s, i) => `
-      <div class="mcp-row" data-idx="${i}">
-        <div class="mcp-row-icon"><i class="ri-server-line"></i></div>
-        <div class="mcp-row-info">
-          <div class="mcp-row-name">${escapeHtml(s.name)}</div>
-          <div class="mcp-row-url">${escapeHtml(s.url)}</div>
-        </div>
-        <div class="mcp-row-actions">
-          <button class="icon-btn mcp-test" data-idx="${i}" title="Test"><i class="ri-flashlight-line"></i></button>
-          <button class="icon-btn mcp-remove" data-idx="${i}" title="Remove"><i class="ri-delete-bin-line"></i></button>
-        </div>
-      </div>`).join('');
-    wrap.querySelectorAll('.mcp-remove').forEach((b) => {
-      b.onclick = () => {
-        const i = parseInt(b.dataset.idx, 10);
-        __mcpServers.splice(i, 1);
-        saveMcp(); renderMcpList();
-        toast('Server removed');
+
+  /* ═══════════ SOUND ═══════════ */
+  let __audioCtx = null;
+  function playChime() {
+    if (!__prefs.sound) return;
+    try {
+      if (!__audioCtx) __audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = __audioCtx;
+      if (ctx.state === 'suspended') ctx.resume();
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, now);
+      osc.frequency.exponentialRampToValueAtTime(660, now + 0.15);
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.15, now + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+      osc.start(now); osc.stop(now + 0.42);
+    } catch {}
+  }
+
+  /* ═══════════ IMAGE → base64 with vision support ═══════════ */
+  function imageToBase64DataURL(file) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const rawDataUrl = reader.result;
+        const img = new Image();
+        img.onload = () => {
+          let w = img.naturalWidth, h = img.naturalHeight;
+          if (w > MAX_IMAGE_DIM || h > MAX_IMAGE_DIM) {
+            const ratio = Math.min(MAX_IMAGE_DIM / w, MAX_IMAGE_DIM / h);
+            w = Math.round(w * ratio); h = Math.round(h * ratio);
+          }
+          const c = document.createElement('canvas');
+          c.width = w; c.height = h;
+          c.getContext('2d').drawImage(img, 0, 0, w, h);
+          let outUrl;
+          try {
+            // Preserve transparency for PNG / WebP; JPEG for photos
+            const srcMime = (file.type || 'image/jpeg').toLowerCase();
+            if (srcMime === 'image/png' || srcMime === 'image/webp' || srcMime === 'image/gif') {
+              outUrl = c.toDataURL('image/png');
+            } else {
+              outUrl = c.toDataURL('image/jpeg', 0.88);
+            }
+          } catch { outUrl = rawDataUrl; }
+          const base64 = String(outUrl).split(',')[1] || '';
+          const mime = (String(outUrl).split(';')[0].split(':')[1]) || file.type || 'image/jpeg';
+          resolve({
+            type: 'image',
+            name: file.name,
+            size: file.size,
+            mime,
+            dataUrl: outUrl,
+            base64,
+            width: w,
+            height: h,
+            originalWidth: img.naturalWidth,
+            originalHeight: img.naturalHeight,
+            vision: true,
+          });
+        };
+        img.onerror = () => resolve({
+          type: 'image', name: file.name, size: file.size,
+          mime: file.type || 'image/jpeg', dataUrl: rawDataUrl,
+          base64: String(rawDataUrl).split(',')[1] || '',
+          width: null, height: null, vision: true,
+        });
+        img.src = rawDataUrl;
       };
-    });
-    wrap.querySelectorAll('.mcp-test').forEach((b) => {
-      b.onclick = async () => {
-        const i = parseInt(b.dataset.idx, 10);
-        const s = __mcpServers[i];
-        if (!s) return;
-        toast(`Testing ${s.name}…`);
-        try {
-          const r = await netFetch(s.url, { method: 'GET', headers: s.key ? { Authorization: 'Bearer ' + s.key } : {} }, 5000);
-          toast(r.ok ? `✓ ${s.name} is reachable` : `✗ ${s.name} returned ${r.status}`);
-        } catch (e) { toast(`✗ ${s.name} unreachable`); }
-      };
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(file);
     });
   }
 
-  /* ═══════════ MODEL ACCESS ═══════════ */
-  function canUseModel(tier) {
-    if (__tier === 'free' && isBonusActive()) return true;
-    if (tier === 'free') return true;
-    if (__tier === 'ultimate') return true;
-    if (__tier === 'pro' && tier === 'pro') return true;
-    return false;
+  function svgToVisionData(file) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const svgText = String(reader.result);
+        let base64 = '';
+        try { base64 = btoa(unescape(encodeURIComponent(svgText))); } catch {}
+        const dataUrl = 'data:image/svg+xml;base64,' + base64;
+        // Also render SVG to a PNG snapshot so vision models can see it
+        const img = new Image();
+        const blob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
+        const objUrl = URL.createObjectURL(blob);
+        img.onload = () => {
+          let w = img.naturalWidth || 512, h = img.naturalHeight || 512;
+          if (w > MAX_IMAGE_DIM || h > MAX_IMAGE_DIM) {
+            const ratio = Math.min(MAX_IMAGE_DIM / w, MAX_IMAGE_DIM / h);
+            w = Math.round(w * ratio); h = Math.round(h * ratio);
+          }
+          let pngDataUrl = null;
+          try {
+            const c = document.createElement('canvas');
+            c.width = w; c.height = h;
+            c.getContext('2d').drawImage(img, 0, 0, w, h);
+            pngDataUrl = c.toDataURL('image/png');
+          } catch {}
+          URL.revokeObjectURL(objUrl);
+          resolve({
+            type: 'image',
+            name: file.name,
+            size: file.size,
+            mime: 'image/svg+xml',
+            dataUrl,
+            base64,
+            svgText,
+            pngDataUrl,
+            pngBase64: pngDataUrl ? pngDataUrl.split(',')[1] : '',
+            width: w, height: h,
+            vision: true,
+            isSvg: true,
+          });
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(objUrl);
+          resolve({
+            type: 'image', name: file.name, size: file.size,
+            mime: 'image/svg+xml', dataUrl, base64, svgText,
+            width: null, height: null, vision: true, isSvg: true,
+          });
+        };
+        img.src = objUrl;
+      };
+      reader.onerror = () => resolve(null);
+      reader.readAsText(file);
+    });
   }
-  function modelAccessReason(tier) {
-    if (__tier === 'free' && isBonusActive() && tier !== 'free') return 'bonus';
-    if (tier === 'free') return 'free';
-    if (__tier === 'ultimate') return 'tier';
-    if (__tier === 'pro' && tier === 'pro') return 'tier';
-    return 'locked';
+
+  function handleFiles(fileList) {
+    if (!fileList || !fileList.length) return;
+    const arr = [];
+    for (const f of Array.from(fileList)) {
+      if (hasAttachment(f.name, f.size)) { toast('Already added', 1500); continue; }
+      arr.push(f);
+    }
+    if (!arr.length) return;
+    let done = 0;
+    const newFiles = [];
+    const finish = () => {
+      newFiles.sort((a, b) => (a.order || 0) - (b.order || 0));
+      for (const nf of newFiles) if (!hasAttachment(nf.name, nf.size)) pendingFiles.push(nf);
+      updatePreview(); updateSendButtonState();
+    };
+    arr.forEach((f, idx) => {
+      const isSvg = f.type === 'image/svg+xml' || /\.svg$/i.test(f.name);
+      const isImg = !isSvg && ((f.type || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(f.name));
+      const one = () => { done++; if (done === arr.length) finish(); };
+
+      if (isSvg) {
+        svgToVisionData(f).then((data) => { if (data) newFiles.push({ ...data, order: idx }); one(); }).catch(one);
+      } else if (isImg) {
+        imageToBase64DataURL(f).then((data) => { if (data) newFiles.push({ ...data, order: idx }); one(); }).catch(one);
+      } else {
+        const r = new FileReader();
+        r.onload = () => { newFiles.push({ name: f.name, size: f.size, type: 'text', mime: f.type || 'text/plain', content: String(r.result).slice(0, 80000), order: idx }); one(); };
+        r.onerror = one;
+        r.readAsText(f);
+      }
+    });
   }
-  function tierLabel(tier) {
-    if (tier === 'free') return 'FREE';
-    if (tier === 'pro') return 'PRO';
-    if (tier === 'ultimate') return 'ULT';
-    return tier.toUpperCase();
-  }
+
+  function hasAttachment(name, size) { return pendingFiles.some((f) => f.name === name && f.size === size); }
 
   /* ═══════════ CONFETTI ═══════════ */
   function launchConfetti(opts) {
     if (__prefs.reduceMotion) return;
     const o = opts || {};
     const duration = o.duration || 4200;
-    const count = o.count || 200;
+    const count = o.count || 220;
     const canvas = document.createElement('canvas');
     canvas.className = 'confetti-canvas';
     document.body.appendChild(canvas);
@@ -398,7 +534,7 @@
     return 'Thinking';
   }
 
-  /* ═══════════ Thinking panel ═══════════ */
+  /* ═══════════ THINKING PANEL ═══════════ */
   function createThinkPanel(label, steps, headline) {
     const el = document.createElement('div');
     el.className = 'think-wrap';
@@ -449,7 +585,7 @@
     };
   }
 
-  /* ═══════════ Conversations ═══════════ */
+  /* ═══════════ CONVERSATIONS ═══════════ */
   function currentConvo() { return __conversations.find((c) => c.id === currentConversationId) || null; }
   function saveChats() {
     const slim = __conversations.map((c) => ({
@@ -457,7 +593,12 @@
       messages: (c.messages || []).map((m) => ({
         id: m.id, role: m.role, content: m.content, ts: m.ts,
         imageKey: m.imageKey || null,
-        files: (m.files || []).map((f) => ({ name: f.name, size: f.size, type: f.type })),
+        files: (m.files || []).map((f) => ({
+          name: f.name, size: f.size, type: f.type, mime: f.mime,
+          // Only keep the small ones inline; big images are on IndexedDB in the future
+          dataUrl: (f.type === 'image' && f.dataUrl && f.dataUrl.length < 200000) ? f.dataUrl : undefined,
+          width: f.width, height: f.height,
+        })),
       })),
     }));
     safeSet(LS_KEY, slim);
@@ -536,6 +677,12 @@
       badge.innerHTML = `<i class="ri-vip-crown-fill"></i>+${formatK(bonus)} · ${formatBonusRemaining()}`;
       el.appendChild(badge);
     }
+    // Update share row subtitle with remaining
+    const sub = $('#shareRowSub');
+    if (sub) {
+      if (hasBonus) sub.textContent = `Bonus active — ${formatBonusRemaining()} left · tap to re-share`;
+      else sub.textContent = 'Get 50k tokens + Pro/Ultra/Eclipse free for 7 days';
+    }
   }
   function atChatBottom(c = $('#chatMessages')) { return !c || c.scrollHeight - c.scrollTop - c.clientHeight < 100; }
   function scrollToBottom(force = false) {
@@ -559,7 +706,7 @@
   }
   function fileIconHTML() { return '<span class="file-glyph" aria-hidden="true"><i class="ri-file-text-line"></i></span>'; }
 
-  /* ═══════════ Language meta ═══════════ */
+  /* ═══════════ LANGUAGES ═══════════ */
   const LANG_META = {
     lua: { label: 'LUA', icon: 'devicon-lua-plain colored', hljs: 'lua' },
     python: { label: 'PY', icon: 'devicon-python-plain colored', hljs: 'python' },
@@ -585,6 +732,7 @@
     yml: { label: 'YAML', icon: 'ri-file-list-2-line', hljs: 'yaml' },
     markdown: { label: 'MD', icon: 'ri-markdown-line', hljs: 'markdown' },
     md: { label: 'MD', icon: 'ri-markdown-line', hljs: 'markdown' },
+    svg: { label: 'SVG', icon: 'devicon-html5-plain colored', hljs: 'xml' },
   };
   function langMeta(lang) {
     const key = String(lang || '').toLowerCase().trim();
@@ -614,7 +762,7 @@
     </div>`;
   }
 
-  /* ═══════════ Markdown ═══════════ */
+  /* ═══════════ MARKDOWN ═══════════ */
   function renderMarkdown(rawText) {
     if (!rawText) return '';
     const src = String(rawText);
@@ -699,7 +847,7 @@
     });
   }
 
-  /* ═══════════ Message DOM ═══════════ */
+  /* ═══════════ MESSAGE DOM ═══════════ */
   function addMessageToDOM(role, content, ts, msgId, files, image) {
     const container = $('#chatMessages'); if (!container) return null;
     container.querySelector('.welcome-screen')?.remove();
@@ -711,8 +859,13 @@
     if (role === 'user' && files && files.length) {
       inner += '<div class="attach-row">';
       for (const f of files) {
-        if (f.type === 'image' && f.dataUrl) inner += `<div class="attach-chip"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name || '')}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`;
-        else inner += `<div class="attach-chip">${fileIconHTML()}${escapeHtml(f.name || 'file')}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`;
+        if (f.type === 'image' && f.dataUrl) {
+          const visionTag = f.vision ? '<span class="attach-vision" title="Sent to AI"><i class="ri-eye-line"></i> vision</span>' : '';
+          const dims = f.width && f.height ? `<span class="attach-size">${f.width}×${f.height}</span>` : '';
+          inner += `<div class="attach-chip attach-chip-image"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name || '')}${dims}${visionTag}</div>`;
+        } else {
+          inner += `<div class="attach-chip">${fileIconHTML()}${escapeHtml(f.name || 'file')}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`;
+        }
       }
       inner += '</div>';
     }
@@ -826,7 +979,7 @@
     }
   }
 
-  /* ═══════════ API — with bonus proof so premium models work for guests ═══════════ */
+  /* ═══════════ API — with vision content parts ═══════════ */
   async function sendToAPI(text, files, forceSearch, continuation = null) {
     const isContinuation = !!(continuation && continuation.continuation);
     const convoAtStart = currentConvo();
@@ -867,6 +1020,30 @@
       scrollToBottom(true);
     }
 
+    // ── Build image content parts for vision ──
+    const visionFiles = files.filter((f) => f.type === 'image' && f.dataUrl);
+    const imageParts = visionFiles.map((f) => {
+      // Prefer PNG snapshot (from SVG) or the original data URL
+      const url = f.pngDataUrl || f.dataUrl;
+      return { type: 'image_url', image_url: { url, detail: 'auto' } };
+    });
+    const contentParts = [];
+    if (text) contentParts.push({ type: 'text', text });
+    for (const p of imageParts) contentParts.push(p);
+    // If there's an SVG, also append its raw source so AI reads the code
+    for (const f of visionFiles) {
+      if (f.isSvg && f.svgText) {
+        contentParts.push({ type: 'text', text: `\n[Attached SVG source — "${f.name}"]:\n\`\`\`svg\n${f.svgText.slice(0, 30000)}\n\`\`\`` });
+      }
+    }
+
+    // Explain to the AI what it's about to see (helps models that lack vision)
+    const visionNote = visionFiles.length && __prefs.vision
+      ? `\n\n[The user attached ${visionFiles.length} image${visionFiles.length === 1 ? '' : 's'}: ${visionFiles.map((f) => `${f.name} (${f.width || '?'}×${f.height || '?'}, ${f.mime})`).join(', ')}. Analyze them.` 
+      : '';
+
+    if (__prefs.verboseLog) console.log('[Mirox] Request:', { text, model, files: files.length, vision: visionFiles.length });
+
     activeStreamController = new AbortController();
     let generatedImage = null, gotToken = !!isContinuation, limitHit = false;
     let streamComplete = false;
@@ -886,17 +1063,30 @@
 
     try {
       const reqBody = {
-        message: text, history, model, stream: true, files, search: !!forceSearch,
+        message: text + visionNote,
+        history, model, stream: true, search: !!forceSearch,
+        // files: metadata + base64 (large objects trimmed to avoid bloating payload)
+        files: files.map((f) => ({
+          name: f.name, size: f.size, type: f.type, mime: f.mime,
+          width: f.width, height: f.height,
+          dataUrl: f.dataUrl,
+          base64: f.base64 || null,
+          svgText: f.svgText || null,
+          pngDataUrl: f.pngDataUrl || null,
+          vision: !!f.vision,
+        })),
+        content_parts: contentParts.length ? contentParts : null,
         guest_id: getGuestId(),
         bonus_active: isBonusActive(),
         bonus_tokens: getActiveBonus(),
         bonus_expires: (loadBonusRaw() || {}).expiresAt || 0,
         mcp_servers: __mcpServers,
-        mcp_enabled: !!document.getElementById('mcpEnableToggle')?.checked,
+        mcp_enabled: !!__prefs.mcpEnabled,
         persona: __prefs.persona || '',
         language: __prefs.responseLanguage || 'auto',
+        vision_enabled: !!__prefs.vision && visionFiles.length > 0,
       };
-      if (__prefs.verboseLog) console.log('[Mirox] Request:', reqBody, authHeaders());
+
       const res = await fetch('/v1/chat/completions', {
         method: 'POST',
         headers: authHeaders(),
@@ -907,7 +1097,6 @@
       if (!res.ok) {
         let detail = `HTTP ${res.status}`;
         try { const d = await res.json(); detail = d.error?.message || d.error || d.message || detail; } catch {}
-        // Special handling: guest users with valid bonus should be allowed
         if ((res.status === 401 || res.status === 403) && isBonusActive()) {
           throw new Error('Bonus verified locally but server rejected guest access. Try refreshing or signing in — your 50k bonus is saved.');
         }
@@ -995,7 +1184,8 @@
       if (savedMsg && shouldShowContinue(full, convo, streamComplete)) {
         attachContinueButton(msgEl, bubble, savedMsg);
       }
-      if (__prefs.desktopNotify && document.hidden) {
+      playChime();
+      if (__prefs.desktopNotify && document.hidden && 'Notification' in window && Notification.permission === 'granted') {
         try { new Notification('Mirox replied', { body: 'Tap to view the answer', icon: '/logo.png' }); } catch {}
       }
     } catch (e) {
@@ -1031,75 +1221,26 @@
     updateSendButtonState();
   }
 
-  /* ═══════════ Files ═══════════ */
-  function hasAttachment(name, size) { return pendingFiles.some((f) => f.name === name && f.size === size); }
-  function readImageAsResizedDataUrl(file) {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = reader.result;
-        const img = new Image();
-        img.onload = () => {
-          let { width, height } = img;
-          if (width > MAX_IMAGE_DIM || height > MAX_IMAGE_DIM) {
-            const ratio = Math.min(MAX_IMAGE_DIM / width, MAX_IMAGE_DIM / height);
-            width = Math.round(width * ratio); height = Math.round(height * ratio);
-          }
-          const c = document.createElement('canvas');
-          c.width = width; c.height = height;
-          c.getContext('2d').drawImage(img, 0, 0, width, height);
-          try { resolve(c.toDataURL('image/jpeg', 0.85)); } catch { resolve(dataUrl); }
-        };
-        img.onerror = () => resolve(dataUrl);
-        img.src = dataUrl;
-      };
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(file);
-    });
-  }
-  function handleFiles(fileList) {
-    if (!fileList || !fileList.length) return;
-    const arr = [];
-    for (const f of Array.from(fileList)) {
-      if (hasAttachment(f.name, f.size)) { toast('Already added', 1500); continue; }
-      arr.push(f);
-    }
-    if (!arr.length) return;
-    let done = 0;
-    const newFiles = [];
-    const finish = () => {
-      newFiles.sort((a, b) => (a.order || 0) - (b.order || 0));
-      for (const nf of newFiles) if (!hasAttachment(nf.name, nf.size)) pendingFiles.push(nf);
-      updatePreview(); updateSendButtonState();
-    };
-    arr.forEach((f, idx) => {
-      const isImg = (f.type || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(f.name);
-      const one = () => { done++; if (done === arr.length) finish(); };
-      if (isImg) {
-        readImageAsResizedDataUrl(f).then((dataUrl) => { if (dataUrl) newFiles.push({ name: f.name, size: f.size, type: 'image', dataUrl, order: idx }); one(); }).catch(one);
-      } else {
-        const r = new FileReader();
-        r.onload = () => { newFiles.push({ name: f.name, size: f.size, type: 'text', content: String(r.result).slice(0, 60000), order: idx }); one(); };
-        r.onerror = one;
-        r.readAsText(f);
-      }
-    });
-  }
+  /* ═══════════ ATTACHMENT PREVIEW ═══════════ */
   function updatePreview() {
     const p = $('#attachmentPreview'), list = $('#attachmentList');
     if (!p || !list) return;
     if (!pendingFiles.length) { p.style.display = 'none'; list.innerHTML = ''; return; }
     p.style.display = 'flex';
     list.innerHTML = pendingFiles.map((f) => {
-      if (f.type === 'image' && f.dataUrl) return `<div class="attach-chip"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name)}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`;
+      if (f.type === 'image' && f.dataUrl) {
+        const dims = f.width && f.height ? `<span class="attach-size">${f.width}×${f.height}</span>` : '';
+        const vision = f.vision ? '<span class="attach-vision"><i class="ri-eye-line"></i> vision</span>' : '';
+        return `<div class="attach-chip attach-chip-image"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name)}${dims}${vision}</div>`;
+      }
       return `<div class="attach-chip">${fileIconHTML()}${escapeHtml(f.name)}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`;
     }).join('');
   }
   function addTextAttachment(text, name) {
-    const body = String(text).slice(0, 60000);
+    const body = String(text).slice(0, 80000);
     const fname = name || ('pasted-' + new Date().toISOString().slice(11, 19).replace(/:/g, '-') + '.txt');
     if (pendingFiles.some((f) => f.type === 'text' && f.content === body)) { toast('Already added', 1500); return; }
-    pendingFiles.push({ name: fname, size: text.length, type: 'text', content: body });
+    pendingFiles.push({ name: fname, size: text.length, type: 'text', mime: 'text/plain', content: body });
     updatePreview(); updateSendButtonState();
   }
 
@@ -1111,7 +1252,7 @@
     setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 350); }, ms || 1800);
   }
 
-  /* ═══════════ Share ═══════════ */
+  /* ═══════════ SHARE ═══════════ */
   function loadShareState() { __shareState = safeGet(SHARE_KEY, { claimed: false, claimedAt: 0, dismissedAt: 0 }); }
   function saveShareState() { safeSet(SHARE_KEY, __shareState); }
   function shouldShowShareAd() {
@@ -1217,7 +1358,7 @@
     }, 90000);
   }
 
-  /* ═══════════ Image viewer ═══════════ */
+  /* ═══════════ IMAGE VIEWER ═══════════ */
   function openImageViewer(url) {
     if (!url) return;
     __ivDataUrl = url;
@@ -1233,14 +1374,33 @@
   }
   function closeImageViewer() { $('#imageViewer')?.classList.remove('open'); }
 
-  /* ═══════════ Model picker ═══════════ */
+  /* ═══════════ MODELS ═══════════ */
   function getModelsList() { return __config?.models?.length ? __config.models : FALLBACK_MODELS; }
+  function canUseModel(tier) {
+    if (__tier === 'free' && isBonusActive()) return true;
+    if (tier === 'free') return true;
+    if (__tier === 'ultimate') return true;
+    if (__tier === 'pro' && tier === 'pro') return true;
+    return false;
+  }
+  function modelAccessReason(tier) {
+    if (__tier === 'free' && isBonusActive() && tier !== 'free') return 'bonus';
+    if (tier === 'free') return 'free';
+    if (__tier === 'ultimate') return 'tier';
+    if (__tier === 'pro' && tier === 'pro') return 'tier';
+    return 'locked';
+  }
+  function tierLabel(tier) {
+    if (tier === 'free') return 'FREE';
+    if (tier === 'pro') return 'PRO';
+    if (tier === 'ultimate') return 'ULT';
+    return tier.toUpperCase();
+  }
   function renderModelPicker() {
     const menu = $('#modelPickerMenu'); if (!menu) return;
     const models = getModelsList();
     const cur = __model || models[0].id;
     const bonusActive = __tier === 'free' && isBonusActive();
-
     let html = '';
     if (bonusActive) {
       html += `<div class="model-picker-banner">
@@ -1251,7 +1411,6 @@
         </div>
       </div>`;
     }
-
     html += models.map((m) => {
       const usable = canUseModel(m.tier);
       const reason = modelAccessReason(m.tier);
@@ -1274,27 +1433,19 @@
         </span>
       </div>`;
     }).join('');
-
     if (!bonusActive && __tier === 'free') {
       html += `<div class="model-picker-cta" id="modelPickerShareCta">
         <i class="ri-gift-2-line"></i>
         <span>Share to unlock <strong>Pro, Ultra &amp; Eclipse</strong> free for 7 days</span>
       </div>`;
     }
-
     menu.innerHTML = html;
-
     menu.querySelectorAll('.model-option').forEach((opt) => {
       opt.onclick = (e) => {
         e.stopPropagation();
         if (opt.dataset.usable === 'false') {
-          if (__tier === 'free') {
-            toast('Share to unlock this model free for 7 days', 3500);
-            closeModelPicker();
-            setTimeout(() => openShareAd(), 400);
-          } else {
-            toast('Upgrade to use this model');
-          }
+          if (__tier === 'free') { toast('Share to unlock this model free for 7 days', 3500); closeModelPicker(); setTimeout(() => openShareAd(), 400); }
+          else toast('Upgrade to use this model');
           return;
         }
         selectModel(opt.dataset.modelId);
@@ -1302,10 +1453,8 @@
     });
     const cta = menu.querySelector('#modelPickerShareCta');
     if (cta) cta.onclick = (e) => { e.stopPropagation(); closeModelPicker(); setTimeout(() => openShareAd(), 200); };
-
     const c = models.find((m) => m.id === cur);
     if (c) { const lbl = $('#currentModelLabel'); if (lbl) lbl.textContent = c.label; }
-
     const btn = $('#modelPickerBtn');
     if (btn) {
       btn.classList.toggle('has-bonus', bonusActive);
@@ -1333,27 +1482,30 @@
   function openModelPicker() { $('#modelPicker')?.classList.add('open'); $('#modelPickerMenu')?.classList.add('open'); renderModelPicker(); }
   function closeModelPicker() { $('#modelPicker')?.classList.remove('open'); $('#modelPickerMenu')?.classList.remove('open'); }
 
-  /* ═══════════ Usage / auth ═══════════ */
+  /* ═══════════ USAGE / AUTH ═══════════ */
   async function refreshUsage() {
     const res = await jsonOr('/api/me', {}, null, 7000);
     if (!res || !res.user) {
-      __user = null; __usage = null; __tier = 'free';
-      const chip = $('#userChip');
-      if (chip) { chip.querySelector('.user-name').textContent = 'Guest mode'; chip.querySelector('.user-sub').textContent = 'Sign in to save chats'; }
+      __user = null; __tier = 'free';
+      const label = $('#accountLabel'); if (label) label.textContent = 'Guest mode';
+      const sub = $('#accountSub'); if (sub) sub.textContent = 'Chats saved locally in this browser';
       const sb = $('#signInFromSettingsBtn'); if (sb) sb.style.display = '';
       const lo = $('#logoutBtn'); if (lo) lo.style.display = 'none';
+      const chip = $('#userChip');
+      if (chip) { chip.querySelector('.user-name').textContent = 'Guest mode'; chip.querySelector('.user-sub').textContent = 'Sign in to save chats'; }
       renderModelPicker(); updateTokenUsage(); return;
     }
     __user = res.user;
     __tier = res.user.tier || 'free';
-    __usage = res.user;
+    const label = $('#accountLabel'); if (label) label.textContent = res.user.name || res.user.email;
+    const sub = $('#accountSub'); if (sub) sub.textContent = (__tier.charAt(0).toUpperCase() + __tier.slice(1)) + ' plan · signed in';
+    const sb = $('#signInFromSettingsBtn'); if (sb) sb.style.display = 'none';
+    const lo = $('#logoutBtn'); if (lo) lo.style.display = '';
     const chip = $('#userChip');
     if (chip) {
       chip.querySelector('.user-name').textContent = res.user.name || res.user.email;
       chip.querySelector('.user-sub').textContent = (__tier.charAt(0).toUpperCase() + __tier.slice(1)) + ' plan';
     }
-    const sb = $('#signInFromSettingsBtn'); if (sb) sb.style.display = 'none';
-    const lo = $('#logoutBtn'); if (lo) lo.style.display = '';
     renderModelPicker(); updateTokenUsage();
   }
   async function loadConfig() {
@@ -1409,7 +1561,50 @@
     }
   }
 
-  /* ═══════════ Bonus watcher ═══════════ */
+  /* ═══════════ MCP ═══════════ */
+  function loadMcp() {
+    __mcpServers = safeGet(MCP_KEY, []);
+    if (!Array.isArray(__mcpServers)) __mcpServers = [];
+  }
+  function saveMcp() { safeSet(MCP_KEY, __mcpServers); }
+  function renderMcpList() {
+    const wrap = $('#mcpServerList');
+    if (!wrap) return;
+    if (!__mcpServers.length) { wrap.innerHTML = '<div class="mcp-empty">No MCP servers configured.</div>'; return; }
+    wrap.innerHTML = __mcpServers.map((s, i) => `
+      <div class="mcp-row" data-idx="${i}">
+        <div class="mcp-row-icon"><i class="ri-server-line"></i></div>
+        <div class="mcp-row-info">
+          <div class="mcp-row-name">${escapeHtml(s.name)}</div>
+          <div class="mcp-row-url">${escapeHtml(s.url)}</div>
+        </div>
+        <div class="mcp-row-actions">
+          <button class="icon-btn mcp-test" data-idx="${i}" title="Test"><i class="ri-flashlight-line"></i></button>
+          <button class="icon-btn mcp-remove" data-idx="${i}" title="Remove"><i class="ri-delete-bin-line"></i></button>
+        </div>
+      </div>`).join('');
+    wrap.querySelectorAll('.mcp-remove').forEach((b) => {
+      b.onclick = () => {
+        const i = parseInt(b.dataset.idx, 10);
+        __mcpServers.splice(i, 1);
+        saveMcp(); renderMcpList(); toast('Server removed');
+      };
+    });
+    wrap.querySelectorAll('.mcp-test').forEach((b) => {
+      b.onclick = async () => {
+        const i = parseInt(b.dataset.idx, 10);
+        const s = __mcpServers[i];
+        if (!s) return;
+        toast(`Testing ${s.name}…`);
+        try {
+          const r = await netFetch(s.url, { method: 'GET', headers: s.key ? { Authorization: 'Bearer ' + s.key } : {} }, 5000);
+          toast(r.ok ? `✓ ${s.name} is reachable` : `✗ ${s.name} returned ${r.status}`);
+        } catch (e) { toast(`✗ ${s.name} unreachable`); }
+      };
+    });
+  }
+
+  /* ═══════════ BONUS WATCHER ═══════════ */
   function startBonusWatcher() {
     if (__bonusTimer) clearInterval(__bonusTimer);
     __bonusTimer = setInterval(() => {
@@ -1424,37 +1619,31 @@
         } else if (active) {
           toast('🎉 Bonus active — Pro, Ultra & Eclipse unlocked!', 4500);
         }
-      } else if (active) updateTokenUsage();
+      } else if (active) {
+        updateTokenUsage();
+        // Bonus reminder: fire once when < 1 day left
+        if (__prefs.bonusReminder) {
+          const ms = getBonusExpiryMs();
+          const days = Math.ceil(ms / 86400000);
+          if (days <= 1 && __lastBonusWarnDay !== 'warned') {
+            __lastBonusWarnDay = 'warned';
+            toast('Your 50k bonus expires in less than a day — share again to renew!', 6000);
+            if (__prefs.desktopNotify && 'Notification' in window && Notification.permission === 'granted') {
+              try { new Notification('Bonus expiring soon', { body: 'Your 50k bonus expires in less than a day.', icon: '/logo.png' }); } catch {}
+            }
+          }
+        }
+      }
     }, BONUS_CHECK_MS);
   }
 
-  /* ═══════════ Modals ═══════════ */
+  /* ═══════════ MODALS ═══════════ */
   function openModal(id) { const el = document.getElementById(id); if (el) el.classList.add('open'); }
   function closeModal(id) { const el = document.getElementById(id); if (el) el.classList.remove('open'); }
   function openSidebar() { $('#sidebar')?.classList.add('open'); $('#sidebarScrim')?.classList.add('open'); }
   function closeSidebar() { $('#sidebar')?.classList.remove('open'); $('#sidebarScrim')?.classList.remove('open'); }
 
-  function applyAppearance(prefs) {
-    const root = document.documentElement;
-    let mode = prefs.mode || 'light';
-    if (mode === 'auto') {
-      mode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    }
-    const theme = prefs.theme || 'default';
-    root.setAttribute('data-mode', mode);
-    root.setAttribute('data-theme', theme);
-    if (prefs.mode === 'auto') root.setAttribute('data-mode-auto', '1'); else root.removeAttribute('data-mode-auto');
-    safeSet(APPEARANCE_KEY, { mode: prefs.mode || 'light', theme });
-    $$('[data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === (prefs.mode || 'light')));
-    $$('.swatch').forEach((b) => b.classList.toggle('active', b.dataset.theme === theme));
-  }
-  function loadAppearance() {
-    const prefs = safeGet(APPEARANCE_KEY, {});
-    if (!prefs.mode && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) prefs.mode = 'dark';
-    applyAppearance(prefs);
-  }
-
-  /* ═══════════ Wiring ═══════════ */
+  /* ═══════════ WIRING — all interactions now work ═══════════ */
   function wireAll() {
     on('#hamburgerBtn', 'click', openSidebar);
     on('#sidebarCloseBtn', 'click', closeSidebar);
@@ -1492,7 +1681,7 @@
     }
     on('#sendBtn', 'click', handleSend);
     on('#scrollBottomBtn', 'click', () => { autoScrollEnabled = true; userIsAtBottom = true; scrollToBottom(true); });
-    on('#chatMessages', 'scroll', () => { const c = $('#chatMessages'); userIsAtBottom = atChatBottom(c); autoScrollEnabled = userIsAtBottom; updateScrollButton(); });
+    on('#chatMessages', 'scroll', () => { const c = $('#chatMessages'); userIsAtBottom = atChatBottom(c); updateScrollButton(); });
     on('#attachBtn', 'click', () => $('#fileInput')?.click());
     on('#fileInput', 'change', (e) => { handleFiles(e.target.files); e.target.value = ''; });
     on('#removeAttachmentBtn', 'click', () => { pendingFiles = []; updatePreview(); updateSendButtonState(); });
@@ -1515,6 +1704,7 @@
     on('#logoutBtn', 'click', doLogout);
     on('#loginmentBtn', 'click', doLoginment);
     on('#signInFromSettingsBtn', 'click', () => { closeModal('settingsModal'); openModal('loginModal'); });
+    on('#shareFromSettingsBtn', 'click', () => { closeModal('settingsModal'); setTimeout(() => openShareAd(), 100); });
 
     // Settings tabs
     $$('.settings-tab').forEach((tab) => {
@@ -1525,12 +1715,29 @@
       };
     });
 
-    // Appearance
-    $$('[data-mode]').forEach((b) => { b.onclick = () => applyAppearance({ mode: b.dataset.mode, theme: document.documentElement.getAttribute('data-theme') || 'default' }); });
-    $$('.swatch').forEach((b) => { b.onclick = () => applyAppearance({ mode: (safeGet(APPEARANCE_KEY, {}).mode || 'light'), theme: b.dataset.theme }); });
-    $$('[data-fontsize]').forEach((b) => { b.onclick = () => { __prefs.fontSize = b.dataset.fontsize; savePrefs(); applyPrefs(); $$('[data-fontsize]').forEach((x) => x.classList.toggle('active', x.dataset.fontsize === __prefs.fontSize)); }; });
+    // Appearance — Mode
+    $$('#modeSegmented .seg-btn').forEach((b) => {
+      b.onclick = () => {
+        __prefs.mode = b.dataset.mode;
+        savePrefs(); applyAppearanceFromPrefs(); applyPrefs();
+      };
+    });
+    // Appearance — Accent
+    $$('#accentSwatches .swatch').forEach((b) => {
+      b.onclick = () => {
+        __prefs.theme = b.dataset.theme;
+        savePrefs(); applyAppearanceFromPrefs(); applyPrefs();
+      };
+    });
+    // Appearance — Font size
+    $$('#fontSizeSegmented .seg-btn').forEach((b) => {
+      b.onclick = () => {
+        __prefs.fontSize = b.dataset.fontsize;
+        savePrefs(); applyPrefs();
+      };
+    });
 
-    // Toggles
+    // Generic checkbox toggle helper
     const bindToggle = (id, key, cb) => {
       const el = document.getElementById(id);
       if (!el) return;
@@ -1541,9 +1748,10 @@
         if (cb) cb(el.checked);
       });
     };
-    bindToggle('autoScrollToggle', 'autoScroll');
+    bindToggle('autoScrollToggle', 'autoScroll', (v) => { autoScrollEnabled = v; });
     bindToggle('enterSendToggle', 'enterSend');
     bindToggle('showThinkingToggle', 'showThinking');
+    bindToggle('visionToggle', 'vision');
     bindToggle('compactToggle', 'compact');
     bindToggle('reduceMotionToggle', 'reduceMotion');
     bindToggle('desktopNotifyToggle', 'desktopNotify', (v) => {
@@ -1553,6 +1761,7 @@
     bindToggle('bonusReminderToggle', 'bonusReminder');
     bindToggle('verboseLogToggle', 'verboseLog');
     bindToggle('translateCommentsToggle', 'translateComments');
+    bindToggle('mcpEnableToggle', 'mcpEnabled');
 
     // Persona
     on('#savePersonaBtn', 'click', () => {
@@ -1575,7 +1784,6 @@
     });
 
     // MCP
-    on('#mcpEnableToggle', 'change', (e) => { safeSet(MCP_KEY + '_enabled', e.target.checked); toast(`MCP ${e.target.checked ? 'enabled' : 'disabled'}`); });
     on('#mcpAddBtn', 'click', () => {
       const name = $('#mcpNameInput')?.value.trim();
       const url = $('#mcpUrlInput')?.value.trim();
@@ -1587,9 +1795,27 @@
       toast(`Added server: ${name}`);
     });
 
-    // Language
-    on('#languageSelect', 'change', (e) => { __prefs.responseLanguage = e.target.value; savePrefs(); toast('Response language updated'); });
-    on('#uiLanguageSelect', 'change', (e) => { __prefs.uiLanguage = e.target.value; savePrefs(); toast('UI language preference saved (requires reload)'); });
+    // Language — with full support
+    on('#languageSelect', 'change', (e) => {
+      __prefs.responseLanguage = e.target.value;
+      savePrefs();
+      const langName = e.target.options[e.target.selectedIndex].textContent;
+      toast(`Response language: ${langName}`);
+    });
+    on('#uiLanguageSelect', 'change', (e) => {
+      __prefs.uiLanguage = e.target.value;
+      savePrefs();
+      toast('UI language saved — reload to apply');
+    });
+
+    // Notifications
+    on('#testNotifyBtn', 'click', () => {
+      playChime();
+      if ('Notification' in window && Notification.permission === 'granted') {
+        try { new Notification('Mirox test', { body: 'Notifications are working', icon: '/logo.png' }); } catch {}
+      }
+      toast('Test notification sent');
+    });
 
     // Data
     on('#exportChatsBtn', 'click', () => {
@@ -1623,7 +1849,7 @@
     });
     on('#clearAllDataBtn', 'click', () => {
       if (!confirm('Reset everything? Chats, settings and bonus will be erased.')) return;
-      ['miroxai_conversations_v34','miroxai_appearance_v34','miroxai_share_v5','miroxai_bonus_v5','miroxai_prefs_v1','miroxai_mcp_v1','mirox_token','miroxai_guest_id_v1'].forEach((k) => { try { localStorage.removeItem(k); } catch {} });
+      ['miroxai_conversations_v35','miroxai_appearance_v35','miroxai_share_v6','miroxai_bonus_v6','miroxai_prefs_v2','miroxai_mcp_v2','mirox_token','miroxai_guest_id_v1'].forEach((k) => safeRemove(k));
       toast('All local data cleared — reloading…');
       setTimeout(() => location.reload(), 900);
     });
@@ -1634,8 +1860,8 @@
         ua: navigator.userAgent, url: location.href, ts: Date.now(),
         tier: __tier, guestId: getGuestId(),
         bonus: loadBonusRaw(),
-        model: __model,
-        mcpServers: __mcpServers.length,
+        model: __model, mcpServers: __mcpServers.length,
+        prefs: __prefs,
       };
       try { await navigator.clipboard.writeText(JSON.stringify(diag, null, 2)); toast('Diagnostics copied'); } catch {}
     });
@@ -1669,12 +1895,21 @@
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); $('#messageInput')?.focus(); }
     });
     window.addEventListener('resize', () => { if (window.innerWidth > 860) closeSidebar(); });
+    // React to system theme change in 'auto' mode
+    if (window.matchMedia) {
+      try {
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+          if (__prefs.mode === 'auto') applyAppearanceFromPrefs();
+        });
+      } catch {}
+    }
   }
 
   function openSettingsModal() {
-    // Refresh guest ID display
+    // Sync all UI to current prefs on open
     const lbl = $('#guestIdLabel'); if (lbl) lbl.textContent = getGuestId();
     renderMcpList();
+    applyPrefs();
     openModal('settingsModal');
   }
 
@@ -1703,18 +1938,12 @@
 
   async function init() {
     try {
-      loadAppearance(); loadPrefs(); applyPrefs(); loadShareState(); loadChats(); loadMcp(); wireAll();
+      loadPrefs(); applyAppearanceFromPrefs(); applyPrefs();
+      loadShareState(); loadChats(); loadMcp(); wireAll();
       __lastBonusActive = isBonusActive();
       renderHistory(); renderModelPicker(); startIdleMascot();
       updateTokenUsage(); renderMcpList();
       startBonusWatcher();
-      // Auto-detect OS theme change if mode === 'auto'
-      if (window.matchMedia) {
-        try { window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-          const p = safeGet(APPEARANCE_KEY, {});
-          if (p.mode === 'auto') applyAppearance(p);
-        }); } catch {}
-      }
     } catch (e) { console.error('[Mirox init]', e); }
     finally { killLoader(); }
     loadConfig().catch(() => {});
