@@ -139,7 +139,6 @@
   </div>
 </main>
 
-<!-- SHARE AD POPUP -->
 <div id="shareAdModal" class="share-ad-overlay">
   <div class="share-ad-panel">
     <button class="icon-btn share-ad-close" type="button" id="shareAdCloseBtn" data-i18n-title="close"><i class="ri-close-line"></i></button>
@@ -160,7 +159,6 @@
   </div>
 </div>
 
-<!-- BRIDGE WORKSPACE -->
 <div id="bridgeWorkspace" class="bridge-workspace-overlay">
   <div class="bridge-workspace-panel" id="bwPanel">
     <header class="bridge-workspace-top">
@@ -185,12 +183,10 @@
         <button id="bwCloseBtn" class="icon-btn" type="button" data-i18n-title="close"><i class="ri-close-line"></i></button>
       </div>
     </header>
-
     <div class="bridge-progress" id="bwProgress" style="display:none;">
       <div class="bridge-progress-track"><div class="bridge-progress-fill" id="bwProgressFill" style="width:0%;"></div></div>
       <div class="bridge-progress-label"><span id="bwProgressPct">0%</span><span id="bwProgressText" data-i18n="bridge.starting">Starting…</span></div>
     </div>
-
     <div class="bridge-workspace-body">
       <div class="bridge-workspace-main">
         <div class="bridge-messages" id="bridgeMessages">
@@ -205,52 +201,35 @@
           <button id="bridgeSendBtn" class="send-btn is-disabled" type="button" aria-disabled="true" data-i18n-title="send"><i class="ri-arrow-up-line"></i></button>
         </div>
       </div>
-
       <aside class="bridge-workspace-side">
         <div class="bridge-side-section">
           <h4><i class="ri-plug-line"></i> <span data-i18n="bridge.connection">Connection</span></h4>
-          <div id="bwStatusBox" class="bw-status-box">
-            <div class="bridge-status-dot offline"></div>
-            <span data-i18n="bridge.disconnected">Disconnected</span>
-          </div>
+          <div id="bwStatusBox" class="bw-status-box"><div class="bridge-status-dot offline"></div><span data-i18n="bridge.disconnected">Disconnected</span></div>
           <label class="bw-label" for="bwNameInput" data-i18n="bridge.name">Name</label>
-          <input id="bwNameInput" class="modal-input" type="text" data-i18n-placeholder="bridge.namePlaceholder" placeholder="My Laptop" maxlength="60">
+          <input id="bwNameInput" class="modal-input" type="text" data-i18n-placeholder="bridge.namePlaceholder" maxlength="60">
           <label class="bw-label" for="bwPortInput" data-i18n="bridge.port">Port</label>
           <input id="bwPortInput" class="modal-input" type="number" value="8765" min="1024" max="65535">
           <button id="bwConnectBtn" class="modal-btn primary" type="button"><i class="ri-link"></i> <span data-i18n="bridge.connect">Connect</span></button>
           <button id="bwDisconnectBtn" class="modal-btn danger" type="button" style="display:none;"><i class="ri-link-unlink"></i> <span data-i18n="bridge.disconnect">Disconnect</span></button>
           <div id="bwConnectHint" class="bw-hint"></div>
         </div>
-
         <div class="bridge-side-section">
           <h4><i class="ri-smartphone-line"></i> <span data-i18n="bridge.phoneDevices">Phone &amp; Devices</span></h4>
-          <div class="bw-status-box" id="bwKdeBox">
-            <i class="ri-smartphone-line"></i>
-            <span id="bwKdeStatus" data-i18n="bridge.kdeChecking">KDE Connect: checking…</span>
-          </div>
+          <div class="bw-status-box" id="bwKdeBox"><i class="ri-smartphone-line"></i><span id="bwKdeStatus" data-i18n="bridge.kdeChecking">KDE Connect: checking…</span></div>
           <button id="bwScanDevicesBtn" class="modal-btn" type="button"><i class="ri-radar-line"></i> <span data-i18n="bridge.scanDevices">Scan for devices</span></button>
           <div id="bwDeviceList" class="bw-device-list"></div>
         </div>
-
         <div class="bridge-side-section">
           <h4><i class="ri-hammer-line"></i> <span data-i18n="bridge.build">Build</span></h4>
-          <div class="bw-status-box" id="bwBuildBox">
-            <i class="ri-folder-3-line"></i>
-            <span id="bwBuildStatus" data-i18n="bridge.noProject">No project yet</span>
-          </div>
+          <div class="bw-status-box" id="bwBuildBox"><i class="ri-folder-3-line"></i><span id="bwBuildStatus" data-i18n="bridge.noProject">No project yet</span></div>
           <button id="bwBuildOpenBtn" class="modal-btn" type="button"><i class="ri-eye-line"></i> <span data-i18n="bridge.openPreview">Open live preview</span></button>
           <button id="bwBuildFolderBtn" class="modal-btn" type="button"><i class="ri-folder-open-line"></i> <span data-i18n="bridge.copyPath">Copy folder path</span></button>
         </div>
-
         <div class="bridge-side-section">
           <h4><i class="ri-shield-keyhole-line"></i> <span data-i18n="bridge.sudo">Sudo</span></h4>
-          <div class="bw-status-box" id="bwSudoBox">
-            <i class="ri-shield-keyhole-line"></i>
-            <span id="bwSudoStatus" data-i18n="bridge.noPassword">No password saved</span>
-          </div>
+          <div class="bw-status-box" id="bwSudoBox"><i class="ri-shield-keyhole-line"></i><span id="bwSudoStatus" data-i18n="bridge.noPassword">No password saved</span></div>
           <button id="bwSudoForgetBtn" class="modal-btn" type="button"><i class="ri-forbid-2-line"></i> <span data-i18n="bridge.forgetPassword">Forget password</span></button>
         </div>
-
         <div class="bridge-side-section">
           <h4><i class="ri-rocket-line"></i> <span data-i18n="bridge.quickActions">Quick actions</span></h4>
           <div class="bw-quick-grid">
@@ -267,17 +246,10 @@
   </div>
 </div>
 
-<!-- LIVE PREVIEW -->
 <div id="bwPreviewModal" class="planner-overlay">
   <div class="planner-panel preview-panel">
     <header class="planner-top">
-      <div class="planner-title">
-        <i class="ri-eye-line"></i>
-        <div>
-          <div class="planner-title-main" data-i18n="bridge.livePreview">Live Preview</div>
-          <div class="planner-title-sub" id="bwPreviewSubtitle" data-i18n="bridge.noProject">No project yet</div>
-        </div>
-      </div>
+      <div class="planner-title"><i class="ri-eye-line"></i><div><div class="planner-title-main" data-i18n="bridge.livePreview">Live Preview</div><div class="planner-title-sub" id="bwPreviewSubtitle" data-i18n="bridge.noProject">No project yet</div></div></div>
       <div class="preview-tools">
         <input id="bwPreviewPath" class="modal-input" placeholder="~/project/index.html" spellcheck="false">
         <button class="icon-btn" id="bwPreviewLoadBtn" data-i18n-title="bridge.loadPath"><i class="ri-folder-open-line"></i></button>
@@ -285,23 +257,14 @@
         <button class="icon-btn" id="bwPreviewCloseBtn" data-i18n-title="close"><i class="ri-close-line"></i></button>
       </div>
     </header>
-    <div class="planner-body preview-body">
-      <iframe id="bwPreviewFrame" sandbox="allow-scripts allow-same-origin allow-forms allow-modals"></iframe>
-    </div>
+    <div class="planner-body preview-body"><iframe id="bwPreviewFrame" sandbox="allow-scripts allow-same-origin allow-forms allow-modals"></iframe></div>
   </div>
 </div>
 
-<!-- KDE DEVICE PICKER -->
 <div id="kdeModal" class="planner-overlay">
   <div class="planner-panel kde-panel">
     <header class="planner-top">
-      <div class="planner-title">
-        <i class="ri-smartphone-line"></i>
-        <div>
-          <div class="planner-title-main" data-i18n="kde.title">KDE Connect · Devices</div>
-          <div class="planner-title-sub" id="kdeSubtitle" data-i18n="kde.subtitle">Pick a device for Mirox to work with</div>
-        </div>
-      </div>
+      <div class="planner-title"><i class="ri-smartphone-line"></i><div><div class="planner-title-main" data-i18n="kde.title">KDE Connect · Devices</div><div class="planner-title-sub" id="kdeSubtitle" data-i18n="kde.subtitle">Pick a device for Mirox to work with</div></div></div>
       <button class="icon-btn" id="kdeCloseBtn" type="button" data-i18n-title="close"><i class="ri-close-line"></i></button>
     </header>
     <div class="planner-body kde-body"><div id="kdeGrid" class="kde-device-grid"></div></div>
@@ -313,17 +276,10 @@
   </div>
 </div>
 
-<!-- MIROX PLANNER -->
 <div id="plannerModal" class="planner-overlay">
   <div class="planner-panel">
     <header class="planner-top">
-      <div class="planner-title">
-        <i class="ri-layout-masonry-line"></i>
-        <div>
-          <div class="planner-title-main" data-i18n="planner.title">Mirox Planner</div>
-          <div class="planner-title-sub" id="plannerSubtitle" data-i18n="planner.subtitle">Pick a design — Mirox will build it for you</div>
-        </div>
-      </div>
+      <div class="planner-title"><i class="ri-layout-masonry-line"></i><div><div class="planner-title-main" data-i18n="planner.title">Mirox Planner</div><div class="planner-title-sub" id="plannerSubtitle" data-i18n="planner.subtitle">Pick a design — Mirox will build it for you</div></div></div>
       <button class="icon-btn" id="plannerCloseBtn" type="button" data-i18n-title="close"><i class="ri-close-line"></i></button>
     </header>
     <div class="planner-body"><div id="plannerGrid" class="planner-grid"></div></div>
@@ -334,7 +290,6 @@
   </div>
 </div>
 
-<!-- SUDO -->
 <div id="sudoModal" class="question-overlay">
   <div class="question-panel sudo-panel">
     <div class="question-top">
@@ -347,7 +302,7 @@
     </div>
     <p class="question-text sudo-command" id="sudoCommandText"></p>
     <div class="sudo-input-wrap">
-      <input type="password" id="sudoPasswordInput" class="modal-input" data-i18n-placeholder="sudo.password" placeholder="Your sudo password" autocomplete="current-password" spellcheck="false">
+      <input type="password" id="sudoPasswordInput" class="modal-input" data-i18n-placeholder="sudo.password" autocomplete="current-password" spellcheck="false">
       <button class="icon-btn sudo-reveal" type="button" id="sudoRevealBtn" data-i18n-title="sudo.showHide"><i class="ri-eye-line"></i></button>
     </div>
     <label class="sudo-remember"><input type="checkbox" id="sudoRememberChk"><span data-i18n="sudo.remember">Remember for this session (kept in memory only)</span></label>
@@ -359,7 +314,6 @@
   </div>
 </div>
 
-<!-- BRIDGE QUESTION -->
 <div id="bridgeQuestionModal" class="question-overlay">
   <div class="question-panel">
     <div class="question-top">
@@ -374,7 +328,7 @@
     <p class="question-text" id="bqText"></p>
     <div class="question-options" id="bqOptions"></div>
     <div class="question-custom" id="bqCustomWrap" style="display:none;">
-      <input type="text" id="bqCustomInput" class="modal-input" data-i18n-placeholder="bq.customPlaceholder" placeholder="Or type your own answer…">
+      <input type="text" id="bqCustomInput" class="modal-input" data-i18n-placeholder="bq.customPlaceholder">
     </div>
     <div class="question-footer">
       <button id="bqCustomToggle" class="modal-btn" type="button"><i class="ri-edit-line"></i> <span data-i18n="bq.custom">Custom</span></button>
@@ -383,7 +337,6 @@
   </div>
 </div>
 
-<!-- LOGIN -->
 <div id="loginModal" class="modal-overlay">
   <div class="modal">
     <button class="icon-btn modal-close" type="button" data-close="loginModal" data-i18n-title="close"><i class="ri-close-line"></i></button>
@@ -402,97 +355,94 @@
   </div>
 </div>
 
-<!-- SETTINGS -->
 <div id="settingsModal" class="modal-overlay">
   <div class="modal modal-wide">
     <button class="icon-btn modal-close" type="button" data-close="settingsModal" data-i18n-title="close"><i class="ri-close-line"></i></button>
     <h2 class="modal-title" data-i18n="settings.title">Settings</h2>
     <div class="settings-tabs" role="tablist">
-      <button class="settings-tab active" type="button" data-tab="general"><i class="ri-settings-3-line"></i><span data-i18n="settings.tab.general">General</span></button>
-      <button class="settings-tab" type="button" data-tab="appearance"><i class="ri-palette-line"></i><span data-i18n="settings.tab.appearance">Appearance</span></button>
-      <button class="settings-tab" type="button" data-tab="persona"><i class="ri-user-smile-line"></i><span data-i18n="settings.tab.persona">Persona</span></button>
-      <button class="settings-tab" type="button" data-tab="mcp"><i class="ri-plug-2-line"></i><span data-i18n="settings.tab.mcp">MCP</span></button>
-      <button class="settings-tab" type="button" data-tab="language"><i class="ri-translate-2"></i><span data-i18n="settings.tab.language">Language</span></button>
-      <button class="settings-tab" type="button" data-tab="notifications"><i class="ri-notification-3-line"></i><span data-i18n="settings.tab.alerts">Alerts</span></button>
-      <button class="settings-tab" type="button" data-tab="data"><i class="ri-database-2-line"></i><span data-i18n="settings.tab.data">Data</span></button>
-      <button class="settings-tab" type="button" data-tab="developer"><i class="ri-code-s-slash-line"></i><span data-i18n="settings.tab.dev">Dev</span></button>
+      <button class="settings-tab active" type="button" data-tab="general"><i class="ri-settings-3-line"></i><span data-i18n="settingsT.tab.general">General</span></button>
+      <button class="settings-tab" type="button" data-tab="appearance"><i class="ri-palette-line"></i><span data-i18n="settingsT.tab.appearance">Appearance</span></button>
+      <button class="settings-tab" type="button" data-tab="persona"><i class="ri-user-smile-line"></i><span data-i18n="settingsT.tab.persona">Persona</span></button>
+      <button class="settings-tab" type="button" data-tab="mcp"><i class="ri-plug-2-line"></i><span data-i18n="settingsT.tab.mcp">MCP</span></button>
+      <button class="settings-tab" type="button" data-tab="language"><i class="ri-translate-2"></i><span data-i18n="settingsT.tab.language">Language</span></button>
+      <button class="settings-tab" type="button" data-tab="notifications"><i class="ri-notification-3-line"></i><span data-i18n="settingsT.tab.alerts">Alerts</span></button>
+      <button class="settings-tab" type="button" data-tab="data"><i class="ri-database-2-line"></i><span data-i18n="settingsT.tab.data">Data</span></button>
+      <button class="settings-tab" type="button" data-tab="developer"><i class="ri-code-s-slash-line"></i><span data-i18n="settingsT.tab.dev">Dev</span></button>
     </div>
 
-    <!-- GENERAL -->
     <div class="settings-pane active" data-pane="general">
       <div class="setting-group">
-        <h4 data-i18n="settings.account">Account</h4>
+        <h4 data-i18n="settingsT.account">Account</h4>
         <div class="setting-row">
           <div class="setting-row-info">
             <span class="setting-row-label" id="accountLabel" data-i18n="guestMode">Guest mode</span>
-            <span class="setting-row-sub" id="accountSub" data-i18n="settings.accountSub">Chats saved locally in this browser</span>
+            <span class="setting-row-sub" id="accountSub" data-i18n="settingsT.accountSub">Chats saved locally in this browser</span>
           </div>
-          <button id="signInFromSettingsBtn" class="setting-mini-btn primary" type="button" data-i18n="settings.signIn">Sign in</button>
+          <button id="signInFromSettingsBtn" class="setting-mini-btn primary" type="button" data-i18n="settingsT.signIn">Sign in</button>
         </div>
-        <button id="logoutBtn" class="modal-btn danger" type="button" style="display:none;margin-top:10px;" data-i18n="settings.signOut">Sign out</button>
+        <button id="logoutBtn" class="modal-btn danger" type="button" style="display:none;margin-top:10px;" data-i18n="settingsT.signOut">Sign out</button>
       </div>
       <div class="setting-group">
-        <h4 data-i18n="settings.rewards">Rewards</h4>
+        <h4 data-i18n="settingsT.rewards">Rewards</h4>
         <div class="setting-row">
           <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="settings.shareEarn">Share &amp; earn</span>
-            <span class="setting-row-sub" id="shareRowSub" data-i18n="settings.shareSub">Get 50k tokens + Pro/Ultra/Eclipse free for 7 days</span>
+            <span class="setting-row-label" data-i18n="settingsT.shareEarn">Share &amp; earn</span>
+            <span class="setting-row-sub" id="shareRowSub" data-i18n="settingsT.shareSub">Get 50k tokens + Pro/Ultra/Eclipse free for 7 days</span>
           </div>
-          <button id="shareFromSettingsBtn" class="setting-mini-btn primary" type="button"><i class="ri-share-forward-2-line"></i> <span data-i18n="settings.shareBtn">Share</span></button>
+          <button id="shareFromSettingsBtn" class="setting-mini-btn primary" type="button"><i class="ri-share-forward-2-line"></i> <span data-i18n="settingsT.shareBtn">Share</span></button>
         </div>
       </div>
       <div class="setting-group">
-        <h4 data-i18n="settings.behavior">Behavior</h4>
+        <h4 data-i18n="settingsT.behavior">Behavior</h4>
         <div class="setting-row">
           <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="settings.autoScroll">Auto-scroll</span>
-            <span class="setting-row-sub" data-i18n="settings.autoScrollSub">Follow new messages as they arrive</span>
+            <span class="setting-row-label" data-i18n="settingsT.autoScroll">Auto-scroll</span>
+            <span class="setting-row-sub" data-i18n="settingsT.autoScrollSub">Follow new messages as they arrive</span>
           </div>
           <label class="switch"><input type="checkbox" id="autoScrollToggle" checked><span class="switch-slider"></span></label>
         </div>
         <div class="setting-row">
           <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="settings.enterSend">Send with Enter</span>
-            <span class="setting-row-sub" data-i18n="settings.enterSendSub">Use Shift+Enter for a new line</span>
+            <span class="setting-row-label" data-i18n="settingsT.enterSend">Send with Enter</span>
+            <span class="setting-row-sub" data-i18n="settingsT.enterSendSub">Use Shift+Enter for a new line</span>
           </div>
           <label class="switch"><input type="checkbox" id="enterSendToggle" checked><span class="switch-slider"></span></label>
         </div>
         <div class="setting-row">
           <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="settings.showThinking">Show thinking trace</span>
-            <span class="setting-row-sub" data-i18n="settings.showThinkingSub">Display the reasoning panel above replies</span>
+            <span class="setting-row-label" data-i18n="settingsT.showThinking">Show thinking trace</span>
+            <span class="setting-row-sub" data-i18n="settingsT.showThinkingSub">Display the reasoning panel above replies</span>
           </div>
           <label class="switch"><input type="checkbox" id="showThinkingToggle" checked><span class="switch-slider"></span></label>
         </div>
         <div class="setting-row">
           <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="settings.vision">Vision for images</span>
-            <span class="setting-row-sub" data-i18n="settings.visionSub">Send attached images to the AI (base64)</span>
+            <span class="setting-row-label" data-i18n="settingsT.vision">Vision for images</span>
+            <span class="setting-row-sub" data-i18n="settingsT.visionSub">Send attached images to the AI (base64)</span>
           </div>
           <label class="switch"><input type="checkbox" id="visionToggle" checked><span class="switch-slider"></span></label>
         </div>
         <div class="setting-row">
           <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="settings.compact">Compact mode</span>
-            <span class="setting-row-sub" data-i18n="settings.compactSub">Tighter spacing for dense chats</span>
+            <span class="setting-row-label" data-i18n="settingsT.compact">Compact mode</span>
+            <span class="setting-row-sub" data-i18n="settingsT.compactSub">Tighter spacing for dense chats</span>
           </div>
           <label class="switch"><input type="checkbox" id="compactToggle"><span class="switch-slider"></span></label>
         </div>
       </div>
     </div>
 
-    <!-- APPEARANCE -->
     <div class="settings-pane" data-pane="appearance">
       <div class="setting-group">
-        <h4 data-i18n="settings.mode">Mode</h4>
+        <h4 data-i18n="settingsT.mode">Mode</h4>
         <div class="segmented" id="modeSegmented">
-          <button class="seg-btn" type="button" data-mode="light" data-i18n="settings.mode.light">Light</button>
-          <button class="seg-btn" type="button" data-mode="dark" data-i18n="settings.mode.dark">Dark</button>
-          <button class="seg-btn" type="button" data-mode="auto" data-i18n="settings.mode.auto">Auto</button>
+          <button class="seg-btn" type="button" data-mode="light" data-i18n="settingsT.mode2.light">Light</button>
+          <button class="seg-btn" type="button" data-mode="dark" data-i18n="settingsT.mode2.dark">Dark</button>
+          <button class="seg-btn" type="button" data-mode="auto" data-i18n="settingsT.mode2.auto">Auto</button>
         </div>
       </div>
       <div class="setting-group">
-        <h4 data-i18n="settings.accent">Accent color</h4>
+        <h4 data-i18n="settingsT.accent">Accent color</h4>
         <div class="swatch-grid" id="accentSwatches">
           <button class="swatch" type="button" data-theme="default" style="--sw:#4d6bfe"></button>
           <button class="swatch" type="button" data-theme="sage" style="--sw:#16a34a"></button>
@@ -503,118 +453,115 @@
         </div>
       </div>
       <div class="setting-group">
-        <h4 data-i18n="settings.fontSize">Font size</h4>
+        <h4 data-i18n="settingsT.fontSize">Font size</h4>
         <div class="segmented" id="fontSizeSegmented">
-          <button class="seg-btn" type="button" data-fontsize="sm" data-i18n="settings.font.sm">Small</button>
-          <button class="seg-btn" type="button" data-fontsize="md" data-i18n="settings.font.md">Medium</button>
-          <button class="seg-btn" type="button" data-fontsize="lg" data-i18n="settings.font.lg">Large</button>
+          <button class="seg-btn" type="button" data-fontsize="sm" data-i18n="settingsT.font2.sm">Small</button>
+          <button class="seg-btn" type="button" data-fontsize="md" data-i18n="settingsT.font2.md">Medium</button>
+          <button class="seg-btn" type="button" data-fontsize="lg" data-i18n="settingsT.font2.lg">Large</button>
         </div>
       </div>
       <div class="setting-group">
-        <h4 data-i18n="settings.animations">Animations</h4>
+        <h4 data-i18n="settingsT.animations">Animations</h4>
         <div class="setting-row">
           <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="settings.reduceMotion">Reduce motion</span>
-            <span class="setting-row-sub" data-i18n="settings.reduceMotionSub">Minimize animation across the app</span>
+            <span class="setting-row-label" data-i18n="settingsT.reduceMotion">Reduce motion</span>
+            <span class="setting-row-sub" data-i18n="settingsT.reduceMotionSub">Minimize animation across the app</span>
           </div>
           <label class="switch"><input type="checkbox" id="reduceMotionToggle"><span class="switch-slider"></span></label>
         </div>
       </div>
     </div>
 
-    <!-- PERSONA -->
     <div class="settings-pane" data-pane="persona">
       <div class="setting-group">
-        <h4 data-i18n="settings.persona">Custom character</h4>
-        <p class="setting-help" data-i18n="settings.personaHelp">Describe how Mirox should behave — tone, style, expertise, quirks.</p>
-        <textarea id="personaInput" class="modal-textarea" rows="4" data-i18n-placeholder="settings.personaPlaceholder"></textarea>
+        <h4 data-i18n="settingsT.persona">Custom character</h4>
+        <p class="setting-help" data-i18n="settingsT.personaHelp">Describe how Mirox should behave — tone, style, expertise, quirks.</p>
+        <textarea id="personaInput" class="modal-textarea" rows="4" data-i18n-placeholder="settingsT.personaPlaceholder"></textarea>
         <div class="persona-actions">
-          <button id="savePersonaBtn" class="modal-btn primary" type="button"><i class="ri-save-line"></i> <span data-i18n="settings.personaSave">Save persona</span></button>
-          <button id="clearPersonaBtn" class="modal-btn" type="button"><i class="ri-delete-bin-line"></i> <span data-i18n="settings.personaClear">Clear</span></button>
+          <button id="savePersonaBtn" class="modal-btn primary" type="button"><i class="ri-save-line"></i> <span data-i18n="settingsT.personaSave">Save persona</span></button>
+          <button id="clearPersonaBtn" class="modal-btn" type="button"><i class="ri-delete-bin-line"></i> <span data-i18n="settingsT.personaClear">Clear</span></button>
           <span id="personaStatus" class="persona-status"></span>
         </div>
       </div>
       <div class="setting-group">
-        <h4 data-i18n="settings.personaPresets">Preset personalities</h4>
+        <h4 data-i18n="settingsT.personaPresets">Preset personalities</h4>
         <div class="persona-presets">
-          <button class="persona-preset" type="button" data-persona="You are a friendly, casual assistant. Keep replies short, warm and human."><i class="ri-chat-smile-2-line"></i><span data-i18n="settings.preset.casual">Casual</span></button>
-          <button class="persona-preset" type="button" data-persona="You are a senior software engineer. Give precise, production-quality code with brief explanations."><i class="ri-code-box-line"></i><span data-i18n="settings.preset.engineer">Engineer</span></button>
-          <button class="persona-preset" type="button" data-persona="You are a patient teacher. Explain step by step with analogies. Never use jargon without explaining it."><i class="ri-graduation-cap-line"></i><span data-i18n="settings.preset.teacher">Teacher</span></button>
-          <button class="persona-preset" type="button" data-persona="You are a creative writer. Vivid, evocative, punchy. Show, don't tell."><i class="ri-quill-pen-line"></i><span data-i18n="settings.preset.writer">Writer</span></button>
-          <button class="persona-preset" type="button" data-persona="You are a stoic philosopher. Answer with clarity, calm and a touch of timeless wisdom."><i class="ri-ancient-gate-line"></i><span data-i18n="settings.preset.philosopher">Philosopher</span></button>
+          <button class="persona-preset" type="button" data-persona="You are a friendly, casual assistant. Keep replies short, warm and human."><i class="ri-chat-smile-2-line"></i><span data-i18n="settingsT.preset.casual">Casual</span></button>
+          <button class="persona-preset" type="button" data-persona="You are a senior software engineer. Give precise, production-quality code with brief explanations."><i class="ri-code-box-line"></i><span data-i18n="settingsT.preset.engineer">Engineer</span></button>
+          <button class="persona-preset" type="button" data-persona="You are a patient teacher. Explain step by step with analogies."><i class="ri-graduation-cap-line"></i><span data-i18n="settingsT.preset.teacher">Teacher</span></button>
+          <button class="persona-preset" type="button" data-persona="You are a creative writer. Vivid, evocative, punchy."><i class="ri-quill-pen-line"></i><span data-i18n="settingsT.preset.writer">Writer</span></button>
+          <button class="persona-preset" type="button" data-persona="You are a stoic philosopher. Answer with clarity and calm."><i class="ri-ancient-gate-line"></i><span data-i18n="settingsT.preset.philosopher">Philosopher</span></button>
         </div>
       </div>
     </div>
 
-    <!-- MCP -->
     <div class="settings-pane" data-pane="mcp">
       <div class="setting-group">
-        <h4 data-i18n="settings.mcp.title">Model Context Protocol</h4>
-        <p class="setting-help" data-i18n="settings.mcp.help">Connect MCP servers so Mirox can use external tools and data sources.</p>
+        <h4 data-i18n="settingsT.mcp.title">Model Context Protocol</h4>
+        <p class="setting-help" data-i18n="settingsT.mcp.help">Connect MCP servers so Mirox can use external tools.</p>
         <div class="setting-row">
           <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="settings.mcp.enable">Enable MCP</span>
-            <span class="setting-row-sub" data-i18n="settings.mcp.enableSub">Allow Mirox to call connected servers</span>
+            <span class="setting-row-label" data-i18n="settingsT.mcp.enable">Enable MCP</span>
+            <span class="setting-row-sub" data-i18n="settingsT.mcp.enableSub">Allow Mirox to call connected servers</span>
           </div>
           <label class="switch"><input type="checkbox" id="mcpEnableToggle"><span class="switch-slider"></span></label>
         </div>
       </div>
       <div class="setting-group">
-        <h4 data-i18n="settings.mcp.add">Add server</h4>
+        <h4 data-i18n="settingsT.mcp.add">Add server</h4>
         <div class="mcp-form">
-          <input type="text" id="mcpNameInput" class="modal-input" data-i18n-placeholder="settings.mcp.name" maxlength="60">
-          <input type="text" id="mcpUrlInput" class="modal-input" data-i18n-placeholder="settings.mcp.url" spellcheck="false">
-          <input type="password" id="mcpKeyInput" class="modal-input" data-i18n-placeholder="settings.mcp.key" spellcheck="false">
-          <button id="mcpAddBtn" class="modal-btn primary" type="button"><i class="ri-add-line"></i> <span data-i18n="settings.mcp.addBtn">Add server</span></button>
+          <input type="text" id="mcpNameInput" class="modal-input" data-i18n-placeholder="settingsT.mcp.name" maxlength="60">
+          <input type="text" id="mcpUrlInput" class="modal-input" data-i18n-placeholder="settingsT.mcp.url" spellcheck="false">
+          <input type="password" id="mcpKeyInput" class="modal-input" data-i18n-placeholder="settingsT.mcp.key" spellcheck="false">
+          <button id="mcpAddBtn" class="modal-btn primary" type="button"><i class="ri-add-line"></i> <span data-i18n="settingsT.mcp.addBtn">Add server</span></button>
         </div>
       </div>
       <div class="setting-group">
-        <h4 data-i18n="settings.mcp.connected">Connected servers</h4>
-        <div id="mcpServerList" class="mcp-list"><div class="mcp-empty" data-i18n="settings.mcp.empty">No MCP servers configured.</div></div>
+        <h4 data-i18n="settingsT.mcp.connected">Connected servers</h4>
+        <div id="mcpServerList" class="mcp-list"><div class="mcp-empty" data-i18n="settingsT.mcp.empty">No MCP servers configured.</div></div>
       </div>
     </div>
 
-    <!-- LANGUAGE -->
     <div class="settings-pane" data-pane="language">
       <div class="setting-group">
-        <h4 data-i18n="settings.lang.response">Preferred response language</h4>
-        <p class="setting-help" data-i18n="settings.lang.responseHelp">Mirox will reply in this language unless asked otherwise.</p>
+        <h4 data-i18n="settingsT.lang.response">Preferred response language</h4>
+        <p class="setting-help" data-i18n="settingsT.lang.responseHelp">Mirox will reply in this language.</p>
         <select id="languageSelect" class="modal-select">
-          <option value="auto" data-i18n="settings.lang.auto">Auto-detect</option>
+          <option value="auto" data-i18n="settingsT.lang.auto">Auto-detect</option>
           <option value="en">English</option>
           <option value="fa">فارسی — Persian (Farsi)</option>
           <option value="ps">پښتو — Pashto</option>
           <option value="de">Deutsch — German</option>
-          <option value="es-MX">Español (México) — Mexican Spanish</option>
+          <option value="es-MX">Español (México)</option>
           <option value="es">Español — Spanish</option>
           <option value="fr">Français — French</option>
           <option value="it">Italiano — Italian</option>
-          <option value="pt">Português — Portuguese</option>
-          <option value="ru">Русский — Russian</option>
-          <option value="ar">العربية — Arabic</option>
-          <option value="he">עברית — Hebrew</option>
-          <option value="tr">Türkçe — Turkish</option>
-          <option value="hi">हिन्दी — Hindi</option>
-          <option value="ur">اردو — Urdu</option>
-          <option value="bn">বাংলা — Bengali</option>
-          <option value="zh-CN">简体中文 — Chinese (Simplified)</option>
-          <option value="zh-TW">繁體中文 — Chinese (Traditional)</option>
-          <option value="ja">日本語 — Japanese</option>
-          <option value="ko">한국어 — Korean</option>
-          <option value="vi">Tiếng Việt — Vietnamese</option>
-          <option value="th">ไทย — Thai</option>
+          <option value="pt">Português</option>
+          <option value="ru">Русский</option>
+          <option value="ar">العربية</option>
+          <option value="he">עברית</option>
+          <option value="tr">Türkçe</option>
+          <option value="hi">हिन्दी</option>
+          <option value="ur">اردو</option>
+          <option value="bn">বাংলা</option>
+          <option value="zh-CN">简体中文</option>
+          <option value="zh-TW">繁體中文</option>
+          <option value="ja">日本語</option>
+          <option value="ko">한국어</option>
+          <option value="vi">Tiếng Việt</option>
+          <option value="th">ไทย</option>
           <option value="id">Bahasa Indonesia</option>
-          <option value="pl">Polski — Polish</option>
-          <option value="nl">Nederlands — Dutch</option>
-          <option value="sv">Svenska — Swedish</option>
-          <option value="el">Ελληνικά — Greek</option>
-          <option value="cs">Čeština — Czech</option>
-          <option value="ro">Română — Romanian</option>
+          <option value="pl">Polski</option>
+          <option value="nl">Nederlands</option>
+          <option value="sv">Svenska</option>
+          <option value="el">Ελληνικά</option>
+          <option value="cs">Čeština</option>
+          <option value="ro">Română</option>
         </select>
       </div>
       <div class="setting-group">
-        <h4 data-i18n="settings.lang.ui">Interface language</h4>
-        <p class="setting-help" data-i18n="settings.lang.uiHelp">Language of buttons, menus and labels — applies immediately.</p>
+        <h4 data-i18n="settingsT.lang.ui">Interface language</h4>
+        <p class="setting-help" data-i18n="settingsT.lang.uiHelp">Language of buttons, menus and labels — applies immediately.</p>
         <select id="uiLanguageSelect" class="modal-select">
           <option value="en">English</option>
           <option value="fa">فارسی — Farsi</option>
@@ -633,99 +580,95 @@
         </select>
       </div>
       <div class="setting-group">
-        <h4 data-i18n="settings.lang.comments">Code comments</h4>
+        <h4 data-i18n="settingsT.lang.comments">Code comments</h4>
         <div class="setting-row">
           <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="settings.lang.translateComments">Translate code comments</span>
-            <span class="setting-row-sub" data-i18n="settings.lang.translateCommentsSub">Write code comments in preferred language</span>
+            <span class="setting-row-label" data-i18n="settingsT.lang.translateComments">Translate code comments</span>
+            <span class="setting-row-sub" data-i18n="settingsT.lang.translateCommentsSub">Write code comments in preferred language</span>
           </div>
           <label class="switch"><input type="checkbox" id="translateCommentsToggle"><span class="switch-slider"></span></label>
         </div>
       </div>
     </div>
 
-    <!-- NOTIFICATIONS -->
     <div class="settings-pane" data-pane="notifications">
       <div class="setting-group">
-        <h4 data-i18n="settings.alerts.title">Notifications</h4>
+        <h4 data-i18n="settingsT.alerts.title">Notifications</h4>
         <div class="setting-row">
           <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="settings.alerts.desktop">Desktop notifications</span>
-            <span class="setting-row-sub" data-i18n="settings.alerts.desktopSub">Notify when a reply finishes in the background</span>
+            <span class="setting-row-label" data-i18n="settingsT.alerts.desktop">Desktop notifications</span>
+            <span class="setting-row-sub" data-i18n="settingsT.alerts.desktopSub">Notify when a reply finishes in background</span>
           </div>
           <label class="switch"><input type="checkbox" id="desktopNotifyToggle"><span class="switch-slider"></span></label>
         </div>
         <div class="setting-row">
           <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="settings.alerts.sound">Sound</span>
-            <span class="setting-row-sub" data-i18n="settings.alerts.soundSub">Play a soft chime when a reply arrives</span>
+            <span class="setting-row-label" data-i18n="settingsT.alerts.sound">Sound</span>
+            <span class="setting-row-sub" data-i18n="settingsT.alerts.soundSub">Play a soft chime when a reply arrives</span>
           </div>
           <label class="switch"><input type="checkbox" id="soundToggle" checked><span class="switch-slider"></span></label>
         </div>
         <div class="setting-row">
           <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="settings.alerts.bonus">Bonus reminders</span>
-            <span class="setting-row-sub" data-i18n="settings.alerts.bonusSub">Remind me before my 50k bonus expires</span>
+            <span class="setting-row-label" data-i18n="settingsT.alerts.bonus">Bonus reminders</span>
+            <span class="setting-row-sub" data-i18n="settingsT.alerts.bonusSub">Remind me before my 50k bonus expires</span>
           </div>
           <label class="switch"><input type="checkbox" id="bonusReminderToggle" checked><span class="switch-slider"></span></label>
         </div>
         <div class="setting-row">
           <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="settings.alerts.test">Test notification</span>
-            <span class="setting-row-sub" data-i18n="settings.alerts.testSub">Fire a sample chime + notification</span>
+            <span class="setting-row-label" data-i18n="settingsT.alerts.test">Test notification</span>
+            <span class="setting-row-sub" data-i18n="settingsT.alerts.testSub">Fire a sample chime + notification</span>
           </div>
-          <button id="testNotifyBtn" class="setting-mini-btn" type="button" data-i18n="settings.alerts.testBtn">Test</button>
+          <button id="testNotifyBtn" class="setting-mini-btn" type="button" data-i18n="settingsT.alerts.testBtn">Test</button>
         </div>
       </div>
     </div>
 
-    <!-- DATA -->
     <div class="settings-pane" data-pane="data">
       <div class="setting-group">
-        <h4 data-i18n="settings.data.chats">Chats</h4>
-        <button id="exportChatsBtn" class="modal-btn" type="button"><i class="ri-download-2-line"></i> <span data-i18n="settings.data.export">Export all chats (JSON)</span></button>
-        <button id="importChatsBtn" class="modal-btn" type="button"><i class="ri-upload-2-line"></i> <span data-i18n="settings.data.import">Import chats from file</span></button>
+        <h4 data-i18n="settingsT.data.chats">Chats</h4>
+        <button id="exportChatsBtn" class="modal-btn" type="button"><i class="ri-download-2-line"></i> <span data-i18n="settingsT.data.export">Export all chats (JSON)</span></button>
+        <button id="importChatsBtn" class="modal-btn" type="button"><i class="ri-upload-2-line"></i> <span data-i18n="settingsT.data.import">Import chats from file</span></button>
         <input type="file" id="importChatsInput" accept=".json" hidden>
-        <button id="clearChatsBtn" class="modal-btn danger" type="button"><i class="ri-delete-bin-6-line"></i> <span data-i18n="settings.data.clearChats">Clear all chats</span></button>
+        <button id="clearChatsBtn" class="modal-btn danger" type="button"><i class="ri-delete-bin-6-line"></i> <span data-i18n="settingsT.data.clearChats">Clear all chats</span></button>
       </div>
       <div class="setting-group">
-        <h4 data-i18n="settings.data.local">Local data</h4>
-        <button id="clearAllDataBtn" class="modal-btn danger" type="button"><i class="ri-eraser-line"></i> <span data-i18n="settings.data.reset">Reset everything (chats, settings, bonus)</span></button>
+        <h4 data-i18n="settingsT.data.local">Local data</h4>
+        <button id="clearAllDataBtn" class="modal-btn danger" type="button"><i class="ri-eraser-line"></i> <span data-i18n="settingsT.data.reset">Reset everything</span></button>
       </div>
     </div>
 
-    <!-- DEVELOPER -->
     <div class="settings-pane" data-pane="developer">
       <div class="setting-group">
-        <h4 data-i18n="settings.dev.console">Developer console</h4>
-        <a href="/developers/" class="modal-btn link-btn"><i class="ri-code-s-slash-line"></i> <span data-i18n="settings.dev.open">Open Developer Console</span></a>
+        <h4 data-i18n="settingsT.dev.console">Developer console</h4>
+        <a href="/developers/" class="modal-btn link-btn"><i class="ri-code-s-slash-line"></i> <span data-i18n="settingsT.dev.open">Open Developer Console</span></a>
       </div>
       <div class="setting-group">
-        <h4 data-i18n="settings.dev.diag">Diagnostics</h4>
+        <h4 data-i18n="settingsT.dev.diag">Diagnostics</h4>
         <div class="setting-row">
           <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="settings.dev.verbose">Verbose logging</span>
-            <span class="setting-row-sub" data-i18n="settings.dev.verboseSub">Log API requests to the browser console</span>
+            <span class="setting-row-label" data-i18n="settingsT.dev.verbose">Verbose logging</span>
+            <span class="setting-row-sub" data-i18n="settingsT.dev.verboseSub">Log API requests to console</span>
           </div>
           <label class="switch"><input type="checkbox" id="verboseLogToggle"><span class="switch-slider"></span></label>
         </div>
-        <button id="copyDiagBtn" class="modal-btn" type="button"><i class="ri-file-copy-line"></i> <span data-i18n="settings.dev.copyDiag">Copy diagnostic info</span></button>
+        <button id="copyDiagBtn" class="modal-btn" type="button"><i class="ri-file-copy-line"></i> <span data-i18n="settingsT.dev.copyDiag">Copy diagnostic info</span></button>
       </div>
       <div class="setting-group">
-        <h4 data-i18n="settings.dev.guest">Guest identity</h4>
+        <h4 data-i18n="settingsT.dev.guest">Guest identity</h4>
         <div class="setting-row">
           <div class="setting-row-info">
             <span class="setting-row-label" id="guestIdLabel">—</span>
-            <span class="setting-row-sub" data-i18n="settings.dev.guestSub">Device-scoped ID used for bonus verification</span>
+            <span class="setting-row-sub" data-i18n="settingsT.dev.guestSub">Device-scoped ID for bonus verification</span>
           </div>
-          <button id="resetGuestBtn" class="setting-mini-btn" type="button" data-i18n="settings.dev.reset">Reset</button>
+          <button id="resetGuestBtn" class="setting-mini-btn" type="button" data-i18n="settingsT.dev.reset">Reset</button>
         </div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- PLANS -->
 <div id="plansModal" class="modal-overlay">
   <div class="modal modal-wide">
     <button class="icon-btn modal-close" type="button" data-close="plansModal" data-i18n-title="close"><i class="ri-close-line"></i></button>
@@ -735,21 +678,19 @@
   </div>
 </div>
 
-<!-- IMAGE STUDIO -->
 <div id="imageModal" class="modal-overlay">
   <div class="modal">
     <button class="icon-btn modal-close" type="button" data-close="imageModal" data-i18n-title="close"><i class="ri-close-line"></i></button>
     <h2 class="modal-title" data-i18n="lumenal.title">Lumenal 1.0</h2>
     <p class="modal-sub" data-i18n="lumenal.sub">Strong image generation, powered by Mirox.</p>
     <div class="image-studio">
-      <textarea id="imagePrompt" class="modal-textarea" rows="3" data-i18n-placeholder="lumenal.prompt" placeholder="Describe the image you want…"></textarea>
+      <textarea id="imagePrompt" class="modal-textarea" rows="3" data-i18n-placeholder="lumenal.prompt"></textarea>
       <button id="generateImageBtn" class="modal-btn primary" type="button"><i class="ri-image-add-line"></i> <span data-i18n="lumenal.generate">Generate</span></button>
       <div id="imageResult" class="image-result"></div>
     </div>
   </div>
 </div>
 
-<!-- SUPPORT -->
 <div id="supportModal" class="modal-overlay">
   <div class="modal">
     <button class="icon-btn modal-close" type="button" data-close="supportModal" data-i18n-title="close"><i class="ri-close-line"></i></button>
@@ -762,7 +703,6 @@
   </div>
 </div>
 
-<!-- IMAGE VIEWER -->
 <div id="imageViewer" class="image-viewer">
   <div class="image-viewer-backdrop" data-iv-close></div>
   <div class="image-viewer-panel">
