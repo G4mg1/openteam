@@ -1,7 +1,6 @@
 (function () {
   'use strict';
 
-  /* ═══════════ Loader ═══════════ */
   let __loaderGone = false;
   function killLoader() {
     if (__loaderGone) return;
@@ -30,10 +29,10 @@
     { id: 'mirox-eclipse-2.0', label: 'Eclipse', tier: 'ultimate' },
   ];
   const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
-  const LS_KEY = 'miroxai_conversations_v27';
+  const LS_KEY = 'miroxai_conversations_v28';
   const TOKEN_KEY = 'mirox_token';
-  const APPEARANCE_KEY = 'miroxai_appearance_v27';
-  const BRIDGE_KEY = 'miroxai_bridge_v27';
+  const APPEARANCE_KEY = 'miroxai_appearance_v28';
+  const BRIDGE_KEY = 'miroxai_bridge_v28';
   const KDE_DEVICE_KEY = 'miroxai_kde_device_v1';
   const BRIDGE_OPTS_KEY = 'miroxai_bridge_opts_v1';
   const PASTE_ATTACH_THRESHOLD = 1024;
@@ -91,7 +90,6 @@
     } catch { return fallback; }
   }
 
-  /* ═══════════ IndexedDB ═══════════ */
   const idb = (() => {
     let p = null;
     const open = () => p || (p = new Promise((res, rej) => {
@@ -107,7 +105,6 @@
     };
   })();
 
-  /* ═══════════ Blob Mascot — solid black, minimal motion ═══════════ */
   document.addEventListener('mousemove', (e) => {
     const x = ((e.clientX / window.innerWidth) - .5) * 4;
     const y = ((e.clientY / window.innerHeight) - .5) * 3;
@@ -116,15 +113,14 @@
     r.setProperty('--look-y', y.toFixed(1) + 'px');
   }, { passive: true });
 
+  /* ═══════════ Blob mascot — 4-lobed cloud with two eye streaks ═══════════ */
   const MOODS = ['idle','happy','love','wink','sad','surprised','sleepy','thinking','reasoning','searching','reading','learning','coding','celebrate','error','listening','cool','confused','focus'];
 
-  // Solid organic blob — 4-lobed irregular circle matching the reference black blob.
-  const BLOB_PATH = 'M0,-90 C30,-94 58,-82 72,-60 C92,-54 106,-36 104,-12 C106,12 94,38 76,54 C70,78 48,92 24,92 C8,96 -12,96 -32,92 C-56,92 -78,78 -86,54 C-104,38 -112,12 -108,-12 C-108,-36 -92,-54 -72,-60 C-58,-82 -30,-94 0,-90 Z';
+  const BLOB_PATH = 'M100 20 C126 20 144 32 154 54 C178 56 194 76 194 102 C194 128 178 148 154 152 C144 174 126 186 100 186 C74 186 56 174 46 152 C22 148 6 128 6 102 C6 76 22 56 46 54 C56 32 74 20 100 20 Z';
 
-  const BLOB_SVG = `<svg class="blob-svg" viewBox="-120 -120 240 240" role="img" aria-label="Mirox avatar" xmlns="http://www.w3.org/2000/svg"><g class="blob-float"><path class="blob-body" d="${BLOB_PATH}" fill="currentColor"/></g></svg>`;
+  const BLOB_SVG = `<svg class="blob-svg" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mirox avatar"><g class="blob-float"><path class="blob-body" d="${BLOB_PATH}" fill="currentColor"/><g class="blob-eyes" fill="var(--bg)"><ellipse cx="88" cy="82" rx="4.5" ry="13" transform="rotate(18 88 82)"/><ellipse cx="110" cy="78" rx="4.5" ry="13" transform="rotate(18 110 78)"/></g></g></svg>`;
 
-  let blobMascotId = 0;
-  function blobSvg() { blobMascotId++; return BLOB_SVG; }
+  function blobSvg() { return BLOB_SVG; }
   function mascotHTML(cls, mood) {
     const m = MOODS.includes(mood) ? mood : 'idle';
     return `<div class="mascot ${cls || ''} m-${m}" data-mood="${m}">${blobSvg()}</div>`;
@@ -169,7 +165,6 @@
     }, 7000);
   }
 
-  /* ═══════════ Status labels ═══════════ */
   function pickStatusLabel(text) {
     const t = String(text || '').toLowerCase();
     if (!t) return 'Thinking';
@@ -187,7 +182,6 @@
     return 'Thinking';
   }
 
-  /* ═══════════ Reasoning steps ═══════════ */
   const LANG_WORDS = { lua: 'Lua', python: 'Python', py: 'Python', javascript: 'JavaScript', js: 'JavaScript', typescript: 'TypeScript', ts: 'TypeScript', html: 'HTML', css: 'CSS', java: 'Java', 'c++': 'C++', cpp: 'C++', c: 'C', go: 'Go', rust: 'Rust', ruby: 'Ruby', php: 'PHP', bash: 'Bash', sql: 'SQL', swift: 'Swift', kotlin: 'Kotlin' };
   function detectLanguage(text) {
     const t = String(text || '').toLowerCase();
@@ -200,29 +194,38 @@
     const raw = String(text || '').trim().replace(/\s+/g, ' ');
     const steps = [];
     const short = raw.length > 110 ? raw.slice(0, 110) + '…' : raw;
-    if (raw) steps.push(`Analyzing request: "${short}"`);
+    if (raw) steps.push(`Analyzing: "${short}"`);
     const lang = detectLanguage(raw);
     if (lang) steps.push(`Target language: ${lang}`);
     const t = raw.toLowerCase();
     if (/\b(build|create|make|write|code|script|app|game|site|page)\b/.test(t)) steps.push('Planning project structure');
     if (/\b(fix|bug|error|broken|crash|wrong|fail)\b/.test(t)) steps.push('Diagnosing the issue');
     if (/\b(search|latest|news|current|today)\b/.test(t)) steps.push('Preparing a web search');
-    if (/\b(explain|why|how does|what is)\b/.test(t)) steps.push('Preparing a step-by-step explanation');
     if (files && files.length) steps.push(`Reading ${files.length} attached file${files.length === 1 ? '' : 's'}`);
     if (!steps.length) steps.push('Planning a clear answer');
     return steps;
   }
 
-  /* ═══════════ Client-side Tool Registry (for local tools the AI may invoke) ═══════════ */
+  /* ═══════════ Tool registry ═══════════ */
   const __tools = new Map();
   window.miroxRegisterTool = function(name, def) {
     if (!name || !def || typeof def.run !== 'function') return false;
-    __tools.set(name, { name, label: def.label || name, icon: def.icon || 'ri-terminal-box-line', description: def.description || '', run: def.run, expandable: !!def.expandable });
+    __tools.set(name, { name, label: def.label || name, icon: def.icon || 'ri-tools-line', description: def.description || '', run: def.run });
     return true;
   };
   window.miroxListTools = () => Array.from(__tools.keys());
 
-  // ---- Built-in local tools (executed in the browser, no backend needed) ----
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      if ([...document.scripts].some((s) => s.src === src)) return resolve();
+      const s = document.createElement('script');
+      s.src = src; s.async = true;
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error('Failed to load ' + src));
+      document.head.appendChild(s);
+    });
+  }
+
   window.miroxRegisterTool('extract_zip', {
     label: 'Extract ZIP archive',
     icon: 'ri-file-zip-line',
@@ -232,11 +235,10 @@
       const filename = input?.filename || input?.file?.name || 'archive.zip';
       if (!dataUrl) return { ok: false, error: 'No zip data provided.' };
       try {
-        const JSZip = (await loadScript('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js'));
-        const zip = await JSZip.loadAsync(dataUrl.split(',')[1] || dataUrl, { base64: true });
+        await loadScript('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js');
+        const zip = await window.JSZip.loadAsync(dataUrl.split(',')[1] || dataUrl, { base64: true });
         const files = [];
-        const entries = Object.keys(zip.files);
-        for (const path of entries) {
+        for (const path of Object.keys(zip.files)) {
           const entry = zip.files[path];
           if (entry.dir) continue;
           const text = await entry.async('string').catch(() => null);
@@ -249,7 +251,7 @@
 
   window.miroxRegisterTool('execute_python', {
     label: 'Execute Python code',
-    icon: 'ri-terminal-box-line',
+    icon: 'ri-code-box-line',
     description: 'Runs Python in a sandbox (Pyodide).',
     async run(input) {
       const code = input?.code || '';
@@ -266,7 +268,6 @@
   window.miroxRegisterTool('read_attachment', {
     label: 'Read attachment',
     icon: 'ri-file-text-line',
-    description: 'Reads the text content of a pending attachment.',
     async run(input) {
       const name = input?.name;
       const f = pendingFiles.find((x) => x.name === name);
@@ -278,172 +279,28 @@
   window.miroxRegisterTool('list_attachments', {
     label: 'List attachments',
     icon: 'ri-attachment-2',
-    description: 'Lists the current pending attachments.',
     async run() {
       return { ok: true, files: pendingFiles.map((f) => ({ name: f.name, size: f.size, type: f.type })) };
     },
   });
 
-  function loadScript(src) {
-    return new Promise((resolve, reject) => {
-      if ([...document.scripts].some((s) => s.src === src)) return resolve();
-      const s = document.createElement('script');
-      s.src = src; s.async = true;
-      s.onload = () => resolve();
-      s.onerror = () => reject(new Error('Failed to load ' + src));
-      document.head.appendChild(s);
-    });
-  }
-
-  /* ═══════════ Modals ═══════════ */
-  const openModal = (id) => { const el = document.getElementById(id); if (el) el.classList.add('open'); };
-  const closeModal = (id) => { const el = document.getElementById(id); if (el) el.classList.remove('open'); };
-  const openSidebar = () => { $('#sidebar')?.classList.add('open'); $('#sidebarScrim')?.classList.add('open'); };
-  const closeSidebar = () => { $('#sidebar')?.classList.remove('open'); $('#sidebarScrim')?.classList.remove('open'); };
-
-  /* ═══════════ Appearance ═══════════ */
-  function applyAppearance(prefs) {
-    const root = document.documentElement;
-    const mode = prefs.mode || 'light';
-    const theme = prefs.theme || 'default';
-    root.setAttribute('data-mode', mode);
-    root.setAttribute('data-theme', theme);
-    safeSet(APPEARANCE_KEY, { mode, theme });
-    $$('[data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
-    $$('.swatch').forEach((b) => b.classList.toggle('active', b.dataset.theme === theme));
-  }
-  function loadAppearance() {
-    const prefs = safeGet(APPEARANCE_KEY, {});
-    if (!prefs.mode && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) prefs.mode = 'dark';
-    applyAppearance(prefs);
-  }
-
-  /* ═══════════ Bridge tag cleanup ═══════════ */
-  function stripBridgeTags(text) {
-    if (!text) return '';
-    let t = String(text);
-    t = t.replace(/<bridge-designs>[\s\S]*?<\/bridge-designs>/g, '');
-    t = t.replace(/<bridge-[a-z][a-z0-9-]*[^>]*>[\s\S]*?<\/bridge-[a-z][a-z0-9-]*>/g, '');
-    t = t.replace(/<bridge-[a-z][a-z0-9-]*\s+[^>]*\/>/g, '');
-    t = t.replace(/<\/?bridge-[a-z][a-z0-9-]*[^>]*>/g, '');
-    t = t.replace(/\n{3,}/g, '\n\n');
-    return t.trim();
-  }
-  function sanitizeForChat(text) {
-    let t = stripBridgeTags(text);
-    t = t.replace(/```[\s\S]*?```/g, '').replace(/~~~[\s\S]*?~~~/g, '').replace(/`[^`\n]+`/g, '');
-    t = t.replace(/\bDONE\b/g, '').replace(/\basking\(\s*\)/gi, '');
-    return t.replace(/\n{3,}/g, '\n\n').trim();
-  }
-
-  /* ═══════════ Markdown ═══════════ */
-  const HL_ALIASES = { html: 'xml', htm: 'xml', js: 'javascript', mjs: 'javascript', ts: 'typescript', py: 'python', python3: 'python', sh: 'bash', shell: 'bash', zsh: 'bash', yml: 'yaml', jsonc: 'json', cxx: 'cpp' };
-  function highlightCode(lang, code) {
-    const raw = String(code || '').replace(/\n$/, '');
-    try {
-      if (window.hljs) {
-        const l = (HL_ALIASES[String(lang || '').toLowerCase()] || String(lang || '').toLowerCase()).trim();
-        if (l && hljs.getLanguage && hljs.getLanguage(l)) return hljs.highlight(raw, { language: l }).value;
-        return hljs.highlightAuto(raw).value;
-      }
-    } catch {}
-    return escapeHtml(raw);
-  }
-  function renderMarkdown(rawText) {
-    if (!rawText) return '';
-    const src = stripBridgeTags(String(rawText));
-    if (!src) return '';
-    const parts = [];
-    const re = /```([a-zA-Z0-9+#._-]*)\n?([\s\S]*?)```/g;
-    let last = 0, m;
-    while ((m = re.exec(src)) !== null) {
-      if (m.index > last) parts.push({ type: 'text', content: src.slice(last, m.index) });
-      parts.push({ type: 'code', lang: (m[1] || '').trim(), content: m[2], closed: true });
-      last = re.lastIndex;
-    }
-    const rest = src.slice(last);
-    const openM = rest.match(/```([a-zA-Z0-9+#._-]*)\n?([\s\S]*)$/);
-    if (openM) {
-      const before = rest.slice(0, openM.index);
-      if (before) parts.push({ type: 'text', content: before });
-      parts.push({ type: 'code', lang: (openM[1] || '').trim(), content: openM[2], closed: false });
-    } else if (rest) parts.push({ type: 'text', content: rest });
-    return parts.map((p) => p.type === 'code' ? renderCode(p.lang, p.content, p.closed) : renderText(p.content)).join('');
-  }
-  function renderCode(lang, code, closed) {
-    const cleanLang = (lang || '').trim().toLowerCase();
-    const label = (cleanLang || 'CODE').toUpperCase();
-    const raw = String(code || '').replace(/\n$/, '');
-    const btn = closed
-      ? '<button class="code-action-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button>'
-      : '<span class="writing-tag"><i class="ri-loader-4-line spin"></i> writing…</span>';
-    return `<div class="code-block"><div class="code-block-header"><span class="code-lang-label">${escapeHtml(label)}</span>${btn}</div><pre><code class="hljs">${highlightCode(cleanLang, raw)}</code></pre></div>`;
-  }
-  function renderText(text) {
-    const lines = String(text).split('\n');
-    let out = '';
-    const buf = [];
-    const flush = () => { if (buf.length) { out += `<p>${inlineFmt(buf.join(' '))}</p>`; buf.length = 0; } };
-    const cells = (line) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((v) => v.trim());
-    for (let i = 0; i < lines.length; i++) {
-      const t = lines[i].trim();
-      if (!t) { flush(); continue; }
-      if (t.includes('|') && i + 1 < lines.length && /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[i + 1])) {
-        flush();
-        const headers = cells(t); i += 1;
-        let table = '<div class="md-table-wrap"><table class="md-table"><thead><tr>';
-        headers.forEach((c) => { table += `<th>${inlineFmt(c)}</th>`; });
-        table += '</tr></thead><tbody>';
-        while (i + 1 < lines.length && lines[i + 1].trim().includes('|') && lines[i + 1].trim() !== '') {
-          i++; const row = cells(lines[i]); table += '<tr>';
-          for (let j = 0; j < headers.length; j++) table += `<td>${inlineFmt(row[j] || '')}</td>`;
-          table += '</tr>';
-        }
-        out += table + '</tbody></table></div>';
-        continue;
-      }
-      const hm = t.match(/^(#{1,4})\s+(.+)$/);
-      if (hm) { flush(); out += `<h${hm[1].length}>${inlineFmt(hm[2])}</h${hm[1].length}>`; continue; }
-      const um = t.match(/^[-*+]\s+(.+)$/);
-      if (um) { flush(); out += `<div class="md-li">• ${inlineFmt(um[1])}</div>`; continue; }
-      const om = t.match(/^(\d+)\.\s+(.+)$/);
-      if (om) { flush(); out += `<div class="md-li">${om[1]}. ${inlineFmt(om[2])}</div>`; continue; }
-      if (/^>\s?/.test(t)) { flush(); out += `<blockquote>${inlineFmt(t.replace(/^>\s?/, ''))}</blockquote>`; continue; }
-      buf.push(t);
-    }
-    flush();
-    return out;
-  }
-  function inlineFmt(t) {
-    t = escapeHtml(t);
-    t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
-    return t;
-  }
-  function wireCopyButtons(scope) {
-    (scope || document).querySelectorAll('.code-action-btn[data-copy]').forEach((btn) => {
-      if (btn.__wired) return; btn.__wired = true;
-      btn.onclick = async () => {
-        const code = btn.closest('.code-block')?.querySelector('pre code')?.textContent || '';
-        try {
-          await navigator.clipboard.writeText(code);
-          btn.innerHTML = '<i class="ri-check-line"></i> Copied';
-          setTimeout(() => { btn.innerHTML = '<i class="ri-file-copy-line"></i> Copy'; }, 1200);
-        } catch {}
-      };
-    });
-  }
-
-  /* ═══════════ Thinking panel — terminal-tool style ═══════════ */
+  /* ═══════════ Tool icon mapping ═══════════ */
   function iconForTool(name) {
     const t = __tools.get(name);
     if (t && t.icon) return t.icon;
-    if (/python|exec|run|shell|bash/i.test(name)) return 'ri-terminal-box-line';
-    if (/zip|archive/i.test(name)) return 'ri-file-zip-line';
-    if (/read|file/i.test(name)) return 'ri-file-text-line';
-    if (/write|edit/i.test(name)) return 'ri-file-edit-line';
-    if (/search|find/i.test(name)) return 'ri-search-line';
-    if (/list|dir|folder/i.test(name)) return 'ri-folder-open-line';
+    const n = String(name || '').toLowerCase();
+    if (/python|py\b/.test(n)) return 'ri-code-box-line';
+    if (/js|javascript|node/.test(n)) return 'ri-javascript-line';
+    if (/shell|bash|exec|run|command|terminal|sudo/.test(n)) return 'ri-terminal-box-line';
+    if (/zip|archive|extract/.test(n)) return 'ri-file-zip-line';
+    if (/read|cat|view/.test(n)) return 'ri-file-text-line';
+    if (/write|save|edit|append|create/.test(n)) return 'ri-file-edit-line';
+    if (/list|ls|dir|folder/.test(n)) return 'ri-folder-open-line';
+    if (/search|find|grep|query/.test(n)) return 'ri-search-line';
+    if (/browse|http|fetch|web|url/.test(n)) return 'ri-global-line';
+    if (/image|img|photo/.test(n)) return 'ri-image-line';
+    if (/move|copy|cp|mv/.test(n)) return 'ri-drag-move-line';
+    if (/delete|rm/.test(n)) return 'ri-delete-bin-line';
     return 'ri-tools-line';
   }
   function humanToolLabel(name) {
@@ -452,32 +309,31 @@
     return String(name || 'tool').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   }
 
+  /* ═══════════ Thinking panel — flat terminal style, no bubble ═══════════ */
   function createThinkPanel(label, steps, headline) {
     const el = document.createElement('div');
     el.className = 'think-wrap';
     el.innerHTML = `
       <div class="think-head">
-        <div class="think-head-icon"><i class="ri-tools-line"></i></div>
-        <div class="think-head-text">
-          <div class="think-head-title">
-            <span class="think-tool-summary" hidden></span>
-            <span class="think-label">${escapeHtml(label || 'Thinking')}</span>
-          </div>
-          ${headline ? `<div class="think-head-sub">${escapeHtml(headline)}</div>` : ''}
-        </div>
+        <span class="think-head-icon"><i class="ri-loader-4-line spin"></i></span>
+        <span class="think-head-label">
+          <span class="think-tool-summary" hidden></span>
+          <span class="think-label">${escapeHtml(label || 'Thinking')}</span>
+        </span>
         <span class="think-timer">0.0s</span>
         <button class="think-btn" data-think="min" type="button" title="Minimize"><i class="ri-subtract-line"></i></button>
         <button class="think-btn" data-think="max" type="button" title="Expand"><i class="ri-fullscreen-line"></i></button>
       </div>
+      ${headline ? `<div class="think-head-sub">${escapeHtml(headline)}</div>` : ''}
       <div class="think-body"></div>`;
     const body = el.querySelector('.think-body');
     const timerEl = el.querySelector('.think-timer');
     const labelEl = el.querySelector('.think-label');
     const summaryEl = el.querySelector('.think-tool-summary');
+    const headIcon = el.querySelector('.think-head-icon i');
     const t0 = performance.now();
     let done = false;
     let toolCount = 0;
-    let lastToolRow = null;
 
     const timer = setInterval(() => {
       if (done) { clearInterval(timer); return; }
@@ -487,59 +343,42 @@
     function updateSummary() {
       if (toolCount > 0) {
         summaryEl.hidden = false;
-        summaryEl.textContent = `Used ${toolCount} tool${toolCount === 1 ? '' : 's'}, `;
-      } else {
-        summaryEl.hidden = true;
-        summaryEl.textContent = '';
-      }
+        summaryEl.textContent = `Used ${toolCount} tool${toolCount === 1 ? '' : 's'} · `;
+      } else summaryEl.hidden = true;
     }
 
+    // Plain narration line — no bubble, just text with small bullet
     function addNarration(text) {
       if (!text) return;
-      const p = document.createElement('p');
+      const p = document.createElement('div');
       p.className = 'think-narration';
-      p.textContent = text;
+      p.innerHTML = `<span class="think-narration-dot"></span><span>${escapeHtml(text)}</span>`;
       body.appendChild(p);
-      body.scrollTop = body.scrollHeight;
     }
 
-    function addBullet(text) {
-      const li = document.createElement('div');
-      li.className = 'think-bullet';
-      li.innerHTML = `<span class="think-bullet-dot"></span><span class="think-bullet-text">${escapeHtml(text)}</span>`;
-      body.appendChild(li);
-      body.scrollTop = body.scrollHeight;
-      return li;
-    }
-
-    // Tool row: [>_] Execute Python code    <chevron>
+    // Tool row — icon + name + status + chevron, terminal style
     function addTool(name, opts) {
       const o = opts || {};
       toolCount++;
       updateSummary();
       const row = document.createElement('div');
       row.className = 'think-tool';
-      row.dataset.toolName = name;
-      const label2 = o.label || humanToolLabel(name);
+      const lbl = o.label || humanToolLabel(name);
       const icon = o.icon || iconForTool(name);
       row.innerHTML = `
         <div class="think-tool-head">
           <span class="think-tool-icon"><i class="${icon}"></i></span>
-          <span class="think-tool-name">${escapeHtml(label2)}</span>
+          <span class="think-tool-name">${escapeHtml(lbl)}</span>
           <span class="think-tool-status"><i class="ri-loader-4-line spin"></i></span>
           <button class="think-tool-toggle" type="button" aria-label="Toggle"><i class="ri-arrow-down-s-line"></i></button>
         </div>
         <div class="think-tool-body"></div>`;
       body.appendChild(row);
-      body.scrollTop = body.scrollHeight;
-
-      const head = row.querySelector('.think-tool-head');
-      head.addEventListener('click', () => row.classList.toggle('open'));
-      lastToolRow = row;
+      row.querySelector('.think-tool-head').addEventListener('click', () => row.classList.toggle('open'));
 
       return {
         row,
-        setStatus(state, text) {
+        setStatus(state) {
           const st = row.querySelector('.think-tool-status');
           if (state === 'run') st.innerHTML = '<i class="ri-loader-4-line spin"></i>';
           else if (state === 'ok') st.innerHTML = '<i class="ri-check-line"></i>';
@@ -550,37 +389,20 @@
           if (!text) return;
           const li = document.createElement('div');
           li.className = 'think-tool-result';
-          li.innerHTML = `<span class="think-tool-result-dot"></span><span>${escapeHtml(text)}</span>`;
+          li.textContent = text;
           row.querySelector('.think-tool-body').appendChild(li);
-          body.scrollTop = body.scrollHeight;
         },
-        addCode(code, lang) {
+        addCode(code) {
           if (!code) return;
           const pre = document.createElement('pre');
           pre.className = 'think-tool-code';
-          pre.innerHTML = `<code>${escapeHtml(String(code).slice(0, 2000))}</code>`;
+          pre.textContent = String(code).slice(0, 2000);
           row.querySelector('.think-tool-body').appendChild(pre);
-          body.scrollTop = body.scrollHeight;
         },
       };
     }
 
-    // Legacy API kept for bridge/other callers — adds a bullet in the current tool body or top-level.
-    function addStep(text, state = 'info') {
-      if (lastToolRow && state === 'ok') {
-        const li = document.createElement('div');
-        li.className = 'think-tool-result';
-        li.innerHTML = `<span class="think-tool-result-dot"></span><span>${escapeHtml(text)}</span>`;
-        lastToolRow.querySelector('.think-tool-body').appendChild(li);
-        body.scrollTop = body.scrollHeight;
-        return lastToolRow;
-      }
-      return addBullet(text);
-    }
-
-    if (Array.isArray(steps)) {
-      steps.forEach((s) => addNarration(s));
-    }
+    if (Array.isArray(steps)) steps.forEach((s) => addNarration(s));
 
     el.querySelector('[data-think="min"]').addEventListener('click', (e) => { e.stopPropagation(); el.classList.toggle('collapsed'); });
     el.querySelector('[data-think="max"]').addEventListener('click', (e) => { e.stopPropagation(); el.classList.toggle('expanded'); });
@@ -591,30 +413,27 @@
       clearInterval(timer);
       timerEl.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
       labelEl.textContent = finalLabel;
+      headIcon.className = 'ri-checkbox-circle-line';
       el.classList.add('done');
       setMascotMood(mood, el);
-      setTimeout(() => el.classList.add('collapsed'), 1600);
+      setTimeout(() => el.classList.add('collapsed'), 1800);
     }
     return {
       el,
-      addStep,
+      addStep(text) { addNarration(text); },
       addNarration,
-      addBullet,
       addTool,
       setMood(mood) { setMascotMood(mood, el); },
       markWriting() { addNarration('Writing the answer…'); },
       finish() {
-        body.querySelectorAll('.think-tool-status .ri-loader-4-line').forEach((i) => {
-          i.className = 'ri-check-line';
-        });
-        addBullet('Thinking complete');
-        close('Done', 'happy');
+        body.querySelectorAll('.think-tool-status .ri-loader-4-line').forEach((i) => { i.className = 'ri-check-line'; });
+        addNarration('Thinking complete');
+        close('Thought for a moment', 'happy');
       },
       fail(msg) {
-        body.querySelectorAll('.think-tool-status .ri-loader-4-line').forEach((i) => {
-          i.className = 'ri-error-warning-line';
-        });
-        addBullet(msg || 'Stopped with an error.');
+        body.querySelectorAll('.think-tool-status .ri-loader-4-line').forEach((i) => { i.className = 'ri-error-warning-line'; });
+        addNarration(msg || 'Stopped with an error.');
+        headIcon.className = 'ri-error-warning-line';
         close('Stopped', 'error');
       },
       destroy() { clearInterval(timer); if (!done) close('Stopped', 'idle'); },
@@ -712,7 +531,6 @@
     if (span) span.textContent = limit ? `${Math.min(used, limit).toLocaleString()} / 10k tokens` : `${used.toLocaleString()} tokens`;
     el.classList.toggle('token-near-limit', !!limit && used >= limit * .85);
     el.classList.toggle('token-limit', !!limit && used >= limit);
-    el.title = limit ? `Estimated conversation usage. Free limit: ${limit.toLocaleString()} tokens.` : 'Estimated tokens used in this conversation';
   }
   function atChatBottom(c = $('#chatMessages')) { return !c || c.scrollHeight - c.scrollTop - c.clientHeight < 100; }
   function scrollToBottom(force = false) {
@@ -744,7 +562,7 @@
     continuationBusy = true;
     btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line spin"></i><span>Continuing…</span>';
     try {
-      await sendToAPI('Continue your previous response from exactly where it stopped. Do not repeat the completed text. Continue in the same response.', [], false, { existingMsgEl: msgEl, existingBubble: bubble, messageObj, continuation: true });
+      await sendToAPI('Continue your previous response from exactly where it stopped. Do not repeat the completed text.', [], false, { existingMsgEl: msgEl, existingBubble: bubble, messageObj, continuation: true });
     } finally {
       continuationBusy = false;
       if (btn.isConnected) btn.remove();
@@ -840,7 +658,7 @@
     const inp = $('#messageInput'); if (!inp) return;
     const text = inp.value.trim();
     if (!text && !pendingFiles.length) return;
-    if (freeLimitReached()) { toast('Max tokens length reached — try new chat or upgrade to Pro / Ultimate.', 5000); updateTokenUsage(); return; }
+    if (freeLimitReached()) { toast('Max tokens length reached — try new chat or upgrade.', 5000); updateTokenUsage(); return; }
     const files = pendingFiles.slice();
     const searchFlag = forceSearchNext;
     forceSearchNext = false;
@@ -860,19 +678,13 @@
     updateSendButtonState();
     saveChats();
     renderHistory(); updateTokenUsage();
-    if (freeLimitReached(convo)) {
-      const lastUserEl = $('#chatMessages')?.querySelector(`[data-msg-id="${msgId}"]`);
-      showLimitNote(lastUserEl?.querySelector('.bubble'));
-      saveChats(); toast('Max tokens length reached — try new chat or upgrade to Pro / Ultimate.', 5000);
-      updateSendButtonState(); return;
-    }
     sendToAPI(text, files, searchFlag);
   }
 
   async function sendToAPI(text, files, forceSearch, continuation = null) {
     const isContinuation = !!(continuation && continuation.continuation);
     const convoAtStart = currentConvo();
-    if (!isContinuation && freeLimitReached(convoAtStart)) { toast('Max tokens length reached — try new chat or upgrade to Pro / Ultimate.', 5000); return; }
+    if (!isContinuation && freeLimitReached(convoAtStart)) { toast('Max tokens length reached.', 5000); return; }
     isReplying = true;
     updateSendButtonState();
     const stopBtn = $('#stopBtn');
@@ -893,7 +705,7 @@
       timeEl = msgEl.querySelector('.message-time');
       bubble.querySelector('[data-continue]')?.remove();
       bubble.querySelector('.token-limit-note')?.remove();
-      panel = { el: document.createElement('span'), addStep() {}, addNarration() {}, addBullet() {}, addTool() { return { row: document.createElement('span'), setStatus() {}, addResult() {}, addCode() {} }; }, setMood() {}, markWriting() {}, finish() {}, fail() {}, destroy() {} };
+      panel = { el: document.createElement('span'), addStep() {}, addNarration() {}, addTool() { return { row: document.createElement('span'), setStatus() {}, addResult() {}, addCode() {} }; }, setMood() {}, markWriting() {}, finish() {}, fail() {}, destroy() {} };
       const prev = String(continuation.messageObj.content || '');
       var full = prev ? prev + '\n\n' : '';
     } else {
@@ -901,7 +713,7 @@
       msgEl.className = 'message ai';
       msgEl.dataset.msgId = aiMsgId;
       msgEl.dataset.role = 'ai';
-      panel = createThinkPanel(pickStatusLabel(text), [], text);
+      panel = createThinkPanel(pickStatusLabel(text), buildThinkingSteps(text, files), text);
       panel.setMood(pickMoodFor(text));
       msgEl.appendChild(panel.el);
       timeEl = document.createElement('div'); timeEl.className = 'message-time';
@@ -939,10 +751,7 @@
         }),
         signal: activeStreamController.signal,
       });
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        throw new Error(d.error?.message || `HTTP ${res.status}`);
-      }
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error?.message || `HTTP ${res.status}`); }
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let buf = '', searchStepAdded = false;
@@ -970,7 +779,6 @@
           let o;
           try { o = JSON.parse(pl); } catch { continue; }
 
-          // ── New: tool start event ──
           if (o.tool) {
             const name = typeof o.tool === 'string' ? o.tool : (o.tool.name || 'tool');
             const label = typeof o.tool === 'object' ? o.tool.label : null;
@@ -978,31 +786,26 @@
             currentToolHandle = panel.addTool(name, { label, icon });
             panel.setMood('coding');
           }
-          // ── New: tool result event ──
           if (o.tool_result) {
             const tr = o.tool_result;
             if (currentToolHandle) {
               currentToolHandle.setStatus(tr.ok === false ? 'warn' : 'ok');
               if (tr.text) currentToolHandle.addResult(tr.text);
               else if (tr.result) currentToolHandle.addResult(typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result));
-              if (tr.code) currentToolHandle.addCode(tr.code, tr.lang);
+              if (tr.code) currentToolHandle.addCode(tr.code);
               currentToolHandle = null;
-            } else {
-              panel.addBullet(typeof tr === 'string' ? tr : (tr.text || ''));
             }
           }
-          // ── Narration event ──
-          if (o.n) { panel.addNarration(o.n); }
-
+          if (o.n) panel.addNarration(o.n);
           if (o.search && o.search.query && !searchStepAdded) {
             searchStepAdded = true;
             panel.addNarration(`Searching the web for "${o.search.query}"…`);
             panel.setMood('searching');
           }
-          if (o.overview && o.overview.text) panel.addBullet(`Overview from ${o.overview.source || 'web'} acquired`);
-          if (o.source && o.source.title) panel.addBullet(`Source: ${o.source.title}`);
-          if (o.search_done) { panel.addBullet(`Search finished — ${o.count || 0} result(s)`); panel.setMood('reading'); }
-          if (o.p) { panel.addBullet(`Connected to ${o.p}`); panel.setMood('reasoning'); }
+          if (o.overview && o.overview.text) panel.addNarration(`Overview from ${o.overview.source || 'web'} acquired`);
+          if (o.source && o.source.title) panel.addNarration(`Source: ${o.source.title}`);
+          if (o.search_done) { panel.addNarration(`Search finished — ${o.count || 0} result(s)`); panel.setMood('reading'); }
+          if (o.p) { panel.addNarration(`Connected to ${o.p}`); panel.setMood('reasoning'); }
           if (o.img) {
             generatedImage = o.img;
             panel.markWriting();
@@ -1125,7 +928,6 @@
       reader.readAsDataURL(file);
     });
   }
-
   function readAsDataUrl(file) {
     return new Promise((resolve) => {
       const r = new FileReader();
@@ -1134,24 +936,19 @@
       r.readAsDataURL(file);
     });
   }
-
   function addTextAttachment(text, name) {
     const body = String(text).slice(0, 60000);
     const fname = name || ('pasted-' + new Date().toISOString().slice(11, 19).replace(/:/g, '-') + '.txt');
     if (pendingFiles.some((f) => f.type === 'text' && f.content === body)) { toast('attachment already added', 1800); return; }
     pendingFiles.push({ name: fname, size: text.length, type: 'text', content: body });
-    updatePreview();
-    updateSendButtonState();
-    toast(`Large text added as attachment (${fmtSize(text.length)})`, 2200);
+    updatePreview(); updateSendButtonState();
+    toast(`Added as attachment (${fmtSize(text.length)})`, 2200);
   }
-
   function handleFiles(fileList) {
     if (!fileList || !fileList.length) return;
     const arr = [];
     for (const f of Array.from(fileList)) {
-      if (hasAttachment(f.name, f.size) || arr.some((x) => x.name === f.name && x.size === f.size)) {
-        toast('attachment already added', 1800); continue;
-      }
+      if (hasAttachment(f.name, f.size) || arr.some((x) => x.name === f.name && x.size === f.size)) { toast('attachment already added', 1800); continue; }
       arr.push(f);
     }
     if (!arr.length) return;
@@ -1160,22 +957,16 @@
     const finish = () => {
       newFiles.sort((a, b) => (a.order || 0) - (b.order || 0));
       for (const nf of newFiles) if (!hasAttachment(nf.name, nf.size)) pendingFiles.push(nf);
-      updatePreview();
-      updateSendButtonState();
+      updatePreview(); updateSendButtonState();
     };
     arr.forEach((f, idx) => {
       const isImg = (f.type || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(f.name);
-      const isZip = /\.zip$/i.test(f.name) || f.type === 'application/zip' || f.type === 'application/x-zip-compressed';
+      const isZip = /\.zip$/i.test(f.name) || f.type === 'application/zip';
       const one = () => { done++; if (done === arr.length) finish(); };
       if (isZip) {
-        readAsDataUrl(f).then((dataUrl) => {
-          if (dataUrl) newFiles.push({ name: f.name, size: f.size, type: 'zip', dataUrl, order: idx });
-          one();
-        }).catch(one);
+        readAsDataUrl(f).then((dataUrl) => { if (dataUrl) newFiles.push({ name: f.name, size: f.size, type: 'zip', dataUrl, order: idx }); one(); }).catch(one);
       } else if (isImg) {
-        readImageAsResizedDataUrl(f)
-          .then((dataUrl) => { if (dataUrl) newFiles.push({ name: f.name, size: f.size, type: 'image', dataUrl, order: idx }); one(); })
-          .catch(one);
+        readImageAsResizedDataUrl(f).then((dataUrl) => { if (dataUrl) newFiles.push({ name: f.name, size: f.size, type: 'image', dataUrl, order: idx }); one(); }).catch(one);
       } else {
         const r = new FileReader();
         r.onload = () => { newFiles.push({ name: f.name, size: f.size, type: 'text', content: String(r.result).slice(0, 60000), order: idx }); one(); };
@@ -1184,7 +975,6 @@
       }
     });
   }
-
   function updatePreview() {
     const p = $('#attachmentPreview'), list = $('#attachmentList');
     if (!p || !list) return;
@@ -1197,7 +987,6 @@
     }).join('');
   }
 
-  /* ═══════════ Toast ═══════════ */
   function toast(msg, ms) {
     const t = document.createElement('div');
     t.className = 'mirox-toast';
@@ -1254,27 +1043,19 @@
     });
   }
 
-  /* ═══════════ Models / config ═══════════ */
+  /* ═══════════ Models ═══════════ */
   function getModelsList() { return __config?.models?.length ? __config.models : FALLBACK_MODELS; }
-  function canUseModel(tier) {
-    if (tier === 'free' || tier === 'ultimate') return true;
-    return TIER_RANK[__tier] >= TIER_RANK[tier];
-  }
+  function canUseModel(tier) { if (tier === 'free' || tier === 'ultimate') return true; return TIER_RANK[__tier] >= TIER_RANK[tier]; }
   function renderModelPicker() {
     const menu = $('#modelPickerMenu'); if (!menu) return;
     const models = getModelsList();
     const cur = __model || models[0].id;
     menu.innerHTML = models.map((m) => {
       const usable = canUseModel(m.tier);
-      return `<div class="model-option${m.id === cur ? ' active' : ''}${usable ? '' : ' locked'}" data-model-id="${m.id}" data-usable="${usable}">
-        <span class="model-option-label"><span class="dot"></span>${escapeHtml(m.label)}</span></div>`;
+      return `<div class="model-option${m.id === cur ? ' active' : ''}${usable ? '' : ' locked'}" data-model-id="${m.id}" data-usable="${usable}"><span class="model-option-label"><span class="dot"></span>${escapeHtml(m.label)}</span></div>`;
     }).join('');
     menu.querySelectorAll('.model-option').forEach((opt) => {
-      opt.onclick = (e) => {
-        e.stopPropagation();
-        if (opt.dataset.usable === 'false') { toast('Upgrade to use this model'); return; }
-        selectModel(opt.dataset.modelId);
-      };
+      opt.onclick = (e) => { e.stopPropagation(); if (opt.dataset.usable === 'false') { toast('Upgrade to use this model'); return; } selectModel(opt.dataset.modelId); };
     });
     const c = models.find((m) => m.id === cur);
     if (c) { const lbl = $('#currentModelLabel'); if (lbl) lbl.textContent = c.label; }
@@ -1305,7 +1086,6 @@
     setPill('[data-credit="image"]', __usage.image_used || 0, __usage.image_limit || 10);
     setPill('[data-credit="eclipse"]', __usage.eclipse_used || 0, __usage.eclipse_limit || 5);
   }
-
   async function refreshUsage() {
     const res = await jsonOr('/api/me', {}, null, 7000);
     if (!res || !res.user) {
@@ -1313,8 +1093,7 @@
       renderCreditBar();
       const chip = $('#userChip');
       if (chip) { chip.querySelector('.user-name').textContent = 'Guest mode'; chip.querySelector('.user-sub').textContent = 'Sign in to save chats'; }
-      renderModelPicker();
-      return;
+      renderModelPicker(); return;
     }
     __user = res.user;
     __tier = res.user.tier || 'free';
@@ -1331,7 +1110,6 @@
     }
     renderModelPicker(); updateTokenUsage();
   }
-
   async function loadConfig() {
     const data = await jsonOr('/api/config', {}, null, 7000);
     if (data && Array.isArray(data.models) && data.models.length) __config = data;
@@ -1341,7 +1119,6 @@
     const wrap = $('#emailLoginWrap');
     if (wrap && __config.email_login_available === false) wrap.style.display = 'none';
   }
-
   async function doLogin(e) {
     if (e) e.preventDefault();
     const name = $('#loginName')?.value.trim();
@@ -1349,18 +1126,15 @@
     if (!name || !email) return;
     const res = await jsonOr('/api/auth/simple-login', { method: 'POST', body: JSON.stringify({ name, email }) }, null);
     if (res && res.ok) { setToken(res.token || ''); closeModal('loginModal'); await refreshUsage(); toast('Welcome, ' + name + '!'); }
-    else { toast(res?.error || 'Login failed', 2500); }
+    else toast(res?.error || 'Login failed', 2500);
   }
   function doLoginment() {
     const tries = Number(sessionStorage.getItem('mirox_lm_tries') || 0);
-    if (tries >= 2) { toast('Sign-in did not complete. Refresh the page and try once more, or use email login.', 4000); sessionStorage.removeItem('mirox_lm_tries'); return; }
+    if (tries >= 2) { toast('Sign-in did not complete. Refresh and try again.', 4000); sessionStorage.removeItem('mirox_lm_tries'); return; }
     sessionStorage.setItem('mirox_lm_tries', String(tries + 1));
     window.location.href = '/api/auth/loginment/start';
   }
-  async function doLogout() {
-    await jsonOr('/api/logout', { method: 'POST' }, null);
-    setToken(''); await refreshUsage(); closeModal('settingsModal'); toast('Signed out');
-  }
+  async function doLogout() { await jsonOr('/api/logout', { method: 'POST' }, null); setToken(''); await refreshUsage(); closeModal('settingsModal'); toast('Signed out'); }
   async function loadPlans() {
     const grid = $('#plansGrid'); if (!grid) return;
     grid.innerHTML = '<div class="studio-empty">Loading plans…</div>';
@@ -1369,20 +1143,10 @@
     grid.innerHTML = res.plans.map((p) => {
       const isCurrent = p.id === __tier;
       const price = p.id === 'free' ? '<div class="plan-price">Free</div>' : `<div class="plan-price">$${Number(p.price_usd).toFixed(2)}</div>`;
-      return `<div class="plan-card${isCurrent ? ' current' : ''}">
-        <div class="plan-name">${escapeHtml(p.label)}</div>
-        <div class="plan-tagline">${escapeHtml(p.tagline || '')}</div>
-        ${price}
-        <ul class="plan-perks">${(p.perks || []).map((x) => `<li>✓ ${escapeHtml(x)}</li>`).join('')}</ul>
-      </div>`;
+      return `<div class="plan-card${isCurrent ? ' current' : ''}"><div class="plan-name">${escapeHtml(p.label)}</div><div class="plan-tagline">${escapeHtml(p.tagline || '')}</div>${price}<ul class="plan-perks">${(p.perks || []).map((x) => `<li>✓ ${escapeHtml(x)}</li>`).join('')}</ul></div>`;
     }).join('');
   }
-  async function loadPersona() {
-    if (!__user) return;
-    const res = await jsonOr('/api/persona', {}, null);
-    const inp = $('#personaInput');
-    if (inp && res?.persona) inp.value = res.persona;
-  }
+  async function loadPersona() { if (!__user) return; const res = await jsonOr('/api/persona', {}, null); const inp = $('#personaInput'); if (inp && res?.persona) inp.value = res.persona; }
   async function savePersona() {
     const status = $('#personaStatus');
     const set = (t, c) => { if (status) { status.textContent = t; status.className = 'persona-status ' + (c || ''); } };
@@ -1403,10 +1167,7 @@
       const res = await netFetch('/v1/images/generations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt }) }, 70000);
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok && data.image) {
-        if (result) {
-          result.innerHTML = `<img src="${data.image}" alt="${escapeHtml(prompt)}">`;
-          result.querySelector('img').onclick = () => openImageViewer(data.image);
-        }
+        if (result) { result.innerHTML = `<img src="${data.image}" alt="${escapeHtml(prompt)}">`; result.querySelector('img').onclick = () => openImageViewer(data.image); }
         refreshUsage(); renderImageHistory(); renderSidebarImageHistory();
       } else if (result) result.innerHTML = `<div class="studio-error">Failed: ${escapeHtml(data.error?.message || data.error || 'Unknown')}</div>`;
     } catch (e) {
@@ -1416,7 +1177,7 @@
     }
   }
 
-  /* ═══════════ Bridge — kept intact ═══════════ */
+  /* ═══════════ Bridge (unchanged core) ═══════════ */
   function loadBridgeLS() { const b = safeGet(BRIDGE_KEY, {}); __bridge = { ...__bridge, ...b, connected: false, baseUrl: null, env: null }; }
   function saveBridgeLS() { safeSet(BRIDGE_KEY, { name: __bridge.name, model: __bridge.model, port: __bridge.port }); }
   function loadBridgeOpts() { const o = safeGet(BRIDGE_OPTS_KEY, {}); if (typeof o.autoRun === 'boolean') __bridgeAutoRun = o.autoRun; if (typeof o.showCode === 'boolean') __bridgeShowCode = o.showCode; }
@@ -1435,20 +1196,14 @@
     const c = $('#bwConnectBtn'), d = $('#bwDisconnectBtn');
     if (c) c.style.display = __bridge.connected ? 'none' : 'flex';
     if (d) d.style.display = __bridge.connected ? 'flex' : 'none';
-    updateBridgeSendBtn();
-    renderSudoStatus();
-    renderToggles();
+    updateBridgeSendBtn(); renderSudoStatus(); renderToggles();
   }
   function renderToggles() {
     $('#bwToggleAutoRun')?.classList.toggle('active', __bridgeAutoRun);
     $('#bwToggleShowCode')?.classList.toggle('active', __bridgeShowCode);
     const sb = $('#bwStopBtn'); if (sb) sb.style.display = bridgeRunning ? 'inline-flex' : 'none';
   }
-  function renderSudoStatus() {
-    const s = $('#bwSudoStatus'); if (!s) return;
-    s.textContent = __sudoPassword ? (__sudoRemember ? 'Password saved (session)' : 'Password set (temporary)') : 'No password saved';
-    s.style.color = __sudoPassword ? 'var(--success)' : '';
-  }
+  function renderSudoStatus() { const s = $('#bwSudoStatus'); if (!s) return; s.textContent = __sudoPassword ? (__sudoRemember ? 'Password saved (session)' : 'Password set (temporary)') : 'No password saved'; s.style.color = __sudoPassword ? 'var(--success)' : ''; }
   function renderKdeStatus() {
     const box = $('#bwKdeBox'), txt = $('#bwKdeStatus');
     if (!box || !txt) return;
@@ -1458,15 +1213,12 @@
   }
   function renderKdeDeviceList() {
     const wrap = $('#bwDeviceList'); if (!wrap) return;
-    if (!__kdeAvailable) { wrap.innerHTML = '<div class="bw-hint">Install on the bridge: <code>sudo apt install kdeconnect</code></div>'; return; }
+    if (!__kdeAvailable) { wrap.innerHTML = '<div class="bw-hint">Install on bridge: <code>sudo apt install kdeconnect</code></div>'; return; }
     if (!__kdeDevices.length) { wrap.innerHTML = '<div class="bw-hint">No devices found. Tap <b>Scan for devices</b>.</div>'; return; }
     wrap.innerHTML = __kdeDevices.map((d) => `
       <div class="bw-device-row" data-id="${escapeHtml(d.id)}">
         <div class="bw-device-icon"><i class="ri-smartphone-line"></i></div>
-        <div class="bw-device-info">
-          <div class="bw-device-name">${escapeHtml(d.name)}</div>
-          <div class="bw-device-id">${escapeHtml(d.id)}${d.reachable ? ' · reachable' : ''}</div>
-        </div>
+        <div class="bw-device-info"><div class="bw-device-name">${escapeHtml(d.name)}</div><div class="bw-device-id">${escapeHtml(d.id)}${d.reachable ? ' · reachable' : ''}</div></div>
         <div class="bw-device-actions">
           <button class="icon-btn" data-kde-ping title="Ping"><i class="ri-wifi-line"></i></button>
           <button class="icon-btn" data-kde-ring title="Ring"><i class="ri-notification-3-line"></i></button>
@@ -1476,29 +1228,17 @@
     wrap.querySelectorAll('.bw-device-row').forEach((row) => {
       const dev = __kdeDevices.find((x) => x.id === row.dataset.id);
       if (!dev) return;
-      row.querySelector('[data-kde-pick]')?.addEventListener('click', () => {
-        __kdeCurrentDevice = { id: dev.id, name: dev.name };
-        saveKdeDevice(); renderKdeDeviceList();
-        toast(`Selected: ${dev.name}`);
-      });
-      row.querySelector('[data-kde-ping]')?.addEventListener('click', async () => {
-        toast(`Pinging ${dev.name}…`);
-        try { const r = await bridgeCall('/kde/ping', { device: dev.id }); toast(r.ok ? `📱 ${dev.name} is online` : '✗ No response'); } catch { toast('Ping failed'); }
-      });
-      row.querySelector('[data-kde-ring]')?.addEventListener('click', async () => {
-        toast(`Ringing ${dev.name}…`);
-        try { await bridgeCall('/kde/ring', { device: dev.id }); } catch {}
-      });
+      row.querySelector('[data-kde-pick]')?.addEventListener('click', () => { __kdeCurrentDevice = { id: dev.id, name: dev.name }; saveKdeDevice(); renderKdeDeviceList(); toast(`Selected: ${dev.name}`); });
+      row.querySelector('[data-kde-ping]')?.addEventListener('click', async () => { toast(`Pinging ${dev.name}…`); try { const r = await bridgeCall('/kde/ping', { device: dev.id }); toast(r.ok ? `📱 ${dev.name} is online` : '✗ No response'); } catch { toast('Ping failed'); } });
+      row.querySelector('[data-kde-ring]')?.addEventListener('click', async () => { toast(`Ringing ${dev.name}…`); try { await bridgeCall('/kde/ring', { device: dev.id }); } catch {} });
     });
   }
-
   function showSudoModal(command) {
     return new Promise((resolve) => {
       __sudoResolver = resolve;
       const modal = $('#sudoModal'); if (!modal) { resolve(null); return; }
       $('#sudoCommandText') && ($('#sudoCommandText').textContent = command || '');
-      const pwd = $('#sudoPasswordInput');
-      if (pwd) { pwd.value = ''; pwd.type = 'password'; }
+      const pwd = $('#sudoPasswordInput'); if (pwd) { pwd.value = ''; pwd.type = 'password'; }
       const rev = $('#sudoRevealBtn'); if (rev) rev.innerHTML = '<i class="ri-eye-line"></i>';
       const hint = $('#sudoHint'); if (hint) { hint.textContent = ''; hint.className = 'sudo-hint'; }
       modal.classList.add('open');
@@ -1528,20 +1268,16 @@
     }
     return { ok: false };
   }
-  async function fetchEnv(base) {
-    try { const r = await netFetch(`${base}/env`, { mode: 'cors' }, 5000); if (!r.ok) return null; const d = await r.json(); return d && d.ok ? d : null; } catch { return null; }
-  }
+  async function fetchEnv(base) { try { const r = await netFetch(`${base}/env`, { mode: 'cors' }, 5000); if (!r.ok) return null; const d = await r.json(); return d && d.ok ? d : null; } catch { return null; } }
   async function startBridge() {
     const name = ($('#bwNameInput')?.value || __bridge.name).trim() || 'My Laptop';
     const model = $('#bwModelSelect')?.value || __bridge.model;
     const port = parseInt($('#bwPortInput')?.value || __bridge.port, 10) || 8765;
     __bridge.name = name; __bridge.model = model; __bridge.port = port;
-    saveBridgeLS();
-    setBwHint('Connecting…', '');
+    saveBridgeLS(); setBwHint('Connecting…', '');
     const res = await testBridge(port);
     if (res.ok) {
-      __bridge.connected = true;
-      __bridge.baseUrl = res.base;
+      __bridge.connected = true; __bridge.baseUrl = res.base;
       __bridge.env = await fetchEnv(res.base);
       __kdeAvailable = !!__bridge.env?.kde_connect_available;
       renderBridgeStatus(); renderKdeStatus();
@@ -1636,10 +1372,7 @@
     if (e.folder) buttons += `<button class="bridge-success-btn" data-copy-folder="${escapeHtml(e.folder)}"><i class="ri-folder-open-line"></i> Copy path</button>`;
     const el = document.createElement('div');
     el.className = 'bridge-msg ai';
-    el.innerHTML = `<div class="bridge-success">
-      <div class="bridge-success-head"><i class="ri-checkbox-circle-fill"></i><span>${escapeHtml(text)}</span></div>
-      ${buttons ? `<div class="bridge-success-actions">${buttons}</div>` : ''}
-    </div>`;
+    el.innerHTML = `<div class="bridge-success"><div class="bridge-success-head"><i class="ri-checkbox-circle-fill"></i><span>${escapeHtml(text)}</span></div>${buttons ? `<div class="bridge-success-actions">${buttons}</div>` : ''}</div>`;
     el.querySelectorAll('[data-preview]').forEach((b) => { b.onclick = () => openPreview(b.dataset.preview); });
     el.querySelectorAll('[data-copy-folder]').forEach((b) => { b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copyFolder); toast('Path copied.'); } catch {} }; });
     container.appendChild(el); scrollBridgeBottom();
@@ -1657,14 +1390,7 @@
     const data = getActionData(cmd);
     const el = document.createElement('div');
     el.className = 'bridge-msg ai';
-    el.innerHTML = `<div class="bridge-action">
-      <div class="bridge-action-head">
-        <div class="bridge-action-icon ${data.iconClass}"><i class="${data.icon}"></i></div>
-        <div class="bridge-action-label">${data.label}</div>
-        <span class="bridge-action-status working"><i class="ri-loader-4-line spin"></i> Working</span>
-      </div>
-      <div class="bridge-action-code" style="display:none;"></div>
-    </div>`;
+    el.innerHTML = `<div class="bridge-action"><div class="bridge-action-head"><div class="bridge-action-icon ${data.iconClass}"><i class="${data.icon}"></i></div><div class="bridge-action-label">${data.label}</div><span class="bridge-action-status working"><i class="ri-loader-4-line spin"></i> Working</span></div><div class="bridge-action-code" style="display:none;"></div></div>`;
     container.appendChild(el); scrollBridgeBottom();
     return el;
   }
@@ -1723,8 +1449,7 @@
       else if (/^lua\s/i.test(c)) friendly = 'Running Lua';
       else if (/^node\s/i.test(c)) friendly = 'Running Node';
       else if (/^git\s/i.test(c)) friendly = 'Git operation';
-      else if (/^npm\s+run/i.test(c)) friendly = 'Running project';
-      return { icon: 'ri-play-line', iconClass: 'exec', label: friendly };
+      return { icon: 'ri-terminal-box-line', iconClass: 'exec', label: friendly };
     }
     return { icon: 'ri-terminal-line', iconClass: '', label: 'Working' };
   }
@@ -1829,14 +1554,7 @@
     const home = env.home || '(unknown)';
     const cwd = env.cwd || home;
     const user = env.user || (home ? home.split('/').filter(Boolean).pop() : '(unknown)');
-    return [
-      '[Bridge environment]', `user=${user}`, `home=${home}`, `cwd=${cwd}`, `platform=${env.platform || '(unknown)'}`,
-      `allowed_dirs=${allowed}`, `kdeConnect=${env.kde_connect_available ? 'true' : 'false'}`,
-      __kdeCurrentDevice ? `currentKdeDevice=${__kdeCurrentDevice.id} name="${__kdeCurrentDevice.name}"` : '',
-      '', `PATH RULE: every path must be absolute and start with ${home}/. Never write "." or "~".`,
-      'CRITICAL:', '- Never paste code, CSS, HTML, or JS into your visible reply. All file content goes inside <bridge-write> or <bridge-append> tags.',
-      '- Always close your tags.', '- For long files, write the first chunk with <bridge-write>, then add the rest with <bridge-append>.',
-    ].filter(Boolean).join('\n');
+    return ['[Bridge environment]', `user=${user}`, `home=${home}`, `cwd=${cwd}`, `platform=${env.platform || '(unknown)'}`, `allowed_dirs=${allowed}`, `kdeConnect=${env.kde_connect_available ? 'true' : 'false'}`, __kdeCurrentDevice ? `currentKdeDevice=${__kdeCurrentDevice.id} name="${__kdeCurrentDevice.name}"` : '', '', `PATH RULE: every path must be absolute and start with ${home}/.`, 'CRITICAL:', '- Never paste code, CSS, HTML, or JS into visible reply. All file content goes inside <bridge-write> or <bridge-append> tags.', '- Always close your tags.', '- For long files, write the first chunk with <bridge-write>, then add the rest with <bridge-append>.'].filter(Boolean).join('\n');
   }
   function absBridgePath(p, home) {
     let s = String(p || '').trim().replace(/\\/g, '/');
@@ -1867,10 +1585,7 @@
         card.innerHTML = `
           <div class="kde-device-card-head">
             <div class="kde-device-card-icon"><i class="ri-smartphone-line"></i></div>
-            <div class="kde-device-card-meta">
-              <div class="kde-device-card-name">${escapeHtml(d.name)}</div>
-              <div class="kde-device-card-id">${escapeHtml(d.id)}</div>
-            </div>
+            <div class="kde-device-card-meta"><div class="kde-device-card-name">${escapeHtml(d.name)}</div><div class="kde-device-card-id">${escapeHtml(d.id)}</div></div>
             <div class="kde-device-card-num">${i + 1}</div>
           </div>
           <div class="kde-device-card-status ${d.reachable ? 'ok' : 'warn'}">${d.reachable ? '● reachable' : '○ not reachable'}</div>
@@ -1918,12 +1633,7 @@
       }
       try {
         if (t === 'kde-refresh') return await bridgeCall('/kde/refresh', {});
-        if (t === 'kde-list') {
-          await bridgeCall('/kde/refresh', {});
-          const r = await kdeListDevices(!!cmd.available);
-          if (r && r.devices && r.devices.length && !__kdeCurrentDevice) { const pick = await askDeviceChoice(r.devices); if (pick) return { ok: true, devices: r.devices, chosen: pick }; }
-          return { ok: true, devices: r?.devices || [] };
-        }
+        if (t === 'kde-list') { await bridgeCall('/kde/refresh', {}); const r = await kdeListDevices(!!cmd.available); if (r && r.devices && r.devices.length && !__kdeCurrentDevice) { const pick = await askDeviceChoice(r.devices); if (pick) return { ok: true, devices: r.devices, chosen: pick }; } return { ok: true, devices: r?.devices || [] }; }
         if (t === 'kde-myid') return await bridgeCall('/kde/my-id', {});
         if (t === 'kde-ping') return await bridgeCall('/kde/ping', { device: deviceId, message: cmd.message || '' });
         if (t === 'kde-ring') return await bridgeCall('/kde/ring', { device: deviceId });
@@ -1981,30 +1691,14 @@
     }
     const trunc = (s, n = 3000) => String(s || '').slice(0, n);
     if (cmd.type.startsWith('kde-')) {
-      if (cmd.type === 'kde-list') { const list = (result.devices || []).map((d) => `${d.reachable ? '*' : ' '} ${d.name} (${d.id})`).join('\n'); return `[kde-list] ${result.devices?.length || 0} device(s)\n${list}${result.chosen ? `\nCHOSEN: ${result.chosen.name} (${result.chosen.id})` : ''}`; }
-      if (cmd.type === 'kde-ping') return `[kde-ping] ${result.online ? 'ONLINE' : 'OFFLINE'}`;
-      if (cmd.type === 'kde-share') return `[kde-share] sent${result.was_dir ? ' (zipped)' : ''}`;
-      if (cmd.type === 'kde-myid') return `[kde-my-id] ${result.id}`;
+      if (cmd.type === 'kde-list') { const list = (result.devices || []).map((d) => `${d.reachable ? '*' : ' '} ${d.name} (${d.id})`).join('\n'); return `[kde-list] ${result.devices?.length || 0} device(s)\n${list}`; }
       return `[${cmd.type}] ok`;
     }
     switch (cmd.type) {
       case 'sudo': case 'exec': return `[exec] exit=${result.exit_code}\nSTDOUT:\n${trunc(result.stdout)}\nSTDERR:\n${trunc(result.stderr, 1500)}`;
       case 'write': return `[write] ok path=${result.path} bytes=${result.bytes}`;
-      case 'append': return `[append] ok path=${result.path}`;
-      case 'delete': return `[delete] ok path=${result.path}`;
-      case 'move': return `[move] ${result.from} → ${result.to}`;
-      case 'copy': return `[copy] ${result.from} → ${result.to}`;
       case 'read': return `[read] path=${result.path}\n${trunc(result.content)}`;
       case 'list': return `[list] path=${result.path}\n` + (result.items || []).map((i) => (i.is_dir ? 'D ' : 'F ') + i.name).join('\n');
-      case 'sysinfo': return `[sysinfo] ${JSON.stringify(result, null, 2).slice(0, 2500)}`;
-      case 'syscheck': return `[syscheck] ${JSON.stringify(result.check || {}, null, 2)}`;
-      case 'processes': return `[processes] ${trunc(result.raw || '', 2500)}`;
-      case 'email': return `[email] sent to ${result.sent_to}`;
-      case 'http': return `[http] status=${result.status}\n${trunc(result.body, 2500)}`;
-      case 'clipboard': return `[clipboard] ${cmd.action === 'get' ? 'content:\n' + trunc(result.content, 2000) : 'set ok'}`;
-      case 'screenshot': return `[screenshot] saved to ${result.path}`;
-      case 'git': return `[git ${cmd.action}] ${trunc(result.stdout, 2000)}\n${trunc(result.stderr, 800)}`;
-      case 'pkgs': return `[pkgs ${cmd.pkgType}] ${trunc(result.raw, 2000)}`;
       default: return `[${cmd.type}] ok`;
     }
   }
@@ -2016,8 +1710,6 @@
     if (t === 'delete') return 'delete:' + cmd.path;
     if (t === 'move' || t === 'copy') return t + ':' + cmd.from + '→' + cmd.to;
     if (t === 'read' || t === 'list') return t + ':' + cmd.path;
-    if (t === 'email') return 'email:' + cmd.to + ':' + (cmd.subject || '');
-    if (t === 'http') return 'http:' + cmd.method + ':' + cmd.url;
     if (t.startsWith('kde-')) return t + ':' + (cmd.device || '') + ':' + (cmd.path || cmd.text || cmd.number || '');
     return t + ':' + (cmd.path || cmd.action || cmd.pkgType || '');
   }
@@ -2074,9 +1766,7 @@
         iframe.srcdoc = '<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;height:100%;overflow:auto;font-family:system-ui,sans-serif;background:#fff;color:#111}</style></head><body>' + d.html + '</body></html>';
         const footer = document.createElement('div');
         footer.className = 'planner-card-footer';
-        footer.innerHTML = `
-          <div class="planner-card-label"><span class="planner-card-dot"></span><span class="planner-card-name">${escapeHtml(d.name)}</span><span class="planner-card-id">Design ${d.id}</span></div>
-          <button class="planner-choose-btn" type="button"><i class="ri-check-line"></i> Choose</button>`;
+        footer.innerHTML = `<div class="planner-card-label"><span class="planner-card-dot"></span><span class="planner-card-name">${escapeHtml(d.name)}</span><span class="planner-card-id">Design ${d.id}</span></div><button class="planner-choose-btn" type="button"><i class="ri-check-line"></i> Choose</button>`;
         card.appendChild(iframe); card.appendChild(footer); grid.appendChild(card);
         footer.querySelector('.planner-choose-btn').addEventListener('click', () => { closePlannerModal(); resolve({ id: d.id, name: d.name }); });
       });
@@ -2106,8 +1796,7 @@
     const okCount = rows.filter((r) => r.exists).length;
     const allOk = okCount === rows.length;
     const header = allOk ? `<i class="ri-checkbox-circle-fill"></i> Verified · ${okCount}/${rows.length} files exist` : `<i class="ri-error-warning-fill"></i> Verification · ${okCount}/${rows.length} found`;
-    const trs = rows.map((r, i) => `
-      <tr class="${r.exists ? 'ok' : 'err'}"><td>${i + 1}</td><td><code>${escapeHtml(r.realPath)}</code></td><td>${r.exists ? '<span class="vt-ok">✓ exists</span>' : '<span class="vt-err">✗ missing</span>'}</td><td>${r.exists ? r.size + ' B' : '—'}</td></tr>`).join('');
+    const trs = rows.map((r, i) => `<tr class="${r.exists ? 'ok' : 'err'}"><td>${i + 1}</td><td><code>${escapeHtml(r.realPath)}</code></td><td>${r.exists ? '<span class="vt-ok">✓ exists</span>' : '<span class="vt-err">✗ missing</span>'}</td><td>${r.exists ? r.size + ' B' : '—'}</td></tr>`).join('');
     const el = document.createElement('div');
     el.className = 'bridge-msg ai';
     el.innerHTML = `<div class="verify-card ${allOk ? 'ok' : 'err'}"><div class="verify-header">${header}</div><table class="verify-table"><thead><tr><th>#</th><th>File path</th><th>Status</th><th>Size</th></tr></thead><tbody>${trs}</tbody></table></div>`;
@@ -2141,9 +1830,8 @@
   }
   async function autoContinueAfterDelay(label = 'Auto-continuing') {
     if (!__bridgeAutoRun) return;
-    const secs = AUTO_CONTINUE_DELAY_MS / 1000;
-    addBridgeSystemMsg(`${label} in ${secs}s…`);
-    setProgressText(`${label} in ${secs}s…`);
+    addBridgeSystemMsg(`${label} in ${AUTO_CONTINUE_DELAY_MS / 1000}s…`);
+    setProgressText(`${label} in ${AUTO_CONTINUE_DELAY_MS / 1000}s…`);
     await sleep(AUTO_CONTINUE_DELAY_MS);
   }
   function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
@@ -2171,7 +1859,7 @@
       addBridgeUserMsg(userText);
       __lastBuildWasMobile = /\b(phone|mobile|tablet|android|iphone|ipad|device)\b/i.test(userText);
       const lang = detectLanguage(userText);
-      bridgeConversation.push({ role: 'user', content: `[System] Rules for this turn:\n1. NEVER paste code into visible text. All file content goes inside <bridge-write>...</bridge-write> or <bridge-append>...</bridge-append>.\n2. ALWAYS close tags.\n3. Long files: write the first chunk with <bridge-write>, then add the rest with <bridge-append>.\n4. Never ask the user to pick a plan for a small file. Just build it.\n5. Create projects inside <home>/<project-name>/. Use absolute paths only.\n6. Before writing code, think out loud in one or two short lines: what the user asked, the language${lang ? ' (' + lang + ')' : ''}, and the files you will create.\n7. When the whole project is on disk, reply DONE on its own line.\n\n${userText}` });
+      bridgeConversation.push({ role: 'user', content: `[System] Rules:\n1. NEVER paste code into visible text. All file content goes inside <bridge-write> or <bridge-append>.\n2. ALWAYS close tags.\n3. Long files: <bridge-write> first chunk, then <bridge-append> rest.\n4. Create projects inside <home>/<project-name>/.\n5. When done, reply DONE on its own line.\n\n${userText}` });
     } else setProgressText('Continuing…');
 
     let iter = 0, autoContinues = 0;
@@ -2217,7 +1905,7 @@
         if (!cmdsInReply.length && !questionsInReply.length && !saidDone && !truncatedWrite && looksLikeFreeQuestion(reply)) {
           const narrationQ = sanitizeForChat(reply);
           if (narrationQ) addBridgeAiMsg(narrationQ);
-          addBridgeSystemMsg('Mirox is waiting for you — type your reply below.');
+          addBridgeSystemMsg('Mirox is waiting — type your reply below.');
           bridgeConversation.push({ role: 'assistant', content: reply });
           bridgeWaitingForUser = true; bridgeTaskComplete = true;
           setProgressText('Waiting for your reply…');
@@ -2247,7 +1935,7 @@
           for (const cmd of cmdsInReply) {
             if (bridgeAbort) { resultLines.push('[abort] user stopped'); break; }
             const sig = cmdSignature(cmd);
-            if (shouldBlockSignature(sig)) { resultLines.push(`[${cmd.type}] BLOCKED (repeated or failed earlier)`); continue; }
+            if (shouldBlockSignature(sig)) { resultLines.push(`[${cmd.type}] BLOCKED`); continue; }
             bridgeTurn.commandLog.set(sig, (bridgeTurn.commandLog.get(sig) || 0) + 1);
             bridgeTurn.commandsRun++;
             if (cmd.type === 'write' || cmd.type === 'append') bridgeTurn.plannedFiles.add(cmd.path);
@@ -2263,7 +1951,7 @@
           if (tp2 > 0) updateBridgeProgress(2 + Math.round((dc2 / tp2) * 93), `Files: ${dc2} / ${tp2}`);
           const env = __bridge.env || {};
           bridgeConversation.push({ role: 'user', content: ['[Bridge environment]', `home=${env.home || '?'}`, `cwd=${env.cwd || '?'}`, `platform=${env.platform || '?'}`, `allowed_dirs=${(env.allowed_dirs || []).join(', ') || '(none)'}`, '', `[Progress] ${dc2}/${tp2 || '?'} files`, '[Results]', resultLines.join('\n\n'), 'Write inside allowed_dirs only. If done, reply DONE. Otherwise continue.'].join('\n') });
-          if (truncatedWrite && lastPath) bridgeConversation.push({ role: 'user', content: `[System] Your previous reply was cut off mid-file (path="${lastPath}"). Continue with <bridge-append path="${lastPath}">...</bridge-append> and close the tag.` });
+          if (truncatedWrite && lastPath) bridgeConversation.push({ role: 'user', content: `[System] Cut off mid-file (path="${lastPath}"). Continue with <bridge-append path="${lastPath}">.` });
           continue;
         }
         if (truncatedWrite) {
@@ -2271,10 +1959,10 @@
             autoContinues++;
             const p = lastPath || 'your file';
             setProgressText('Continuing the truncated file…');
-            bridgeConversation.push({ role: 'user', content: `[System] Your last reply ended with an unclosed tag (path="${p}"). Continue from the last character with <bridge-append path="${p}"> and close it.` });
+            bridgeConversation.push({ role: 'user', content: `[System] Unclosed tag (path="${p}"). Continue with <bridge-append path="${p}">.` });
             continue;
           }
-          addBridgeSystemMsg('File was truncated. Type "continue" to resume.');
+          addBridgeSystemMsg('File truncated. Type "continue" to resume.');
           bridgeWaitingForUser = true; updateBridgeSendBtn(); return;
         }
         const hasPlan = bridgeTurn.plannedFiles.size > 0;
@@ -2304,9 +1992,9 @@
           continue;
         }
         if (!saidDone) {
-          if (__bridgeAutoRun && autoContinues < MAX_AUTO_CONTINUES) { autoContinues++; await autoContinueAfterDelay('Auto-continuing'); bridgeConversation.push({ role: 'user', content: '[System] Continue. Output the next actions.' }); continue; }
-          if (!__bridgeAutoRun) { bridgeWaitingForUser = true; addBridgeSystemMsg('Auto-Run is off — click Send to continue.'); updateBridgeSendBtn(); break; }
-          addBridgeSystemMsg('Iteration limit reached. Type "continue" to keep going.'); break;
+          if (__bridgeAutoRun && autoContinues < MAX_AUTO_CONTINUES) { autoContinues++; await autoContinueAfterDelay('Auto-continuing'); bridgeConversation.push({ role: 'user', content: '[System] Continue.' }); continue; }
+          if (!__bridgeAutoRun) { bridgeWaitingForUser = true; addBridgeSystemMsg('Auto-Run off — click Send to continue.'); updateBridgeSendBtn(); break; }
+          addBridgeSystemMsg('Iteration limit reached.'); break;
         }
       }
     } catch (e) { addBridgeSystemMsg('Bridge error: ' + e.message); }
@@ -2347,7 +2035,7 @@
     if (pathInput) pathInput.value = targetPath;
     if (!targetPath) {
       if (subtitle) subtitle.textContent = 'No file path yet.';
-      if (frame) frame.srcdoc = '<html><body style="font-family:system-ui;padding:40px;color:#888;text-align:center"><h2>No preview</h2><p>Build a project, or type an absolute path to an .html file.</p></body></html>';
+      if (frame) frame.srcdoc = '<html><body style="font-family:system-ui;padding:40px;color:#888;text-align:center"><h2>No preview</h2></body></html>';
       return;
     }
     if (subtitle) subtitle.textContent = targetPath;
@@ -2441,7 +2129,7 @@
       $('#searchModeBtn')?.classList.toggle('active', forceSearchNext);
       toast(forceSearchNext ? 'Web search enabled for next message.' : 'Web search disabled.');
       const ta = $('#messageInput');
-      if (ta) { ta.placeholder = forceSearchNext ? 'What should I search the web for?' : 'How can I help you today? (paste big text → becomes an attachment)'; ta.focus(); }
+      if (ta) { ta.placeholder = forceSearchNext ? 'What should I search the web for?' : 'How can I help you today?'; ta.focus(); }
     });
     on('#imageModeBtn', 'click', () => { openModal('imageModal'); renderImageHistory(); });
     on('#plansModeBtn', 'click', () => { openModal('plansModal'); loadPlans(); });
@@ -2473,11 +2161,7 @@
     on('#userChip', 'click', () => { if (!__user) openModal('loginModal'); });
     on('#upgradeBtn', 'click', (e) => { e.stopPropagation(); if (!__user) openModal('loginModal'); else { openModal('plansModal'); loadPlans(); } });
     on('#simpleLoginForm', 'submit', doLogin);
-    on('#ivDownload', 'click', () => {
-      if (!__ivDataUrl) return;
-      const a = document.createElement('a'); a.href = __ivDataUrl; a.download = `mirox-${Date.now()}.png`;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    });
+    on('#ivDownload', 'click', () => { if (!__ivDataUrl) return; const a = document.createElement('a'); a.href = __ivDataUrl; a.download = `mirox-${Date.now()}.png`; document.body.appendChild(a); a.click(); document.body.removeChild(a); });
     on('#bwCloseBtn', 'click', closeBridgeWorkspace);
     on('#bwNewBtn', 'click', clearBridgeChat);
     on('#bwDownloadBtn', 'click', downloadBridgeClient);
@@ -2490,12 +2174,7 @@
     on('#bwToggleShowCode', 'click', () => { __bridgeShowCode = !__bridgeShowCode; saveBridgeOpts(); renderToggles(); toast(`Show Code ${__bridgeShowCode ? 'ON' : 'OFF'}`); });
     on('#bwPreviewBtn', 'click', () => openPreview(__lastPreviewFile || ''));
     on('#bwStopBtn', 'click', () => { bridgeAbort = true; toast('Stopping…'); });
-    on('#bwScanDevicesBtn', 'click', async () => {
-      if (!__bridge.connected) { toast('Connect the bridge first.'); return; }
-      toast('Scanning for devices…');
-      const devices = await refreshKdeDevices(false);
-      toast(devices && devices.length ? `Found ${devices.length} device${devices.length === 1 ? '' : 's'}` : 'No devices found yet.');
-    });
+    on('#bwScanDevicesBtn', 'click', async () => { if (!__bridge.connected) { toast('Connect the bridge first.'); return; } toast('Scanning for devices…'); const devices = await refreshKdeDevices(false); toast(devices && devices.length ? `Found ${devices.length} device${devices.length === 1 ? '' : 's'}` : 'No devices found yet.'); });
     on('#bwBuildOpenBtn', 'click', () => openPreview(__lastPreviewFile || ''));
     on('#bwBuildFolderBtn', 'click', async () => { if (!__lastBuildFolder) { toast('No project yet.'); return; } try { await navigator.clipboard.writeText(__lastBuildFolder); toast('Path copied.'); } catch {} });
     on('#bwPreviewCloseBtn', 'click', closePreview);
@@ -2504,12 +2183,7 @@
     on('#sudoSubmitBtn', 'click', submitSudo);
     on('#sudoSkipBtn', 'click', skipSudo);
     on('#sudoCloseBtn', 'click', skipSudo);
-    on('#sudoRevealBtn', 'click', () => {
-      const pwd = $('#sudoPasswordInput'); if (!pwd) return;
-      const rev = $('#sudoRevealBtn');
-      if (pwd.type === 'password') { pwd.type = 'text'; if (rev) rev.innerHTML = '<i class="ri-eye-off-line"></i>'; }
-      else { pwd.type = 'password'; if (rev) rev.innerHTML = '<i class="ri-eye-line"></i>'; }
-    });
+    on('#sudoRevealBtn', 'click', () => { const pwd = $('#sudoPasswordInput'); if (!pwd) return; const rev = $('#sudoRevealBtn'); if (pwd.type === 'password') { pwd.type = 'text'; if (rev) rev.innerHTML = '<i class="ri-eye-off-line"></i>'; } else { pwd.type = 'password'; if (rev) rev.innerHTML = '<i class="ri-eye-line"></i>'; } });
     on('#sudoPasswordInput', 'keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitSudo(); } });
     on('#plannerCloseBtn', 'click', plannerSkip);
     on('#plannerSkipBtn', 'click', plannerSkip);
@@ -2522,9 +2196,7 @@
       bwInp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); handleBridgeSend(); } });
     }
     on('#bridgeSendBtn', 'click', handleBridgeSend);
-    $$('.bw-quick').forEach((btn) => {
-      btn.onclick = () => { const inp2 = $('#bridgeInput'); if (inp2) { inp2.value = btn.dataset.q; updateBridgeSendBtn(); } handleBridgeSend(); };
-    });
+    $$('.bw-quick').forEach((btn) => { btn.onclick = () => { const inp2 = $('#bridgeInput'); if (inp2) { inp2.value = btn.dataset.q; updateBridgeSendBtn(); } handleBridgeSend(); }; });
     on('#bqCustomToggle', 'click', () => { const cw = $('#bqCustomWrap'); if (!cw) return; cw.style.display = cw.style.display === 'none' ? 'block' : 'none'; if (cw.style.display === 'block') $('#bqCustomInput')?.focus(); });
     on('#bqSubmit', 'click', submitBridgeQuestion);
     on('#bqSkipOne', 'click', skipBridgeQuestion);
