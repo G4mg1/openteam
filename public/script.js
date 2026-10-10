@@ -1,6 +1,319 @@
 (function () {
   'use strict';
 
+  /* ═══════════ I18N — full UI translation ═══════════ */
+  const TRANSLATIONS = {
+    en: {
+      brand:'MiroxAI', newChat:'New chat', newChatTitle:'New chat',
+      tab:{chats:'Chats',bridge:'Bridge',images:'Images'},
+      searchChats:'Search chats…', noChats:'No conversations yet', noImages:'No images yet.',
+      guestMode:'Guest mode', signInHint:'Sign in to save chats',
+      settings:'Settings', support:'Support', developers:'Developers', madeBy:'Made by OpenSurr',
+      welcomeTitle:"Hi, I'm Mirox",
+      welcomeSub:'Luna and Gen are unlimited and free. Share to unlock <strong>Pro, Ultra &amp; Eclipse</strong> free for 7 days.',
+      suggest:{lua:'Write a Lua script',html:'Show an HTML table',image:'Generate an image',explain:'Explain a concept'},
+      tools:{search:'Search',lumenal:'Lumenal',bridge:'Bridge',plans:'Plans',help:'Help'},
+      composerPlaceholder:'How can I help you today?',
+      composerNote:'Mirox can make mistakes — double-check important info.',
+      latest:'Latest', send:'Send', stop:'Stop', close:'Close', skip:'Skip',
+      openMenu:'Open menu', plans:'Plans', tokenBudget:'Token budget', scrollLatest:'Scroll to latest message',
+      attachFiles:'Attach files', removeAttach:'Remove attachments',
+      loading:{waking:'Waking up Luna…'},
+      share:{title:'Share our site, get 50k tokens',sub:'Get <strong>50k tokens for 1 week</strong> and unlock <strong>Pro, Ultra &amp; Eclipse</strong> models free.',perk1:'50,000 bonus tokens',perk2:'Valid for 7 days',perk3:'Pro · Ultra · Eclipse unlocked',now:'Share now',ignore:'Ignore',hint:"We verify shares through your device's native share sheet."},
+      login:{title:'Sign in',sub:'Sign in with Google, Apple, or email — powered by Loginment.',loginment:'Continue with Loginment',orDemo:'or use a quick demo login',name:'Name',email:'Email',continue:'Continue'},
+      settings2:{},
+      bridge:{title:'Bridge',disconnected:'Disconnected',connected:'Connected',sideHint:'Give Mirox direct control of your laptop.',openWorkspace:'Open Bridge Workspace',download:'Download client',panel:'Panel',autoRun:'Auto-Run',showCode:'Show Code',preview:'Preview',stop:'Stop',clearChat:'Clear chat',starting:'Starting…',emptyTitle:'Bridge Workspace',emptyBody:'Tell Mirox what to build. It writes files into <code>~/&lt;project&gt;/</code>, verifies them, and shows you a live preview.',inputPlaceholder:'e.g. Build a calculator in my home folder',connection:'Connection',name:'Name',namePlaceholder:'My Laptop',port:'Port',connect:'Connect',disconnect:'Disconnect',phoneDevices:'Phone & Devices',kdeChecking:'KDE Connect: checking…',scanDevices:'Scan for devices',build:'Build',noProject:'No project yet',openPreview:'Open live preview',copyPath:'Copy folder path',sudo:'Sudo',noPassword:'No password saved',forgetPassword:'Forget password',quickActions:'Quick actions',quick:{calc:'Calculator',landing:'Landing page',snake:'Snake game',todo:'Todo app',portfolio:'Portfolio',scan:'Scan devices'},livePreview:'Live Preview',loadPath:'Load path',reload:'Reload'},
+      kde:{title:'KDE Connect · Devices',subtitle:'Pick a device for Mirox to work with',hint:'Devices marked reachable are on the same Wi-Fi and paired.',rescan:'Rescan',skip:'Skip'},
+      planner:{title:'Mirox Planner',subtitle:'Pick a design — Mirox will build it for you',hint:'Live demos — pick your favorite.',auto:'Let Mirox decide',choose:'Choose'},
+      sudo:{title:'Password required',sub:'Mirox needs root access to continue.',password:'Your sudo password',showHide:'Show / hide',remember:'Remember for this session (kept in memory only)',run:'Run with sudo'},
+      bq:{title:'Mirox needs your input',customPlaceholder:'Or type your own answer…',custom:'Custom',submit:'Submit & continue'},
+      plans:{title:'Plans',sub:'Luna and Gen are free and unlimited. Share to unlock Pro, Ultra and Eclipse for 7 days.'},
+      lumenal:{title:'Lumenal 1.0',sub:'Strong image generation, powered by Mirox.',prompt:'Describe the image you want…',generate:'Generate'},
+      support:{title:'Contact Support',subject:'Subject',message:'Message',submit:'Submit'},
+      iv:{title:'Generated image',download:'Download'},
+      settingsT:{tab:{general:'General',appearance:'Appearance',persona:'Persona',mcp:'MCP',language:'Language',alerts:'Alerts',data:'Data',dev:'Dev'},
+        title:'Settings',account:'Account',accountSub:'Chats saved locally in this browser',signIn:'Sign in',signOut:'Sign out',
+        rewards:'Rewards',shareEarn:'Share & earn',shareSub:'Get 50k tokens + Pro/Ultra/Eclipse free for 7 days',shareBtn:'Share',
+        behavior:'Behavior',autoScroll:'Auto-scroll',autoScrollSub:'Follow new messages as they arrive',enterSend:'Send with Enter',enterSendSub:'Use Shift+Enter for a new line',showThinking:'Show thinking trace',showThinkingSub:'Display the reasoning panel above replies',vision:'Vision for images',visionSub:'Send attached images to the AI (base64)',compact:'Compact mode',compactSub:'Tighter spacing for dense chats',
+        mode:'Mode',mode2:{light:'Light',dark:'Dark',auto:'Auto'},accent:'Accent color',fontSize:'Font size',font2:{sm:'Small',md:'Medium',lg:'Large'},animations:'Animations',reduceMotion:'Reduce motion',reduceMotionSub:'Minimize animation across the app',
+        persona:'Custom character',personaHelp:'Describe how Mirox should behave — tone, style, expertise, quirks.',personaPlaceholder:'e.g. You are a patient teacher. Explain in simple steps…',personaSave:'Save persona',personaClear:'Clear',personaPresets:'Preset personalities',preset:{casual:'Casual',engineer:'Engineer',teacher:'Teacher',writer:'Writer',philosopher:'Philosopher'},
+        mcp:{title:'Model Context Protocol',help:'Connect MCP servers so Mirox can use external tools and data sources.',enable:'Enable MCP',enableSub:'Allow Mirox to call connected servers',add:'Add server',name:'Server name (e.g. filesystem)',url:'Server URL (e.g. http://localhost:3001/mcp)',key:'API key / token (optional)',addBtn:'Add server',connected:'Connected servers',empty:'No MCP servers configured.'},
+        lang:{response:'Preferred response language',responseHelp:'Mirox will reply in this language unless asked otherwise.',auto:'Auto-detect',ui:'Interface language',uiHelp:'Language of buttons, menus and labels — applies immediately.',comments:'Code comments',translateComments:'Translate code comments',translateCommentsSub:'Write code comments in preferred language'},
+        alerts:{title:'Notifications',desktop:'Desktop notifications',desktopSub:'Notify when a reply finishes in the background',sound:'Sound',soundSub:'Play a soft chime when a reply arrives',bonus:'Bonus reminders',bonusSub:'Remind me before my 50k bonus expires',test:'Test notification',testSub:'Fire a sample chime + notification',testBtn:'Test'},
+        data:{chats:'Chats',export:'Export all chats (JSON)',import:'Import chats from file',clearChats:'Clear all chats',local:'Local data',reset:'Reset everything (chats, settings, bonus)'},
+        dev:{console:'Developer console',open:'Open Developer Console',diag:'Diagnostics',verbose:'Verbose logging',verboseSub:'Log API requests to the browser console',copyDiag:'Copy diagnostic info',guest:'Guest identity',guestSub:'Device-scoped ID used for bonus verification',reset:'Reset'},
+      },
+      toast:{bonusAdded:'bonus tokens + Pro/Ultra/Eclipse unlocked for',days:'days!',shared:'Share detected! Adding reward…',sharedOk:'Share confirmed! Adding reward…',cancelled:'Share cancelled. Try again when you\'re ready.',noShare:'No share detected. Try again?',bonusActive:'Bonus active — Pro, Ultra & Eclipse unlocked!',bonusExpired:'Bonus expired — switched back to Luna. Share again to renew!',signedIn:'Welcome',signedOut:'Signed out',langChanged:'Interface language updated',respLangChanged:'Response language',personaSaved:'Persona saved',personaCleared:'Persona cleared',presetApplied:'Preset applied — click Save to persist',serverAdded:'Added server',serverRemoved:'Server removed',chatsExported:'Chats exported',chatsImported:'Imported',chatsCleared:'All chats cleared',resetAll:'All local data cleared — reloading…',guestReset:'Guest ID reset',copied:'Diagnostics copied',testSent:'Test notification sent',shareUnlock:'Share to unlock this model free for 7 days',upgrade:'Upgrade to use this model',noToken:'Max tokens reached — share for more or upgrade.',bridgeConnected:'Bridge connected',bridgeNotReachable:'Bridge not reachable'},
+    },
+    fa: {
+      brand:'MiroxAI', newChat:'گفتگوی جدید', newChatTitle:'گفتگوی جدید',
+      tab:{chats:'گفتگوها',bridge:'پل',images:'تصاویر'},
+      searchChats:'جستجوی گفتگوها…', noChats:'هنوز گفتگویی نیست', noImages:'هنوز تصویری نیست.',
+      guestMode:'حالت مهمان', signInHint:'برای ذخیره گفتگوها وارد شوید',
+      settings:'تنظیمات', support:'پشتیبانی', developers:'توسعه‌دهندگان', madeBy:'ساخته‌شده توسط OpenSurr',
+      welcomeTitle:'سلام، من Mirox هستم',
+      welcomeSub:'Luna و Gen نامحدود و رایگان هستند. اشتراک‌گذاری کنید تا <strong>Pro، Ultra و Eclipse</strong> را ۷ روز رایگان باز کنید.',
+      suggest:{lua:'نوشتن اسکریپت Lua',html:'نمایش جدول HTML',image:'تولید تصویر',explain:'توضیح یک مفهوم'},
+      tools:{search:'جستجو',lumenal:'Lumenal',bridge:'پل',plans:'طرح‌ها',help:'راهنما'},
+      composerPlaceholder:'چطور می‌توانم کمکتان کنم؟',
+      composerNote:'Mirox اشتباه می‌کند — اطلاعات مهم را بررسی کنید.',
+      latest:'آخرین', send:'ارسال', stop:'توقف', close:'بستن', skip:'رد کردن',
+      openMenu:'باز کردن منو', plans:'طرح‌ها', tokenBudget:'بودجه توکن', scrollLatest:'پیمایش به آخرین پیام',
+      attachFiles:'پیوست فایل‌ها', removeAttach:'حذف پیوست‌ها',
+      loading:{waking:'بیدار کردن Luna…'},
+      share:{title:'سایت ما را به اشتراک بگذارید، ۵۰ هزار توکن بگیرید',sub:'<strong>۵۰ هزار توکن برای یک هفته</strong> بگیرید و مدل‌های <strong>Pro، Ultra و Eclipse</strong> را رایگان باز کنید.',perk1:'۵۰,۰۰۰ توکن پاداش',perk2:'برای ۷ روز معتبر',perk3:'Pro · Ultra · Eclipse باز شده',now:'همین حالا به اشتراک بگذارید',ignore:'نادیده بگیرید',hint:'ما اشتراک‌گذاری را از طریق صفحه اشتراک بومی دستگاه شما تأیید می‌کنیم.'},
+      login:{title:'ورود',sub:'با Google، Apple یا ایمیل وارد شوید — با قدرت Loginment.',loginment:'ادامه با Loginment',orDemo:'یا از ورود سریع استفاده کنید',name:'نام',email:'ایمیل',continue:'ادامه'},
+      bridge:{title:'پل',disconnected:'قطع',connected:'متصل',sideHint:'به Mirox کنترل مستقیم لپ‌تاپ خود را بدهید.',openWorkspace:'باز کردن فضای کاری پل',download:'دانلود کلاینت',panel:'پنل',autoRun:'اجرای خودکار',showCode:'نمایش کد',preview:'پیش‌نمایش',stop:'توقف',clearChat:'پاک کردن گفتگو',starting:'شروع…',emptyTitle:'فضای کاری پل',emptyBody:'به Mirox بگویید چه بسازد. فایل‌ها را در <code>~/&lt;project&gt;/</code> می‌نویسد، آن‌ها را تأیید می‌کند و پیش‌نمایش زنده نشان می‌دهد.',inputPlaceholder:'مثلاً یک ماشین‌حساب در پوشه خانه من بساز',connection:'اتصال',name:'نام',namePlaceholder:'لپ‌تاپ من',port:'پورت',connect:'اتصال',disconnect:'قطع اتصال',phoneDevices:'تلفن و دستگاه‌ها',kdeChecking:'KDE Connect: در حال بررسی…',scanDevices:'جستجوی دستگاه‌ها',build:'ساخت',noProject:'هنوز پروژه‌ای نیست',openPreview:'باز کردن پیش‌نمایش زنده',copyPath:'کپی مسیر پوشه',sudo:'Sudo',noPassword:'رمز ذخیره نشده',forgetPassword:'فراموش کردن رمز',quickActions:'اقدامات سریع',quick:{calc:'ماشین‌حساب',landing:'صفحه فرود',snake:'بازی مار',todo:'اپ کارها',portfolio:'نمونه کار',scan:'جستجوی دستگاه‌ها'},livePreview:'پیش‌نمایش زنده',loadPath:'بارگذاری مسیر',reload:'بارگذاری مجدد'},
+      kde:{title:'KDE Connect · دستگاه‌ها',subtitle:'دستگاهی را برای کار Mirox انتخاب کنید',hint:'دستگاه‌های علامت‌گذاری‌شده روی همان Wi-Fi هستند و جفت شده‌اند.',rescan:'اسکن مجدد',skip:'رد کردن'},
+      planner:{title:'Mirox Planner',subtitle:'یک طرح انتخاب کنید — Mirox آن را برایتان می‌سازد',hint:'دموی زنده — مورد علاقه‌تان را انتخاب کنید.',auto:'بگذارید Mirox تصمیم بگیرد',choose:'انتخاب'},
+      sudo:{title:'رمز عبور لازم است',sub:'Mirox برای ادامه به دسترسی root نیاز دارد.',password:'رمز sudo شما',showHide:'نمایش / مخفی',remember:'برای این جلسه به خاطر بسپار (فقط در حافظه)',run:'اجرا با sudo'},
+      bq:{title:'Mirox به ورودی شما نیاز دارد',customPlaceholder:'یا پاسخ خود را بنویسید…',custom:'سفارشی',submit:'ارسال و ادامه'},
+      plans:{title:'طرح‌ها',sub:'Luna و Gen رایگان و نامحدود هستند. اشتراک‌گذاری کنید تا Pro، Ultra و Eclipse را برای ۷ روز باز کنید.'},
+      lumenal:{title:'Lumenal 1.0',sub:'تولید تصویر قوی، با قدرت Mirox.',prompt:'تصویری که می‌خواهید را توصیف کنید…',generate:'تولید'},
+      support:{title:'تماس با پشتیبانی',subject:'موضوع',message:'پیام',submit:'ارسال'},
+      iv:{title:'تصویر تولید شده',download:'دانلود'},
+      settingsT:{tab:{general:'عمومی',appearance:'ظاهر',persona:'شخصیت',mcp:'MCP',language:'زبان',alerts:'هشدارها',data:'داده',dev:'توسعه'},
+        title:'تنظیمات',account:'حساب',accountSub:'گفتگوها به صورت محلی در این مرورگر ذخیره می‌شوند',signIn:'ورود',signOut:'خروج',
+        rewards:'پاداش‌ها',shareEarn:'اشتراک و کسب',shareSub:'۵۰ هزار توکن + Pro/Ultra/Eclipse رایگان برای ۷ روز',shareBtn:'اشتراک',
+        behavior:'رفتار',autoScroll:'پیمایش خودکار',autoScrollSub:'دنبال کردن پیام‌های جدید',enterSend:'ارسال با Enter',enterSendSub:'از Shift+Enter برای خط جدید استفاده کنید',showThinking:'نمایش مسیر تفکر',showThinkingSub:'نمایش پنل استدلال بالای پاسخ‌ها',vision:'بینایی برای تصاویر',visionSub:'ارسال تصاویر پیوست به AI (base64)',compact:'حالت فشرده',compactSub:'فاصله تنگ‌تر برای گفتگوهای زیاد',
+        mode:'حالت',mode2:{light:'روشن',dark:'تیره',auto:'خودکار'},accent:'رنگ تأکید',fontSize:'اندازه فونت',font2:{sm:'کوچک',md:'متوسط',lg:'بزرگ'},animations:'انیمیشن‌ها',reduceMotion:'کاهش حرکت',reduceMotionSub:'کمینه کردن انیمیشن در سراسر برنامه',
+        persona:'شخصیت سفارشی',personaHelp:'توصیف کنید Mirox چگونه رفتار کند — لحن، سبک، تخصص.',personaPlaceholder:'مثلاً شما یک معلم صبور هستید. در مراحل ساده توضیح دهید…',personaSave:'ذخیره شخصیت',personaClear:'پاک کردن',personaPresets:'شخصیت‌های پیش‌فرض',preset:{casual:'غیررسمی',engineer:'مهندس',teacher:'معلم',writer:'نویسنده',philosopher:'فیلسوف'},
+        mcp:{title:'Model Context Protocol',help:'سرورهای MCP را برای ابزارهای خارجی وصل کنید.',enable:'فعال‌سازی MCP',enableSub:'اجازه به Mirox برای فراخوانی سرورها',add:'افزودن سرور',name:'نام سرور',url:'آدرس سرور',key:'کلید API (اختیاری)',addBtn:'افزودن سرور',connected:'سرورهای متصل',empty:'هیچ سرور MCP تنظیم نشده.'},
+        lang:{response:'زبان پاسخ ترجیحی',responseHelp:'Mirox به این زبان پاسخ می‌دهد مگر خلاف آن خواسته شود.',auto:'تشخیص خودکار',ui:'زبان رابط کاربری',uiHelp:'زبان دکمه‌ها و منوها — بلافاصله اعمال می‌شود.',comments:'کامنت‌های کد',translateComments:'ترجمه کامنت‌های کد',translateCommentsSub:'نوشتن کامنت‌ها به زبان ترجیحی'},
+        alerts:{title:'اعلان‌ها',desktop:'اعلان‌های دسکتاپ',desktopSub:'اعلان هنگام اتمام پاسخ در پس‌زمینه',sound:'صدا',soundSub:'پخش صدای ملایم هنگام رسیدن پاسخ',bonus:'یادآور پاداش',bonusSub:'یادآوری قبل از انقضای پاداش ۵۰ هزار توکن',test:'اعلان آزمایشی',testSub:'پخش یک اعلان نمونه',testBtn:'آزمایش'},
+        data:{chats:'گفتگوها',export:'خروجی همه گفتگوها (JSON)',import:'وارد کردن گفتگوها',clearChats:'پاک کردن همه گفتگوها',local:'داده محلی',reset:'بازنشانی همه چیز (گفتگوها، تنظیمات، پاداش)'},
+        dev:{console:'کنسول توسعه‌دهنده',open:'باز کردن کنسول توسعه‌دهنده',diag:'تشخیص',verbose:'لاگ دقیق',verboseSub:'ثبت درخواست‌های API در کنسول مرورگر',copyDiag:'کپی اطلاعات تشخیص',guest:'هویت مهمان',guestSub:'شناسه دستگاه برای تأیید پاداش',reset:'بازنشانی'},
+      },
+      toast:{bonusAdded:'توکن پاداش + Pro/Ultra/Eclipse باز شد برای',days:'روز!',shared:'اشتراک تشخیص داده شد! افزودن پاداش…',sharedOk:'اشتراک تأیید شد! افزودن پاداش…',cancelled:'اشتراک لغو شد. دوباره تلاش کنید.',noShare:'اشتراکی تشخیص داده نشد. دوباره؟',bonusActive:'پاداش فعال — Pro، Ultra و Eclipse باز شدند!',bonusExpired:'پاداش منقضی — بازگشت به Luna. دوباره اشتراک کنید!',signedIn:'خوش آمدید',signedOut:'خارج شدید',langChanged:'زبان رابط به‌روز شد',respLangChanged:'زبان پاسخ',personaSaved:'شخصیت ذخیره شد',personaCleared:'شخصیت پاک شد',presetApplied:'پیش‌فرض اعمال شد — ذخیره کنید',serverAdded:'سرور اضافه شد',serverRemoved:'سرور حذف شد',chatsExported:'گفتگوها صادر شد',chatsImported:'وارد شد',chatsCleared:'همه گفتگوها پاک شد',resetAll:'همه داده‌ها پاک شد — بارگذاری مجدد…',guestReset:'شناسه مهمان بازنشانی شد',copied:'اطلاعات کپی شد',testSent:'اعلان آزمایشی ارسال شد',shareUnlock:'برای باز کردن این مدل رایگان اشتراک کنید',upgrade:'ارتقا برای استفاده',noToken:'حداکثر توکن — اشتراک کنید یا ارتقا دهید.',bridgeConnected:'پل متصل شد',bridgeNotReachable:'پل قابل دسترسی نیست'},
+    },
+    ps: {
+      brand:'MiroxAI', newChat:'نوی خبرې اترې', newChatTitle:'نوی خبرې اترې',
+      tab:{chats:'خبرې',bridge:'پل',images:'انځورونه'},
+      searchChats:'د خبرو پلټنه…', noChats:'لا خبرې نشته', noImages:'لا انځورونه نشته.',
+      guestMode:'میلمه حالت', signInHint:'د خبرو خوندي کولو لپاره ننوځئ',
+      settings:'ترتیبات', support:'ملاتړ', developers:'پراختیا کوونکي', madeBy:'د OpenSurr لخوا جوړ شوی',
+      welcomeTitle:'سلام، زه Mirox یم',
+      welcomeSub:'Luna او Gen بې حد او وړیا دي. شریک کړئ چې <strong>Pro، Ultra او Eclipse</strong> ۷ ورځې وړیا خلاص کړئ.',
+      suggest:{lua:'د Lua سکریپټ لیکل',html:'د HTML میز ښودل',image:'انځور جوړول',explain:'یو مفهوم تشریح کړئ'},
+      tools:{search:'پلټنه',lumenal:'Lumenal',bridge:'پل',plans:'پلانونه',help:'مرسته'},
+      composerPlaceholder:'نن څنګه مرسته وکړم؟',
+      composerNote:'Mirox غلطي کوي — مهم معلومات وګورئ.',
+      latest:'وروستی', send:'لېږل', stop:'ودرول', close:'بندول', skip:'پرېښودل',
+      openMenu:'مینو پرانیستل', plans:'پلانونه', tokenBudget:'د ټوکن بودیجه', scrollLatest:'وروستي پیغام ته سکرول',
+      attachFiles:'دوتنه ضمیمه', removeAttach:'ضمیمې لرې کړئ',
+      loading:{waking:'Luna ویښول…'},
+      share:{title:'زموږ سایټ شریک کړئ، ۵۰ زره ټوکن ترلاسه کړئ',sub:'د <strong>یوې اونۍ لپاره ۵۰ زره ټوکن</strong> ترلاسه کړئ او <strong>Pro، Ultra او Eclipse</strong> ماډلونه وړیا خلاص کړئ.',perk1:'۵۰،۰۰۰ بونس ټوکن',perk2:'۷ ورځو لپاره معتبر',perk3:'Pro · Ultra · Eclipse خلاص شوي',now:'همدا اوس شریک کړئ',ignore:'پام مه کوئ',hint:'موږ ستاسو د وسیلې د اصلي شریک شیټ له لارې شریک تأییدوو.'},
+      login:{title:'ننوتل',sub:'د Google، Apple یا ایمیل سره ننوځئ — د Loginment لخوا.',loginment:'د Loginment سره دوام',orDemo:'یا د چټک ننوتلو کار واخلئ',name:'نوم',email:'ایمیل',continue:'دوام'},
+      bridge:{title:'پل',disconnected:'قطع',connected:'وصل',sideHint:'Mirox ته خپل لیپ ټاپ مستقیم کنټرول ورکړئ.',openWorkspace:'د پل کاري ځای پرانیستل',download:'کلاینټ ډاونلوډ',panel:'پینل',autoRun:'اتومات چلول',showCode:'کوډ ښودل',preview:'مخکتنه',stop:'ودرول',clearChat:'خبرې پاکې کړئ',starting:'پیل…',emptyTitle:'د پل کاري ځای',emptyBody:'Mirox ته ووایاست چې څه جوړ کړي. دوتنې په <code>~/&lt;project&gt;/</code> کې لیکي، تصدیق کوي، او ژوندې مخکتنه ښیي.',inputPlaceholder:'لکه زما په کور فولډر کې یو کیلکولیټر جوړ کړه',connection:'اړیکه',name:'نوم',namePlaceholder:'زما لیپ ټاپ',port:'پورټ',connect:'وصل',disconnect:'قطع',phoneDevices:'تلیفون او وسیلې',kdeChecking:'KDE Connect: ګوري…',scanDevices:'د وسیلو سکن',build:'جوړول',noProject:'لا پروژه نشته',openPreview:'ژوندې مخکتنه پرانیستل',copyPath:'د فولډر لاره کاپي',sudo:'Sudo',noPassword:'پټ نوم نه دی خوندي',forgetPassword:'پټ نوم هېر کړئ',quickActions:'چټک عملونه',quick:{calc:'کیلکولیټر',landing:'د ځمکې پاڼه',snake:'د مار لوبه',todo:'د کارونو اپ',portfolio:'پورټفولیو',scan:'د وسیلو سکن'},livePreview:'ژوندې مخکتنه',loadPath:'لاره پورته کړئ',reload:'بیا پورته'},
+      kde:{title:'KDE Connect · وسیلې',subtitle:'د Mirox لپاره یوه وسیله غوره کړئ',hint:'نښه شوي وسیلې په ورته Wi-Fi دي او جوړه شوې.',rescan:'بیا سکن',skip:'پرېښودل'},
+      planner:{title:'Mirox پلانر',subtitle:'یو ډیزاین غوره کړئ — Mirox به یې جوړ کړي',hint:'ژوندي ډیمو — خپل خوښ غوره کړئ.',auto:'Mirox پریکړه وکړي',choose:'غوره کړئ'},
+      sudo:{title:'پټ نوم اړین',sub:'Mirox ته د دوام لپاره root لاسرسی ته اړتیا ده.',password:'ستاسو sudo پټ نوم',showHide:'ښودل / پټول',remember:'دې غونډې لپاره یاد کړه (یوازې په حافظه)',run:'د sudo سره چل کړه'},
+      bq:{title:'Mirox ستاسو ننوتلو ته اړتیا لري',customPlaceholder:'یا خپل ځواب ولیکئ…',custom:'دودیز',submit:'سپارل او دوام'},
+      plans:{title:'پلانونه',sub:'Luna او Gen وړیا او بې حده دي. د Pro، Ultra او Eclipse لپاره ۷ ورځې شریک کړئ.'},
+      lumenal:{title:'Lumenal 1.0',sub:'د انځور قوي تولید، د Mirox لخوا.',prompt:'هغه انځور تشریح کړئ چې غواړئ…',generate:'جوړول'},
+      support:{title:'د ملاتړ سره اړیکه',subject:'موضوع',message:'پیغام',submit:'سپارل'},
+      iv:{title:'جوړ شوی انځور',download:'ډاونلوډ'},
+      settingsT:{tab:{general:'عمومي',appearance:'ښکاریدل',persona:'شخصیت',mcp:'MCP',language:'ژبه',alerts:'خبرتیاوې',data:'ډاټا',dev:'پراختیا'},
+        title:'ترتیبات',account:'حساب',accountSub:'خبرې په دې براوزر کې په محلي ډول خوندي',signIn:'ننوتل',signOut:'وتل',
+        rewards:'انعامونه',shareEarn:'شریک کړه او ترلاسه کړه',shareSub:'۵۰ زره ټوکن + Pro/Ultra/Eclipse ۷ ورځې وړیا',shareBtn:'شریک',
+        behavior:'چلند',autoScroll:'اتومات سکرول',autoScrollSub:'د نویو پیغامونو تعقیب',enterSend:'د Enter سره لېږل',enterSendSub:'د نوي کرښې لپاره Shift+Enter',showThinking:'د فکر کولو ښودل',showThinkingSub:'د ځوابونو پورتنۍ د استدلال پینل ښودل',vision:'د انځورونو لپاره لید',visionSub:'ضمیمه انځورونه AI ته لېږل (base64)',compact:'کمپیکټ حالت',compactSub:'د ګڼو خبرو لپاره تنګ فاصله',
+        mode:'حالت',mode2:{light:'روښانه',dark:'تیاره',auto:'اتومات'},accent:'د تینګار رنګ',fontSize:'د فونټ اندازه',font2:{sm:'کوچنی',md:'منځنی',lg:'لوی'},animations:'انیمیشنونه',reduceMotion:'د خوځښت کمول',reduceMotionSub:'په اپلیکیشن کې د انیمیشن کمول',
+        persona:'دودیز کرکټر',personaHelp:'تشریح کړئ Mirox څنګه چلند وکړي — لحن، سټایل، تخصص.',personaPlaceholder:'لکه تاسو یو صابر ښوونکی یاست. په ساده ګامونو تشریح کړئ…',personaSave:'شخصیت خوندي کړه',personaClear:'پاک کړه',personaPresets:'مخکې ټاکل شوي شخصیتونه',preset:{casual:'نارسمي',engineer:'انجینر',teacher:'ښوونکی',writer:'لیکوال',philosopher:'فیلسوف'},
+        mcp:{title:'Model Context Protocol',help:'د باندنیو وسیلو لپاره د MCP سرورونه وصل کړئ.',enable:'MCP فعال کړه',enableSub:'Mirox ته اجازه ورکړه چې سرورونه وبللي',add:'سرور اضافه کړه',name:'د سرور نوم',url:'د سرور URL',key:'API کیلي (اختیاري)',addBtn:'سرور اضافه کړه',connected:'وصل شوي سرورونه',empty:'هیڅ MCP سرور تنظیم نشوی.'},
+        lang:{response:'د غوره ځواب ژبه',responseHelp:'Mirox به په دې ژبه ځواب ووایي.',auto:'اتومات کشف',ui:'د انٹرفیس ژبه',uiHelp:'د تڼیو او مینو ژبه — سمدلاسه تطبیق کیږي.',comments:'د کوډ تبصرې',translateComments:'د کوډ تبصرې ژباړه',translateCommentsSub:'په غوره ژبه تبصرې لیکل'},
+        alerts:{title:'خبرتیاوې',desktop:'د ډیسکټاپ خبرتیاوې',desktopSub:'کله چې ځواب پای ته ورسي خبرتیا',sound:'غږ',soundSub:'نرم زنګ غږ کړه',bonus:'د انعام یادونې',bonusSub:'زما د ۵۰ زره انعام له پای وړاندې یادونه',test:'ازموینه خبرتیا',testSub:'یوه بېلګه خبرتیا ولېږه',testBtn:'ازموینه'},
+        data:{chats:'خبرې',export:'ټولې خبرې صادرې کړه (JSON)',import:'خبرې وارد کړه',clearChats:'ټولې خبرې پاکې کړه',local:'محلي ډاټا',reset:'هر څه بیا تنظیم کړه'},
+        dev:{console:'د پراختیا کنسول',open:'د پراختیا کنسول پرانیستل',diag:'تشخیص',verbose:'تفصیلي لاګ',verboseSub:'API غوښتنې په کنسول ثبت کړه',copyDiag:'د تشخیص معلومات کاپي',guest:'د میلمه هویت',guestSub:'د وسیلې ID د انعام تصدیق لپاره',reset:'بیا تنظیم'},
+      },
+      toast:{bonusAdded:'بونس ټوکن + Pro/Ultra/Eclipse خلاص شو د',days:'ورځو لپاره!',shared:'شریک کشف شو! انعام اضافه کیږي…',sharedOk:'شریک تایید شو! انعام اضافه کیږي…',cancelled:'شریک لغو شو. بیا هڅه وکړئ.',noShare:'هیڅ شریک کشف نشو. بیا؟',bonusActive:'انعام فعال — Pro، Ultra او Eclipse خلاص!',bonusExpired:'انعام پای ته ورسید — Luna ته بېرته. بیا شریک کړئ!',signedIn:'ښه راغلاست',signedOut:'وتل',langChanged:'د انٹرفیس ژبه تازه شوه',respLangChanged:'د ځواب ژبه',personaSaved:'شخصیت خوندي شو',personaCleared:'شخصیت پاک شو',presetApplied:'پریسیټ تطبیق شو',serverAdded:'سرور اضافه شو',serverRemoved:'سرور لرې شو',chatsExported:'خبرې صادرې شوې',chatsImported:'وارد شوې',chatsCleared:'ټولې خبرې پاکې شوې',resetAll:'ټول محلي ډاټا پاکه شوه — بیا پورته…',guestReset:'د میلمه ID بیا تنظیم',copied:'تشخیص کاپي شو',testSent:'ازموینه خبرتیا ولېږل شوه',shareUnlock:'دې ماډل وړیا خلاصولو لپاره شریک کړئ',upgrade:'لوړولو لپاره ارتقا',noToken:'د ټوکن حد — شریک یا ارتقا.',bridgeConnected:'پل وصل شو',bridgeNotReachable:'پل نشي رسیدلی'},
+    },
+    de: {
+      brand:'MiroxAI', newChat:'Neuer Chat', newChatTitle:'Neuer Chat',
+      tab:{chats:'Chats',bridge:'Bridge',images:'Bilder'},
+      searchChats:'Chats durchsuchen…', noChats:'Noch keine Unterhaltungen', noImages:'Noch keine Bilder.',
+      guestMode:'Gastmodus', signInHint:'Anmelden, um Chats zu speichern',
+      settings:'Einstellungen', support:'Support', developers:'Entwickler', madeBy:'Von OpenSurr',
+      welcomeTitle:'Hallo, ich bin Mirox',
+      welcomeSub:'Luna und Gen sind unbegrenzt und kostenlos. Teilen Sie, um <strong>Pro, Ultra &amp; Eclipse</strong> 7 Tage kostenlos freizuschalten.',
+      suggest:{lua:'Lua-Skript schreiben',html:'HTML-Tabelle zeigen',image:'Bild generieren',explain:'Konzept erklären'},
+      tools:{search:'Suche',lumenal:'Lumenal',bridge:'Bridge',plans:'Pläne',help:'Hilfe'},
+      composerPlaceholder:'Wie kann ich heute helfen?',
+      composerNote:'Mirox macht Fehler — prüfen Sie wichtige Infos.',
+      latest:'Neueste', send:'Senden', stop:'Stopp', close:'Schließen', skip:'Überspringen',
+      openMenu:'Menü öffnen', plans:'Pläne', tokenBudget:'Token-Budget', scrollLatest:'Zum letzten scrollen',
+      attachFiles:'Dateien anhängen', removeAttach:'Anhänge entfernen',
+      loading:{waking:'Luna wird geweckt…'},
+      share:{title:'Seite teilen, 50k Token erhalten',sub:'<strong>50k Token für 1 Woche</strong> und <strong>Pro, Ultra &amp; Eclipse</strong> kostenlos.',perk1:'50.000 Bonus-Token',perk2:'7 Tage gültig',perk3:'Pro · Ultra · Eclipse freigeschaltet',now:'Jetzt teilen',ignore:'Ignorieren',hint:'Wir überprüfen Shares über das native Share-Sheet Ihres Geräts.'},
+      login:{title:'Anmelden',sub:'Anmelden mit Google, Apple oder E-Mail — mit Loginment.',loginment:'Weiter mit Loginment',orDemo:'oder Demo-Login',name:'Name',email:'E-Mail',continue:'Weiter'},
+      bridge:{title:'Bridge',disconnected:'Nicht verbunden',connected:'Verbunden',sideHint:'Geben Sie Mirox direkte Kontrolle über Ihren Laptop.',openWorkspace:'Bridge-Workspace öffnen',download:'Client herunterladen',panel:'Panel',autoRun:'Auto-Run',showCode:'Code zeigen',preview:'Vorschau',stop:'Stopp',clearChat:'Chat leeren',starting:'Starte…',emptyTitle:'Bridge-Workspace',emptyBody:'Sagen Sie Mirox, was zu bauen ist. Es schreibt Dateien nach <code>~/&lt;projekt&gt;/</code>, verifiziert sie und zeigt eine Live-Vorschau.',inputPlaceholder:'z.B. Baue einen Taschenrechner in meinem Home-Ordner',connection:'Verbindung',name:'Name',namePlaceholder:'Mein Laptop',port:'Port',connect:'Verbinden',disconnect:'Trennen',phoneDevices:'Telefon & Geräte',kdeChecking:'KDE Connect: prüfe…',scanDevices:'Geräte suchen',build:'Build',noProject:'Noch kein Projekt',openPreview:'Live-Vorschau öffnen',copyPath:'Ordnerpfad kopieren',sudo:'Sudo',noPassword:'Kein Passwort gespeichert',forgetPassword:'Passwort vergessen',quickActions:'Schnellaktionen',quick:{calc:'Taschenrechner',landing:'Landingpage',snake:'Snake-Spiel',todo:'Todo-App',portfolio:'Portfolio',scan:'Geräte suchen'},livePreview:'Live-Vorschau',loadPath:'Pfad laden',reload:'Neu laden'},
+      kde:{title:'KDE Connect · Geräte',subtitle:'Wählen Sie ein Gerät für Mirox',hint:'Erreichbare Geräte sind im selben WLAN und gekoppelt.',rescan:'Neu scannen',skip:'Überspringen'},
+      planner:{title:'Mirox Planner',subtitle:'Wählen Sie ein Design — Mirox baut es',hint:'Live-Demos — wählen Sie Ihren Favoriten.',auto:'Mirox entscheiden lassen',choose:'Wählen'},
+      sudo:{title:'Passwort erforderlich',sub:'Mirox braucht Root-Zugriff.',password:'Ihr sudo-Passwort',showHide:'Zeigen / verbergen',remember:'Für diese Sitzung merken (nur im Speicher)',run:'Mit sudo ausführen'},
+      bq:{title:'Mirox braucht Ihre Eingabe',customPlaceholder:'Oder eigene Antwort eingeben…',custom:'Benutzerdefiniert',submit:'Absenden & weiter'},
+      plans:{title:'Pläne',sub:'Luna und Gen sind kostenlos und unbegrenzt. Teilen Sie, um Pro, Ultra und Eclipse 7 Tage freizuschalten.'},
+      lumenal:{title:'Lumenal 1.0',sub:'Starke Bildgenerierung, powered by Mirox.',prompt:'Beschreiben Sie das gewünschte Bild…',generate:'Generieren'},
+      support:{title:'Support kontaktieren',subject:'Betreff',message:'Nachricht',submit:'Absenden'},
+      iv:{title:'Generiertes Bild',download:'Herunterladen'},
+      settingsT:{tab:{general:'Allgemein',appearance:'Aussehen',persona:'Persona',mcp:'MCP',language:'Sprache',alerts:'Hinweise',data:'Daten',dev:'Dev'},
+        title:'Einstellungen',account:'Konto',accountSub:'Chats lokal in diesem Browser gespeichert',signIn:'Anmelden',signOut:'Abmelden',
+        rewards:'Belohnungen',shareEarn:'Teilen & verdienen',shareSub:'50k Token + Pro/Ultra/Eclipse 7 Tage kostenlos',shareBtn:'Teilen',
+        behavior:'Verhalten',autoScroll:'Auto-Scroll',autoScrollSub:'Neuen Nachrichten folgen',enterSend:'Mit Enter senden',enterSendSub:'Shift+Enter für neue Zeile',showThinking:'Denkspur zeigen',showThinkingSub:'Argumentations-Panel über Antworten',vision:'Vision für Bilder',visionSub:'Bilder an KI senden (base64)',compact:'Kompaktmodus',compactSub:'Engere Abstände',
+        mode:'Modus',mode2:{light:'Hell',dark:'Dunkel',auto:'Auto'},accent:'Akzentfarbe',fontSize:'Schriftgröße',font2:{sm:'Klein',md:'Mittel',lg:'Groß'},animations:'Animationen',reduceMotion:'Bewegung reduzieren',reduceMotionSub:'Animationen minimieren',
+        persona:'Eigene Figur',personaHelp:'Beschreiben Sie, wie Mirox sich verhalten soll.',personaPlaceholder:'z.B. Sie sind ein geduldiger Lehrer…',personaSave:'Persona speichern',personaClear:'Löschen',personaPresets:'Voreingestellte Charaktere',preset:{casual:'Locker',engineer:'Ingenieur',teacher:'Lehrer',writer:'Autor',philosopher:'Philosoph'},
+        mcp:{title:'Model Context Protocol',help:'MCP-Server verbinden für externe Tools.',enable:'MCP aktivieren',enableSub:'Mirox darf Server aufrufen',add:'Server hinzufügen',name:'Server-Name',url:'Server-URL',key:'API-Schlüssel (optional)',addBtn:'Server hinzufügen',connected:'Verbundene Server',empty:'Keine MCP-Server konfiguriert.'},
+        lang:{response:'Bevorzugte Antwortsprache',responseHelp:'Mirox antwortet in dieser Sprache.',auto:'Automatisch',ui:'Oberflächensprache',uiHelp:'Sprache von Knöpfen und Menüs — sofort wirksam.',comments:'Code-Kommentare',translateComments:'Code-Kommentare übersetzen',translateCommentsSub:'Kommentare in bevorzugter Sprache'},
+        alerts:{title:'Benachrichtigungen',desktop:'Desktop-Benachrichtigungen',desktopSub:'Benachrichtigen wenn Antwort fertig',sound:'Ton',soundSub:'Sanfter Ton wenn Antwort ankommt',bonus:'Bonus-Erinnerungen',bonusSub:'Vor Ablauf des 50k-Bonus erinnern',test:'Test',testSub:'Testbenachrichtigung senden',testBtn:'Test'},
+        data:{chats:'Chats',export:'Alle Chats exportieren (JSON)',import:'Chats importieren',clearChats:'Alle Chats löschen',local:'Lokale Daten',reset:'Alles zurücksetzen'},
+        dev:{console:'Entwicklerkonsole',open:'Entwicklerkonsole öffnen',diag:'Diagnose',verbose:'Ausführliches Logging',verboseSub:'API-Anfragen in Konsole loggen',copyDiag:'Diagnose kopieren',guest:'Gast-Identität',guestSub:'Geräte-ID für Bonus-Verifizierung',reset:'Zurücksetzen'},
+      },
+      toast:{bonusAdded:'Bonus-Token + Pro/Ultra/Eclipse für',days:'Tage freigeschaltet!',shared:'Share erkannt! Belohnung wird hinzugefügt…',sharedOk:'Share bestätigt! Belohnung wird hinzugefügt…',cancelled:'Share abgebrochen. Versuchen Sie es erneut.',noShare:'Kein Share erkannt. Nochmal?',bonusActive:'Bonus aktiv — Pro, Ultra & Eclipse freigeschaltet!',bonusExpired:'Bonus abgelaufen — zurück zu Luna. Erneut teilen!',signedIn:'Willkommen',signedOut:'Abgemeldet',langChanged:'Sprache aktualisiert',respLangChanged:'Antwortsprache',personaSaved:'Persona gespeichert',personaCleared:'Persona gelöscht',presetApplied:'Preset angewendet',serverAdded:'Server hinzugefügt',serverRemoved:'Server entfernt',chatsExported:'Chats exportiert',chatsImported:'Importiert',chatsCleared:'Alle Chats gelöscht',resetAll:'Alles gelöscht — neu laden…',guestReset:'Gast-ID zurückgesetzt',copied:'Diagnose kopiert',testSent:'Test gesendet',shareUnlock:'Teilen um dieses Modell freizuschalten',upgrade:'Upgrade zum Nutzen',noToken:'Token-Limit — teilen oder upgraden.',bridgeConnected:'Bridge verbunden',bridgeNotReachable:'Bridge nicht erreichbar'},
+    },
+    es: {
+      brand:'MiroxAI', newChat:'Nuevo chat', newChatTitle:'Nuevo chat',
+      tab:{chats:'Chats',bridge:'Bridge',images:'Imágenes'},
+      searchChats:'Buscar chats…', noChats:'Sin conversaciones', noImages:'Sin imágenes.',
+      guestMode:'Modo invitado', signInHint:'Inicia sesión para guardar chats',
+      settings:'Ajustes', support:'Soporte', developers:'Desarrolladores', madeBy:'Hecho por OpenSurr',
+      welcomeTitle:'Hola, soy Mirox',
+      welcomeSub:'Luna y Gen son ilimitados y gratuitos. Comparte para desbloquear <strong>Pro, Ultra y Eclipse</strong> gratis 7 días.',
+      suggest:{lua:'Escribe un script Lua',html:'Muestra una tabla HTML',image:'Genera una imagen',explain:'Explica un concepto'},
+      tools:{search:'Buscar',lumenal:'Lumenal',bridge:'Bridge',plans:'Planes',help:'Ayuda'},
+      composerPlaceholder:'¿Cómo puedo ayudarte hoy?',
+      composerNote:'Mirox comete errores — verifica información importante.',
+      latest:'Recientes', send:'Enviar', stop:'Detener', close:'Cerrar', skip:'Saltar',
+      openMenu:'Abrir menú', plans:'Planes', tokenBudget:'Presupuesto', scrollLatest:'Ir al último',
+      attachFiles:'Adjuntar archivos', removeAttach:'Quitar adjuntos',
+      loading:{waking:'Despertando a Luna…'},
+      share:{title:'Comparte nuestra web, obtén 50k tokens',sub:'Obtén <strong>50k tokens por 1 semana</strong> y desbloquea <strong>Pro, Ultra y Eclipse</strong> gratis.',perk1:'50,000 tokens de bonificación',perk2:'Válido por 7 días',perk3:'Pro · Ultra · Eclipse desbloqueados',now:'Compartir ahora',ignore:'Ignorar',hint:'Verificamos los compartidos con la hoja nativa.'},
+      login:{title:'Iniciar sesión',sub:'Inicia con Google, Apple o email — con Loginment.',loginment:'Continuar con Loginment',orDemo:'o usa un inicio rápido',name:'Nombre',email:'Email',continue:'Continuar'},
+      bridge:{title:'Bridge',disconnected:'Desconectado',connected:'Conectado',sideHint:'Da a Mirox control directo de tu portátil.',openWorkspace:'Abrir espacio Bridge',download:'Descargar cliente',panel:'Panel',autoRun:'Auto-Run',showCode:'Mostrar código',preview:'Vista previa',stop:'Detener',clearChat:'Limpiar chat',starting:'Iniciando…',emptyTitle:'Espacio Bridge',emptyBody:'Dile a Mirox qué construir. Escribe archivos en <code>~/&lt;proyecto&gt;/</code>, los verifica y muestra una vista previa.',inputPlaceholder:'ej. Crea una calculadora en mi carpeta home',connection:'Conexión',name:'Nombre',namePlaceholder:'Mi portátil',port:'Puerto',connect:'Conectar',disconnect:'Desconectar',phoneDevices:'Teléfono y dispositivos',kdeChecking:'KDE Connect: comprobando…',scanDevices:'Escanear dispositivos',build:'Construir',noProject:'Sin proyecto',openPreview:'Abrir vista previa',copyPath:'Copiar ruta',sudo:'Sudo',noPassword:'Sin contraseña',forgetPassword:'Olvidar contraseña',quickActions:'Acciones rápidas',quick:{calc:'Calculadora',landing:'Landing',snake:'Snake',todo:'Todo app',portfolio:'Portafolio',scan:'Escanear'},livePreview:'Vista previa',loadPath:'Cargar ruta',reload:'Recargar'},
+      kde:{title:'KDE Connect · Dispositivos',subtitle:'Elige un dispositivo para Mirox',hint:'Los dispositivos marcados están en la misma Wi-Fi.',rescan:'Reescanear',skip:'Saltar'},
+      planner:{title:'Mirox Planner',subtitle:'Elige un diseño — Mirox lo construirá',hint:'Demos en vivo — elige tu favorito.',auto:'Que Mirox decida',choose:'Elegir'},
+      sudo:{title:'Contraseña requerida',sub:'Mirox necesita acceso root.',password:'Tu contraseña sudo',showHide:'Mostrar / ocultar',remember:'Recordar en esta sesión (solo en memoria)',run:'Ejecutar con sudo'},
+      bq:{title:'Mirox necesita tu aporte',customPlaceholder:'O escribe tu respuesta…',custom:'Personalizado',submit:'Enviar y continuar'},
+      plans:{title:'Planes',sub:'Luna y Gen son gratis e ilimitados. Comparte para desbloquear Pro, Ultra y Eclipse 7 días.'},
+      lumenal:{title:'Lumenal 1.0',sub:'Generación fuerte de imágenes, por Mirox.',prompt:'Describe la imagen que quieres…',generate:'Generar'},
+      support:{title:'Contactar soporte',subject:'Asunto',message:'Mensaje',submit:'Enviar'},
+      iv:{title:'Imagen generada',download:'Descargar'},
+      settingsT:{tab:{general:'General',appearance:'Apariencia',persona:'Persona',mcp:'MCP',language:'Idioma',alerts:'Alertas',data:'Datos',dev:'Dev'},
+        title:'Ajustes',account:'Cuenta',accountSub:'Chats guardados localmente',signIn:'Iniciar sesión',signOut:'Salir',
+        rewards:'Recompensas',shareEarn:'Comparte y gana',shareSub:'50k tokens + Pro/Ultra/Eclipse 7 días gratis',shareBtn:'Compartir',
+        behavior:'Comportamiento',autoScroll:'Desplazamiento automático',autoScrollSub:'Seguir mensajes nuevos',enterSend:'Enviar con Enter',enterSendSub:'Shift+Enter para nueva línea',showThinking:'Mostrar razonamiento',showThinkingSub:'Panel de razonamiento arriba de respuestas',vision:'Visión para imágenes',visionSub:'Enviar imágenes a la IA (base64)',compact:'Modo compacto',compactSub:'Espaciado más ajustado',
+        mode:'Modo',mode2:{light:'Claro',dark:'Oscuro',auto:'Auto'},accent:'Color de acento',fontSize:'Tamaño de fuente',font2:{sm:'Pequeño',md:'Medio',lg:'Grande'},animations:'Animaciones',reduceMotion:'Reducir movimiento',reduceMotionSub:'Minimizar animaciones',
+        persona:'Carácter personalizado',personaHelp:'Describe cómo debe comportarse Mirox.',personaPlaceholder:'ej. Eres un profesor paciente…',personaSave:'Guardar persona',personaClear:'Limpiar',personaPresets:'Personalidades predefinidas',preset:{casual:'Casual',engineer:'Ingeniero',teacher:'Profesor',writer:'Escritor',philosopher:'Filósofo'},
+        mcp:{title:'Model Context Protocol',help:'Conecta servidores MCP para herramientas externas.',enable:'Activar MCP',enableSub:'Permitir que Mirox llame servidores',add:'Añadir servidor',name:'Nombre del servidor',url:'URL del servidor',key:'Clave API (opcional)',addBtn:'Añadir servidor',connected:'Servidores conectados',empty:'Sin servidores MCP.'},
+        lang:{response:'Idioma preferido de respuesta',responseHelp:'Mirox responderá en este idioma.',auto:'Detectar automáticamente',ui:'Idioma de interfaz',uiHelp:'Idioma de botones y menús — aplica al instante.',comments:'Comentarios de código',translateComments:'Traducir comentarios',translateCommentsSub:'Escribir comentarios en idioma preferido'},
+        alerts:{title:'Notificaciones',desktop:'Notificaciones de escritorio',desktopSub:'Notificar cuando acabe una respuesta',sound:'Sonido',soundSub:'Reproducir un timbre suave',bonus:'Recordatorios de bonos',bonusSub:'Recordar antes de que expire el bono',test:'Notificación de prueba',testSub:'Enviar notificación de muestra',testBtn:'Probar'},
+        data:{chats:'Chats',export:'Exportar todos los chats (JSON)',import:'Importar chats',clearChats:'Borrar todos los chats',local:'Datos locales',reset:'Restablecer todo'},
+        dev:{console:'Consola de desarrollador',open:'Abrir consola',diag:'Diagnóstico',verbose:'Registro detallado',verboseSub:'Registrar solicitudes API',copyDiag:'Copiar diagnóstico',guest:'Identidad de invitado',guestSub:'ID del dispositivo para verificar bonos',reset:'Restablecer'},
+      },
+      toast:{bonusAdded:'tokens de bonificación + Pro/Ultra/Eclipse desbloqueados por',days:'días!',shared:'¡Compartido detectado! Añadiendo recompensa…',sharedOk:'¡Compartido confirmado! Añadiendo…',cancelled:'Compartido cancelado. Inténtalo de nuevo.',noShare:'No se detectó compartido. ¿Otra vez?',bonusActive:'¡Bono activo — Pro, Ultra y Eclipse desbloqueados!',bonusExpired:'Bono expirado — vuelta a Luna. ¡Comparte de nuevo!',signedIn:'Bienvenido',signedOut:'Sesión cerrada',langChanged:'Idioma actualizado',respLangChanged:'Idioma de respuesta',personaSaved:'Persona guardada',personaCleared:'Persona limpiada',presetApplied:'Preset aplicado',serverAdded:'Servidor añadido',serverRemoved:'Servidor eliminado',chatsExported:'Chats exportados',chatsImported:'Importados',chatsCleared:'Chats borrados',resetAll:'Todo borrado — recargando…',guestReset:'ID de invitado restablecido',copied:'Diagnóstico copiado',testSent:'Prueba enviada',shareUnlock:'Comparte para desbloquear este modelo',upgrade:'Actualiza para usar',noToken:'Límite alcanzado — comparte o actualiza.',bridgeConnected:'Bridge conectado',bridgeNotReachable:'Bridge inalcanzable'},
+    },
+    'es-MX': null, fr: {
+      brand:'MiroxAI', newChat:'Nouveau chat', newChatTitle:'Nouveau chat',
+      tab:{chats:'Chats',bridge:'Bridge',images:'Images'},
+      searchChats:'Rechercher…', noChats:'Aucune conversation', noImages:'Aucune image.',
+      guestMode:'Mode invité', signInHint:'Connectez-vous pour enregistrer',
+      settings:'Paramètres', support:'Support', developers:'Développeurs', madeBy:'Par OpenSurr',
+      welcomeTitle:'Salut, je suis Mirox',
+      welcomeSub:'Luna et Gen sont illimités et gratuits. Partagez pour débloquer <strong>Pro, Ultra &amp; Eclipse</strong> 7 jours gratuitement.',
+      suggest:{lua:'Écrire un script Lua',html:'Montrer un tableau HTML',image:'Générer une image',explain:'Expliquer un concept'},
+      tools:{search:'Recherche',lumenal:'Lumenal',bridge:'Bridge',plans:'Forfaits',help:'Aide'},
+      composerPlaceholder:'Comment puis-je vous aider ?',
+      composerNote:'Mirox peut se tromper — vérifiez les infos importantes.',
+      latest:'Récent', send:'Envoyer', stop:'Arrêter', close:'Fermer', skip:'Passer',
+      openMenu:'Ouvrir le menu', plans:'Forfaits', tokenBudget:'Budget tokens', scrollLatest:'Aller au dernier',
+      attachFiles:'Joindre des fichiers', removeAttach:'Retirer les pièces jointes',
+      loading:{waking:'Réveil de Luna…'},
+      share:{title:'Partagez notre site, obtenez 50k tokens',sub:'<strong>50k tokens pendant 1 semaine</strong> et <strong>Pro, Ultra &amp; Eclipse</strong> gratuits.',perk1:'50 000 tokens bonus',perk2:'Valide 7 jours',perk3:'Pro · Ultra · Eclipse débloqués',now:'Partager',ignore:'Ignorer',hint:'Nous vérifions via la feuille de partage native.'},
+      login:{title:'Connexion',sub:'Connectez-vous avec Google, Apple ou email — via Loginment.',loginment:'Continuer avec Loginment',orDemo:'ou connexion démo',name:'Nom',email:'Email',continue:'Continuer'},
+      bridge:{title:'Bridge',disconnected:'Déconnecté',connected:'Connecté',sideHint:'Donnez à Mirox le contrôle direct de votre ordinateur.',openWorkspace:'Ouvrir l\'espace Bridge',download:'Télécharger le client',panel:'Panneau',autoRun:'Auto-Run',showCode:'Voir le code',preview:'Aperçu',stop:'Arrêter',clearChat:'Effacer le chat',starting:'Démarrage…',emptyTitle:'Espace Bridge',emptyBody:'Dites à Mirox quoi construire. Il écrit les fichiers dans <code>~/&lt;projet&gt;/</code>, les vérifie et affiche un aperçu.',inputPlaceholder:'ex. Crée une calculatrice dans mon dossier personnel',connection:'Connexion',name:'Nom',namePlaceholder:'Mon ordinateur',port:'Port',connect:'Connecter',disconnect:'Déconnecter',phoneDevices:'Téléphone et appareils',kdeChecking:'KDE Connect : vérification…',scanDevices:'Rechercher des appareils',build:'Build',noProject:'Aucun projet',openPreview:'Ouvrir l\'aperçu',copyPath:'Copier le chemin',sudo:'Sudo',noPassword:'Aucun mot de passe',forgetPassword:'Oublier le mot de passe',quickActions:'Actions rapides',quick:{calc:'Calculatrice',landing:'Landing',snake:'Snake',todo:'Todo',portfolio:'Portfolio',scan:'Scanner'},livePreview:'Aperçu en direct',loadPath:'Charger le chemin',reload:'Recharger'},
+      kde:{title:'KDE Connect · Appareils',subtitle:'Choisissez un appareil',hint:'Les appareils marqués sont sur le même Wi-Fi.',rescan:'Rescanner',skip:'Passer'},
+      planner:{title:'Mirox Planner',subtitle:'Choisissez un design — Mirox le construira',hint:'Démos en direct — choisissez votre préféré.',auto:'Laisser Mirox décider',choose:'Choisir'},
+      sudo:{title:'Mot de passe requis',sub:'Mirox a besoin d\'un accès root.',password:'Votre mot de passe sudo',showHide:'Afficher / masquer',remember:'Mémoriser pour cette session (en mémoire)',run:'Exécuter avec sudo'},
+      bq:{title:'Mirox a besoin de votre réponse',customPlaceholder:'Ou tapez votre réponse…',custom:'Personnalisé',submit:'Envoyer & continuer'},
+      plans:{title:'Forfaits',sub:'Luna et Gen sont gratuits et illimités. Partagez pour débloquer Pro, Ultra et Eclipse 7 jours.'},
+      lumenal:{title:'Lumenal 1.0',sub:'Forte génération d\'images, par Mirox.',prompt:'Décrivez l\'image souhaitée…',generate:'Générer'},
+      support:{title:'Contacter le support',subject:'Sujet',message:'Message',submit:'Envoyer'},
+      iv:{title:'Image générée',download:'Télécharger'},
+      settingsT:{tab:{general:'Général',appearance:'Apparence',persona:'Persona',mcp:'MCP',language:'Langue',alerts:'Alertes',data:'Données',dev:'Dev'},
+        title:'Paramètres',account:'Compte',accountSub:'Chats enregistrés localement',signIn:'Connexion',signOut:'Déconnexion',
+        rewards:'Récompenses',shareEarn:'Partager & gagner',shareSub:'50k tokens + Pro/Ultra/Eclipse 7 jours gratuits',shareBtn:'Partager',
+        behavior:'Comportement',autoScroll:'Défilement auto',autoScrollSub:'Suivre les nouveaux messages',enterSend:'Envoyer avec Entrée',enterSendSub:'Shift+Entrée pour nouvelle ligne',showThinking:'Afficher le raisonnement',showThinkingSub:'Panneau de raisonnement au-dessus des réponses',vision:'Vision pour images',visionSub:'Envoyer les images à l\'IA (base64)',compact:'Mode compact',compactSub:'Espacement plus serré',
+        mode:'Mode',mode2:{light:'Clair',dark:'Sombre',auto:'Auto'},accent:'Couleur d\'accent',fontSize:'Taille police',font2:{sm:'Petit',md:'Moyen',lg:'Grand'},animations:'Animations',reduceMotion:'Réduire le mouvement',reduceMotionSub:'Minimiser les animations',
+        persona:'Caractère personnalisé',personaHelp:'Décrivez comment Mirox doit se comporter.',personaPlaceholder:'ex. Vous êtes un professeur patient…',personaSave:'Enregistrer',personaClear:'Effacer',personaPresets:'Personnalités prédéfinies',preset:{casual:'Décontracté',engineer:'Ingénieur',teacher:'Professeur',writer:'Écrivain',philosopher:'Philosophe'},
+        mcp:{title:'Model Context Protocol',help:'Connectez des serveurs MCP pour outils externes.',enable:'Activer MCP',enableSub:'Autoriser Mirox à appeler les serveurs',add:'Ajouter un serveur',name:'Nom du serveur',url:'URL du serveur',key:'Clé API (optionnel)',addBtn:'Ajouter',connected:'Serveurs connectés',empty:'Aucun serveur MCP.'},
+        lang:{response:'Langue de réponse préférée',responseHelp:'Mirox répondra dans cette langue.',auto:'Détection automatique',ui:'Langue de l\'interface',uiHelp:'Langue des boutons et menus — appliquée immédiatement.',comments:'Commentaires de code',translateComments:'Traduire les commentaires',translateCommentsSub:'Écrire les commentaires en langue préférée'},
+        alerts:{title:'Notifications',desktop:'Notifications de bureau',desktopSub:'Notifier quand une réponse est prête',sound:'Son',soundSub:'Jouer un carillon doux',bonus:'Rappels de bonus',bonusSub:'Rappeler avant l\'expiration du bonus',test:'Notification test',testSub:'Envoyer une notification test',testBtn:'Tester'},
+        data:{chats:'Chats',export:'Exporter tous les chats (JSON)',import:'Importer des chats',clearChats:'Effacer tous les chats',local:'Données locales',reset:'Tout réinitialiser'},
+        dev:{console:'Console développeur',open:'Ouvrir la console',diag:'Diagnostic',verbose:'Journalisation détaillée',verboseSub:'Journaliser les requêtes API',copyDiag:'Copier le diagnostic',guest:'Identité invité',guestSub:'ID appareil pour vérifier les bonus',reset:'Réinitialiser'},
+      },
+      toast:{bonusAdded:'tokens bonus + Pro/Ultra/Eclipse débloqués pour',days:'jours!',shared:'Partage détecté ! Ajout de la récompense…',sharedOk:'Partage confirmé ! Ajout…',cancelled:'Partage annulé. Réessayez.',noShare:'Aucun partage détecté.',bonusActive:'Bonus actif — Pro, Ultra & Eclipse débloqués !',bonusExpired:'Bonus expiré — retour à Luna. Repartagez !',signedIn:'Bienvenue',signedOut:'Déconnecté',langChanged:'Langue mise à jour',respLangChanged:'Langue de réponse',personaSaved:'Persona enregistré',personaCleared:'Persona effacé',presetApplied:'Préréglage appliqué',serverAdded:'Serveur ajouté',serverRemoved:'Serveur retiré',chatsExported:'Chats exportés',chatsImported:'Importés',chatsCleared:'Chats effacés',resetAll:'Tout effacé — rechargement…',guestReset:'ID invité réinitialisé',copied:'Diagnostic copié',testSent:'Test envoyé',shareUnlock:'Partagez pour débloquer ce modèle',upgrade:'Passez à un forfait supérieur',noToken:'Limite atteinte — partagez ou mettez à niveau.',bridgeConnected:'Bridge connecté',bridgeNotReachable:'Bridge injoignable'},
+    },
+    ar: { welcomeTitle:'مرحباً، أنا Mirox', newChat:'محادثة جديدة', settings:'الإعدادات', support:'الدعم', developers:'المطورون', guestMode:'وضع الضيف', signInHint:'سجّل الدخول لحفظ المحادثات', composerPlaceholder:'كيف أساعدك اليوم؟', send:'إرسال', close:'إغلاق', plans:'الخطط', madeBy:'صنع بواسطة OpenSurr', tab:{chats:'الدردشات',bridge:'Bridge',images:'الصور'}, noChats:'لا توجد محادثات بعد', noImages:'لا توجد صور بعد.', welcomeSub:'Luna و Gen غير محدودين ومجانيان. شارك لفتح <strong>Pro و Ultra و Eclipse</strong> مجاناً لمدة 7 أيام.' },
+    'zh-CN': { welcomeTitle:'你好，我是 Mirox', newChat:'新对话', settings:'设置', support:'支持', developers:'开发者', guestMode:'访客模式', signInHint:'登录以保存对话', composerPlaceholder:'今天我能帮您什么？', send:'发送', close:'关闭', plans:'方案', madeBy:'由 OpenSurr 制作', tab:{chats:'对话',bridge:'Bridge',images:'图片'}, noChats:'尚无对话', noImages:'尚无图片。', welcomeSub:'Luna 和 Gen 无限且免费。分享即可免费解锁 <strong>Pro、Ultra 和 Eclipse</strong> 7 天。' },
+    ja: { welcomeTitle:'こんにちは、Miroxです', newChat:'新しいチャット', settings:'設定', support:'サポート', developers:'開発者', guestMode:'ゲストモード', signInHint:'サインインしてチャットを保存', composerPlaceholder:'今日は何をお手伝いしましょうか？', send:'送信', close:'閉じる', plans:'プラン', madeBy:'OpenSurr 製', tab:{chats:'チャット',bridge:'Bridge',images:'画像'}, noChats:'まだ会話がありません', noImages:'まだ画像がありません。', welcomeSub:'Luna と Gen は無制限で無料です。シェアして <strong>Pro、Ultra、Eclipse</strong> を 7 日間無料で解除。' },
+    ru: { welcomeTitle:'Привет, я Mirox', newChat:'Новый чат', settings:'Настройки', support:'Поддержка', developers:'Разработчикам', guestMode:'Гостевой режим', signInHint:'Войдите, чтобы сохранить чаты', composerPlaceholder:'Чем помочь сегодня?', send:'Отправить', close:'Закрыть', plans:'Тарифы', madeBy:'Сделано OpenSurr', tab:{chats:'Чаты',bridge:'Bridge',images:'Изображения'}, noChats:'Пока нет чатов', noImages:'Пока нет изображений.', welcomeSub:'Luna и Gen безлимитные и бесплатные. Поделитесь, чтобы разблокировать <strong>Pro, Ultra и Eclipse</strong> на 7 дней.' },
+    tr: { welcomeTitle:'Merhaba, ben Mirox', newChat:'Yeni sohbet', settings:'Ayarlar', support:'Destek', developers:'Geliştiriciler', guestMode:'Misafir modu', signInHint:'Sohbetleri kaydetmek için giriş yapın', composerPlaceholder:'Bugün nasıl yardımcı olabilirim?', send:'Gönder', close:'Kapat', plans:'Planlar', madeBy:'OpenSurr yapımı', tab:{chats:'Sohbetler',bridge:'Bridge',images:'Görseller'}, noChats:'Henüz sohbet yok', noImages:'Henüz görsel yok.', welcomeSub:'Luna ve Gen sınırsız ve ücretsiz. <strong>Pro, Ultra ve Eclipse</strong> için 7 gün ücretsiz paylaşın.' },
+    hi: { welcomeTitle:'नमस्ते, मैं Mirox हूँ', newChat:'नया चैट', settings:'सेटिंग्स', support:'समर्थन', developers:'डेवलपर्स', guestMode:'अतिथि मोड', signInHint:'चैट सहेजने के लिए साइन इन करें', composerPlaceholder:'आज मैं कैसे मदद कर सकता हूँ?', send:'भेजें', close:'बंद करें', plans:'योजनाएँ', madeBy:'OpenSurr द्वारा निर्मित', tab:{chats:'चैट',bridge:'Bridge',images:'छवियाँ'}, noChats:'अभी कोई चैट नहीं', noImages:'अभी कोई छवि नहीं।', welcomeSub:'Luna और Gen असीमित और मुफ्त हैं। <strong>Pro, Ultra और Eclipse</strong> को 7 दिनों के लिए मुफ्त अनलॉक करने के लिए साझा करें।' },
+    ur: { welcomeTitle:'ہیلو، میں Mirox ہوں', newChat:'نئی چیٹ', settings:'ترتیبات', support:'معاونت', developers:'ڈویلپرز', guestMode:'مہمان موڈ', signInHint:'چیٹس محفوظ کرنے کے لیے سائن ان کریں', composerPlaceholder:'آج میں کیسے مدد کر سکتا ہوں؟', send:'بھیجیں', close:'بند کریں', plans:'پلانز', madeBy:'OpenSurr کی طرف سے', tab:{chats:'چیٹس',bridge:'Bridge',images:'تصاویر'}, noChats:'ابھی کوئی چیٹ نہیں', noImages:'ابھی کوئی تصویر نہیں۔', welcomeSub:'Luna اور Gen لامحدود اور مفت ہیں۔ <strong>Pro، Ultra اور Eclipse</strong> کو 7 دن کے لیے مفت کھولنے کے لیے شیئر کریں۔' },
+  };
+  TRANSLATIONS['es-MX'] = Object.assign({}, TRANSLATIONS.es, {
+    welcomeTitle:'¡Hola, soy Mirox!', newChat:'Nuevo chat', composerPlaceholder:'¿Cómo te ayudo hoy?', welcomeSub:'Luna y Gen son ilimitados y gratis. Comparte para desbloquear <strong>Pro, Ultra y Eclipse</strong> gratis 7 días.',
+  });
+  const RTL_LANGS = ['fa','ps','ar','he','ur'];
+
+  function t(key, fallback) {
+    if (!key) return fallback || '';
+    const lang = __prefs.uiLanguage || 'en';
+    const parts = key.split('.');
+    // Try current lang → en → fallback
+    const fromLang = (TRANSLATIONS[lang] || TRANSLATIONS.en);
+    const fromEn = TRANSLATIONS.en;
+    const dig = (obj) => { let v = obj; for (const p of parts) { if (v == null) return undefined; v = v[p]; } return v; };
+    let val = dig(fromLang);
+    if (val === undefined || val === null) val = dig(fromEn);
+    if (val === undefined || val === null) val = fallback;
+    return val != null ? String(val) : (fallback || key);
+  }
+  window.__t = t;
+
+  function applyTranslations() {
+    const lang = __prefs.uiLanguage || 'en';
+    document.documentElement.lang = lang;
+    document.documentElement.dir = RTL_LANGS.includes(lang) ? 'rtl' : 'ltr';
+    // Text content
+    document.querySelectorAll('[data-i18n]').forEach((el) => {
+      const key = el.dataset.i18n;
+      const txt = t(key, el.textContent);
+      if (txt != null && txt !== '') el.textContent = txt;
+    });
+    // HTML content
+    document.querySelectorAll('[data-i18n-html]').forEach((el) => {
+      const key = el.dataset.i18nHtml;
+      const txt = t(key, null);
+      if (txt) el.innerHTML = txt;
+    });
+    // Placeholders
+    document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+      const key = el.dataset.i18nPlaceholder;
+      const txt = t(key, el.placeholder);
+      if (txt) el.placeholder = txt;
+    });
+    // Titles (tooltips)
+    document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+      const key = el.dataset.i18nTitle;
+      const txt = t(key, el.title);
+      if (txt) el.title = txt;
+    });
+    // Update dynamic pieces
+    updateTokenUsage();
+    renderModelPicker();
+    renderHistory();
+    if (typeof renderMcpList === 'function') renderMcpList();
+  }
+
+  /* ═══════════ Loader ═══════════ */
   let __loaderGone = false;
   function killLoader() {
     if (__loaderGone) return;
@@ -12,7 +325,7 @@
     setTimeout(() => { el.style.display = 'none'; }, 400);
   }
   window.__miroxKillLoader = killLoader;
-  setTimeout(killLoader, 1200);
+  setTimeout(killLoader, 1500);
   window.addEventListener('load', killLoader);
   window.addEventListener('error', killLoader);
   window.addEventListener('unhandledrejection', killLoader);
@@ -29,14 +342,17 @@
     { id: 'mirox-eclipse-2.0', label: 'Eclipse', tier: 'ultimate', tagline: 'Most powerful', icon: 'ri-sun-fill' },
   ];
   const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
-  const LS_KEY = 'miroxai_conversations_v35';
+  const LS_KEY = 'miroxai_conversations_v36';
   const TOKEN_KEY = 'mirox_token';
   const GUEST_KEY = 'miroxai_guest_id_v1';
-  const APPEARANCE_KEY = 'miroxai_appearance_v35';
-  const SHARE_KEY = 'miroxai_share_v6';
-  const BONUS_KEY = 'miroxai_bonus_v6';
-  const PREFS_KEY = 'miroxai_prefs_v2';
-  const MCP_KEY = 'miroxai_mcp_v2';
+  const APPEARANCE_KEY = 'miroxai_appearance_v36';
+  const SHARE_KEY = 'miroxai_share_v7';
+  const BONUS_KEY = 'miroxai_bonus_v7';
+  const PREFS_KEY = 'miroxai_prefs_v3';
+  const MCP_KEY = 'miroxai_mcp_v3';
+  const BRIDGE_KEY = 'miroxai_bridge_v1';
+  const BRIDGE_OPTS_KEY = 'miroxai_bridge_opts_v1';
+  const KDE_DEVICE_KEY = 'miroxai_kde_device_v1';
   const PASTE_ATTACH_THRESHOLD = 1024;
   const NET_TIMEOUT_MS = 15000;
   const STREAM_TIMEOUT_MS = 120000;
@@ -45,6 +361,11 @@
   const BONUS_MS = 7 * 24 * 60 * 60 * 1000;
   const BONUS_CHECK_MS = 30 * 1000;
   const MAX_IMAGE_DIM = 1600;
+  const MAX_BRIDGE_QUESTIONS = 6;
+  const MAX_BRIDGE_ITER = 200;
+  const MAX_AUTO_CONTINUES = 100;
+  const MAX_DUP_COMMANDS = 40;
+  const AUTO_CONTINUE_DELAY_MS = 900;
 
   let __config = null, __user = null, __tier = 'free', __model = 'mirox-luna-1.2';
   let currentConversationId = null, isReplying = false;
@@ -59,6 +380,16 @@
   let __prefs = {};
   let __mcpServers = [];
   let __lastBonusWarnDay = null;
+  // Bridge state
+  let __bridge = { name: 'My Laptop', port: 8765, connected: false, baseUrl: null, env: null };
+  let bridgeRunning = false, bridgeAbort = false, bridgeConversation = [], bridgeProgress = 0;
+  let bridgeTurn = null, bridgeTaskComplete = true, bridgeWaitingForUser = false;
+  let __lastBuildFolder = null, __lastBuildWasMobile = false, __lastPreviewFile = null;
+  let __sudoPassword = '', __sudoRemember = false, __sudoResolver = null;
+  let __kdeDevices = [], __kdeCurrentDevice = null, __kdeResolver = null, __kdeAvailable = false;
+  let __bqResolver = null, __bqSelected = null;
+  let __plannerResolver = null;
+  let __bridgeAutoRun = true, __bridgeShowCode = false;
 
   const uid = () => 'c_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
   const escapeHtml = (s) => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
@@ -68,7 +399,6 @@
   function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
   function setToken(t) { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch {} }
 
-  /* ═══════════ GUEST IDENTITY ═══════════ */
   function getGuestId() {
     let id = null;
     try { id = localStorage.getItem(GUEST_KEY); } catch {}
@@ -83,17 +413,10 @@
     try { localStorage.setItem(GUEST_KEY, id); } catch {}
     return id;
   }
-
-  /* ═══════════ HEADERS ═══════════ */
   function bonusProofHeaders() {
     const b = loadBonusRaw();
     if (!b || !isBonusValid(b)) return {};
-    return {
-      'X-Mirox-Guest': getGuestId(),
-      'X-Mirox-Bonus-Tokens': String(b.tokens),
-      'X-Mirox-Bonus-Expires': String(b.expiresAt),
-      'X-Mirox-Bonus-Granted': String(b.grantedAt || 0),
-    };
+    return { 'X-Mirox-Guest': getGuestId(), 'X-Mirox-Bonus-Tokens': String(b.tokens), 'X-Mirox-Bonus-Expires': String(b.expiresAt), 'X-Mirox-Bonus-Granted': String(b.grantedAt || 0) };
   }
   function authHeaders(extra) {
     const h = { 'Content-Type': 'application/json', ...(extra || {}) };
@@ -147,13 +470,8 @@
     const prev = loadBonusRaw();
     const now = Date.now();
     let newTokens, newExpiry;
-    if (isBonusValid(prev)) {
-      newTokens = (prev.tokens || 0) + tokens;
-      newExpiry = Math.max(prev.expiresAt, now + BONUS_MS);
-    } else {
-      newTokens = tokens;
-      newExpiry = now + BONUS_MS;
-    }
+    if (isBonusValid(prev)) { newTokens = (prev.tokens || 0) + tokens; newExpiry = Math.max(prev.expiresAt, now + BONUS_MS); }
+    else { newTokens = tokens; newExpiry = now + BONUS_MS; }
     const bonus = { tokens: newTokens, expiresAt: newExpiry, grantedAt: now, guest: getGuestId() };
     saveBonusRaw(bonus);
     return bonus;
@@ -170,7 +488,7 @@
     return mins + 'm';
   }
 
-  /* ═══════════ PREFS — with fully synced UI ═══════════ */
+  /* ═══════════ PREFS ═══════════ */
   const DEFAULT_PREFS = {
     autoScroll: true, enterSend: true, showThinking: true, vision: true, compact: false,
     reduceMotion: false, fontSize: 'md', mode: 'light', theme: 'default',
@@ -178,10 +496,10 @@
     desktopNotify: false, sound: true, bonusReminder: true,
     verboseLog: false, persona: '',
     mcpEnabled: false,
+    bridgeAutoRun: true, bridgeShowCode: false,
   };
   function loadPrefs() {
     __prefs = Object.assign({}, DEFAULT_PREFS, safeGet(PREFS_KEY, {}));
-    // Legacy: also read appearance key for mode/theme
     const app = safeGet(APPEARANCE_KEY, {});
     if (app.mode) __prefs.mode = app.mode;
     if (app.theme) __prefs.theme = app.theme;
@@ -190,18 +508,13 @@
     safeSet(PREFS_KEY, __prefs);
     safeSet(APPEARANCE_KEY, { mode: __prefs.mode, theme: __prefs.theme });
   }
-
   function applyPrefs() {
     const root = document.documentElement;
-    // Font size
     root.setAttribute('data-fontsize', __prefs.fontSize || 'md');
-    // Reduce motion + compact
     root.classList.toggle('reduce-motion', !!__prefs.reduceMotion);
     root.classList.toggle('compact-mode', !!__prefs.compact);
-    // Auto scroll
     autoScrollEnabled = __prefs.autoScroll !== false;
 
-    // ── Sync ALL checkbox toggles ──
     const syncChk = (id, val) => { const el = document.getElementById(id); if (el && el.checked !== !!val) el.checked = !!val; };
     syncChk('autoScrollToggle', __prefs.autoScroll);
     syncChk('enterSendToggle', __prefs.enterSend);
@@ -216,39 +529,22 @@
     syncChk('translateCommentsToggle', __prefs.translateComments);
     syncChk('mcpEnableToggle', __prefs.mcpEnabled);
 
-    // ── Sync SELECT dropdowns ──
     const langSel = document.getElementById('languageSelect');
-    if (langSel) {
-      const want = __prefs.responseLanguage || 'auto';
-      if (langSel.value !== want) langSel.value = want;
-    }
+    if (langSel && langSel.value !== (__prefs.responseLanguage || 'auto')) langSel.value = __prefs.responseLanguage || 'auto';
     const uiSel = document.getElementById('uiLanguageSelect');
-    if (uiSel) {
-      const want = __prefs.uiLanguage || 'en';
-      if (uiSel.value !== want) uiSel.value = want;
-    }
+    if (uiSel && uiSel.value !== (__prefs.uiLanguage || 'en')) uiSel.value = __prefs.uiLanguage || 'en';
 
-    // ── Sync segmented mode buttons ──
     const mode = __prefs.mode || 'light';
     $$('#modeSegmented .seg-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
-
-    // ── Sync font size segmented buttons ──
     const fs = __prefs.fontSize || 'md';
     $$('#fontSizeSegmented .seg-btn').forEach((b) => b.classList.toggle('active', b.dataset.fontsize === fs));
-
-    // ── Sync accent swatches ──
     const theme = __prefs.theme || 'default';
     $$('#accentSwatches .swatch').forEach((b) => b.classList.toggle('active', b.dataset.theme === theme));
-
-    // ── Persona textarea ──
     const pInp = document.getElementById('personaInput');
-    if (pInp) pInp.value = __prefs.persona || '';
-
-    // ── Vision indicator in composer ──
+    if (pInp && pInp.value !== (__prefs.persona || '')) pInp.value = __prefs.persona || '';
     const attachBtn = document.getElementById('attachBtn');
-    if (attachBtn) attachBtn.title = __prefs.vision ? 'Attach files (vision enabled)' : 'Attach files';
+    if (attachBtn) attachBtn.title = t('attachFiles', 'Attach files');
   }
-
   function applyAppearanceFromPrefs() {
     const root = document.documentElement;
     let mode = __prefs.mode || 'light';
@@ -266,8 +562,7 @@
       const ctx = __audioCtx;
       if (ctx.state === 'suspended') ctx.resume();
       const now = ctx.currentTime;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
+      const osc = ctx.createOscillator(); const gain = ctx.createGain();
       osc.connect(gain); gain.connect(ctx.destination);
       osc.type = 'sine';
       osc.frequency.setValueAtTime(880, now);
@@ -279,7 +574,7 @@
     } catch {}
   }
 
-  /* ═══════════ IMAGE → base64 with vision support ═══════════ */
+  /* ═══════════ IMAGE → base64 ═══════════ */
   function imageToBase64DataURL(file) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -288,52 +583,27 @@
         const img = new Image();
         img.onload = () => {
           let w = img.naturalWidth, h = img.naturalHeight;
-          if (w > MAX_IMAGE_DIM || h > MAX_IMAGE_DIM) {
-            const ratio = Math.min(MAX_IMAGE_DIM / w, MAX_IMAGE_DIM / h);
-            w = Math.round(w * ratio); h = Math.round(h * ratio);
-          }
+          if (w > MAX_IMAGE_DIM || h > MAX_IMAGE_DIM) { const ratio = Math.min(MAX_IMAGE_DIM / w, MAX_IMAGE_DIM / h); w = Math.round(w * ratio); h = Math.round(h * ratio); }
           const c = document.createElement('canvas');
           c.width = w; c.height = h;
           c.getContext('2d').drawImage(img, 0, 0, w, h);
           let outUrl;
           try {
-            // Preserve transparency for PNG / WebP; JPEG for photos
             const srcMime = (file.type || 'image/jpeg').toLowerCase();
-            if (srcMime === 'image/png' || srcMime === 'image/webp' || srcMime === 'image/gif') {
-              outUrl = c.toDataURL('image/png');
-            } else {
-              outUrl = c.toDataURL('image/jpeg', 0.88);
-            }
+            if (srcMime === 'image/png' || srcMime === 'image/webp' || srcMime === 'image/gif') outUrl = c.toDataURL('image/png');
+            else outUrl = c.toDataURL('image/jpeg', 0.88);
           } catch { outUrl = rawDataUrl; }
           const base64 = String(outUrl).split(',')[1] || '';
           const mime = (String(outUrl).split(';')[0].split(':')[1]) || file.type || 'image/jpeg';
-          resolve({
-            type: 'image',
-            name: file.name,
-            size: file.size,
-            mime,
-            dataUrl: outUrl,
-            base64,
-            width: w,
-            height: h,
-            originalWidth: img.naturalWidth,
-            originalHeight: img.naturalHeight,
-            vision: true,
-          });
+          resolve({ type: 'image', name: file.name, size: file.size, mime, dataUrl: outUrl, base64, width: w, height: h, originalWidth: img.naturalWidth, originalHeight: img.naturalHeight, vision: true });
         };
-        img.onerror = () => resolve({
-          type: 'image', name: file.name, size: file.size,
-          mime: file.type || 'image/jpeg', dataUrl: rawDataUrl,
-          base64: String(rawDataUrl).split(',')[1] || '',
-          width: null, height: null, vision: true,
-        });
+        img.onerror = () => resolve({ type: 'image', name: file.name, size: file.size, mime: file.type || 'image/jpeg', dataUrl: rawDataUrl, base64: String(rawDataUrl).split(',')[1] || '', vision: true });
         img.src = rawDataUrl;
       };
       reader.onerror = () => resolve(null);
       reader.readAsDataURL(file);
     });
   }
-
   function svgToVisionData(file) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -342,64 +612,31 @@
         let base64 = '';
         try { base64 = btoa(unescape(encodeURIComponent(svgText))); } catch {}
         const dataUrl = 'data:image/svg+xml;base64,' + base64;
-        // Also render SVG to a PNG snapshot so vision models can see it
         const img = new Image();
         const blob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
         const objUrl = URL.createObjectURL(blob);
         img.onload = () => {
           let w = img.naturalWidth || 512, h = img.naturalHeight || 512;
-          if (w > MAX_IMAGE_DIM || h > MAX_IMAGE_DIM) {
-            const ratio = Math.min(MAX_IMAGE_DIM / w, MAX_IMAGE_DIM / h);
-            w = Math.round(w * ratio); h = Math.round(h * ratio);
-          }
+          if (w > MAX_IMAGE_DIM || h > MAX_IMAGE_DIM) { const ratio = Math.min(MAX_IMAGE_DIM / w, MAX_IMAGE_DIM / h); w = Math.round(w * ratio); h = Math.round(h * ratio); }
           let pngDataUrl = null;
-          try {
-            const c = document.createElement('canvas');
-            c.width = w; c.height = h;
-            c.getContext('2d').drawImage(img, 0, 0, w, h);
-            pngDataUrl = c.toDataURL('image/png');
-          } catch {}
+          try { const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(img, 0, 0, w, h); pngDataUrl = c.toDataURL('image/png'); } catch {}
           URL.revokeObjectURL(objUrl);
-          resolve({
-            type: 'image',
-            name: file.name,
-            size: file.size,
-            mime: 'image/svg+xml',
-            dataUrl,
-            base64,
-            svgText,
-            pngDataUrl,
-            pngBase64: pngDataUrl ? pngDataUrl.split(',')[1] : '',
-            width: w, height: h,
-            vision: true,
-            isSvg: true,
-          });
+          resolve({ type: 'image', name: file.name, size: file.size, mime: 'image/svg+xml', dataUrl, base64, svgText, pngDataUrl, pngBase64: pngDataUrl ? pngDataUrl.split(',')[1] : '', width: w, height: h, vision: true, isSvg: true });
         };
-        img.onerror = () => {
-          URL.revokeObjectURL(objUrl);
-          resolve({
-            type: 'image', name: file.name, size: file.size,
-            mime: 'image/svg+xml', dataUrl, base64, svgText,
-            width: null, height: null, vision: true, isSvg: true,
-          });
-        };
+        img.onerror = () => { URL.revokeObjectURL(objUrl); resolve({ type: 'image', name: file.name, size: file.size, mime: 'image/svg+xml', dataUrl, base64, svgText, vision: true, isSvg: true }); };
         img.src = objUrl;
       };
       reader.onerror = () => resolve(null);
       reader.readAsText(file);
     });
   }
-
+  function hasAttachment(name, size) { return pendingFiles.some((f) => f.name === name && f.size === size); }
   function handleFiles(fileList) {
     if (!fileList || !fileList.length) return;
     const arr = [];
-    for (const f of Array.from(fileList)) {
-      if (hasAttachment(f.name, f.size)) { toast('Already added', 1500); continue; }
-      arr.push(f);
-    }
+    for (const f of Array.from(fileList)) { if (hasAttachment(f.name, f.size)) continue; arr.push(f); }
     if (!arr.length) return;
-    let done = 0;
-    const newFiles = [];
+    let done = 0; const newFiles = [];
     const finish = () => {
       newFiles.sort((a, b) => (a.order || 0) - (b.order || 0));
       for (const nf of newFiles) if (!hasAttachment(nf.name, nf.size)) pendingFiles.push(nf);
@@ -409,28 +646,39 @@
       const isSvg = f.type === 'image/svg+xml' || /\.svg$/i.test(f.name);
       const isImg = !isSvg && ((f.type || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(f.name));
       const one = () => { done++; if (done === arr.length) finish(); };
-
-      if (isSvg) {
-        svgToVisionData(f).then((data) => { if (data) newFiles.push({ ...data, order: idx }); one(); }).catch(one);
-      } else if (isImg) {
-        imageToBase64DataURL(f).then((data) => { if (data) newFiles.push({ ...data, order: idx }); one(); }).catch(one);
-      } else {
-        const r = new FileReader();
-        r.onload = () => { newFiles.push({ name: f.name, size: f.size, type: 'text', mime: f.type || 'text/plain', content: String(r.result).slice(0, 80000), order: idx }); one(); };
-        r.onerror = one;
-        r.readAsText(f);
-      }
+      if (isSvg) svgToVisionData(f).then((d) => { if (d) newFiles.push({ ...d, order: idx }); one(); }).catch(one);
+      else if (isImg) imageToBase64DataURL(f).then((d) => { if (d) newFiles.push({ ...d, order: idx }); one(); }).catch(one);
+      else { const r = new FileReader(); r.onload = () => { newFiles.push({ name: f.name, size: f.size, type: 'text', mime: f.type || 'text/plain', content: String(r.result).slice(0, 80000), order: idx }); one(); }; r.onerror = one; r.readAsText(f); }
     });
   }
-
-  function hasAttachment(name, size) { return pendingFiles.some((f) => f.name === name && f.size === size); }
+  function updatePreview() {
+    const p = $('#attachmentPreview'), list = $('#attachmentList');
+    if (!p || !list) return;
+    if (!pendingFiles.length) { p.style.display = 'none'; list.innerHTML = ''; return; }
+    p.style.display = 'flex';
+    list.innerHTML = pendingFiles.map((f) => {
+      if (f.type === 'image' && f.dataUrl) {
+        const dims = f.width && f.height ? `<span class="attach-size">${f.width}×${f.height}</span>` : '';
+        const vision = f.vision ? '<span class="attach-vision"><i class="ri-eye-line"></i> vision</span>' : '';
+        return `<div class="attach-chip attach-chip-image"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name)}${dims}${vision}</div>`;
+      }
+      return `<div class="attach-chip">${fileIconHTML()}${escapeHtml(f.name)}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`;
+    }).join('');
+  }
+  function addTextAttachment(text, name) {
+    const body = String(text).slice(0, 80000);
+    const fname = name || ('pasted-' + new Date().toISOString().slice(11, 19).replace(/:/g, '-') + '.txt');
+    if (pendingFiles.some((f) => f.type === 'text' && f.content === body)) return;
+    pendingFiles.push({ name: fname, size: text.length, type: 'text', mime: 'text/plain', content: body });
+    updatePreview(); updateSendButtonState();
+  }
 
   /* ═══════════ CONFETTI ═══════════ */
   function launchConfetti(opts) {
     if (__prefs.reduceMotion) return;
     const o = opts || {};
     const duration = o.duration || 4200;
-    const count = o.count || 220;
+    const count = o.count || 200;
     const canvas = document.createElement('canvas');
     canvas.className = 'confetti-canvas';
     document.body.appendChild(canvas);
@@ -446,20 +694,7 @@
       const origin = origins[i % origins.length];
       const angle = (Math.random() - 0.5) * Math.PI * 1.4 - Math.PI / 2;
       const speed = 6 + Math.random() * 12;
-      particles.push({
-        x: origin.x + (Math.random() - 0.5) * 60,
-        y: origin.y + (Math.random() - 0.5) * 40,
-        vx: Math.cos(angle) * speed * (0.7 + Math.random() * 0.6),
-        vy: Math.sin(angle) * speed - 4 - Math.random() * 3,
-        gravity: 0.28 + Math.random() * 0.14, drag: 0.988,
-        size: 6 + Math.random() * 8,
-        color: colors[Math.floor(Math.random() * colors.length)],
-        rotation: Math.random() * Math.PI * 2,
-        rotationSpeed: (Math.random() - 0.5) * 0.34,
-        shape: Math.random() < 0.55 ? 'rect' : (Math.random() < 0.5 ? 'circle' : 'ribbon'),
-        swayAmp: 0.5 + Math.random() * 1.8, swayFreq: 0.02 + Math.random() * 0.03,
-        swayPhase: Math.random() * Math.PI * 2,
-      });
+      particles.push({ x: origin.x + (Math.random() - 0.5) * 60, y: origin.y + (Math.random() - 0.5) * 40, vx: Math.cos(angle) * speed * (0.7 + Math.random() * 0.6), vy: Math.sin(angle) * speed - 4 - Math.random() * 3, gravity: 0.28 + Math.random() * 0.14, drag: 0.988, size: 6 + Math.random() * 8, color: colors[Math.floor(Math.random() * colors.length)], rotation: Math.random() * Math.PI * 2, rotationSpeed: (Math.random() - 0.5) * 0.34, shape: Math.random() < 0.55 ? 'rect' : (Math.random() < 0.5 ? 'circle' : 'ribbon'), swayAmp: 0.5 + Math.random() * 1.8, swayFreq: 0.02 + Math.random() * 0.03, swayPhase: Math.random() * Math.PI * 2 });
     }
     const start = performance.now(); let raf = null, stopped = false;
     function frame(now) {
@@ -469,8 +704,7 @@
       const fadeStart = 0.7;
       ctx.globalAlpha = t > fadeStart ? Math.max(0, 1 - (t - fadeStart) / (1 - fadeStart)) : 1;
       for (const p of particles) {
-        p.vy += p.gravity; p.vx *= p.drag; p.vy *= p.drag;
-        p.swayPhase += p.swayFreq;
+        p.vy += p.gravity; p.vx *= p.drag; p.vy *= p.drag; p.swayPhase += p.swayFreq;
         p.x += p.vx + Math.sin(p.swayPhase) * p.swayAmp * 0.4;
         p.y += p.vy; p.rotation += p.rotationSpeed;
         if (p.y > H + 40) continue;
@@ -491,11 +725,10 @@
   const MOODS = ['idle','happy','thinking','coding','celebrate','error','learning'];
   const BLOB_PATH = 'M100 20 C126 20 144 32 154 54 C178 56 194 76 194 102 C194 128 178 148 154 152 C144 174 126 186 100 186 C74 186 56 174 46 152 C22 148 6 128 6 102 C6 76 22 56 46 54 C56 32 74 20 100 20 Z';
   const BLOB_SVG = `<svg class="blob-svg" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mirox avatar"><g class="blob-float"><path class="blob-body" d="${BLOB_PATH}" fill="currentColor"/><g class="blob-eyes" fill="var(--bg)"><ellipse cx="88" cy="82" rx="4.5" ry="13" transform="rotate(18 88 82)"/><ellipse cx="110" cy="78" rx="4.5" ry="13" transform="rotate(18 110 78)"/></g></g></svg>`;
-  function blobSvg() { return BLOB_SVG; }
   function upgradeStaticMascots(scope = document) {
     scope.querySelectorAll('.mascot:not([data-blob-ready])').forEach((el) => {
       const m = MOODS.includes(el.dataset.mood) ? el.dataset.mood : 'idle';
-      el.innerHTML = blobSvg(); el.dataset.mood = m; el.classList.add('m-' + m); el.dataset.blobReady = '1';
+      el.innerHTML = BLOB_SVG; el.dataset.mood = m; el.classList.add('m-' + m); el.dataset.blobReady = '1';
     });
   }
   function setMascotMood(mood, scope) {
@@ -509,12 +742,12 @@
   }
   upgradeStaticMascots();
   const lb = document.getElementById('loadingBlob');
-  if (lb) lb.innerHTML = blobSvg();
+  if (lb) lb.innerHTML = BLOB_SVG;
   function pickMoodFor(text) {
-    const t = String(text || '').toLowerCase();
-    if (/\b(search|look up|google|latest|news|find)\b/.test(t)) return 'searching';
-    if (/\b(build|code|script|fix|bug|function|debug|lua|python|javascript|html|css)\b/.test(t)) return 'coding';
-    if (/\b(explain|teach|learn|how does|why|what is)\b/.test(t)) return 'learning';
+    const t2 = String(text || '').toLowerCase();
+    if (/\b(search|look up|google|latest|news|find)\b/.test(t2)) return 'searching';
+    if (/\b(build|code|script|fix|bug|function|debug|lua|python|javascript|html|css)\b/.test(t2)) return 'coding';
+    if (/\b(explain|teach|learn|how does|why|what is)\b/.test(t2)) return 'learning';
     return 'thinking';
   }
   function startIdleMascot() {
@@ -526,11 +759,11 @@
     }, 8000);
   }
   function pickStatusLabel(text) {
-    const t = String(text || '').toLowerCase();
-    if (!t) return 'Thinking';
-    if (/\b(build|create|make|write|code|script)\b/.test(t)) return 'Building';
-    if (/\b(search|find|look up|google)\b/.test(t)) return 'Searching';
-    if (/\b(fix|bug|error|debug)\b/.test(t)) return 'Debugging';
+    const t2 = String(text || '').toLowerCase();
+    if (!t2) return 'Thinking';
+    if (/\b(build|create|make|write|code|script)\b/.test(t2)) return 'Building';
+    if (/\b(search|find|look up|google)\b/.test(t2)) return 'Searching';
+    if (/\b(fix|bug|error|debug)\b/.test(t2)) return 'Debugging';
     return 'Thinking';
   }
 
@@ -558,8 +791,7 @@
     }, 100);
     function addNarration(text) {
       if (!text) return;
-      const p = document.createElement('div');
-      p.className = 'think-narration';
+      const p = document.createElement('div'); p.className = 'think-narration';
       p.innerHTML = `<span class="think-narration-dot"></span><span>${escapeHtml(text)}</span>`;
       body.appendChild(p);
     }
@@ -588,19 +820,7 @@
   /* ═══════════ CONVERSATIONS ═══════════ */
   function currentConvo() { return __conversations.find((c) => c.id === currentConversationId) || null; }
   function saveChats() {
-    const slim = __conversations.map((c) => ({
-      ...c,
-      messages: (c.messages || []).map((m) => ({
-        id: m.id, role: m.role, content: m.content, ts: m.ts,
-        imageKey: m.imageKey || null,
-        files: (m.files || []).map((f) => ({
-          name: f.name, size: f.size, type: f.type, mime: f.mime,
-          // Only keep the small ones inline; big images are on IndexedDB in the future
-          dataUrl: (f.type === 'image' && f.dataUrl && f.dataUrl.length < 200000) ? f.dataUrl : undefined,
-          width: f.width, height: f.height,
-        })),
-      })),
-    }));
+    const slim = __conversations.map((c) => ({ ...c, messages: (c.messages || []).map((m) => ({ id: m.id, role: m.role, content: m.content, ts: m.ts, imageKey: m.imageKey || null, files: (m.files || []).map((f) => ({ name: f.name, size: f.size, type: f.type, mime: f.mime, dataUrl: (f.type === 'image' && f.dataUrl && f.dataUrl.length < 200000) ? f.dataUrl : undefined, width: f.width, height: f.height })) })) }));
     safeSet(LS_KEY, slim);
   }
   function loadChats() { const v = safeGet(LS_KEY, []); __conversations = Array.isArray(v) ? v : []; }
@@ -608,19 +828,19 @@
   function welcomeHTML() {
     return `<div class="welcome-screen">
       <div class="welcome-mascot"><div class="mascot mascot-lg m-idle" id="welcomeMascot" data-mood="idle"></div></div>
-      <h1 class="welcome-title">Hi, I'm Mirox</h1>
-      <p class="welcome-sub">Luna and Gen are unlimited and free. Share to unlock <strong>Pro, Ultra &amp; Eclipse</strong> free for 7 days.</p>
+      <h1 class="welcome-title">${escapeHtml(t('welcomeTitle'))}</h1>
+      <p class="welcome-sub">${t('welcomeSub')}</p>
       <div class="suggestion-grid">
-        <button class="suggestion-card" type="button" data-prompt="Show me a simple Lua script that prints numbers 1 to 5"><i class="ri-code-box-line"></i><span>Write a Lua script</span></button>
-        <button class="suggestion-card" type="button" data-prompt="Show me an HTML example with a table"><i class="ri-html5-line"></i><span>Show an HTML table</span></button>
-        <button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span>Generate an image</span></button>
-        <button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span>Explain a concept</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Show me a simple Lua script that prints numbers 1 to 5"><i class="ri-code-box-line"></i><span>${escapeHtml(t('suggest.lua'))}</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Show me an HTML example with a table"><i class="ri-html5-line"></i><span>${escapeHtml(t('suggest.html'))}</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span>${escapeHtml(t('suggest.image'))}</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span>${escapeHtml(t('suggest.explain'))}</span></button>
       </div>
     </div>`;
   }
   function startNewChat() {
     currentConversationId = null;
-    const t = $('#chatTitle'); if (t) t.textContent = 'New chat';
+    const ttl = $('#chatTitle'); if (ttl) ttl.textContent = t('newChatTitle');
     const c = $('#chatMessages'); if (c) c.innerHTML = welcomeHTML();
     upgradeStaticMascots($('#chatMessages'));
     bindSuggestionClicks(); updateTokenUsage();
@@ -641,7 +861,7 @@
     const q = __historyQuery.trim().toLowerCase();
     let items = __conversations;
     if (q) items = __conversations.filter((c) => (c.title || '').toLowerCase().includes(q) || (c.messages || []).some((m) => (m.content || '').toLowerCase().includes(q)));
-    if (!items.length) { list.innerHTML = `<li class="history-empty">${q ? 'No matches' : 'No conversations yet'}</li>`; return; }
+    if (!items.length) { list.innerHTML = `<li class="history-empty">${escapeHtml(q ? (t('noMatches') || 'No matches') : t('noChats'))}</li>`; return; }
     list.innerHTML = items.map((c) =>
       `<li class="history-item${c.id === currentConversationId ? ' active' : ''}" data-id="${c.id}">
         <i class="ri-chat-3-line"></i>
@@ -654,10 +874,7 @@
     if (!convo) return 0;
     return (convo.messages || []).reduce((sum, m) => sum + estimateTokens(m.content || ''), 0);
   }
-  function formatK(n) {
-    if (n >= 1000) return (n / 1000).toFixed(n % 1000 === 0 ? 0 : 1) + 'k';
-    return String(n);
-  }
+  function formatK(n) { if (n >= 1000) return (n / 1000).toFixed(n % 1000 === 0 ? 0 : 1) + 'k'; return String(n); }
   function updateTokenUsage() {
     const el = $('#tokenUsage'); if (!el) return;
     const used = conversationTokenUsage();
@@ -677,11 +894,10 @@
       badge.innerHTML = `<i class="ri-vip-crown-fill"></i>+${formatK(bonus)} · ${formatBonusRemaining()}`;
       el.appendChild(badge);
     }
-    // Update share row subtitle with remaining
     const sub = $('#shareRowSub');
     if (sub) {
-      if (hasBonus) sub.textContent = `Bonus active — ${formatBonusRemaining()} left · tap to re-share`;
-      else sub.textContent = 'Get 50k tokens + Pro/Ultra/Eclipse free for 7 days';
+      if (hasBonus) sub.textContent = `Bonus active — ${formatBonusRemaining()} left`;
+      else sub.textContent = t('settingsT.shareSub', 'Get 50k tokens + Pro/Ultra/Eclipse free for 7 days');
     }
   }
   function atChatBottom(c = $('#chatMessages')) { return !c || c.scrollHeight - c.scrollTop - c.clientHeight < 100; }
@@ -698,68 +914,36 @@
     if (__tier !== 'free') return false;
     return conversationTokenUsage(convo) >= getFreeLimit();
   }
-  function fmtSize(n) {
-    if (n == null) return '';
-    if (n < 1024) return n + ' B';
-    if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
-    return (n / 1048576).toFixed(1) + ' MB';
-  }
+  function fmtSize(n) { if (n == null) return ''; if (n < 1024) return n + ' B'; if (n < 1048576) return (n / 1024).toFixed(1) + ' KB'; return (n / 1048576).toFixed(1) + ' MB'; }
   function fileIconHTML() { return '<span class="file-glyph" aria-hidden="true"><i class="ri-file-text-line"></i></span>'; }
 
-  /* ═══════════ LANGUAGES ═══════════ */
+  /* ═══════════ CODE LANG ═══════════ */
   const LANG_META = {
-    lua: { label: 'LUA', icon: 'devicon-lua-plain colored', hljs: 'lua' },
-    python: { label: 'PY', icon: 'devicon-python-plain colored', hljs: 'python' },
-    py: { label: 'PY', icon: 'devicon-python-plain colored', hljs: 'python' },
-    javascript: { label: 'JS', icon: 'devicon-javascript-plain colored', hljs: 'javascript' },
-    js: { label: 'JS', icon: 'devicon-javascript-plain colored', hljs: 'javascript' },
-    typescript: { label: 'TS', icon: 'devicon-typescript-plain colored', hljs: 'typescript' },
-    ts: { label: 'TS', icon: 'devicon-typescript-plain colored', hljs: 'typescript' },
-    html: { label: 'HTML', icon: 'devicon-html5-plain colored', hljs: 'xml' },
-    css: { label: 'CSS', icon: 'devicon-css3-plain colored', hljs: 'css' },
-    json: { label: 'JSON', icon: 'devicon-json-plain colored', hljs: 'json' },
-    bash: { label: 'SH', icon: 'devicon-bash-plain colored', hljs: 'bash' },
-    sh: { label: 'SH', icon: 'devicon-bash-plain colored', hljs: 'bash' },
-    java: { label: 'JAVA', icon: 'devicon-java-plain colored', hljs: 'java' },
-    cpp: { label: 'C++', icon: 'devicon-cplusplus-plain colored', hljs: 'cpp' },
-    c: { label: 'C', icon: 'devicon-c-plain colored', hljs: 'c' },
-    go: { label: 'GO', icon: 'devicon-go-plain colored', hljs: 'go' },
-    rust: { label: 'RUST', icon: 'devicon-rust-plain colored', hljs: 'rust' },
-    ruby: { label: 'RB', icon: 'devicon-ruby-plain colored', hljs: 'ruby' },
-    php: { label: 'PHP', icon: 'devicon-php-plain colored', hljs: 'php' },
-    sql: { label: 'SQL', icon: 'ri-database-2-line', hljs: 'sql' },
-    yaml: { label: 'YAML', icon: 'ri-file-list-2-line', hljs: 'yaml' },
-    yml: { label: 'YAML', icon: 'ri-file-list-2-line', hljs: 'yaml' },
-    markdown: { label: 'MD', icon: 'ri-markdown-line', hljs: 'markdown' },
-    md: { label: 'MD', icon: 'ri-markdown-line', hljs: 'markdown' },
-    svg: { label: 'SVG', icon: 'devicon-html5-plain colored', hljs: 'xml' },
+    lua:{label:'LUA',icon:'devicon-lua-plain colored',hljs:'lua'},
+    python:{label:'PY',icon:'devicon-python-plain colored',hljs:'python'},py:{label:'PY',icon:'devicon-python-plain colored',hljs:'python'},
+    javascript:{label:'JS',icon:'devicon-javascript-plain colored',hljs:'javascript'},js:{label:'JS',icon:'devicon-javascript-plain colored',hljs:'javascript'},
+    typescript:{label:'TS',icon:'devicon-typescript-plain colored',hljs:'typescript'},ts:{label:'TS',icon:'devicon-typescript-plain colored',hljs:'typescript'},
+    html:{label:'HTML',icon:'devicon-html5-plain colored',hljs:'xml'},css:{label:'CSS',icon:'devicon-css3-plain colored',hljs:'css'},
+    json:{label:'JSON',icon:'devicon-json-plain colored',hljs:'json'},
+    bash:{label:'SH',icon:'devicon-bash-plain colored',hljs:'bash'},sh:{label:'SH',icon:'devicon-bash-plain colored',hljs:'bash'},
+    java:{label:'JAVA',icon:'devicon-java-plain colored',hljs:'java'},
+    cpp:{label:'C++',icon:'devicon-cplusplus-plain colored',hljs:'cpp'},c:{label:'C',icon:'devicon-c-plain colored',hljs:'c'},
+    go:{label:'GO',icon:'devicon-go-plain colored',hljs:'go'},rust:{label:'RUST',icon:'devicon-rust-plain colored',hljs:'rust'},
+    ruby:{label:'RB',icon:'devicon-ruby-plain colored',hljs:'ruby'},php:{label:'PHP',icon:'devicon-php-plain colored',hljs:'php'},
+    sql:{label:'SQL',icon:'ri-database-2-line',hljs:'sql'},yaml:{label:'YAML',icon:'ri-file-list-2-line',hljs:'yaml'},yml:{label:'YAML',icon:'ri-file-list-2-line',hljs:'yaml'},
+    markdown:{label:'MD',icon:'ri-markdown-line',hljs:'markdown'},md:{label:'MD',icon:'ri-markdown-line',hljs:'markdown'},svg:{label:'SVG',icon:'devicon-html5-plain colored',hljs:'xml'},
   };
-  function langMeta(lang) {
-    const key = String(lang || '').toLowerCase().trim();
-    return LANG_META[key] || { label: (key || 'CODE').toUpperCase().slice(0, 6), icon: 'ri-code-s-slash-line', hljs: key || 'plaintext' };
-  }
+  function langMeta(lang) { const k = String(lang || '').toLowerCase().trim(); return LANG_META[k] || { label: (k || 'CODE').toUpperCase().slice(0, 6), icon: 'ri-code-s-slash-line', hljs: k || 'plaintext' }; }
   function highlightCode(lang, code) {
     const raw = String(code || '').replace(/\n$/, '');
     const meta = langMeta(lang);
-    try {
-      if (window.hljs && hljs.getLanguage && hljs.getLanguage(meta.hljs)) return hljs.highlight(raw, { language: meta.hljs }).value;
-      if (window.hljs) return hljs.highlightAuto(raw).value;
-    } catch {}
+    try { if (window.hljs && hljs.getLanguage && hljs.getLanguage(meta.hljs)) return hljs.highlight(raw, { language: meta.hljs }).value; if (window.hljs) return hljs.highlightAuto(raw).value; } catch {}
     return escapeHtml(raw);
   }
   function renderCode(lang, code, closed) {
-    const meta = langMeta(lang);
-    const raw = String(code || '').replace(/\n$/, '');
-    const btn = closed
-      ? '<button class="code-action-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button>'
-      : '<span class="writing-tag"><i class="ri-loader-4-line spin"></i> writing…</span>';
-    return `<div class="code-block" data-lang="${escapeHtml(meta.hljs)}">
-      <div class="code-block-header">
-        <span class="code-lang-badge"><i class="${meta.icon}"></i><span>${escapeHtml(meta.label)}</span></span>
-        ${btn}
-      </div>
-      <pre><code class="hljs language-${escapeHtml(meta.hljs)}">${highlightCode(lang, raw)}</code></pre>
-    </div>`;
+    const meta = langMeta(lang); const raw = String(code || '').replace(/\n$/, '');
+    const btn = closed ? '<button class="code-action-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button>' : '<span class="writing-tag"><i class="ri-loader-4-line spin"></i> writing…</span>';
+    return `<div class="code-block" data-lang="${escapeHtml(meta.hljs)}"><div class="code-block-header"><span class="code-lang-badge"><i class="${meta.icon}"></i><span>${escapeHtml(meta.label)}</span></span>${btn}</div><pre><code class="hljs language-${escapeHtml(meta.hljs)}">${highlightCode(lang, raw)}</code></pre></div>`;
   }
 
   /* ═══════════ MARKDOWN ═══════════ */
@@ -776,54 +960,43 @@
     }
     const rest = src.slice(last);
     const openM = rest.match(/```([a-zA-Z0-9+#._-]*)\n?([\s\S]*)$/);
-    if (openM) {
-      const before = rest.slice(0, openM.index);
-      if (before) parts.push({ type: 'text', content: before });
-      parts.push({ type: 'code', lang: (openM[1] || '').trim(), content: openM[2], closed: false });
-    } else if (rest) parts.push({ type: 'text', content: rest });
+    if (openM) { const before = rest.slice(0, openM.index); if (before) parts.push({ type: 'text', content: before }); parts.push({ type: 'code', lang: (openM[1] || '').trim(), content: openM[2], closed: false }); }
+    else if (rest) parts.push({ type: 'text', content: rest });
     return parts.map((p) => p.type === 'code' ? renderCode(p.lang, p.content, p.closed) : renderText(p.content)).join('');
   }
   function renderText(text) {
     const lines = String(text).split('\n');
-    let out = '';
-    const buf = [];
+    let out = ''; const buf = [];
     const flush = () => { if (buf.length) { out += `<p>${inlineFmt(buf.join(' '))}</p>`; buf.length = 0; } };
     const splitRow = (line) => { let s = line.trim(); if (s.startsWith('|')) s = s.slice(1); if (s.endsWith('|')) s = s.slice(0, -1); return s.split('|').map((v) => v.trim()); };
     const isSepRow = (line) => /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
     for (let i = 0; i < lines.length; i++) {
-      const t = lines[i].trim();
-      if (!t) { flush(); continue; }
-      if (t.includes('|') && i + 1 < lines.length && isSepRow(lines[i + 1])) {
-        flush();
-        const headers = splitRow(t); i += 1;
+      const tt = lines[i].trim();
+      if (!tt) { flush(); continue; }
+      if (tt.includes('|') && i + 1 < lines.length && isSepRow(lines[i + 1])) {
+        flush(); const headers = splitRow(tt); i += 1;
         let table = '<div class="md-table-wrap"><table class="md-table"><thead><tr>';
         headers.forEach((c) => { table += `<th>${inlineFmt(c)}</th>`; });
         table += '</tr></thead><tbody>';
-        while (i + 1 < lines.length && lines[i + 1].includes('|') && lines[i + 1].trim() !== '') {
-          i++;
-          const row = splitRow(lines[i]); table += '<tr>';
-          for (let j = 0; j < headers.length; j++) table += `<td>${inlineFmt(row[j] || '')}</td>`;
-          table += '</tr>';
-        }
-        out += table + '</tbody></table></div>';
-        continue;
+        while (i + 1 < lines.length && lines[i + 1].includes('|') && lines[i + 1].trim() !== '') { i++; const row = splitRow(lines[i]); table += '<tr>'; for (let j = 0; j < headers.length; j++) table += `<td>${inlineFmt(row[j] || '')}</td>`; table += '</tr>'; }
+        out += table + '</tbody></table></div>'; continue;
       }
-      const hm = t.match(/^(#{1,6})\s+(.+)$/);
+      const hm = tt.match(/^(#{1,6})\s+(.+)$/);
       if (hm) { flush(); const lvl = hm[1].length; out += `<h${lvl} class="md-h md-h${lvl}">${inlineFmt(hm[2])}</h${lvl}>`; continue; }
-      const hr = t.match(/^([-*_])\1{2,}$/);
+      const hr = tt.match(/^([-*_])\1{2,}$/);
       if (hr) { flush(); out += '<hr class="md-hr">'; continue; }
-      const um = t.match(/^[-*+]\s+(.+)$/);
+      const um = tt.match(/^[-*+]\s+(.+)$/);
       if (um) { flush(); out += `<div class="md-li md-ul">• ${inlineFmt(um[1])}</div>`; continue; }
-      const om = t.match(/^(\d+)\.\s+(.+)$/);
+      const om = tt.match(/^(\d+)\.\s+(.+)$/);
       if (om) { flush(); out += `<div class="md-li md-ol">${om[1]}. ${inlineFmt(om[2])}</div>`; continue; }
-      if (/^>\s?/.test(t)) { flush(); out += `<blockquote class="md-quote">${inlineFmt(t.replace(/^>\s?/, ''))}</blockquote>`; continue; }
-      buf.push(t);
+      if (/^>\s?/.test(tt)) { flush(); out += `<blockquote class="md-quote">${inlineFmt(tt.replace(/^>\s?/, ''))}</blockquote>`; continue; }
+      buf.push(tt);
     }
     flush();
     return out;
   }
-  function inlineFmt(t) {
-    let s = escapeHtml(t);
+  function inlineFmt(t2) {
+    let s = escapeHtml(t2);
     const codes = [];
     s = s.replace(/`([^`]+)`/g, (_, c) => { codes.push(c); return `\u0000C${codes.length - 1}\u0000`; });
     s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
@@ -836,14 +1009,7 @@
   function wireCopyButtons(scope) {
     (scope || document).querySelectorAll('.code-action-btn[data-copy]').forEach((btn) => {
       if (btn.__wired) return; btn.__wired = true;
-      btn.onclick = async () => {
-        const code = btn.closest('.code-block')?.querySelector('pre code')?.textContent || '';
-        try {
-          await navigator.clipboard.writeText(code);
-          btn.innerHTML = '<i class="ri-check-line"></i> Copied';
-          setTimeout(() => { btn.innerHTML = '<i class="ri-file-copy-line"></i> Copy'; }, 1200);
-        } catch {}
-      };
+      btn.onclick = async () => { const code = btn.closest('.code-block')?.querySelector('pre code')?.textContent || ''; try { await navigator.clipboard.writeText(code); btn.innerHTML = '<i class="ri-check-line"></i> Copied'; setTimeout(() => { btn.innerHTML = '<i class="ri-file-copy-line"></i> Copy'; }, 1200); } catch {} };
     });
   }
 
@@ -860,12 +1026,10 @@
       inner += '<div class="attach-row">';
       for (const f of files) {
         if (f.type === 'image' && f.dataUrl) {
-          const visionTag = f.vision ? '<span class="attach-vision" title="Sent to AI"><i class="ri-eye-line"></i> vision</span>' : '';
+          const visionTag = f.vision ? '<span class="attach-vision"><i class="ri-eye-line"></i> vision</span>' : '';
           const dims = f.width && f.height ? `<span class="attach-size">${f.width}×${f.height}</span>` : '';
           inner += `<div class="attach-chip attach-chip-image"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name || '')}${dims}${visionTag}</div>`;
-        } else {
-          inner += `<div class="attach-chip">${fileIconHTML()}${escapeHtml(f.name || 'file')}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`;
-        }
+        } else inner += `<div class="attach-chip">${fileIconHTML()}${escapeHtml(f.name || 'file')}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`;
       }
       inner += '</div>';
     }
@@ -881,10 +1045,7 @@
     const bt = el.querySelector('.bubble-text');
     if (role === 'user') { bt.textContent = content || ''; if (!content) bt.style.display = 'none'; }
     else if (content) { bt.innerHTML = renderMarkdown(content); wireCopyButtons(bt); }
-    if (role === 'ai' && image) {
-      const img = el.querySelector('.gen-image img');
-      if (img) img.onclick = () => openImageViewer(image);
-    }
+    if (role === 'ai' && image) { const img = el.querySelector('.gen-image img'); if (img) img.onclick = () => openImageViewer(image); }
     wireMessageActions(el);
     scrollToBottom();
     return el;
@@ -894,13 +1055,8 @@
       if (btn.__wired) return; btn.__wired = true;
       btn.onclick = async () => {
         const action = btn.dataset.action;
-        if (action === 'copy') {
-          try {
-            await navigator.clipboard.writeText(el.querySelector('.bubble')?.innerText || '');
-            btn.innerHTML = '<i class="ri-check-line"></i>';
-            setTimeout(() => { btn.innerHTML = '<i class="ri-file-copy-line"></i>'; }, 1200);
-          } catch {}
-        } else if (action === 'retry') { if (!isReplying) handleRetry(el); }
+        if (action === 'copy') { try { await navigator.clipboard.writeText(el.querySelector('.bubble')?.innerText || ''); btn.innerHTML = '<i class="ri-check-line"></i>'; setTimeout(() => { btn.innerHTML = '<i class="ri-file-copy-line"></i>'; }, 1200); } catch {} }
+        else if (action === 'retry') { if (!isReplying) handleRetry(el); }
       };
     });
   }
@@ -912,10 +1068,8 @@
     let userMsg = null;
     for (let i = idx - 1; i >= 0; i--) if (convo.messages[i].role === 'user') { userMsg = convo.messages[i]; break; }
     if (!userMsg) return;
-    convo.messages = convo.messages.slice(0, idx);
-    saveChats();
-    let s = el.nextElementSibling;
-    while (s) { const n = s.nextElementSibling; s.remove(); s = n; }
+    convo.messages = convo.messages.slice(0, idx); saveChats();
+    let s = el.nextElementSibling; while (s) { const n = s.nextElementSibling; s.remove(); s = n; }
     el.remove();
     sendToAPI(userMsg.content, userMsg.files || []);
   }
@@ -931,14 +1085,14 @@
     const inp = $('#messageInput'); if (!inp) return;
     const text = inp.value.trim();
     if (!text && !pendingFiles.length) return;
-    if (freeLimitReached()) { toast('Max tokens reached — share for more or upgrade.', 5000); return; }
+    if (freeLimitReached()) { toast(t('toast.noToken', 'Max tokens reached — share or upgrade.'), 5000); return; }
     const files = pendingFiles.slice();
     const searchFlag = forceSearchNext;
     forceSearchNext = false;
     $('#searchModeBtn')?.classList.remove('active');
     if (!currentConversationId) {
       currentConversationId = uid();
-      __conversations.unshift({ id: currentConversationId, title: text.slice(0, 60) || 'New chat', messages: [], created: Date.now() });
+      __conversations.unshift({ id: currentConversationId, title: text.slice(0, 60) || t('newChat'), messages: [], created: Date.now() });
     }
     const msgId = uid();
     const convo = currentConvo();
@@ -971,19 +1125,15 @@
     if (isReplying || continuationBusy) return;
     continuationBusy = true;
     btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line spin"></i><span>Continuing…</span>';
-    try {
-      await sendToAPI('Continue your previous response from exactly where it stopped. Do not repeat the completed text.', [], false, { existingMsgEl: msgEl, existingBubble: bubble, messageObj, continuation: true });
-    } finally {
-      continuationBusy = false;
-      if (btn.isConnected) btn.remove();
-    }
+    try { await sendToAPI('Continue your previous response from exactly where it stopped. Do not repeat the completed text.', [], false, { existingMsgEl: msgEl, existingBubble: bubble, messageObj, continuation: true }); }
+    finally { continuationBusy = false; if (btn.isConnected) btn.remove(); }
   }
 
   /* ═══════════ API — with vision content parts ═══════════ */
   async function sendToAPI(text, files, forceSearch, continuation = null) {
     const isContinuation = !!(continuation && continuation.continuation);
     const convoAtStart = currentConvo();
-    if (!isContinuation && freeLimitReached(convoAtStart)) { toast('Max tokens reached.', 5000); return; }
+    if (!isContinuation && freeLimitReached(convoAtStart)) { toast(t('toast.noToken'), 5000); return; }
     isReplying = true;
     updateSendButtonState();
     const stopBtn = $('#stopBtn');
@@ -1020,61 +1170,26 @@
       scrollToBottom(true);
     }
 
-    // ── Build image content parts for vision ──
     const visionFiles = files.filter((f) => f.type === 'image' && f.dataUrl);
-    const imageParts = visionFiles.map((f) => {
-      // Prefer PNG snapshot (from SVG) or the original data URL
-      const url = f.pngDataUrl || f.dataUrl;
-      return { type: 'image_url', image_url: { url, detail: 'auto' } };
-    });
+    const imageParts = visionFiles.map((f) => { const url = f.pngDataUrl || f.dataUrl; return { type: 'image_url', image_url: { url, detail: 'auto' } }; });
     const contentParts = [];
     if (text) contentParts.push({ type: 'text', text });
     for (const p of imageParts) contentParts.push(p);
-    // If there's an SVG, also append its raw source so AI reads the code
-    for (const f of visionFiles) {
-      if (f.isSvg && f.svgText) {
-        contentParts.push({ type: 'text', text: `\n[Attached SVG source — "${f.name}"]:\n\`\`\`svg\n${f.svgText.slice(0, 30000)}\n\`\`\`` });
-      }
-    }
-
-    // Explain to the AI what it's about to see (helps models that lack vision)
-    const visionNote = visionFiles.length && __prefs.vision
-      ? `\n\n[The user attached ${visionFiles.length} image${visionFiles.length === 1 ? '' : 's'}: ${visionFiles.map((f) => `${f.name} (${f.width || '?'}×${f.height || '?'}, ${f.mime})`).join(', ')}. Analyze them.` 
-      : '';
-
-    if (__prefs.verboseLog) console.log('[Mirox] Request:', { text, model, files: files.length, vision: visionFiles.length });
+    for (const f of visionFiles) if (f.isSvg && f.svgText) contentParts.push({ type: 'text', text: `\n[Attached SVG source — "${f.name}"]:\n\`\`\`svg\n${f.svgText.slice(0, 30000)}\n\`\`\`` });
+    const visionNote = visionFiles.length && __prefs.vision ? `\n\n[The user attached ${visionFiles.length} image${visionFiles.length === 1 ? '' : 's'}: ${visionFiles.map((f) => `${f.name} (${f.width || '?'}×${f.height || '?'}, ${f.mime})`).join(', ')}. Analyze them.]` : '';
 
     activeStreamController = new AbortController();
     let generatedImage = null, gotToken = !!isContinuation, limitHit = false;
     let streamComplete = false;
     let renderTimer = null;
-    const renderStreamText = () => {
-      renderTimer = null;
-      if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); wireCopyButtons(bubbleText); }
-      scrollToBottom();
-    };
-    const scheduleRender = () => {
-      const now = performance.now();
-      if (renderTimer) return;
-      renderTimer = setTimeout(renderStreamText, Math.max(50, 120 - (now - streamRenderAt)));
-      streamRenderAt = now;
-    };
+    const renderStreamText = () => { renderTimer = null; if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); wireCopyButtons(bubbleText); } scrollToBottom(); };
+    const scheduleRender = () => { const now = performance.now(); if (renderTimer) return; renderTimer = setTimeout(renderStreamText, Math.max(50, 120 - (now - streamRenderAt))); streamRenderAt = now; };
     const streamTimeout = setTimeout(() => { try { activeStreamController?.abort(); } catch {} }, STREAM_TIMEOUT_MS);
 
     try {
       const reqBody = {
-        message: text + visionNote,
-        history, model, stream: true, search: !!forceSearch,
-        // files: metadata + base64 (large objects trimmed to avoid bloating payload)
-        files: files.map((f) => ({
-          name: f.name, size: f.size, type: f.type, mime: f.mime,
-          width: f.width, height: f.height,
-          dataUrl: f.dataUrl,
-          base64: f.base64 || null,
-          svgText: f.svgText || null,
-          pngDataUrl: f.pngDataUrl || null,
-          vision: !!f.vision,
-        })),
+        message: text + visionNote, history, model, stream: true, search: !!forceSearch,
+        files: files.map((f) => ({ name: f.name, size: f.size, type: f.type, mime: f.mime, width: f.width, height: f.height, dataUrl: f.dataUrl, base64: f.base64 || null, svgText: f.svgText || null, pngDataUrl: f.pngDataUrl || null, vision: !!f.vision })),
         content_parts: contentParts.length ? contentParts : null,
         guest_id: getGuestId(),
         bonus_active: isBonusActive(),
@@ -1084,57 +1199,43 @@
         mcp_enabled: !!__prefs.mcpEnabled,
         persona: __prefs.persona || '',
         language: __prefs.responseLanguage || 'auto',
+        ui_language: __prefs.uiLanguage || 'en',
         vision_enabled: !!__prefs.vision && visionFiles.length > 0,
       };
-
-      const res = await fetch('/v1/chat/completions', {
-        method: 'POST',
-        headers: authHeaders(),
-        credentials: 'same-origin',
-        body: JSON.stringify(reqBody),
-        signal: activeStreamController.signal,
-      });
+      const res = await fetch('/v1/chat/completions', { method: 'POST', headers: authHeaders(), credentials: 'same-origin', body: JSON.stringify(reqBody), signal: activeStreamController.signal });
       if (!res.ok) {
         let detail = `HTTP ${res.status}`;
         try { const d = await res.json(); detail = d.error?.message || d.error || d.message || detail; } catch {}
-        if ((res.status === 401 || res.status === 403) && isBonusActive()) {
-          throw new Error('Bonus verified locally but server rejected guest access. Try refreshing or signing in — your 50k bonus is saved.');
-        }
-        if (res.status === 401 || res.status === 403) throw new Error('Not signed in. Sign in or refresh the page.');
-        if (res.status === 404) throw new Error('Endpoint /v1/chat/completions not found.');
+        if ((res.status === 401 || res.status === 403) && isBonusActive()) throw new Error('Bonus verified locally but server rejected guest access. Refresh or sign in — your bonus is saved.');
+        if (res.status === 401 || res.status === 403) throw new Error('Not signed in.');
+        if (res.status === 404) throw new Error('Endpoint not found.');
         if (res.status >= 500) throw new Error(`Server error (${res.status}).`);
         throw new Error(detail);
       }
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let buf = '';
-      const ensureBubble = () => {
-        if (!bubble) { bubble = document.createElement('div'); bubble.className = 'bubble'; msgEl.insertBefore(bubble, timeEl); }
-      };
+      const ensureBubble = () => { if (!bubble) { bubble = document.createElement('div'); bubble.className = 'bubble'; msgEl.insertBefore(bubble, timeEl); } };
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
         buf += dec.decode(value, { stream: true });
         let idx;
         while ((idx = buf.indexOf('\n')) !== -1) {
-          const line = buf.slice(0, idx).trim();
-          buf = buf.slice(idx + 1);
+          const line = buf.slice(0, idx).trim(); buf = buf.slice(idx + 1);
           if (!line.startsWith('data:')) continue;
           const pl = line.slice(5).trim();
           if (!pl) continue;
           if (pl === '[DONE]') { streamComplete = true; continue; }
-          let o;
-          try { o = JSON.parse(pl); } catch { continue; }
+          let o; try { o = JSON.parse(pl); } catch { continue; }
           if (o.n) panel.addNarration(o.n);
           if (o.img) {
             generatedImage = o.img;
             panel.markWriting(); panel.setMood('celebrate'); ensureBubble();
             bubble.innerHTML = `<div class="gen-image"><img src="${o.img}" draggable="false" alt=""></div><div class="bubble-text"></div>`;
             bubbleText = bubble.querySelector('.bubble-text');
-            const img = bubble.querySelector('img');
-            if (img) img.onclick = () => openImageViewer(o.img);
-            scrollToBottom();
-            continue;
+            const img = bubble.querySelector('img'); if (img) img.onclick = () => openImageViewer(o.img);
+            scrollToBottom(); continue;
           }
           if (o.d) {
             full += o.d;
@@ -1147,12 +1248,7 @@
               try { await reader.cancel(); } catch {}
               break;
             }
-            if (!gotToken) {
-              gotToken = true;
-              panel.markWriting(); panel.setMood('learning'); ensureBubble();
-              bubble.innerHTML = '<div class="bubble-text"></div>';
-              bubbleText = bubble.querySelector('.bubble-text');
-            }
+            if (!gotToken) { gotToken = true; panel.markWriting(); panel.setMood('learning'); ensureBubble(); bubble.innerHTML = '<div class="bubble-text"></div>'; bubbleText = bubble.querySelector('.bubble-text'); }
             scheduleRender();
           }
           if (o.error) throw new Error(o.error.message || 'Stream error');
@@ -1165,29 +1261,17 @@
       if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); wireCopyButtons(bubbleText); }
       wireMessageActions(msgEl);
       let imageKey = null;
-      if (generatedImage) {
-        imageKey = 'img:' + aiMsgId;
-        await idb.set(imageKey, generatedImage).catch(() => { imageKey = null; });
-      }
+      if (generatedImage) { imageKey = 'img:' + aiMsgId; await idb.set(imageKey, generatedImage).catch(() => { imageKey = null; }); }
       let savedMsg;
       if (convo) {
-        if (isContinuation) {
-          savedMsg = convo.messages.find((m) => m.id === aiMsgId) || continuation.messageObj;
-          savedMsg.content = full; savedMsg.ts = Date.now(); if (imageKey) savedMsg.imageKey = imageKey;
-        } else {
-          savedMsg = { id: aiMsgId, role: 'assistant', content: full, ts: Date.now(), imageKey };
-          convo.messages.push(savedMsg);
-        }
+        if (isContinuation) { savedMsg = convo.messages.find((m) => m.id === aiMsgId) || continuation.messageObj; savedMsg.content = full; savedMsg.ts = Date.now(); if (imageKey) savedMsg.imageKey = imageKey; }
+        else { savedMsg = { id: aiMsgId, role: 'assistant', content: full, ts: Date.now(), imageKey }; convo.messages.push(savedMsg); }
       }
       saveChats(); updateTokenUsage();
       timeEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      if (savedMsg && shouldShowContinue(full, convo, streamComplete)) {
-        attachContinueButton(msgEl, bubble, savedMsg);
-      }
+      if (savedMsg && shouldShowContinue(full, convo, streamComplete)) attachContinueButton(msgEl, bubble, savedMsg);
       playChime();
-      if (__prefs.desktopNotify && document.hidden && 'Notification' in window && Notification.permission === 'granted') {
-        try { new Notification('Mirox replied', { body: 'Tap to view the answer', icon: '/logo.png' }); } catch {}
-      }
+      if (__prefs.desktopNotify && document.hidden && 'Notification' in window && Notification.permission === 'granted') { try { new Notification('Mirox replied', { body: 'Tap to view', icon: '/logo.png' }); } catch {} }
     } catch (e) {
       clearTimeout(streamTimeout);
       const aborted = e.name === 'AbortError';
@@ -1221,35 +1305,12 @@
     updateSendButtonState();
   }
 
-  /* ═══════════ ATTACHMENT PREVIEW ═══════════ */
-  function updatePreview() {
-    const p = $('#attachmentPreview'), list = $('#attachmentList');
-    if (!p || !list) return;
-    if (!pendingFiles.length) { p.style.display = 'none'; list.innerHTML = ''; return; }
-    p.style.display = 'flex';
-    list.innerHTML = pendingFiles.map((f) => {
-      if (f.type === 'image' && f.dataUrl) {
-        const dims = f.width && f.height ? `<span class="attach-size">${f.width}×${f.height}</span>` : '';
-        const vision = f.vision ? '<span class="attach-vision"><i class="ri-eye-line"></i> vision</span>' : '';
-        return `<div class="attach-chip attach-chip-image"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name)}${dims}${vision}</div>`;
-      }
-      return `<div class="attach-chip">${fileIconHTML()}${escapeHtml(f.name)}${f.size ? ` <span class="attach-size">${fmtSize(f.size)}</span>` : ''}</div>`;
-    }).join('');
-  }
-  function addTextAttachment(text, name) {
-    const body = String(text).slice(0, 80000);
-    const fname = name || ('pasted-' + new Date().toISOString().slice(11, 19).replace(/:/g, '-') + '.txt');
-    if (pendingFiles.some((f) => f.type === 'text' && f.content === body)) { toast('Already added', 1500); return; }
-    pendingFiles.push({ name: fname, size: text.length, type: 'text', mime: 'text/plain', content: body });
-    updatePreview(); updateSendButtonState();
-  }
-
   function toast(msg, ms) {
-    const t = document.createElement('div');
-    t.className = 'mirox-toast';
-    t.textContent = msg;
-    document.body.appendChild(t);
-    setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 350); }, ms || 1800);
+    const el = document.createElement('div');
+    el.className = 'mirox-toast';
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 350); }, ms || 1800);
   }
 
   /* ═══════════ SHARE ═══════════ */
@@ -1261,115 +1322,57 @@
     if (__shareState.dismissedAt && Date.now() - __shareState.dismissedAt < 6 * 3600 * 1000) return false;
     return true;
   }
-  function openShareAd() {
-    if (!shouldShowShareAd()) return;
-    setTimeout(() => $('#shareAdModal')?.classList.add('open'), 1800);
-  }
-  function closeShareAd(dismiss) {
-    const modal = $('#shareAdModal');
-    if (modal) modal.classList.remove('open');
-    if (dismiss) { __shareState.dismissedAt = Date.now(); saveShareState(); }
-  }
-  function setShareStatus(text, cls) {
-    const el = $('#shareAdStatus');
-    if (!el) return;
-    el.textContent = text;
-    el.className = 'share-ad-status' + (cls ? ' ' + cls : '');
-  }
+  function openShareAd() { if (!shouldShowShareAd()) return; setTimeout(() => $('#shareAdModal')?.classList.add('open'), 1800); }
+  function closeShareAd(dismiss) { const modal = $('#shareAdModal'); if (modal) modal.classList.remove('open'); if (dismiss) { __shareState.dismissedAt = Date.now(); saveShareState(); } }
+  function setShareStatus(text, cls) { const el = $('#shareAdStatus'); if (!el) return; el.textContent = text; el.className = 'share-ad-status' + (cls ? ' ' + cls : ''); }
   function celebrateReward() {
     launchConfetti({ duration: 4500, count: 240 });
-    const chip = $('#tokenUsage');
-    if (chip) { chip.classList.add('pulse'); setTimeout(() => chip.classList.remove('pulse'), 1200); }
+    const chip = $('#tokenUsage'); if (chip) { chip.classList.add('pulse'); setTimeout(() => chip.classList.remove('pulse'), 1200); }
     const wm = document.getElementById('welcomeMascot');
-    if (wm) {
-      setMascotMood('celebrate', wm.parentElement);
-      setTimeout(() => setMascotMood('happy', wm.parentElement), 2000);
-    }
+    if (wm) { setMascotMood('celebrate', wm.parentElement); setTimeout(() => setMascotMood('happy', wm.parentElement), 2000); }
   }
   function grantShareRewardLocal() {
     const bonus = grantLocalBonus(BONUS_TOKENS);
-    __shareState.claimed = true;
-    __shareState.claimedAt = Date.now();
-    __shareState.dismissedAt = 0;
-    saveShareState();
-    updateTokenUsage();
-    renderModelPicker();
-    celebrateReward();
+    __shareState.claimed = true; __shareState.claimedAt = Date.now(); __shareState.dismissedAt = 0;
+    saveShareState(); updateTokenUsage(); renderModelPicker(); celebrateReward();
     const days = Math.round((bonus.expiresAt - Date.now()) / 86400000);
-    toast(`🎉 ${BONUS_TOKENS.toLocaleString()} bonus tokens + Pro/Ultra/Eclipse unlocked for ${days} days!`, 6500);
+    toast(`🎉 ${BONUS_TOKENS.toLocaleString()} ${t('toast.bonusAdded')} ${days} ${t('toast.days')}`, 6500);
   }
   async function grantShareReward() {
     grantShareRewardLocal();
-    try {
-      await jsonOr('/api/share/reward', {
-        method: 'POST',
-        body: JSON.stringify({ bonus_tokens: BONUS_TOKENS, valid_days: 7, verified: true, verified_at: Date.now(), guest_id: getGuestId() }),
-      }, null);
-    } catch {}
+    try { await jsonOr('/api/share/reward', { method: 'POST', body: JSON.stringify({ bonus_tokens: BONUS_TOKENS, valid_days: 7, verified: true, verified_at: Date.now(), guest_id: getGuestId() }) }, null); } catch {}
     try { if (__user) await refreshUsage(); } catch {}
   }
   async function attemptShare() {
     const btn = $('#shareAdShareBtn');
-    const shareData = {
-      title: 'MiroxAI — Free unlimited AI chat',
-      text: 'I\'m using MiroxAI for free AI chats. Get 50k tokens + Pro/Ultra/Eclipse free for a week!',
-      url: location.origin + '/?ref=share&g=' + getGuestId(),
-    };
+    const shareData = { title: 'MiroxAI', text: 'Try MiroxAI — free unlimited AI chat. 50k tokens + Pro/Ultra/Eclipse free!', url: location.origin + '/?ref=share&g=' + getGuestId() };
     if (btn) btn.disabled = true;
     if (navigator.share) {
-      try {
-        setShareStatus('Opening share sheet…', '');
-        await navigator.share(shareData);
-        setShareStatus('Share confirmed! Adding reward…', 'ok');
-        await grantShareReward();
-        setTimeout(() => closeShareAd(false), 2400);
-        return;
-      } catch (e) {
-        if (e && e.name === 'AbortError') {
-          setShareStatus('Share cancelled. Try again when you\'re ready.', 'warn');
-          if (btn) btn.disabled = false;
-          return;
-        }
-      }
+      try { setShareStatus('…', ''); await navigator.share(shareData); setShareStatus(t('toast.sharedOk'), 'ok'); await grantShareReward(); setTimeout(() => closeShareAd(false), 2400); return; }
+      catch (e) { if (e && e.name === 'AbortError') { setShareStatus(t('toast.cancelled'), 'warn'); if (btn) btn.disabled = false; return; } }
     }
     const shareText = encodeURIComponent(shareData.text + ' ' + shareData.url);
     const url = `https://twitter.com/intent/tweet?text=${shareText}`;
     window.open(url, '_blank', 'noopener,width=600,height=500');
-    setShareStatus('Complete the share in the new window…', '');
+    setShareStatus('…', '');
     let resolved = false;
     const focusHandler = () => {
       if (resolved) return;
       resolved = true;
       window.removeEventListener('focus', focusHandler);
-      setTimeout(async () => {
-        setShareStatus('Share detected! Adding reward…', 'ok');
-        await grantShareReward();
-        setTimeout(() => closeShareAd(false), 2400);
-      }, 800);
+      setTimeout(async () => { setShareStatus(t('toast.shared'), 'ok'); await grantShareReward(); setTimeout(() => closeShareAd(false), 2400); }, 800);
     };
     window.addEventListener('focus', focusHandler);
-    setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        window.removeEventListener('focus', focusHandler);
-        setShareStatus('No share detected. Try again?', 'warn');
-        if (btn) btn.disabled = false;
-      }
-    }, 90000);
+    setTimeout(() => { if (!resolved) { resolved = true; window.removeEventListener('focus', focusHandler); setShareStatus(t('toast.noShare'), 'warn'); if (btn) btn.disabled = false; } }, 90000);
   }
 
   /* ═══════════ IMAGE VIEWER ═══════════ */
   function openImageViewer(url) {
-    if (!url) return;
-    __ivDataUrl = url;
+    if (!url) return; __ivDataUrl = url;
     const iv = $('#imageViewer'); if (!iv) return;
     iv.classList.add('open');
     const img = new Image();
-    img.onload = () => {
-      const c = $('#ivCanvas'); if (!c) return;
-      c.width = img.naturalWidth; c.height = img.naturalHeight;
-      c.getContext('2d').drawImage(img, 0, 0);
-    };
+    img.onload = () => { const c = $('#ivCanvas'); if (!c) return; c.width = img.naturalWidth; c.height = img.naturalHeight; c.getContext('2d').drawImage(img, 0, 0); };
     img.src = url;
   }
   function closeImageViewer() { $('#imageViewer')?.classList.remove('open'); }
@@ -1390,64 +1393,33 @@
     if (__tier === 'pro' && tier === 'pro') return 'tier';
     return 'locked';
   }
-  function tierLabel(tier) {
-    if (tier === 'free') return 'FREE';
-    if (tier === 'pro') return 'PRO';
-    if (tier === 'ultimate') return 'ULT';
-    return tier.toUpperCase();
-  }
+  function tierLabel(tier) { return tier === 'free' ? 'FREE' : (tier === 'pro' ? 'PRO' : (tier === 'ultimate' ? 'ULT' : tier.toUpperCase())); }
   function renderModelPicker() {
     const menu = $('#modelPickerMenu'); if (!menu) return;
     const models = getModelsList();
     const cur = __model || models[0].id;
     const bonusActive = __tier === 'free' && isBonusActive();
     let html = '';
-    if (bonusActive) {
-      html += `<div class="model-picker-banner">
-        <i class="ri-vip-crown-fill"></i>
-        <div class="model-picker-banner-text">
-          <strong>All models unlocked</strong>
-          <span>Bonus active · ${formatBonusRemaining()} left</span>
-        </div>
-      </div>`;
-    }
+    if (bonusActive) html += `<div class="model-picker-banner"><i class="ri-vip-crown-fill"></i><div class="model-picker-banner-text"><strong>All models unlocked</strong><span>Bonus active · ${formatBonusRemaining()} left</span></div></div>`;
     html += models.map((m) => {
       const usable = canUseModel(m.tier);
       const reason = modelAccessReason(m.tier);
       const isActive = m.id === cur;
-      const tierLbl = tierLabel(m.tier);
-      const tierClass = 'tier-' + m.tier;
       const reasonClass = usable ? (reason === 'bonus' ? 'via-bonus' : 'via-tier') : 'locked';
       const lockIcon = usable ? '' : '<i class="ri-lock-2-line model-option-lock"></i>';
       const bonusCrown = reason === 'bonus' ? '<i class="ri-vip-crown-fill model-option-crown"></i>' : '';
       const modelIcon = m.icon || 'ri-sparkling-2-line';
       return `<div class="model-option${isActive ? ' active' : ''}${usable ? '' : ' locked'} ${reasonClass}" data-model-id="${m.id}" data-usable="${usable}" data-tier="${m.tier}">
         <span class="model-option-icon"><i class="${modelIcon}"></i></span>
-        <span class="model-option-body">
-          <span class="model-option-top">
-            <span class="model-option-name">${escapeHtml(m.label)}</span>
-            <span class="model-tier-badge ${tierClass}">${tierLbl}</span>
-            ${bonusCrown}${lockIcon}
-          </span>
-          <span class="model-option-tagline">${escapeHtml(m.tagline || '')}</span>
-        </span>
+        <span class="model-option-body"><span class="model-option-top"><span class="model-option-name">${escapeHtml(m.label)}</span><span class="model-tier-badge tier-${m.tier}">${tierLabel(m.tier)}</span>${bonusCrown}${lockIcon}</span><span class="model-option-tagline">${escapeHtml(m.tagline || '')}</span></span>
       </div>`;
     }).join('');
-    if (!bonusActive && __tier === 'free') {
-      html += `<div class="model-picker-cta" id="modelPickerShareCta">
-        <i class="ri-gift-2-line"></i>
-        <span>Share to unlock <strong>Pro, Ultra &amp; Eclipse</strong> free for 7 days</span>
-      </div>`;
-    }
+    if (!bonusActive && __tier === 'free') html += `<div class="model-picker-cta" id="modelPickerShareCta"><i class="ri-gift-2-line"></i><span>Share to unlock <strong>Pro, Ultra &amp; Eclipse</strong> free for 7 days</span></div>`;
     menu.innerHTML = html;
     menu.querySelectorAll('.model-option').forEach((opt) => {
       opt.onclick = (e) => {
         e.stopPropagation();
-        if (opt.dataset.usable === 'false') {
-          if (__tier === 'free') { toast('Share to unlock this model free for 7 days', 3500); closeModelPicker(); setTimeout(() => openShareAd(), 400); }
-          else toast('Upgrade to use this model');
-          return;
-        }
+        if (opt.dataset.usable === 'false') { if (__tier === 'free') { toast(t('toast.shareUnlock')); closeModelPicker(); setTimeout(() => openShareAd(), 400); } else toast(t('toast.upgrade')); return; }
         selectModel(opt.dataset.modelId);
       };
     });
@@ -1459,22 +1431,14 @@
     if (btn) {
       btn.classList.toggle('has-bonus', bonusActive);
       btn.querySelector('.model-picker-crown')?.remove();
-      if (bonusActive) {
-        const crown = document.createElement('i');
-        crown.className = 'ri-vip-crown-fill model-picker-crown';
-        btn.appendChild(crown);
-      }
+      if (bonusActive) { const cr = document.createElement('i'); cr.className = 'ri-vip-crown-fill model-picker-crown'; btn.appendChild(cr); }
     }
   }
   function selectModel(id) {
     if (!id) return;
     const m = getModelsList().find((x) => x.id === id);
     if (!m) return;
-    if (!canUseModel(m.tier)) {
-      if (__tier === 'free') { toast('Share to unlock this model free for 7 days', 3500); closeModelPicker(); setTimeout(() => openShareAd(), 400); }
-      else toast('Upgrade to use this model');
-      return;
-    }
+    if (!canUseModel(m.tier)) { if (__tier === 'free') { toast(t('toast.shareUnlock')); closeModelPicker(); setTimeout(() => openShareAd(), 400); } else toast(t('toast.upgrade')); return; }
     __model = id;
     const lbl = $('#currentModelLabel'); if (lbl) lbl.textContent = m.label;
     renderModelPicker(); closeModelPicker();
@@ -1487,12 +1451,12 @@
     const res = await jsonOr('/api/me', {}, null, 7000);
     if (!res || !res.user) {
       __user = null; __tier = 'free';
-      const label = $('#accountLabel'); if (label) label.textContent = 'Guest mode';
-      const sub = $('#accountSub'); if (sub) sub.textContent = 'Chats saved locally in this browser';
+      const label = $('#accountLabel'); if (label) label.textContent = t('guestMode');
+      const sub = $('#accountSub'); if (sub) sub.textContent = t('settingsT.accountSub');
       const sb = $('#signInFromSettingsBtn'); if (sb) sb.style.display = '';
       const lo = $('#logoutBtn'); if (lo) lo.style.display = 'none';
       const chip = $('#userChip');
-      if (chip) { chip.querySelector('.user-name').textContent = 'Guest mode'; chip.querySelector('.user-sub').textContent = 'Sign in to save chats'; }
+      if (chip) { chip.querySelector('.user-name').textContent = t('guestMode'); chip.querySelector('.user-sub').textContent = t('signInHint'); }
       renderModelPicker(); updateTokenUsage(); return;
     }
     __user = res.user;
@@ -1502,10 +1466,7 @@
     const sb = $('#signInFromSettingsBtn'); if (sb) sb.style.display = 'none';
     const lo = $('#logoutBtn'); if (lo) lo.style.display = '';
     const chip = $('#userChip');
-    if (chip) {
-      chip.querySelector('.user-name').textContent = res.user.name || res.user.email;
-      chip.querySelector('.user-sub').textContent = (__tier.charAt(0).toUpperCase() + __tier.slice(1)) + ' plan';
-    }
+    if (chip) { chip.querySelector('.user-name').textContent = res.user.name || res.user.email; chip.querySelector('.user-sub').textContent = (__tier.charAt(0).toUpperCase() + __tier.slice(1)) + ' plan'; }
     renderModelPicker(); updateTokenUsage();
   }
   async function loadConfig() {
@@ -1523,14 +1484,14 @@
     const email = $('#loginEmail')?.value.trim().toLowerCase();
     if (!name || !email) return;
     const res = await jsonOr('/api/auth/simple-login', { method: 'POST', body: JSON.stringify({ name, email }) }, null);
-    if (res && res.ok) { setToken(res.token || ''); closeModal('loginModal'); await refreshUsage(); toast('Welcome, ' + name + '!'); openShareAd(); }
+    if (res && res.ok) { setToken(res.token || ''); closeModal('loginModal'); await refreshUsage(); toast(`${t('toast.signedIn')}, ${name}!`); openShareAd(); }
     else toast(res?.error || 'Login failed', 2500);
   }
   function doLoginment() { window.location.href = '/api/auth/loginment/start'; }
-  async function doLogout() { await jsonOr('/api/logout', { method: 'POST' }, null); setToken(''); await refreshUsage(); closeModal('settingsModal'); toast('Signed out'); }
+  async function doLogout() { await jsonOr('/api/logout', { method: 'POST' }, null); setToken(''); await refreshUsage(); closeModal('settingsModal'); toast(t('toast.signedOut')); }
   async function loadPlans() {
     const grid = $('#plansGrid'); if (!grid) return;
-    grid.innerHTML = '<div class="studio-empty">Loading plans…</div>';
+    grid.innerHTML = '<div class="studio-empty">Loading…</div>';
     const res = await jsonOr('/api/subscription/plans', {}, null);
     if (!res || !Array.isArray(res.plans)) { grid.innerHTML = '<div class="studio-empty">Could not load plans.</div>'; return; }
     grid.innerHTML = res.plans.map((p) => {
@@ -1541,68 +1502,520 @@
   }
   async function genImage() {
     const prompt = $('#imagePrompt')?.value.trim();
-    if (!prompt) { toast('Describe the image first.'); return; }
+    if (!prompt) return;
     const btn = $('#generateImageBtn'), result = $('#imageResult');
-    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line spin"></i> Generating…'; }
-    if (result) result.innerHTML = '<div class="studio-empty"><i class="ri-loader-4-line spin"></i> Painting…</div>';
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line spin"></i> …'; }
+    if (result) result.innerHTML = '<div class="studio-empty"><i class="ri-loader-4-line spin"></i> …</div>';
     try {
       const res = await netFetch('/v1/images/generations', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ prompt, guest_id: getGuestId() }) }, 90000);
       const data = await res.json().catch(() => ({}));
-      if (res.ok && data.ok && data.image) {
-        if (result) { result.innerHTML = `<img src="${data.image}" alt="${escapeHtml(prompt)}">`; result.querySelector('img').onclick = () => openImageViewer(data.image); }
-      } else {
-        const errMsg = data.error?.message || data.error || data.message || `HTTP ${res.status}`;
-        if (result) result.innerHTML = `<div class="studio-error">Failed: ${escapeHtml(errMsg)}</div>`;
-      }
-    } catch (e) {
-      if (result) result.innerHTML = `<div class="studio-error">Error: ${escapeHtml(e.message)}</div>`;
-    } finally {
-      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-image-add-line"></i> Generate'; }
-    }
+      if (res.ok && data.ok && data.image) { if (result) { result.innerHTML = `<img src="${data.image}" alt="${escapeHtml(prompt)}">`; result.querySelector('img').onclick = () => openImageViewer(data.image); } }
+      else { const errMsg = data.error?.message || data.error || `HTTP ${res.status}`; if (result) result.innerHTML = `<div class="studio-error">Failed: ${escapeHtml(errMsg)}</div>`; }
+    } catch (e) { if (result) result.innerHTML = `<div class="studio-error">Error: ${escapeHtml(e.message)}</div>`; }
+    finally { if (btn) { btn.disabled = false; btn.innerHTML = `<i class="ri-image-add-line"></i> ${t('lumenal.generate')}`; } }
   }
 
   /* ═══════════ MCP ═══════════ */
-  function loadMcp() {
-    __mcpServers = safeGet(MCP_KEY, []);
-    if (!Array.isArray(__mcpServers)) __mcpServers = [];
-  }
+  function loadMcp() { __mcpServers = safeGet(MCP_KEY, []); if (!Array.isArray(__mcpServers)) __mcpServers = []; }
   function saveMcp() { safeSet(MCP_KEY, __mcpServers); }
   function renderMcpList() {
-    const wrap = $('#mcpServerList');
-    if (!wrap) return;
-    if (!__mcpServers.length) { wrap.innerHTML = '<div class="mcp-empty">No MCP servers configured.</div>'; return; }
+    const wrap = $('#mcpServerList'); if (!wrap) return;
+    if (!__mcpServers.length) { wrap.innerHTML = `<div class="mcp-empty">${escapeHtml(t('settingsT.mcp.empty'))}</div>`; return; }
     wrap.innerHTML = __mcpServers.map((s, i) => `
       <div class="mcp-row" data-idx="${i}">
         <div class="mcp-row-icon"><i class="ri-server-line"></i></div>
-        <div class="mcp-row-info">
-          <div class="mcp-row-name">${escapeHtml(s.name)}</div>
-          <div class="mcp-row-url">${escapeHtml(s.url)}</div>
-        </div>
+        <div class="mcp-row-info"><div class="mcp-row-name">${escapeHtml(s.name)}</div><div class="mcp-row-url">${escapeHtml(s.url)}</div></div>
         <div class="mcp-row-actions">
-          <button class="icon-btn mcp-test" data-idx="${i}" title="Test"><i class="ri-flashlight-line"></i></button>
-          <button class="icon-btn mcp-remove" data-idx="${i}" title="Remove"><i class="ri-delete-bin-line"></i></button>
+          <button class="icon-btn mcp-test" data-idx="${i}"><i class="ri-flashlight-line"></i></button>
+          <button class="icon-btn mcp-remove" data-idx="${i}"><i class="ri-delete-bin-line"></i></button>
         </div>
       </div>`).join('');
-    wrap.querySelectorAll('.mcp-remove').forEach((b) => {
-      b.onclick = () => {
-        const i = parseInt(b.dataset.idx, 10);
-        __mcpServers.splice(i, 1);
-        saveMcp(); renderMcpList(); toast('Server removed');
-      };
+    wrap.querySelectorAll('.mcp-remove').forEach((b) => { b.onclick = () => { const i = parseInt(b.dataset.idx, 10); __mcpServers.splice(i, 1); saveMcp(); renderMcpList(); toast(t('toast.serverRemoved')); }; });
+    wrap.querySelectorAll('.mcp-test').forEach((b) => { b.onclick = async () => { const i = parseInt(b.dataset.idx, 10); const s = __mcpServers[i]; if (!s) return; try { const r = await netFetch(s.url, { method: 'GET', headers: s.key ? { Authorization: 'Bearer ' + s.key } : {} }, 5000); toast(r.ok ? `✓ ${s.name}` : `✗ ${r.status}`); } catch { toast(`✗ ${s.name}`); } }; });
+  }
+
+  /* ═══════════ BRIDGE — full workspace ═══════════ */
+  function loadBridgeLS() { const b = safeGet(BRIDGE_KEY, {}); __bridge = { ...__bridge, ...b, connected: false, baseUrl: null, env: null }; }
+  function saveBridgeLS() { safeSet(BRIDGE_KEY, { name: __bridge.name, port: __bridge.port }); }
+  function loadBridgeOpts() { const o = safeGet(BRIDGE_OPTS_KEY, {}); if (typeof o.autoRun === 'boolean') __bridgeAutoRun = o.autoRun; if (typeof o.showCode === 'boolean') __bridgeShowCode = o.showCode; }
+  function saveBridgeOpts() { safeSet(BRIDGE_OPTS_KEY, { autoRun: __bridgeAutoRun, showCode: __bridgeShowCode }); }
+  function loadKdeDevice() { const v = safeGet(KDE_DEVICE_KEY, null); if (v && v.id && v.name) __kdeCurrentDevice = v; }
+  function saveKdeDevice() { if (__kdeCurrentDevice) safeSet(KDE_DEVICE_KEY, __kdeCurrentDevice); else { try { localStorage.removeItem(KDE_DEVICE_KEY); } catch {} } }
+
+  function renderBridgeStatus() {
+    [['#bridgeStatus'], ['#bwStatusPill'], ['#bwStatusBox']].forEach(([sel]) => {
+      const wrap = document.querySelector(sel); if (!wrap) return;
+      const dot = wrap.querySelector('.bridge-status-dot');
+      const txt = wrap.querySelector('span');
+      if (dot) { dot.classList.toggle('online', __bridge.connected); dot.classList.toggle('offline', !__bridge.connected); }
+      if (txt) txt.textContent = __bridge.connected ? t('bridge.connected') : t('bridge.disconnected');
     });
-    wrap.querySelectorAll('.mcp-test').forEach((b) => {
-      b.onclick = async () => {
-        const i = parseInt(b.dataset.idx, 10);
-        const s = __mcpServers[i];
-        if (!s) return;
-        toast(`Testing ${s.name}…`);
-        try {
-          const r = await netFetch(s.url, { method: 'GET', headers: s.key ? { Authorization: 'Bearer ' + s.key } : {} }, 5000);
-          toast(r.ok ? `✓ ${s.name} is reachable` : `✗ ${s.name} returned ${r.status}`);
-        } catch (e) { toast(`✗ ${s.name} unreachable`); }
-      };
+    const c = $('#bwConnectBtn'), d = $('#bwDisconnectBtn');
+    if (c) c.style.display = __bridge.connected ? 'none' : 'flex';
+    if (d) d.style.display = __bridge.connected ? 'flex' : 'none';
+    updateBridgeSendBtn(); renderSudoStatus(); renderToggles();
+  }
+  function renderToggles() {
+    $('#bwToggleAutoRun')?.classList.toggle('active', __bridgeAutoRun);
+    $('#bwToggleShowCode')?.classList.toggle('active', __bridgeShowCode);
+    const sb = $('#bwStopBtn'); if (sb) sb.style.display = bridgeRunning ? 'inline-flex' : 'none';
+  }
+  function renderSudoStatus() {
+    const s = $('#bwSudoStatus'); if (!s) return;
+    s.textContent = __sudoPassword ? (__sudoRemember ? 'Password saved (session)' : 'Password set (temporary)') : t('bridge.noPassword');
+  }
+  function renderKdeStatus() {
+    const txt = $('#bwKdeStatus');
+    if (!txt) return;
+    txt.textContent = __kdeAvailable ? 'KDE Connect ready' : 'KDE Connect: not installed';
+    renderKdeDeviceList();
+  }
+  function renderKdeDeviceList() {
+    const wrap = $('#bwDeviceList'); if (!wrap) return;
+    if (!__kdeAvailable) { wrap.innerHTML = '<div class="bw-hint">Install on bridge: <code>sudo apt install kdeconnect</code></div>'; return; }
+    if (!__kdeDevices.length) { wrap.innerHTML = '<div class="bw-hint">No devices found. Tap <b>Scan for devices</b>.</div>'; return; }
+    wrap.innerHTML = __kdeDevices.map((d) => `
+      <div class="bw-device-row" data-id="${escapeHtml(d.id)}">
+        <div class="bw-device-icon"><i class="ri-smartphone-line"></i></div>
+        <div class="bw-device-info"><div class="bw-device-name">${escapeHtml(d.name)}</div><div class="bw-device-id">${escapeHtml(d.id)}${d.reachable ? ' · reachable' : ''}</div></div>
+        <div class="bw-device-actions">
+          <button class="icon-btn" data-kde-ping><i class="ri-wifi-line"></i></button>
+          <button class="icon-btn" data-kde-ring><i class="ri-notification-3-line"></i></button>
+          <button class="icon-btn" data-kde-pick><i class="ri-check-line"></i></button>
+        </div>
+      </div>`).join('');
+    wrap.querySelectorAll('.bw-device-row').forEach((row) => {
+      const dev = __kdeDevices.find((x) => x.id === row.dataset.id);
+      if (!dev) return;
+      row.querySelector('[data-kde-pick]')?.addEventListener('click', () => { __kdeCurrentDevice = { id: dev.id, name: dev.name }; saveKdeDevice(); renderKdeDeviceList(); toast(`Selected: ${dev.name}`); });
+      row.querySelector('[data-kde-ping]')?.addEventListener('click', async () => { try { const r = await bridgeCall('/kde/ping', { device: dev.id }); toast(r.ok ? `📱 ${dev.name} online` : '✗'); } catch { toast('Failed'); } });
+      row.querySelector('[data-kde-ring]')?.addEventListener('click', async () => { try { await bridgeCall('/kde/ring', { device: dev.id }); } catch {} });
     });
   }
+  function showSudoModal(command) {
+    return new Promise((resolve) => {
+      __sudoResolver = resolve;
+      const modal = $('#sudoModal'); if (!modal) { resolve(null); return; }
+      const cmdText = $('#sudoCommandText'); if (cmdText) cmdText.textContent = command || '';
+      const pwd = $('#sudoPasswordInput'); if (pwd) { pwd.value = ''; pwd.type = 'password'; }
+      const rev = $('#sudoRevealBtn'); if (rev) rev.innerHTML = '<i class="ri-eye-line"></i>';
+      const hint = $('#sudoHint'); if (hint) { hint.textContent = ''; hint.className = 'sudo-hint'; }
+      modal.classList.add('open'); setTimeout(() => pwd?.focus(), 100);
+    });
+  }
+  function closeSudoModal() { $('#sudoModal')?.classList.remove('open'); }
+  function submitSudo() {
+    const pwd = $('#sudoPasswordInput')?.value || '';
+    const remember = !!$('#sudoRememberChk')?.checked;
+    const hint = $('#sudoHint');
+    if (!pwd) { if (hint) { hint.textContent = 'Enter your password.'; hint.className = 'sudo-hint err'; } return; }
+    __sudoPassword = pwd; __sudoRemember = remember;
+    closeSudoModal(); renderSudoStatus();
+    if (__sudoResolver) { __sudoResolver({ password: pwd, remember }); __sudoResolver = null; }
+  }
+  function skipSudo() { closeSudoModal(); if (__sudoResolver) { __sudoResolver(null); __sudoResolver = null; } }
+  function forgetSudo() { __sudoPassword = ''; __sudoRemember = false; renderSudoStatus(); toast('Sudo forgotten'); }
+  async function askSudo(cmd) { if (__sudoPassword) return { password: __sudoPassword, remember: __sudoRemember, reused: true }; return await showSudoModal(cmd); }
+
+  async function testBridge(port) {
+    for (const host of ['localhost', '127.0.0.1']) {
+      try { const r = await netFetch(`http://${host}:${port}/ping`, { mode: 'cors' }, 4000); if (r.ok) { const d = await r.json(); if (d && d.ok) return { ok: true, base: `http://${host}:${port}` }; } } catch {}
+    }
+    return { ok: false };
+  }
+  async function fetchEnv(base) { try { const r = await netFetch(`${base}/env`, { mode: 'cors' }, 5000); if (!r.ok) return null; const d = await r.json(); return d && d.ok ? d : null; } catch { return null; } }
+  async function startBridge() {
+    const name = ($('#bwNameInput')?.value || __bridge.name).trim() || 'My Laptop';
+    const port = parseInt($('#bwPortInput')?.value || __bridge.port, 10) || 8765;
+    __bridge.name = name; __bridge.port = port; saveBridgeLS();
+    setBwHint('Connecting…', '');
+    const res = await testBridge(port);
+    if (res.ok) {
+      __bridge.connected = true; __bridge.baseUrl = res.base; __bridge.env = await fetchEnv(res.base);
+      __kdeAvailable = !!__bridge.env?.kde_connect_available;
+      renderBridgeStatus(); renderKdeStatus();
+      $('#bridgeEmpty')?.remove();
+      const home = __bridge.env?.home || '(unknown)';
+      setBwHint(`Connected · Home: ${home}`, 'ok');
+      addBridgeSystemMsg(`Connected. Home: ${home}`);
+    } else {
+      __bridge.connected = false; __bridge.baseUrl = null; __bridge.env = null; __kdeAvailable = false;
+      renderBridgeStatus(); renderKdeStatus();
+      setBwHint(`Could not reach the bridge on port ${port}.`, 'err');
+    }
+  }
+  function stopBridge() {
+    __bridge.connected = false; __bridge.baseUrl = null; __bridge.env = null;
+    __sudoPassword = ''; __sudoRemember = false; __kdeAvailable = false; __kdeDevices = [];
+    renderBridgeStatus(); renderKdeStatus(); setBwHint('', '');
+  }
+  async function bridgeCall(endpoint, payload) {
+    if (!__bridge.connected || !__bridge.baseUrl) throw new Error('Bridge not connected');
+    const r = await netFetch(__bridge.baseUrl + endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}), credentials: 'omit' }, 130000);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.json();
+  }
+  function downloadBridgeClient() {
+    const params = new URLSearchParams({ name: __bridge.name, port: String(__bridge.port) });
+    const a = document.createElement('a');
+    a.href = '/api/bridge/download?' + params.toString();
+    a.download = 'mirox_client_bridge.zip';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  }
+  function setBwHint(text, cls = '') { const el = $('#bwConnectHint'); if (!el) return; el.textContent = text; el.className = 'bw-hint' + (cls ? ' ' + cls : ''); }
+  function updateBridgeSendBtn() {
+    const btn = $('#bridgeSendBtn'), inp = $('#bridgeInput');
+    if (!btn || !inp) return;
+    const enabled = __bridge.connected && !bridgeRunning && inp.value.trim().length > 0;
+    btn.classList.toggle('is-disabled', !enabled);
+    btn.setAttribute('aria-disabled', String(!enabled));
+    renderToggles();
+  }
+  function openBridgeWorkspace() { $('#bridgeWorkspace')?.classList.add('open'); document.body.style.overflow = 'hidden'; if (!__bridge.connected) setTimeout(() => startBridge(), 50); }
+  function closeBridgeWorkspace() { $('#bridgeWorkspace')?.classList.remove('open'); $('#bwPanel')?.classList.remove('side-open'); document.body.style.overflow = ''; }
+  function clearBridgeChat() {
+    const m = $('#bridgeMessages'); if (m) m.innerHTML = '';
+    bridgeConversation = []; bridgeProgress = 0; bridgeTurn = null;
+    bridgeTaskComplete = true; bridgeWaitingForUser = false;
+    __lastBuildFolder = null; __lastBuildWasMobile = false;
+    updateBridgeProgress(0, 'Ready');
+    const w = $('#bwProgress'); if (w) w.style.display = 'none';
+    renderBuildStatus();
+  }
+  function scrollBridgeBottom() { const c = $('#bridgeMessages'); if (c) c.scrollTop = c.scrollHeight; }
+  function renderBuildStatus() { const s = $('#bwBuildStatus'); if (!s) return; s.textContent = __lastBuildFolder || t('bridge.noProject'); }
+  function addBridgeUserMsg(text) {
+    const container = $('#bridgeMessages'); if (!container) return;
+    $('#bridgeEmpty')?.remove();
+    const el = document.createElement('div'); el.className = 'bridge-msg user';
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    el.innerHTML = `<div class="bridge-bubble">${escapeHtml(text).replace(/\n/g, '<br>')}</div><div class="bridge-meta">You · ${time}</div>`;
+    container.appendChild(el); scrollBridgeBottom();
+  }
+  function addBridgeAiMsg(text) {
+    if (!text) return null;
+    const container = $('#bridgeMessages'); if (!container) return null;
+    $('#bridgeEmpty')?.remove();
+    const el = document.createElement('div'); el.className = 'bridge-msg ai';
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    el.innerHTML = `<div class="bridge-bubble">${escapeHtml(text).replace(/\n/g, '<br>')}</div><div class="bridge-meta">Mirox · ${time}</div>`;
+    container.appendChild(el); scrollBridgeBottom();
+    return el;
+  }
+  function addBridgeSystemMsg(text) {
+    const container = $('#bridgeMessages'); if (!container) return;
+    $('#bridgeEmpty')?.remove();
+    const el = document.createElement('div'); el.className = 'bridge-msg system';
+    el.innerHTML = `<div class="bridge-bubble">${escapeHtml(text)}</div>`;
+    container.appendChild(el); scrollBridgeBottom();
+  }
+  function addBridgeSuccessMsg(text, extras) {
+    const container = $('#bridgeMessages'); if (!container) return;
+    const e = extras || {};
+    let buttons = '';
+    if (e.previewPath) buttons += `<button class="bridge-success-btn" data-preview="${escapeHtml(e.previewPath)}"><i class="ri-eye-line"></i> Preview</button>`;
+    if (e.folder) buttons += `<button class="bridge-success-btn" data-copy-folder="${escapeHtml(e.folder)}"><i class="ri-folder-open-line"></i> Copy path</button>`;
+    const el = document.createElement('div'); el.className = 'bridge-msg ai';
+    el.innerHTML = `<div class="bridge-success"><div class="bridge-success-head"><i class="ri-checkbox-circle-fill"></i><span>${escapeHtml(text)}</span></div>${buttons ? `<div class="bridge-success-actions">${buttons}</div>` : ''}</div>`;
+    el.querySelectorAll('[data-preview]').forEach((b) => { b.onclick = () => openPreview(b.dataset.preview); });
+    el.querySelectorAll('[data-copy-folder]').forEach((b) => { b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copyFolder); toast('Path copied'); } catch {} }; });
+    container.appendChild(el); scrollBridgeBottom();
+  }
+  function addBridgeThinkingPanel(label, steps) {
+    const container = $('#bridgeMessages'); if (!container) return null;
+    $('#bridgeEmpty')?.remove();
+    const panel = createThinkPanel(label || 'Thinking', steps || []);
+    panel.el.classList.add('bridge-think');
+    container.appendChild(panel.el); scrollBridgeBottom();
+    return panel;
+  }
+  function addBridgeActionBubble(cmd) {
+    const container = $('#bridgeMessages'); if (!container) return null;
+    const data = getActionData(cmd);
+    const el = document.createElement('div'); el.className = 'bridge-msg ai';
+    el.innerHTML = `<div class="bridge-action"><div class="bridge-action-head"><div class="bridge-action-icon ${data.iconClass}"><i class="${data.icon}"></i></div><div class="bridge-action-label">${data.label}</div><span class="bridge-action-status working"><i class="ri-loader-4-line spin"></i> Working</span></div><div class="bridge-action-code" style="display:none;"></div></div>`;
+    container.appendChild(el); scrollBridgeBottom();
+    return el;
+  }
+  function updateBridgeActionBubble(el, cmd, result) {
+    if (!el) return;
+    const status = el.querySelector('.bridge-action-status'); if (!status) return;
+    if (result && result.ok) { status.className = 'bridge-action-status ok'; status.innerHTML = '<i class="ri-check-line"></i> Done'; }
+    else if (result && result.cancelled) { status.className = 'bridge-action-status err'; status.innerHTML = '<i class="ri-close-line"></i> Cancelled'; }
+    else { status.className = 'bridge-action-status err'; status.innerHTML = '<i class="ri-close-line"></i> Failed'; }
+    const codeWrap = el.querySelector('.bridge-action-code');
+    if (codeWrap) {
+      if (__bridgeShowCode && cmd.type === 'write' && typeof cmd.content === 'string') { codeWrap.style.display = 'block'; codeWrap.innerHTML = `<pre><code>${escapeHtml(cmd.content.slice(0, 3000))}</code></pre>`; }
+      else { codeWrap.style.display = 'none'; codeWrap.innerHTML = ''; }
+    }
+    scrollBridgeBottom();
+  }
+  function getBaseName(p) { if (!p) return ''; const parts = String(p).split('/'); return parts[parts.length - 1] || p; }
+  function getActionData(cmd) {
+    const t2 = cmd.type;
+    const base = getBaseName(cmd.path) || getBaseName(cmd.from) || '';
+    const map = {
+      'kde-list':['ri-radar-line','list','Scanning devices'],'kde-refresh':['ri-refresh-line','list','Refreshing'],
+      'kde-ping':['ri-wifi-line','exec','Pinging'],'kde-ring':['ri-notification-3-line','exec','Ringing'],
+      sudo:['ri-shield-keyhole-line','exec','sudo'],
+      delete:['ri-delete-bin-line','exec',`Deleting <code>${escapeHtml(base)}</code>`],
+      move:['ri-drag-move-line','exec',`Moving <code>${escapeHtml(base)}</code>`],
+      copy:['ri-file-copy-2-line','exec',`Copying <code>${escapeHtml(base)}</code>`],
+      read:['ri-file-text-line','read',`Reading <code>${escapeHtml(base)}</code>`],
+      list:['ri-folder-line','list',`Listing <code>${escapeHtml(base || cmd.path || '')}</code>`],
+    };
+    if (t2 === 'write') return { icon:'ri-file-add-line', iconClass:'write', label:`Writing <code>${escapeHtml(base)}</code>` };
+    if (t2 === 'append') return { icon:'ri-file-edit-line', iconClass:'write', label:`Appending <code>${escapeHtml(base)}</code>` };
+    if (map[t2]) return { icon: map[t2][0], iconClass: map[t2][1], label: map[t2][2] };
+    if (t2 === 'exec') return { icon:'ri-terminal-box-line', iconClass:'exec', label:'Running command' };
+    return { icon:'ri-terminal-line', iconClass:'', label:'Working' };
+  }
+  function setProgressText(text) { const el = $('#bwProgressText'); if (el && text) el.textContent = text; }
+  function updateBridgeProgress(pct, text) {
+    const newPct = Math.max(0, Math.min(100, Math.round(pct)));
+    if (newPct > bridgeProgress) bridgeProgress = newPct;
+    const bar = $('#bwProgress'), fill = $('#bwProgressFill'), pctEl = $('#bwProgressPct');
+    if (bar) bar.style.display = 'block';
+    if (fill) { fill.style.width = bridgeProgress + '%'; fill.classList.toggle('done', bridgeProgress >= 100); }
+    if (pctEl) { pctEl.textContent = bridgeProgress + '%'; }
+    if (text) setProgressText(text);
+  }
+  function extractBridgeCommands(text) {
+    const cmds = []; const add = (type, mm, extra) => cmds.push(Object.assign({ type, index: mm.index }, extra));
+    const rules = [
+      [/<bridge-sudo>([\s\S]*?)<\/bridge-sudo>/g, 'sudo', (m) => ({ command: m[1].trim() })],
+      [/<bridge-exec>([\s\S]*?)<\/bridge-exec>/g, 'exec', (m) => ({ command: m[1].trim() })],
+      [/<bridge-write\s+path="([^"]+)">([\s\S]*?)<\/bridge-write>/g, 'write', (m) => ({ path: m[1], content: m[2] })],
+      [/<bridge-append\s+path="([^"]+)">([\s\S]*?)<\/bridge-append>/g, 'append', (m) => ({ path: m[1], content: m[2] })],
+      [/<bridge-delete\s+path="([^"]+)"\s*\/>/g, 'delete', (m) => ({ path: m[1] })],
+      [/<bridge-read\s+path="([^"]+)"\s*\/>/g, 'read', (m) => ({ path: m[1] })],
+      [/<bridge-list\s+path="([^"]+)"\s*\/>/g, 'list', (m) => ({ path: m[1] })],
+    ];
+    for (const [re, type, fn] of rules) { re.lastIndex = 0; let m; while ((m = re.exec(text)) !== null) add(type, m, fn(m)); }
+    cmds.sort((a, b) => a.index - b.index);
+    return cmds;
+  }
+  function hasUnclosedWriteOrAppend(text) {
+    const t2 = String(text || '');
+    return (t2.match(/<bridge-write\b/g) || []).length > (t2.match(/<\/bridge-write>/g) || []).length || (t2.match(/<bridge-append\b/g) || []).length > (t2.match(/<\/bridge-append>/g) || []).length;
+  }
+  function lastWriteOrAppendPath(text) {
+    const matches = [...String(text || '').matchAll(/<bridge-(?:write|append)\s+path="([^"]+)"/g)];
+    return matches.length ? matches[matches.length - 1][1] : null;
+  }
+  function buildEnvBlockString() {
+    const env = __bridge.env || {};
+    const home = env.home || '(unknown)';
+    return [`[Bridge environment]`, `home=${home}`, `cwd=${env.cwd || home}`, `platform=${env.platform || '?'}`, `allowed_dirs=${(env.allowed_dirs || []).join(', ') || '(none)'}`].join('\n');
+  }
+  function absBridgePath(p, home) {
+    let s = String(p || '').trim().replace(/\\/g, '/');
+    if (!home) return s;
+    if (s === '' || s === '~' || s === '.' || s === './') return home;
+    if (s.startsWith('~/')) return home + s.slice(1);
+    if (s.startsWith('./')) return home + '/' + s.slice(2);
+    if (!s.startsWith('/')) return home + '/' + s;
+    return s;
+  }
+  function askDeviceChoice(devices) {
+    return new Promise((resolve) => {
+      const modal = $('#kdeModal'), grid = $('#kdeGrid');
+      if (!modal || !grid) { resolve(null); return; }
+      __kdeResolver = resolve; grid.innerHTML = '';
+      if (!devices || !devices.length) grid.innerHTML = '<div class="kde-empty">No devices found.</div>';
+      else devices.forEach((d, i) => {
+        const card = document.createElement('div'); card.className = 'kde-device-card' + (d.reachable ? ' reachable' : '');
+        card.innerHTML = `<div class="kde-device-card-head"><div class="kde-device-card-icon"><i class="ri-smartphone-line"></i></div><div class="kde-device-card-meta"><div class="kde-device-card-name">${escapeHtml(d.name)}</div><div class="kde-device-card-id">${escapeHtml(d.id)}</div></div><div class="kde-device-card-num">${i + 1}</div></div><div class="kde-device-card-status ${d.reachable ? 'ok' : 'warn'}">${d.reachable ? '● reachable' : '○ not reachable'}</div><button class="planner-choose-btn" type="button"><i class="ri-check-line"></i> ${escapeHtml(t('planner.choose'))}</button>`;
+        grid.appendChild(card);
+        card.querySelector('.planner-choose-btn').addEventListener('click', () => { __kdeCurrentDevice = { id: d.id, name: d.name }; saveKdeDevice(); renderKdeDeviceList(); closeKdeModal(); resolve({ id: d.id, name: d.name }); });
+      });
+      modal.classList.add('open');
+    });
+  }
+  function closeKdeModal() { $('#kdeModal')?.classList.remove('open'); }
+  function kdeSkip() { closeKdeModal(); if (__kdeResolver) { __kdeResolver(null); __kdeResolver = null; } }
+  async function executeBridgeCommand(cmd) {
+    const home = __bridge.env?.home || '';
+    if (cmd.path) cmd.path = absBridgePath(cmd.path, home);
+    if (cmd.from) cmd.from = absBridgePath(cmd.from, home);
+    if (cmd.to) cmd.to = absBridgePath(cmd.to, home);
+    const t2 = cmd.type;
+    if (t2 === 'sudo') {
+      const sudo = await askSudo(cmd.command);
+      if (!sudo || !sudo.password) return { ok: false, error: 'cancelled', cancelled: true };
+      try { return await bridgeCall('/sudo-exec', { command: cmd.command, password: sudo.password, timeout: 120 }); } catch (e) { return { ok: false, error: 'sudo failed: ' + e.message }; }
+    }
+    if (t2 === 'exec') {
+      const rawCmd = String(cmd.command || '').trim();
+      if (/(?:^|[\s&|;])sudo\b/.test(rawCmd) && !__sudoPassword) {
+        const sudo = await askSudo(rawCmd);
+        if (!sudo || !sudo.password) return { ok: false, error: 'cancelled', cancelled: true };
+        return bridgeCall('/sudo-exec', { command: rawCmd, password: sudo.password, timeout: 120 });
+      }
+      return bridgeCall('/exec', { command: cmd.command });
+    }
+    const map = {
+      write: ['/write', { path: cmd.path, content: cmd.content }],
+      append: ['/append', { path: cmd.path, content: cmd.content }],
+      delete: ['/delete', { path: cmd.path }],
+      read: ['/read', { path: cmd.path }],
+      list: ['/list', { path: cmd.path }],
+    };
+    if (map[t2]) return bridgeCall(map[t2][0], map[t2][1]);
+    return { ok: false, error: 'Unknown command' };
+  }
+  function formatResultForAI(cmd, result) {
+    if (!result || !result.ok) return `[${cmd.type}] ERROR: ${(result && result.error) || 'unknown'}`;
+    const trunc = (s, n = 3000) => String(s || '').slice(0, n);
+    switch (cmd.type) {
+      case 'sudo': case 'exec': return `[exec] exit=${result.exit_code}\nSTDOUT:\n${trunc(result.stdout)}\nSTDERR:\n${trunc(result.stderr, 1500)}`;
+      case 'write': return `[write] ok path=${result.path} bytes=${result.bytes}`;
+      case 'read': return `[read] path=${result.path}\n${trunc(result.content)}`;
+      case 'list': return `[list] path=${result.path}\n` + (result.items || []).map((i) => (i.is_dir ? 'D ' : 'F ') + i.name).join('\n');
+      default: return `[${cmd.type}] ok`;
+    }
+  }
+  function newTurnState() { return { runs: 0, plannedFiles: new Set(), writtenFiles: new Set(), commandLog: new Map(), failedSignatures: new Set(), commandsRun: 0 }; }
+  function cmdSignature(cmd) {
+    const t2 = cmd.type;
+    if (t2 === 'exec' || t2 === 'sudo') return t2 + ':' + (cmd.command || '').trim();
+    if (t2 === 'write' || t2 === 'append') return t2 + ':' + cmd.path + ':' + (cmd.content || '').length;
+    if (t2 === 'delete') return 'delete:' + cmd.path;
+    if (t2 === 'read' || t2 === 'list') return t2 + ':' + cmd.path;
+    return t2 + ':' + (cmd.path || '');
+  }
+  function shouldBlockSignature(sig) {
+    if (!bridgeTurn) return false;
+    if (bridgeTurn.failedSignatures.has(sig)) return true;
+    return (bridgeTurn.commandLog.get(sig) || 0) >= MAX_DUP_COMMANDS;
+  }
+  async function fetchBridgeReply(history) {
+    const envBlock = buildEnvBlockString();
+    const lastMsg = history[history.length - 1];
+    const r = await netFetch('/v1/chat/completions', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ message: `${envBlock}\n\n${lastMsg.content}`, history: history.slice(0, -1).map((h) => ({ role: h.role, content: h.content })), model: 'mirox-luna-1.2', stream: false, bridge: { connected: true, name: __bridge.name, env: __bridge.env || {} } }) }, 120000);
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error?.message || `HTTP ${r.status}`);
+    return data.reply || '';
+  }
+  function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+  async function runBridgeTurn(userText, isResume = false) {
+    if (!__bridge.connected) { setBwHint('Bridge not connected.', 'err'); return; }
+    if (bridgeRunning) return;
+    bridgeRunning = true; bridgeAbort = false;
+    updateBridgeSendBtn();
+    if (!isResume) {
+      bridgeTaskComplete = false; bridgeWaitingForUser = false;
+      bridgeTurn = newTurnState(); bridgeProgress = 0;
+      updateBridgeProgress(2, t('bridge.starting'));
+      addBridgeUserMsg(userText);
+      __lastBuildWasMobile = /\b(phone|mobile|tablet|android|iphone|ipad|device)\b/i.test(userText);
+      bridgeConversation.push({ role: 'user', content: `[System] Rules:\n1. NEVER paste code into visible text. All file content goes inside <bridge-write> or <bridge-append>.\n2. ALWAYS close tags.\n3. Create projects inside <home>/<project-name>/.\n4. When done, reply DONE on its own line.\n\n${userText}` });
+    }
+    let iter = 0, autoContinues = 0;
+    try {
+      while (iter++ < MAX_BRIDGE_ITER) {
+        if (bridgeAbort) { addBridgeSystemMsg('Stopped.'); break; }
+        bridgeTurn.runs++;
+        const lastUser = bridgeConversation.filter((h) => h.role === 'user').slice(-1)[0];
+        const userLast = lastUser?.content || '';
+        const thinking = addBridgeThinkingPanel(pickStatusLabel(userLast), []);
+        let reply = '';
+        try { reply = await fetchBridgeReply(bridgeConversation); thinking?.finish(); }
+        catch (e) { thinking?.fail('AI error: ' + e.message); break; }
+        if (!reply || !reply.trim()) {
+          if (autoContinues < MAX_AUTO_CONTINUES && __bridgeAutoRun) { autoContinues++; await sleep(600); bridgeConversation.push({ role: 'user', content: '[System] Continue.' }); continue; }
+          break;
+        }
+        const cmdsInReply = extractBridgeCommands(reply);
+        const saidDone = /\bDONE\b/i.test(reply);
+        const truncatedWrite = hasUnclosedWriteOrAppend(reply);
+        const lastPath = lastWriteOrAppendPath(reply);
+        const narration = reply.replace(/<bridge-[^>]+>[\s\S]*?<\/bridge-[^>]+>/g, '').replace(/<bridge-[^>]+\s+[^>]*\/>/g, '').trim();
+        if (narration) addBridgeAiMsg(narration);
+        bridgeConversation.push({ role: 'assistant', content: reply });
+        if (cmdsInReply.length > 0) {
+          const resultLines = [];
+          for (const cmd of cmdsInReply) {
+            if (bridgeAbort) break;
+            const sig = cmdSignature(cmd);
+            if (shouldBlockSignature(sig)) continue;
+            bridgeTurn.commandLog.set(sig, (bridgeTurn.commandLog.get(sig) || 0) + 1);
+            bridgeTurn.commandsRun++;
+            if (cmd.type === 'write' || cmd.type === 'append') bridgeTurn.plannedFiles.add(cmd.path);
+            const bubble = addBridgeActionBubble(cmd);
+            let result;
+            try { result = await executeBridgeCommand(cmd); } catch (e) { result = { ok: false, error: e.message }; }
+            updateBridgeActionBubble(bubble, cmd, result);
+            if (result && result.ok && cmd.type === 'write') bridgeTurn.writtenFiles.add(cmd.path);
+            else if (!result || !result.ok) bridgeTurn.failedSignatures.add(sig);
+            resultLines.push(formatResultForAI(cmd, result));
+          }
+          const tp2 = bridgeTurn.plannedFiles.size, dc2 = bridgeTurn.writtenFiles.size;
+          if (tp2 > 0) updateBridgeProgress(2 + Math.round((dc2 / tp2) * 93), `Files: ${dc2} / ${tp2}`);
+          bridgeConversation.push({ role: 'user', content: ['[Results]', resultLines.join('\n\n'), 'If done, reply DONE. Otherwise continue.'].join('\n') });
+          if (truncatedWrite && lastPath) bridgeConversation.push({ role: 'user', content: `[System] Continue with <bridge-append path="${lastPath}">.` });
+          continue;
+        }
+        if (truncatedWrite) {
+          if (__bridgeAutoRun && autoContinues < MAX_AUTO_CONTINUES) { autoContinues++; bridgeConversation.push({ role: 'user', content: `[System] Continue from last character with <bridge-append path="${lastPath}">.` }); continue; }
+          bridgeWaitingForUser = true; break;
+        }
+        const hasPlan = bridgeTurn.plannedFiles.size > 0;
+        const allFilesWritten = hasPlan && bridgeTurn.writtenFiles.size >= bridgeTurn.plannedFiles.size;
+        if (saidDone && (allFilesWritten || !hasPlan)) {
+          updateBridgeProgress(100, 'Complete');
+          const toVerify = [...bridgeTurn.writtenFiles];
+          if (toVerify.length) {
+            const rows = [];
+            for (const p of toVerify) { let exists = false, sz = 0; try { const res = await bridgeCall('/read', { path: p }); if (res && res.ok) { exists = true; sz = (res.content || '').length; } } catch {} rows.push({ path: p, exists, size: sz }); }
+            const allOk = rows.every((r) => r.exists);
+            const projRoot = toVerify[0]?.replace(/\/[^/]*$/, '') || __bridge.env?.home || '';
+            __lastBuildFolder = projRoot;
+            __lastPreviewFile = toVerify.find((p) => /index\.html?$/i.test(p)) || toVerify[0];
+            addBridgeSuccessMsg(allOk ? `Project complete · ${rows.length} files` : `Finished · ${rows.filter((r) => r.exists).length}/${rows.length}`, { folder: projRoot, previewPath: __lastPreviewFile || '' });
+            renderBuildStatus();
+          } else { addBridgeSuccessMsg('Task complete'); }
+          bridgeTaskComplete = true; break;
+        }
+        if (!saidDone) {
+          if (__bridgeAutoRun && autoContinues < MAX_AUTO_CONTINUES) { autoContinues++; await sleep(600); bridgeConversation.push({ role: 'user', content: '[System] Continue.' }); continue; }
+          bridgeWaitingForUser = true; break;
+        }
+      }
+    } catch (e) { addBridgeSystemMsg('Bridge error: ' + e.message); }
+    finally { bridgeRunning = false; updateBridgeSendBtn(); setProgressText(bridgeTaskComplete ? 'Done' : 'Paused'); }
+  }
+  function handleBridgeSend() {
+    const inp = $('#bridgeInput'); if (!inp) return;
+    const text = inp.value.trim();
+    if (!text || bridgeRunning || !__bridge.connected) return;
+    if (bridgeWaitingForUser) { bridgeWaitingForUser = false; if (!bridgeTurn) bridgeTurn = newTurnState(); }
+    else { bridgeConversation = []; bridgeTaskComplete = true; bridgeTurn = null; }
+    inp.value = ''; inp.style.height = 'auto';
+    updateBridgeSendBtn();
+    runBridgeTurn(text, false);
+  }
+  async function openPreview(pathOrEmpty) {
+    const modal = $('#bwPreviewModal'); if (!modal) return;
+    const frame = $('#bwPreviewFrame');
+    const subtitle = $('#bwPreviewSubtitle');
+    const pathInput = $('#bwPreviewPath');
+    modal.classList.add('open');
+    const targetPath = absBridgePath(pathOrEmpty || pathInput?.value.trim() || __lastPreviewFile || '', __bridge.env?.home || '');
+    if (pathInput) pathInput.value = targetPath;
+    if (!targetPath) { if (subtitle) subtitle.textContent = t('bridge.noProject'); return; }
+    if (subtitle) subtitle.textContent = targetPath;
+    try {
+      const r = await bridgeCall('/read', { path: targetPath });
+      if (!r || !r.ok) throw new Error(r?.error || 'could not read file');
+      let html = r.content || '';
+      const baseDir = targetPath.replace(/\/[^/]*$/, '');
+      for (const m of [...html.matchAll(/<link\s+[^>]*href=["']([^"']+\.css[^"']*)["'][^>]*>/gi)]) { if (/^https?:/i.test(m[1])) continue; const cssPath = m[1].startsWith('/') ? m[1] : `${baseDir}/${m[1]}`.replace(/\/\.\//g, '/'); try { const cr = await bridgeCall('/read', { path: cssPath }); if (cr && cr.ok) html = html.replace(m[0], `<style>\n${cr.content}\n</style>`); } catch {} }
+      for (const m of [...html.matchAll(/<script\s+[^>]*src=["']([^"']+\.js[^"']*)["'][^>]*>\s*<\/script>/gi)]) { if (/^https?:/i.test(m[1])) continue; const jsPath = m[1].startsWith('/') ? m[1] : `${baseDir}/${m[1]}`.replace(/\/\.\//g, '/'); try { const jr = await bridgeCall('/read', { path: jsPath }); if (jr && jr.ok) html = html.replace(m[0], `<script>\n${jr.content}\n</script>`); } catch {} }
+      if (frame) frame.srcdoc = html;
+    } catch (e) { if (frame) frame.srcdoc = `<html><body style="font-family:system-ui;padding:40px;color:#b91c1c"><h2>Preview failed</h2><p>${escapeHtml(e.message)}</p></body></html>`; }
+  }
+  function closePreview() { $('#bwPreviewModal')?.classList.remove('open'); }
 
   /* ═══════════ BONUS WATCHER ═══════════ */
   function startBonusWatcher() {
@@ -1612,28 +2025,9 @@
       if (active !== __lastBonusActive) {
         __lastBonusActive = active;
         updateTokenUsage(); renderModelPicker();
-        if (!active && __model && !canUseModel(getModelsList().find((m) => m.id === __model)?.tier || 'free')) {
-          __model = 'mirox-luna-1.2';
-          const lbl = $('#currentModelLabel'); if (lbl) lbl.textContent = 'Luna';
-          toast('Bonus expired — switched back to Luna. Share again to renew!', 5000);
-        } else if (active) {
-          toast('🎉 Bonus active — Pro, Ultra & Eclipse unlocked!', 4500);
-        }
-      } else if (active) {
-        updateTokenUsage();
-        // Bonus reminder: fire once when < 1 day left
-        if (__prefs.bonusReminder) {
-          const ms = getBonusExpiryMs();
-          const days = Math.ceil(ms / 86400000);
-          if (days <= 1 && __lastBonusWarnDay !== 'warned') {
-            __lastBonusWarnDay = 'warned';
-            toast('Your 50k bonus expires in less than a day — share again to renew!', 6000);
-            if (__prefs.desktopNotify && 'Notification' in window && Notification.permission === 'granted') {
-              try { new Notification('Bonus expiring soon', { body: 'Your 50k bonus expires in less than a day.', icon: '/logo.png' }); } catch {}
-            }
-          }
-        }
-      }
+        if (!active && __model && !canUseModel(getModelsList().find((m) => m.id === __model)?.tier || 'free')) { __model = 'mirox-luna-1.2'; const lbl = $('#currentModelLabel'); if (lbl) lbl.textContent = 'Luna'; toast(t('toast.bonusExpired'), 5000); }
+        else if (active) toast(t('toast.bonusActive'), 4500);
+      } else if (active) updateTokenUsage();
     }, BONUS_CHECK_MS);
   }
 
@@ -1643,7 +2037,7 @@
   function openSidebar() { $('#sidebar')?.classList.add('open'); $('#sidebarScrim')?.classList.add('open'); }
   function closeSidebar() { $('#sidebar')?.classList.remove('open'); $('#sidebarScrim')?.classList.remove('open'); }
 
-  /* ═══════════ WIRING — all interactions now work ═══════════ */
+  /* ═══════════ WIRING ═══════════ */
   function wireAll() {
     on('#hamburgerBtn', 'click', openSidebar);
     on('#sidebarCloseBtn', 'click', closeSidebar);
@@ -1652,20 +2046,15 @@
     on('#newChatBtn', 'click', () => { startNewChat(); if (window.innerWidth <= 860) closeSidebar(); });
     $$('.sidebar-tab').forEach((tab) => {
       tab.onclick = () => {
-        const t = tab.dataset.tab;
-        $$('.sidebar-tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === t));
-        $$('.sidebar-section').forEach((s) => { s.style.display = s.dataset.pane === t ? '' : 'none'; });
+        const tabKey = tab.dataset.tab;
+        $$('.sidebar-tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === tabKey));
+        $$('.sidebar-section').forEach((s) => { s.style.display = s.dataset.pane === tabKey ? '' : 'none'; });
       };
     });
     on('#historyList', 'click', (e) => {
-      const item = e.target.closest('.history-item');
-      if (!item) return;
+      const item = e.target.closest('.history-item'); if (!item) return;
       const id = item.dataset.id;
-      if (e.target.closest('.history-delete')) {
-        __conversations = __conversations.filter((c) => c.id !== id);
-        if (currentConversationId === id) startNewChat();
-        saveChats(); renderHistory(); return;
-      }
+      if (e.target.closest('.history-delete')) { __conversations = __conversations.filter((c) => c.id !== id); if (currentConversationId === id) startNewChat(); saveChats(); renderHistory(); return; }
       openConversation(id);
       if (window.innerWidth <= 860) closeSidebar();
     });
@@ -1673,10 +2062,7 @@
     const inp = $('#messageInput');
     if (inp) {
       inp.addEventListener('input', () => { inp.style.height = 'auto'; inp.style.height = Math.min(inp.scrollHeight, 180) + 'px'; updateSendButtonState(); });
-      inp.addEventListener('keydown', (e) => {
-        const enterSend = __prefs.enterSend !== false;
-        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && enterSend) { e.preventDefault(); handleSend(); }
-      });
+      inp.addEventListener('keydown', (e) => { const enterSend = __prefs.enterSend !== false; if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && enterSend) { e.preventDefault(); handleSend(); } });
       inp.addEventListener('paste', (e) => { const text = e.clipboardData?.getData('text/plain') || ''; if (text.length > PASTE_ATTACH_THRESHOLD) { e.preventDefault(); addTextAttachment(text); } });
     }
     on('#sendBtn', 'click', handleSend);
@@ -1688,16 +2074,14 @@
     on('#stopBtn', 'click', stopStreaming);
     on('#modelPickerBtn', 'click', (e) => { e.stopPropagation(); if ($('#modelPickerMenu')?.classList.contains('open')) closeModelPicker(); else openModelPicker(); });
     document.addEventListener('click', (e) => { if (!e.target.closest('#modelPicker')) closeModelPicker(); });
-    on('#searchModeBtn', 'click', (e) => {
-      e.preventDefault();
-      forceSearchNext = !forceSearchNext;
-      $('#searchModeBtn')?.classList.toggle('active', forceSearchNext);
-      toast(forceSearchNext ? 'Web search enabled' : 'Web search disabled');
-    });
+    on('#searchModeBtn', 'click', (e) => { e.preventDefault(); forceSearchNext = !forceSearchNext; $('#searchModeBtn')?.classList.toggle('active', forceSearchNext); toast(forceSearchNext ? t('tools.search') : ''); });
     on('#imageModeBtn', 'click', () => openModal('imageModal'));
     on('#plansModeBtn', 'click', () => { openModal('plansModal'); loadPlans(); });
     on('#supportModeBtn', 'click', (e) => { e.preventDefault(); openModal('supportModal'); });
     on('#supportModeBtn2', 'click', () => openModal('supportModal'));
+    on('#bridgeModeBtn', 'click', openBridgeWorkspace);
+    on('#bridgeOpenBtn', 'click', openBridgeWorkspace);
+    on('#bridgeDownloadBtn', 'click', downloadBridgeClient);
     on('#generateImageBtn', 'click', genImage);
     on('#submitReportBtn', 'click', () => { toast('Ticket submitted!'); closeModal('supportModal'); });
     on('#settingsBtn', 'click', (e) => { e.preventDefault(); openSettingsModal(); });
@@ -1709,44 +2093,22 @@
     // Settings tabs
     $$('.settings-tab').forEach((tab) => {
       tab.onclick = () => {
-        const t = tab.dataset.tab;
-        $$('.settings-tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === t));
-        $$('.settings-pane').forEach((p) => p.classList.toggle('active', p.dataset.pane === t));
+        const tabKey = tab.dataset.tab;
+        $$('.settings-tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === tabKey));
+        $$('.settings-pane').forEach((p) => p.classList.toggle('active', p.dataset.pane === tabKey));
       };
     });
+    // Mode
+    $$('#modeSegmented .seg-btn').forEach((b) => { b.onclick = () => { __prefs.mode = b.dataset.mode; savePrefs(); applyAppearanceFromPrefs(); applyPrefs(); }; });
+    // Accent
+    $$('#accentSwatches .swatch').forEach((b) => { b.onclick = () => { __prefs.theme = b.dataset.theme; savePrefs(); applyAppearanceFromPrefs(); applyPrefs(); }; });
+    // Font size
+    $$('#fontSizeSegmented .seg-btn').forEach((b) => { b.onclick = () => { __prefs.fontSize = b.dataset.fontsize; savePrefs(); applyPrefs(); }; });
 
-    // Appearance — Mode
-    $$('#modeSegmented .seg-btn').forEach((b) => {
-      b.onclick = () => {
-        __prefs.mode = b.dataset.mode;
-        savePrefs(); applyAppearanceFromPrefs(); applyPrefs();
-      };
-    });
-    // Appearance — Accent
-    $$('#accentSwatches .swatch').forEach((b) => {
-      b.onclick = () => {
-        __prefs.theme = b.dataset.theme;
-        savePrefs(); applyAppearanceFromPrefs(); applyPrefs();
-      };
-    });
-    // Appearance — Font size
-    $$('#fontSizeSegmented .seg-btn').forEach((b) => {
-      b.onclick = () => {
-        __prefs.fontSize = b.dataset.fontsize;
-        savePrefs(); applyPrefs();
-      };
-    });
-
-    // Generic checkbox toggle helper
+    // Generic toggles
     const bindToggle = (id, key, cb) => {
-      const el = document.getElementById(id);
-      if (!el) return;
-      el.addEventListener('change', () => {
-        __prefs[key] = el.checked;
-        savePrefs();
-        applyPrefs();
-        if (cb) cb(el.checked);
-      });
+      const el = document.getElementById(id); if (!el) return;
+      el.addEventListener('change', () => { __prefs[key] = el.checked; savePrefs(); applyPrefs(); if (cb) cb(el.checked); });
     };
     bindToggle('autoScrollToggle', 'autoScroll', (v) => { autoScrollEnabled = v; });
     bindToggle('enterSendToggle', 'enterSend');
@@ -1754,9 +2116,7 @@
     bindToggle('visionToggle', 'vision');
     bindToggle('compactToggle', 'compact');
     bindToggle('reduceMotionToggle', 'reduceMotion');
-    bindToggle('desktopNotifyToggle', 'desktopNotify', (v) => {
-      if (v && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission();
-    });
+    bindToggle('desktopNotifyToggle', 'desktopNotify', (v) => { if (v && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission(); });
     bindToggle('soundToggle', 'sound');
     bindToggle('bonusReminderToggle', 'bonusReminder');
     bindToggle('verboseLogToggle', 'verboseLog');
@@ -1764,113 +2124,76 @@
     bindToggle('mcpEnableToggle', 'mcpEnabled');
 
     // Persona
-    on('#savePersonaBtn', 'click', () => {
-      const inp = $('#personaInput'); if (!inp) return;
-      __prefs.persona = inp.value.trim();
-      savePrefs();
-      const st = $('#personaStatus'); if (st) { st.textContent = 'Saved ✓'; st.className = 'persona-status ok'; setTimeout(() => { st.textContent = ''; }, 2000); }
-      toast('Persona saved');
-    });
-    on('#clearPersonaBtn', 'click', () => {
-      const inp = $('#personaInput'); if (inp) inp.value = '';
-      __prefs.persona = ''; savePrefs();
-      const st = $('#personaStatus'); if (st) { st.textContent = 'Cleared'; st.className = 'persona-status'; setTimeout(() => { st.textContent = ''; }, 2000); }
-    });
-    $$('.persona-preset').forEach((b) => {
-      b.onclick = () => {
-        const inp = $('#personaInput'); if (inp) inp.value = b.dataset.persona;
-        toast('Preset applied — click Save to persist');
-      };
-    });
+    on('#savePersonaBtn', 'click', () => { const inp2 = $('#personaInput'); if (!inp2) return; __prefs.persona = inp2.value.trim(); savePrefs(); const st = $('#personaStatus'); if (st) { st.textContent = t('toast.personaSaved'); st.className = 'persona-status ok'; setTimeout(() => { st.textContent = ''; }, 2000); } toast(t('toast.personaSaved')); });
+    on('#clearPersonaBtn', 'click', () => { const inp2 = $('#personaInput'); if (inp2) inp2.value = ''; __prefs.persona = ''; savePrefs(); toast(t('toast.personaCleared')); });
+    $$('.persona-preset').forEach((b) => { b.onclick = () => { const inp2 = $('#personaInput'); if (inp2) inp2.value = b.dataset.persona; toast(t('toast.presetApplied')); }; });
 
     // MCP
     on('#mcpAddBtn', 'click', () => {
       const name = $('#mcpNameInput')?.value.trim();
       const url = $('#mcpUrlInput')?.value.trim();
       const key = $('#mcpKeyInput')?.value.trim();
-      if (!name || !url) { toast('Name and URL are required'); return; }
-      __mcpServers.push({ name, url, key });
-      saveMcp(); renderMcpList();
+      if (!name || !url) { toast('Name and URL required'); return; }
+      __mcpServers.push({ name, url, key }); saveMcp(); renderMcpList();
       $('#mcpNameInput').value = ''; $('#mcpUrlInput').value = ''; $('#mcpKeyInput').value = '';
-      toast(`Added server: ${name}`);
+      toast(t('toast.serverAdded') + ': ' + name);
     });
 
-    // Language — with full support
-    on('#languageSelect', 'change', (e) => {
-      __prefs.responseLanguage = e.target.value;
-      savePrefs();
-      const langName = e.target.options[e.target.selectedIndex].textContent;
-      toast(`Response language: ${langName}`);
-    });
+    // Language — response AND ui
+    on('#languageSelect', 'change', (e) => { __prefs.responseLanguage = e.target.value; savePrefs(); const langName = e.target.options[e.target.selectedIndex].textContent; toast(t('toast.respLangChanged') + ': ' + langName); });
     on('#uiLanguageSelect', 'change', (e) => {
       __prefs.uiLanguage = e.target.value;
       savePrefs();
-      toast('UI language saved — reload to apply');
+      applyTranslations();
+      toast(t('toast.langChanged'));
     });
 
     // Notifications
-    on('#testNotifyBtn', 'click', () => {
-      playChime();
-      if ('Notification' in window && Notification.permission === 'granted') {
-        try { new Notification('Mirox test', { body: 'Notifications are working', icon: '/logo.png' }); } catch {}
-      }
-      toast('Test notification sent');
-    });
+    on('#testNotifyBtn', 'click', () => { playChime(); if ('Notification' in window && Notification.permission === 'granted') { try { new Notification('Mirox', { body: 'Notifications working', icon: '/logo.png' }); } catch {} } toast(t('toast.testSent')); });
 
     // Data
-    on('#exportChatsBtn', 'click', () => {
-      const blob = new Blob([JSON.stringify(__conversations, null, 2)], { type: 'application/json' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `mirox-chats-${Date.now()}.json`;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      toast('Chats exported');
-    });
+    on('#exportChatsBtn', 'click', () => { const blob = new Blob([JSON.stringify(__conversations, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `mirox-chats-${Date.now()}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); toast(t('toast.chatsExported')); });
     on('#importChatsBtn', 'click', () => $('#importChatsInput')?.click());
-    on('#importChatsInput', 'change', (e) => {
-      const file = e.target.files?.[0]; if (!file) return;
-      const r = new FileReader();
-      r.onload = () => {
-        try {
-          const arr = JSON.parse(String(r.result));
-          if (!Array.isArray(arr)) throw new Error('not an array');
-          __conversations = arr.concat(__conversations);
-          saveChats(); renderHistory();
-          toast(`Imported ${arr.length} chats`);
-        } catch { toast('Invalid file'); }
-      };
-      r.readAsText(file);
-      e.target.value = '';
-    });
-    on('#clearChatsBtn', 'click', () => {
-      if (!confirm('Delete all chats? This cannot be undone.')) return;
-      __conversations = []; saveChats(); startNewChat();
-      toast('All chats cleared');
-    });
-    on('#clearAllDataBtn', 'click', () => {
-      if (!confirm('Reset everything? Chats, settings and bonus will be erased.')) return;
-      ['miroxai_conversations_v35','miroxai_appearance_v35','miroxai_share_v6','miroxai_bonus_v6','miroxai_prefs_v2','miroxai_mcp_v2','mirox_token','miroxai_guest_id_v1'].forEach((k) => safeRemove(k));
-      toast('All local data cleared — reloading…');
-      setTimeout(() => location.reload(), 900);
-    });
+    on('#importChatsInput', 'change', (e) => { const file = e.target.files?.[0]; if (!file) return; const r = new FileReader(); r.onload = () => { try { const arr = JSON.parse(String(r.result)); if (!Array.isArray(arr)) throw new Error(); __conversations = arr.concat(__conversations); saveChats(); renderHistory(); toast(`${t('toast.chatsImported')} ${arr.length}`); } catch { toast('Invalid file'); } }; r.readAsText(file); e.target.value = ''; });
+    on('#clearChatsBtn', 'click', () => { if (!confirm('Clear all chats?')) return; __conversations = []; saveChats(); startNewChat(); toast(t('toast.chatsCleared')); });
+    on('#clearAllDataBtn', 'click', () => { if (!confirm('Reset everything?')) return; [LS_KEY, APPEARANCE_KEY, SHARE_KEY, BONUS_KEY, PREFS_KEY, MCP_KEY, BRIDGE_KEY, BRIDGE_OPTS_KEY, KDE_DEVICE_KEY, TOKEN_KEY, GUEST_KEY].forEach((k) => safeRemove(k)); toast(t('toast.resetAll')); setTimeout(() => location.reload(), 900); });
 
-    // Developer
-    on('#copyDiagBtn', 'click', async () => {
-      const diag = {
-        ua: navigator.userAgent, url: location.href, ts: Date.now(),
-        tier: __tier, guestId: getGuestId(),
-        bonus: loadBonusRaw(),
-        model: __model, mcpServers: __mcpServers.length,
-        prefs: __prefs,
-      };
-      try { await navigator.clipboard.writeText(JSON.stringify(diag, null, 2)); toast('Diagnostics copied'); } catch {}
-    });
-    on('#resetGuestBtn', 'click', () => {
-      if (!confirm('Reset guest ID? You will need to re-share to earn a new bonus.')) return;
-      const newId = resetGuestId();
-      const lbl = $('#guestIdLabel'); if (lbl) lbl.textContent = newId;
-      toast('Guest ID reset');
-    });
+    // Dev
+    on('#copyDiagBtn', 'click', async () => { const diag = { ua: navigator.userAgent, url: location.href, ts: Date.now(), tier: __tier, guestId: getGuestId(), bonus: loadBonusRaw(), model: __model, mcpServers: __mcpServers.length, prefs: __prefs, bridge: { name: __bridge.name, port: __bridge.port, connected: __bridge.connected } }; try { await navigator.clipboard.writeText(JSON.stringify(diag, null, 2)); toast(t('toast.copied')); } catch {} });
+    on('#resetGuestBtn', 'click', () => { if (!confirm('Reset guest ID?')) return; const newId = resetGuestId(); const lbl = $('#guestIdLabel'); if (lbl) lbl.textContent = newId; toast(t('toast.guestReset')); });
+
+    // Bridge toggles & actions
+    on('#bwCloseBtn', 'click', closeBridgeWorkspace);
+    on('#bwNewBtn', 'click', clearBridgeChat);
+    on('#bwDownloadBtn', 'click', downloadBridgeClient);
+    on('#bwConnectBtn', 'click', startBridge);
+    on('#bwDisconnectBtn', 'click', stopBridge);
+    on('#bwSudoForgetBtn', 'click', forgetSudo);
+    on('#bwSideToggle', 'click', () => $('#bwPanel')?.classList.toggle('side-open'));
+    on('#bwToggleAutoRun', 'click', () => { __bridgeAutoRun = !__bridgeAutoRun; saveBridgeOpts(); renderToggles(); });
+    on('#bwToggleShowCode', 'click', () => { __bridgeShowCode = !__bridgeShowCode; saveBridgeOpts(); renderToggles(); });
+    on('#bwPreviewBtn', 'click', () => openPreview(__lastPreviewFile || ''));
+    on('#bwStopBtn', 'click', () => { bridgeAbort = true; toast('Stopping…'); });
+    on('#bwScanDevicesBtn', 'click', async () => { if (!__bridge.connected) { toast('Connect first'); return; } try { await bridgeCall('/kde/refresh', {}); const r = await bridgeCall('/kde/list', {}); __kdeDevices = r.devices || []; __kdeAvailable = !!r.installed; renderKdeStatus(); toast(`Found ${__kdeDevices.length} devices`); } catch {} });
+    on('#bwBuildOpenBtn', 'click', () => openPreview(__lastPreviewFile || ''));
+    on('#bwBuildFolderBtn', 'click', async () => { if (!__lastBuildFolder) return; try { await navigator.clipboard.writeText(__lastBuildFolder); toast('Copied'); } catch {} });
+    on('#bwPreviewCloseBtn', 'click', closePreview);
+    on('#bwPreviewReloadBtn', 'click', () => openPreview());
+    on('#bwPreviewLoadBtn', 'click', () => openPreview());
+    on('#sudoSubmitBtn', 'click', submitSudo);
+    on('#sudoSkipBtn', 'click', skipSudo);
+    on('#sudoCloseBtn', 'click', skipSudo);
+    on('#sudoRevealBtn', 'click', () => { const pwd = $('#sudoPasswordInput'); if (!pwd) return; const rev = $('#sudoRevealBtn'); if (pwd.type === 'password') { pwd.type = 'text'; if (rev) rev.innerHTML = '<i class="ri-eye-off-line"></i>'; } else { pwd.type = 'password'; if (rev) rev.innerHTML = '<i class="ri-eye-line"></i>'; } });
+    on('#sudoPasswordInput', 'keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitSudo(); } });
+    on('#plannerCloseBtn', 'click', () => { $('#plannerModal')?.classList.remove('open'); if (__plannerResolver) { __plannerResolver({ id: 0, name: 'auto' }); __plannerResolver = null; } });
+    on('#plannerSkipBtn', 'click', () => { $('#plannerModal')?.classList.remove('open'); if (__plannerResolver) { __plannerResolver({ id: 0, name: 'auto' }); __plannerResolver = null; } });
+    on('#kdeCloseBtn', 'click', kdeSkip);
+    on('#kdeSkipBtn', 'click', kdeSkip);
+    on('#kdeRefreshBtn', 'click', async () => { try { await bridgeCall('/kde/refresh', {}); const r = await bridgeCall('/kde/list', {}); __kdeDevices = r.devices || []; renderKdeDeviceList(); } catch {} });
+    const bwInp = $('#bridgeInput');
+    if (bwInp) { bwInp.addEventListener('input', () => { bwInp.style.height = 'auto'; bwInp.style.height = Math.min(bwInp.scrollHeight, 140) + 'px'; updateBridgeSendBtn(); }); bwInp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); handleBridgeSend(); } }); }
+    on('#bridgeSendBtn', 'click', handleBridgeSend);
+    $$('.bw-quick').forEach((btn) => { btn.onclick = () => { const inp2 = $('#bridgeInput'); if (inp2) { inp2.value = btn.dataset.q; updateBridgeSendBtn(); } handleBridgeSend(); }; });
 
     // Generic close
     document.addEventListener('click', (e) => {
@@ -1891,25 +2214,21 @@
       if (e.key === 'Escape') {
         closeImageViewer(); closeModelPicker();
         if ($('#shareAdModal')?.classList.contains('open')) { closeShareAd(true); return; }
+        if ($('#bridgeWorkspace')?.classList.contains('open')) { closeBridgeWorkspace(); return; }
+        if ($('#bwPreviewModal')?.classList.contains('open')) { closePreview(); return; }
+        if ($('#kdeModal')?.classList.contains('open')) { kdeSkip(); return; }
+        if ($('#plannerModal')?.classList.contains('open')) { $('#plannerModal').classList.remove('open'); return; }
+        if ($('#sudoModal')?.classList.contains('open')) { skipSudo(); return; }
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); $('#messageInput')?.focus(); }
     });
     window.addEventListener('resize', () => { if (window.innerWidth > 860) closeSidebar(); });
-    // React to system theme change in 'auto' mode
-    if (window.matchMedia) {
-      try {
-        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-          if (__prefs.mode === 'auto') applyAppearanceFromPrefs();
-        });
-      } catch {}
-    }
+    if (window.matchMedia) { try { window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (__prefs.mode === 'auto') applyAppearanceFromPrefs(); }); } catch {} }
   }
 
   function openSettingsModal() {
-    // Sync all UI to current prefs on open
     const lbl = $('#guestIdLabel'); if (lbl) lbl.textContent = getGuestId();
-    renderMcpList();
-    applyPrefs();
+    renderMcpList(); applyPrefs();
     openModal('settingsModal');
   }
 
@@ -1918,7 +2237,7 @@
     if (!convo) return;
     currentConversationId = id;
     updateTokenUsage();
-    const t = $('#chatTitle'); if (t) t.textContent = convo.title || 'Chat';
+    const ttl = $('#chatTitle'); if (ttl) ttl.textContent = convo.title || 'Chat';
     const c = $('#chatMessages'); if (c) c.innerHTML = '';
     let lastAiEl = null, lastAiMessage = null;
     for (const m of convo.messages || []) {
@@ -1928,20 +2247,35 @@
     }
     if (lastAiEl && lastAiMessage) {
       const lastBubble = lastAiEl.querySelector('.bubble');
-      if (lastBubble && shouldShowContinue(lastAiMessage.content || '', convo, true)) {
-        attachContinueButton(lastAiEl, lastBubble, lastAiMessage);
-      }
+      if (lastBubble && shouldShowContinue(lastAiMessage.content || '', convo, true)) attachContinueButton(lastAiEl, lastBubble, lastAiMessage);
     }
     renderHistory(); updateTokenUsage();
     scrollToBottom(true);
   }
 
+  // Simple IDB
+  const idb = (() => {
+    let p = null;
+    const open = () => p || (p = new Promise((res, rej) => {
+      if (!('indexedDB' in window)) return rej(new Error('no idb'));
+      const r = indexedDB.open('mirox', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('kv');
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    }));
+    return { async set(k, v) { const db = await open(); return new Promise((res, rej) => { const t2 = db.transaction('kv', 'readwrite'); t2.objectStore('kv').put(v, k); t2.oncomplete = () => res(true); t2.onerror = () => rej(t2.error); }); }, async get(k) { const db = await open(); return new Promise((res, rej) => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result || null); q.onerror = () => rej(q.error); }); } };
+  })();
+
   async function init() {
     try {
-      loadPrefs(); applyAppearanceFromPrefs(); applyPrefs();
-      loadShareState(); loadChats(); loadMcp(); wireAll();
+      loadPrefs();
+      // Init i18n before anything else renders
+      applyTranslations();
+      applyAppearanceFromPrefs(); applyPrefs();
+      loadShareState(); loadChats(); loadMcp(); loadBridgeLS(); loadBridgeOpts(); loadKdeDevice();
+      wireAll();
       __lastBonusActive = isBonusActive();
-      renderHistory(); renderModelPicker(); startIdleMascot();
+      renderHistory(); renderModelPicker(); renderBridgeStatus(); renderKdeStatus(); startIdleMascot();
       updateTokenUsage(); renderMcpList();
       startBonusWatcher();
     } catch (e) { console.error('[Mirox init]', e); }
