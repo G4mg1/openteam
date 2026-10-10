@@ -23,7 +23,7 @@
   <div class="loading-blob" id="loadingBlob"></div>
   <div class="loading-brand">Mirox</div>
   <div class="loading-line"><div class="loading-line-fill"></div></div>
-  <div class="loading-tip" id="loadingTip" data-i18n="loading.waking">Waking up Luna…</div>
+  <div class="loading-tip" id="loadingTip" data-i18n="loadingTip">Waking up Luna…</div>
 </div>
 
 <div id="sidebarScrim" class="sidebar-scrim"></div>
@@ -38,9 +38,9 @@
   </div>
   <button id="newChatBtn" class="new-chat-btn" type="button"><i class="ri-add-line"></i><span data-i18n="newChat">New chat</span></button>
   <div class="sidebar-tabs" role="tablist">
-    <button class="sidebar-tab active" type="button" data-tab="chats"><i class="ri-chat-3-line"></i> <span data-i18n="tab.chats">Chats</span></button>
-    <button class="sidebar-tab" type="button" data-tab="bridge"><i class="ri-link"></i> <span data-i18n="tab.bridge">Bridge</span></button>
-    <button class="sidebar-tab" type="button" data-tab="images"><i class="ri-image-line"></i> <span data-i18n="tab.images">Images</span></button>
+    <button class="sidebar-tab active" type="button" data-tab="chats"><i class="ri-chat-3-line"></i> <span data-i18n="tabChats">Chats</span></button>
+    <button class="sidebar-tab" type="button" data-tab="bridge"><i class="ri-link"></i> <span data-i18n="tabBridge">Bridge</span></button>
+    <button class="sidebar-tab" type="button" data-tab="images"><i class="ri-image-line"></i> <span data-i18n="tabImages">Images</span></button>
   </div>
   <div class="sidebar-section" data-pane="chats">
     <div class="history-search">
@@ -53,11 +53,10 @@
     <div class="bridge-panel">
       <div class="bridge-status" id="bridgeStatus">
         <div class="bridge-status-dot offline"></div>
-        <span data-i18n="bridge.disconnected">Disconnected</span>
+        <span data-i18n="disconnected">Disconnected</span>
       </div>
-      <p class="bridge-hint" data-i18n="bridge.sideHint">Give Mirox direct control of your laptop.</p>
-      <button id="bridgeOpenBtn" class="modal-btn primary" type="button"><i class="ri-terminal-box-line"></i> <span data-i18n="bridge.openWorkspace">Open Bridge Workspace</span></button>
-      <button id="bridgeDownloadBtn" class="modal-btn" type="button"><i class="ri-download-2-line"></i> <span data-i18n="bridge.download">Download client</span></button>
+      <p class="bridge-hint" data-i18n="bridgeHint">Give Mirox direct control of your laptop.</p>
+      <button id="bridgeOpenBtn" class="modal-btn primary" type="button"><i class="ri-terminal-box-line"></i> <span data-i18n="openBridge">Open Bridge Workspace</span></button>
     </div>
   </div>
   <div class="sidebar-section" data-pane="images" style="display:none;">
@@ -77,7 +76,6 @@
     <div class="sidebar-links">
       <a href="#" id="settingsBtn" class="sidebar-link"><i class="ri-settings-3-line"></i> <span data-i18n="settings">Settings</span></a>
       <a href="#" id="supportModeBtn" class="sidebar-link"><i class="ri-customer-service-2-line"></i> <span data-i18n="support">Support</span></a>
-      <a href="/developers/" id="developerLink" class="sidebar-link"><i class="ri-code-s-slash-line"></i> <span data-i18n="developers">Developers</span></a>
     </div>
     <div class="made-by" data-i18n="madeBy">Made by OpenSurr</div>
   </div>
@@ -86,7 +84,7 @@
 <main class="main">
   <header class="chat-header">
     <button id="hamburgerBtn" class="icon-btn hamburger" type="button" data-i18n-title="openMenu"><i class="ri-menu-line"></i></button>
-    <h2 id="chatTitle" class="chat-title" data-i18n="newChatTitle">New chat</h2>
+    <h2 id="chatTitle" class="chat-title" data-i18n="newChat">New chat</h2>
     <div class="chat-header-actions">
       <div id="tokenUsage" class="token-usage" data-i18n-title="tokenBudget"><i class="ri-cpu-line"></i><span>0 / 10k</span></div>
       <div id="modelPicker" class="model-picker-wrap">
@@ -106,10 +104,10 @@
       <h1 class="welcome-title" data-i18n="welcomeTitle">Hi, I'm Mirox</h1>
       <p class="welcome-sub" data-i18n-html="welcomeSub">Luna and Gen are unlimited and free. Share to unlock <strong>Pro, Ultra &amp; Eclipse</strong> free for 7 days.</p>
       <div class="suggestion-grid">
-        <button class="suggestion-card" type="button" data-prompt="Show me a simple Lua script that prints numbers 1 to 5"><i class="ri-code-box-line"></i><span data-i18n="suggest.lua">Write a Lua script</span></button>
-        <button class="suggestion-card" type="button" data-prompt="Show me an HTML example with a table"><i class="ri-html5-line"></i><span data-i18n="suggest.html">Show an HTML table</span></button>
-        <button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span data-i18n="suggest.image">Generate an image</span></button>
-        <button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span data-i18n="suggest.explain">Explain a concept</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Show me a simple Lua script that prints numbers 1 to 5"><i class="ri-code-box-line"></i><span data-i18n="suggestLua">Write a Lua script</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Show me an HTML example with a table"><i class="ri-html5-line"></i><span data-i18n="suggestHtml">Show an HTML table</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span data-i18n="suggestImage">Generate an image</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span data-i18n="suggestExplain">Explain a concept</span></button>
       </div>
     </div>
   </div>
@@ -122,16 +120,16 @@
       <button id="removeAttachmentBtn" class="icon-btn" type="button" data-i18n-title="removeAttach"><i class="ri-close-line"></i></button>
     </div>
     <div class="tools-row">
-      <button id="searchModeBtn" class="tool-btn" type="button"><i class="ri-global-line"></i><span data-i18n="tools.search">Search</span></button>
-      <button id="imageModeBtn" class="tool-btn" type="button"><i class="ri-image-line"></i><span data-i18n="tools.lumenal">Lumenal</span></button>
-      <button id="bridgeModeBtn" class="tool-btn" type="button"><i class="ri-link"></i><span data-i18n="tools.bridge">Bridge</span></button>
-      <button id="plansModeBtn" class="tool-btn" type="button"><i class="ri-vip-crown-line"></i><span data-i18n="tools.plans">Plans</span></button>
-      <button id="supportModeBtn2" class="tool-btn" type="button"><i class="ri-question-line"></i><span data-i18n="tools.help">Help</span></button>
+      <button id="searchModeBtn" class="tool-btn" type="button"><i class="ri-global-line"></i><span data-i18n="search">Search</span></button>
+      <button id="imageModeBtn" class="tool-btn" type="button"><i class="ri-image-line"></i><span data-i18n="lumenal">Lumenal</span></button>
+      <button id="bridgeModeBtn" class="tool-btn" type="button"><i class="ri-link"></i><span data-i18n="bridge">Bridge</span></button>
+      <button id="plansModeBtn" class="tool-btn" type="button"><i class="ri-vip-crown-line"></i><span data-i18n="plans">Plans</span></button>
+      <button id="supportModeBtn2" class="tool-btn" type="button"><i class="ri-question-line"></i><span data-i18n="help">Help</span></button>
     </div>
     <div class="composer">
       <button type="button" id="attachBtn" class="icon-btn attach-btn" data-i18n-title="attachFiles"><i class="ri-attachment-2"></i></button>
       <input type="file" id="fileInput" multiple hidden accept="image/*,.txt,.md,.json,.csv,.log,.py,.js,.ts,.html,.css,.yml,.yaml,.xml,.sh,.sql,.java,.c,.cpp,.go,.rs,.rb,.php,.lua,.zip">
-      <textarea id="messageInput" class="message-input" data-i18n-placeholder="composerPlaceholder" rows="1"></textarea>
+      <textarea id="messageInput" class="message-input" data-i18n-placeholder="composerPlaceholder" rows="1" placeholder="How can I help you today?"></textarea>
       <button type="button" id="stopBtn" class="icon-btn stop-btn" style="display:none;" data-i18n-title="stop"><i class="ri-stop-circle-line"></i></button>
       <button type="button" id="sendBtn" class="send-btn is-disabled" aria-disabled="true" data-i18n-title="send"><i class="ri-arrow-up-line"></i></button>
     </div>
@@ -139,106 +137,99 @@
   </div>
 </main>
 
+<!-- SHARE AD -->
 <div id="shareAdModal" class="share-ad-overlay">
   <div class="share-ad-panel">
     <button class="icon-btn share-ad-close" type="button" id="shareAdCloseBtn" data-i18n-title="close"><i class="ri-close-line"></i></button>
     <div class="share-ad-icon"><i class="ri-gift-2-line"></i></div>
-    <h2 class="share-ad-title" data-i18n="share.title">Share our site, get 50k tokens</h2>
-    <p class="share-ad-sub" data-i18n-html="share.sub">Get <strong>50k tokens for 1 week</strong> and unlock <strong>Pro, Ultra &amp; Eclipse</strong> models free.</p>
+    <h2 class="share-ad-title" data-i18n="shareTitle">Share our site, get 50k tokens</h2>
+    <p class="share-ad-sub" data-i18n-html="shareSub">Get <strong>50k tokens for 1 week</strong> and unlock <strong>Pro, Ultra &amp; Eclipse</strong> models free.</p>
     <ul class="share-ad-perks">
-      <li><i class="ri-check-line"></i> <span data-i18n="share.perk1">50,000 bonus tokens</span></li>
-      <li><i class="ri-check-line"></i> <span data-i18n="share.perk2">Valid for 7 days</span></li>
-      <li><i class="ri-vip-crown-fill"></i> <span data-i18n="share.perk3">Pro · Ultra · Eclipse unlocked</span></li>
+      <li><i class="ri-check-line"></i> <span data-i18n="sharePerk1">50,000 bonus tokens</span></li>
+      <li><i class="ri-check-line"></i> <span data-i18n="sharePerk2">Valid for 7 days</span></li>
+      <li><i class="ri-vip-crown-fill"></i> <span data-i18n="sharePerk3">Pro · Ultra · Eclipse unlocked</span></li>
     </ul>
     <div class="share-ad-actions">
-      <button class="share-ad-btn primary" type="button" id="shareAdShareBtn"><i class="ri-share-forward-2-line"></i> <span data-i18n="share.now">Share now</span></button>
-      <button class="share-ad-btn" type="button" id="shareAdIgnoreBtn" data-i18n="share.ignore">Ignore</button>
+      <button class="share-ad-btn primary" type="button" id="shareAdShareBtn"><i class="ri-share-forward-2-line"></i> <span data-i18n="shareNow">Share now</span></button>
+      <button class="share-ad-btn" type="button" id="shareAdIgnoreBtn" data-i18n="shareIgnore">Ignore</button>
     </div>
     <div class="share-ad-status" id="shareAdStatus"></div>
-    <div class="share-ad-hint" data-i18n="share.hint">We verify shares through your device's native share sheet.</div>
+    <div class="share-ad-hint" data-i18n="shareHint">We verify shares through your device's native share sheet.</div>
   </div>
 </div>
 
+<!-- BRIDGE WORKSPACE -->
 <div id="bridgeWorkspace" class="bridge-workspace-overlay">
   <div class="bridge-workspace-panel" id="bwPanel">
     <header class="bridge-workspace-top">
       <div class="bridge-workspace-title">
         <img class="bridge-logo" src="/logo.png" alt="" onerror="this.style.display='none'">
-        <span data-i18n="bridge.title">Bridge</span>
+        <span data-i18n="bridge">Bridge</span>
+        <span class="bridge-beta-tag">BETA</span>
       </div>
       <div class="bridge-workspace-status" id="bwStatusPill">
         <div class="bridge-status-dot offline"></div>
-        <span data-i18n="bridge.disconnected">Disconnected</span>
+        <span data-i18n="disconnected">Disconnected</span>
       </div>
       <div class="bridge-workspace-toggles" id="bwToggles">
-        <button id="bwSideToggle" class="bridge-toggle only-mobile" type="button" data-i18n-title="bridge.panel"><i class="ri-layout-column-line"></i><span data-i18n="bridge.panel">Panel</span></button>
-        <button id="bwToggleAutoRun" class="bridge-toggle active" type="button" data-i18n-title="bridge.autoRun"><i class="ri-play-circle-line"></i><span data-i18n="bridge.autoRun">Auto-Run</span></button>
-        <button id="bwToggleShowCode" class="bridge-toggle" type="button" data-i18n-title="bridge.showCode"><i class="ri-code-line"></i><span data-i18n="bridge.showCode">Show Code</span></button>
-        <button id="bwPreviewBtn" class="bridge-toggle" type="button" data-i18n-title="bridge.preview"><i class="ri-eye-line"></i><span data-i18n="bridge.preview">Preview</span></button>
-        <button id="bwStopBtn" class="bridge-toggle danger" type="button" style="display:none;" data-i18n-title="bridge.stop"><i class="ri-stop-circle-line"></i><span data-i18n="bridge.stop">Stop</span></button>
+        <button id="bwToggleAutoRun" class="bridge-toggle active" type="button" data-i18n-title="autoRun"><i class="ri-play-circle-line"></i><span data-i18n="autoRun">Auto-Run</span></button>
+        <button id="bwToggleShowCode" class="bridge-toggle" type="button" data-i18n-title="showCode"><i class="ri-code-line"></i><span data-i18n="showCode">Show Code</span></button>
+        <button id="bwPreviewBtn" class="bridge-toggle" type="button" data-i18n-title="preview"><i class="ri-eye-line"></i><span data-i18n="preview">Preview</span></button>
+        <button id="bwStopBtn" class="bridge-toggle danger" type="button" style="display:none;" data-i18n-title="stop"><i class="ri-stop-circle-line"></i><span data-i18n="stop">Stop</span></button>
       </div>
       <div class="bridge-workspace-actions">
-        <button id="bwDownloadBtn" class="icon-btn" type="button" data-i18n-title="bridge.download"><i class="ri-download-2-line"></i></button>
-        <button id="bwNewBtn" class="icon-btn" type="button" data-i18n-title="bridge.clearChat"><i class="ri-delete-bin-6-line"></i></button>
+        <button id="bwNewBtn" class="icon-btn" type="button" data-i18n-title="clearChat"><i class="ri-delete-bin-6-line"></i></button>
         <button id="bwCloseBtn" class="icon-btn" type="button" data-i18n-title="close"><i class="ri-close-line"></i></button>
       </div>
     </header>
     <div class="bridge-progress" id="bwProgress" style="display:none;">
       <div class="bridge-progress-track"><div class="bridge-progress-fill" id="bwProgressFill" style="width:0%;"></div></div>
-      <div class="bridge-progress-label"><span id="bwProgressPct">0%</span><span id="bwProgressText" data-i18n="bridge.starting">Starting…</span></div>
+      <div class="bridge-progress-label"><span id="bwProgressPct">0%</span><span id="bwProgressText" data-i18n="starting">Starting…</span></div>
     </div>
     <div class="bridge-workspace-body">
       <div class="bridge-workspace-main">
         <div class="bridge-messages" id="bridgeMessages">
           <div class="bridge-empty" id="bridgeEmpty">
             <div class="mascot mascot-md" data-mood="idle"></div>
-            <h3 data-i18n="bridge.emptyTitle">Bridge Workspace</h3>
-            <p data-i18n-html="bridge.emptyBody">Tell Mirox what to build. It writes files into <code>~/&lt;project&gt;/</code>, verifies them, and shows you a live preview.</p>
+            <h3 data-i18n="bridgeWorkspace">Bridge Workspace</h3>
+            <p data-i18n-html="bridgeEmptyBody">Tell Mirox what to build. It writes files into <code>~/&lt;project&gt;/</code>, verifies them, and shows you a live preview.</p>
           </div>
         </div>
         <div class="bridge-input-row">
-          <textarea id="bridgeInput" data-i18n-placeholder="bridge.inputPlaceholder" rows="1"></textarea>
+          <textarea id="bridgeInput" data-i18n-placeholder="bridgeInputPlaceholder" rows="1" placeholder="e.g. Build a calculator in my home folder"></textarea>
           <button id="bridgeSendBtn" class="send-btn is-disabled" type="button" aria-disabled="true" data-i18n-title="send"><i class="ri-arrow-up-line"></i></button>
         </div>
       </div>
       <aside class="bridge-workspace-side">
         <div class="bridge-side-section">
-          <h4><i class="ri-plug-line"></i> <span data-i18n="bridge.connection">Connection</span></h4>
-          <div id="bwStatusBox" class="bw-status-box"><div class="bridge-status-dot offline"></div><span data-i18n="bridge.disconnected">Disconnected</span></div>
-          <label class="bw-label" for="bwNameInput" data-i18n="bridge.name">Name</label>
-          <input id="bwNameInput" class="modal-input" type="text" data-i18n-placeholder="bridge.namePlaceholder" maxlength="60">
-          <label class="bw-label" for="bwPortInput" data-i18n="bridge.port">Port</label>
+          <h4><i class="ri-plug-line"></i> <span data-i18n="connection">Connection</span></h4>
+          <div id="bwStatusBox" class="bw-status-box"><div class="bridge-status-dot offline"></div><span data-i18n="disconnected">Disconnected</span></div>
+          <label class="bw-label" data-i18n="name">Name</label>
+          <input id="bwNameInput" class="modal-input" type="text" placeholder="My Laptop" maxlength="60">
+          <label class="bw-label" data-i18n="port">Port</label>
           <input id="bwPortInput" class="modal-input" type="number" value="8765" min="1024" max="65535">
-          <button id="bwConnectBtn" class="modal-btn primary" type="button"><i class="ri-link"></i> <span data-i18n="bridge.connect">Connect</span></button>
-          <button id="bwDisconnectBtn" class="modal-btn danger" type="button" style="display:none;"><i class="ri-link-unlink"></i> <span data-i18n="bridge.disconnect">Disconnect</span></button>
+          <button id="bwConnectBtn" class="modal-btn primary" type="button"><i class="ri-link"></i> <span data-i18n="connect">Connect</span></button>
+          <button id="bwDisconnectBtn" class="modal-btn danger" type="button" style="display:none;"><i class="ri-link-unlink"></i> <span data-i18n="disconnect">Disconnect</span></button>
           <div id="bwConnectHint" class="bw-hint"></div>
         </div>
         <div class="bridge-side-section">
-          <h4><i class="ri-smartphone-line"></i> <span data-i18n="bridge.phoneDevices">Phone &amp; Devices</span></h4>
-          <div class="bw-status-box" id="bwKdeBox"><i class="ri-smartphone-line"></i><span id="bwKdeStatus" data-i18n="bridge.kdeChecking">KDE Connect: checking…</span></div>
-          <button id="bwScanDevicesBtn" class="modal-btn" type="button"><i class="ri-radar-line"></i> <span data-i18n="bridge.scanDevices">Scan for devices</span></button>
-          <div id="bwDeviceList" class="bw-device-list"></div>
+          <h4><i class="ri-hammer-line"></i> <span data-i18n="build">Build</span></h4>
+          <div class="bw-status-box" id="bwBuildBox"><i class="ri-folder-3-line"></i><span id="bwBuildStatus" data-i18n="noProject">No project yet</span></div>
+          <button id="bwBuildOpenBtn" class="modal-btn" type="button"><i class="ri-eye-line"></i> <span data-i18n="openPreview">Open live preview</span></button>
+          <button id="bwBuildFolderBtn" class="modal-btn" type="button"><i class="ri-folder-open-line"></i> <span data-i18n="copyPath">Copy folder path</span></button>
         </div>
         <div class="bridge-side-section">
-          <h4><i class="ri-hammer-line"></i> <span data-i18n="bridge.build">Build</span></h4>
-          <div class="bw-status-box" id="bwBuildBox"><i class="ri-folder-3-line"></i><span id="bwBuildStatus" data-i18n="bridge.noProject">No project yet</span></div>
-          <button id="bwBuildOpenBtn" class="modal-btn" type="button"><i class="ri-eye-line"></i> <span data-i18n="bridge.openPreview">Open live preview</span></button>
-          <button id="bwBuildFolderBtn" class="modal-btn" type="button"><i class="ri-folder-open-line"></i> <span data-i18n="bridge.copyPath">Copy folder path</span></button>
+          <h4><i class="ri-shield-keyhole-line"></i> <span data-i18n="sudo">Sudo</span></h4>
+          <div class="bw-status-box" id="bwSudoBox"><i class="ri-shield-keyhole-line"></i><span id="bwSudoStatus" data-i18n="noPassword">No password saved</span></div>
+          <button id="bwSudoForgetBtn" class="modal-btn" type="button"><i class="ri-forbid-2-line"></i> <span data-i18n="forgetPassword">Forget password</span></button>
         </div>
         <div class="bridge-side-section">
-          <h4><i class="ri-shield-keyhole-line"></i> <span data-i18n="bridge.sudo">Sudo</span></h4>
-          <div class="bw-status-box" id="bwSudoBox"><i class="ri-shield-keyhole-line"></i><span id="bwSudoStatus" data-i18n="bridge.noPassword">No password saved</span></div>
-          <button id="bwSudoForgetBtn" class="modal-btn" type="button"><i class="ri-forbid-2-line"></i> <span data-i18n="bridge.forgetPassword">Forget password</span></button>
-        </div>
-        <div class="bridge-side-section">
-          <h4><i class="ri-rocket-line"></i> <span data-i18n="bridge.quickActions">Quick actions</span></h4>
+          <h4><i class="ri-rocket-line"></i> <span data-i18n="quickActions">Quick actions</span></h4>
           <div class="bw-quick-grid">
-            <button class="bw-quick" data-q="Build a calculator in my home folder" data-i18n="bridge.quick.calc">Calculator</button>
-            <button class="bw-quick" data-q="Build a modern landing page for a coffee shop in my home folder" data-i18n="bridge.quick.landing">Landing page</button>
-            <button class="bw-quick" data-q="Build a snake game in my home folder" data-i18n="bridge.quick.snake">Snake game</button>
-            <button class="bw-quick" data-q="Build a todo app in my home folder" data-i18n="bridge.quick.todo">Todo app</button>
-            <button class="bw-quick" data-q="Build a personal portfolio in my home folder" data-i18n="bridge.quick.portfolio">Portfolio</button>
-            <button class="bw-quick" data-q="Scan my devices and show me what's available." data-i18n="bridge.quick.scan">Scan devices</button>
+            <button class="bw-quick" data-q="Build a calculator in my home folder" data-i18n="calc">Calculator</button>
+            <button class="bw-quick" data-q="Build a modern landing page in my home folder" data-i18n="landing">Landing page</button>
+            <button class="bw-quick" data-q="Build a snake game in my home folder" data-i18n="snake">Snake game</button>
+            <button class="bw-quick" data-q="Build a todo app in my home folder" data-i18n="todo">Todo app</button>
           </div>
         </div>
       </aside>
@@ -246,14 +237,15 @@
   </div>
 </div>
 
+<!-- LIVE PREVIEW -->
 <div id="bwPreviewModal" class="planner-overlay">
   <div class="planner-panel preview-panel">
     <header class="planner-top">
-      <div class="planner-title"><i class="ri-eye-line"></i><div><div class="planner-title-main" data-i18n="bridge.livePreview">Live Preview</div><div class="planner-title-sub" id="bwPreviewSubtitle" data-i18n="bridge.noProject">No project yet</div></div></div>
+      <div class="planner-title"><i class="ri-eye-line"></i><div><div class="planner-title-main" data-i18n="livePreview">Live Preview</div><div class="planner-title-sub" id="bwPreviewSubtitle" data-i18n="noProject">No project yet</div></div></div>
       <div class="preview-tools">
         <input id="bwPreviewPath" class="modal-input" placeholder="~/project/index.html" spellcheck="false">
-        <button class="icon-btn" id="bwPreviewLoadBtn" data-i18n-title="bridge.loadPath"><i class="ri-folder-open-line"></i></button>
-        <button class="icon-btn" id="bwPreviewReloadBtn" data-i18n-title="bridge.reload"><i class="ri-refresh-line"></i></button>
+        <button class="icon-btn" id="bwPreviewLoadBtn" data-i18n-title="loadPath"><i class="ri-folder-open-line"></i></button>
+        <button class="icon-btn" id="bwPreviewReloadBtn" data-i18n-title="reload"><i class="ri-refresh-line"></i></button>
         <button class="icon-btn" id="bwPreviewCloseBtn" data-i18n-title="close"><i class="ri-close-line"></i></button>
       </div>
     </header>
@@ -261,172 +253,98 @@
   </div>
 </div>
 
-<div id="kdeModal" class="planner-overlay">
-  <div class="planner-panel kde-panel">
-    <header class="planner-top">
-      <div class="planner-title"><i class="ri-smartphone-line"></i><div><div class="planner-title-main" data-i18n="kde.title">KDE Connect · Devices</div><div class="planner-title-sub" id="kdeSubtitle" data-i18n="kde.subtitle">Pick a device for Mirox to work with</div></div></div>
-      <button class="icon-btn" id="kdeCloseBtn" type="button" data-i18n-title="close"><i class="ri-close-line"></i></button>
-    </header>
-    <div class="planner-body kde-body"><div id="kdeGrid" class="kde-device-grid"></div></div>
-    <footer class="planner-footer">
-      <span class="planner-hint"><i class="ri-information-line"></i> <span data-i18n="kde.hint">Devices marked reachable are on the same Wi-Fi and paired.</span></span>
-      <button id="kdeRefreshBtn" class="modal-btn" type="button"><i class="ri-refresh-line"></i> <span data-i18n="kde.rescan">Rescan</span></button>
-      <button id="kdeSkipBtn" class="modal-btn" type="button"><i class="ri-skip-forward-line"></i> <span data-i18n="kde.skip">Skip</span></button>
-    </footer>
-  </div>
-</div>
-
-<div id="plannerModal" class="planner-overlay">
-  <div class="planner-panel">
-    <header class="planner-top">
-      <div class="planner-title"><i class="ri-layout-masonry-line"></i><div><div class="planner-title-main" data-i18n="planner.title">Mirox Planner</div><div class="planner-title-sub" id="plannerSubtitle" data-i18n="planner.subtitle">Pick a design — Mirox will build it for you</div></div></div>
-      <button class="icon-btn" id="plannerCloseBtn" type="button" data-i18n-title="close"><i class="ri-close-line"></i></button>
-    </header>
-    <div class="planner-body"><div id="plannerGrid" class="planner-grid"></div></div>
-    <footer class="planner-footer">
-      <span class="planner-hint"><i class="ri-information-line"></i> <span data-i18n="planner.hint">Live demos — pick your favorite.</span></span>
-      <button id="plannerSkipBtn" class="modal-btn" type="button"><i class="ri-skip-forward-line"></i> <span data-i18n="planner.auto">Let Mirox decide</span></button>
-    </footer>
-  </div>
-</div>
-
+<!-- SUDO -->
 <div id="sudoModal" class="question-overlay">
   <div class="question-panel sudo-panel">
     <div class="question-top">
       <div class="question-badge sudo-badge"><i class="ri-shield-keyhole-line"></i></div>
       <div class="question-heading">
-        <div class="question-title" data-i18n="sudo.title">Password required</div>
-        <div class="question-sub" id="sudoReason" data-i18n="sudo.sub">Mirox needs root access to continue.</div>
+        <div class="question-title" data-i18n="passwordRequired">Password required</div>
+        <div class="question-sub" data-i18n="sudoSub">Mirox needs root access to continue.</div>
       </div>
       <button class="icon-btn" id="sudoCloseBtn" type="button" data-i18n-title="skip"><i class="ri-close-line"></i></button>
     </div>
     <p class="question-text sudo-command" id="sudoCommandText"></p>
     <div class="sudo-input-wrap">
-      <input type="password" id="sudoPasswordInput" class="modal-input" data-i18n-placeholder="sudo.password" autocomplete="current-password" spellcheck="false">
-      <button class="icon-btn sudo-reveal" type="button" id="sudoRevealBtn" data-i18n-title="sudo.showHide"><i class="ri-eye-line"></i></button>
+      <input type="password" id="sudoPasswordInput" class="modal-input" data-i18n-placeholder="sudoPassword" autocomplete="current-password" spellcheck="false">
+      <button class="icon-btn sudo-reveal" type="button" id="sudoRevealBtn" data-i18n-title="showHide"><i class="ri-eye-line"></i></button>
     </div>
-    <label class="sudo-remember"><input type="checkbox" id="sudoRememberChk"><span data-i18n="sudo.remember">Remember for this session (kept in memory only)</span></label>
+    <label class="sudo-remember"><input type="checkbox" id="sudoRememberChk"><span data-i18n="sudoRemember">Remember for this session</span></label>
     <div class="question-footer" style="margin-top:14px;">
       <button id="sudoSkipBtn" class="modal-btn" type="button"><i class="ri-skip-forward-line"></i> <span data-i18n="skip">Skip</span></button>
-      <button id="sudoSubmitBtn" class="modal-btn primary" type="button"><span data-i18n="sudo.run">Run with sudo</span> <i class="ri-arrow-right-line"></i></button>
+      <button id="sudoSubmitBtn" class="modal-btn primary" type="button"><span data-i18n="runWithSudo">Run with sudo</span> <i class="ri-arrow-right-line"></i></button>
     </div>
     <div id="sudoHint" class="sudo-hint"></div>
   </div>
 </div>
 
-<div id="bridgeQuestionModal" class="question-overlay">
-  <div class="question-panel">
-    <div class="question-top">
-      <div class="question-badge"><i class="ri-question-line"></i></div>
-      <div class="question-heading">
-        <div class="question-title" data-i18n="bq.title">Mirox needs your input</div>
-        <div class="question-sub" id="bqCounter">Question 1 of 1</div>
-      </div>
-      <button class="icon-btn" id="bqSkipOne" type="button" data-i18n-title="skip"><i class="ri-skip-forward-line"></i></button>
-    </div>
-    <div class="question-progress"><div class="question-progress-fill" id="bqProgressFill" style="width:0%;"></div></div>
-    <p class="question-text" id="bqText"></p>
-    <div class="question-options" id="bqOptions"></div>
-    <div class="question-custom" id="bqCustomWrap" style="display:none;">
-      <input type="text" id="bqCustomInput" class="modal-input" data-i18n-placeholder="bq.customPlaceholder">
-    </div>
-    <div class="question-footer">
-      <button id="bqCustomToggle" class="modal-btn" type="button"><i class="ri-edit-line"></i> <span data-i18n="bq.custom">Custom</span></button>
-      <button id="bqSubmit" class="modal-btn primary" type="button"><span data-i18n="bq.submit">Submit &amp; continue</span> <i class="ri-arrow-right-line"></i></button>
-    </div>
-  </div>
-</div>
-
+<!-- LOGIN -->
 <div id="loginModal" class="modal-overlay">
   <div class="modal">
     <button class="icon-btn modal-close" type="button" data-close="loginModal" data-i18n-title="close"><i class="ri-close-line"></i></button>
     <div class="modal-mascot"><div class="mascot mascot-md" data-mood="idle"></div></div>
-    <h2 class="modal-title" data-i18n="login.title">Sign in</h2>
-    <p class="modal-sub" data-i18n="login.sub">Sign in with Google, Apple, or email — powered by Loginment.</p>
-    <button id="loginmentBtn" class="modal-btn primary login-main" type="button"><i class="ri-shield-user-line"></i> <span data-i18n="login.loginment">Continue with Loginment</span></button>
+    <h2 class="modal-title" data-i18n="signIn">Sign in</h2>
+    <p class="modal-sub" data-i18n="signInSub">Sign in with Google, Apple, or email.</p>
     <div id="emailLoginWrap">
-      <div class="login-divider" data-i18n="login.orDemo">or use a quick demo login</div>
       <form id="simpleLoginForm" class="modal-form">
-        <input type="text" id="loginName" class="modal-input" data-i18n-placeholder="login.name" required maxlength="60">
-        <input type="email" id="loginEmail" class="modal-input" data-i18n-placeholder="login.email" required>
-        <button type="submit" class="modal-btn" data-i18n="login.continue">Continue</button>
+        <input type="text" id="loginName" class="modal-input" data-i18n-placeholder="name" required maxlength="60">
+        <input type="email" id="loginEmail" class="modal-input" data-i18n-placeholder="email" required>
+        <button type="submit" class="modal-btn" data-i18n="continue">Continue</button>
       </form>
     </div>
   </div>
 </div>
 
+<!-- SETTINGS -->
 <div id="settingsModal" class="modal-overlay">
   <div class="modal modal-wide">
     <button class="icon-btn modal-close" type="button" data-close="settingsModal" data-i18n-title="close"><i class="ri-close-line"></i></button>
-    <h2 class="modal-title" data-i18n="settings.title">Settings</h2>
+    <h2 class="modal-title" data-i18n="settingsTitle">Settings</h2>
     <div class="settings-tabs" role="tablist">
-      <button class="settings-tab active" type="button" data-tab="general"><i class="ri-settings-3-line"></i><span data-i18n="settingsT.tab.general">General</span></button>
-      <button class="settings-tab" type="button" data-tab="appearance"><i class="ri-palette-line"></i><span data-i18n="settingsT.tab.appearance">Appearance</span></button>
-      <button class="settings-tab" type="button" data-tab="persona"><i class="ri-user-smile-line"></i><span data-i18n="settingsT.tab.persona">Persona</span></button>
-      <button class="settings-tab" type="button" data-tab="mcp"><i class="ri-plug-2-line"></i><span data-i18n="settingsT.tab.mcp">MCP</span></button>
-      <button class="settings-tab" type="button" data-tab="language"><i class="ri-translate-2"></i><span data-i18n="settingsT.tab.language">Language</span></button>
-      <button class="settings-tab" type="button" data-tab="notifications"><i class="ri-notification-3-line"></i><span data-i18n="settingsT.tab.alerts">Alerts</span></button>
-      <button class="settings-tab" type="button" data-tab="data"><i class="ri-database-2-line"></i><span data-i18n="settingsT.tab.data">Data</span></button>
-      <button class="settings-tab" type="button" data-tab="developer"><i class="ri-code-s-slash-line"></i><span data-i18n="settingsT.tab.dev">Dev</span></button>
+      <button class="settings-tab active" type="button" data-tab="general"><i class="ri-settings-3-line"></i><span data-i18n="general">General</span></button>
+      <button class="settings-tab" type="button" data-tab="appearance"><i class="ri-palette-line"></i><span data-i18n="appearance">Appearance</span></button>
+      <button class="settings-tab" type="button" data-tab="language"><i class="ri-translate-2"></i><span data-i18n="language">Language</span></button>
+      <button class="settings-tab" type="button" data-tab="data"><i class="ri-database-2-line"></i><span data-i18n="data">Data</span></button>
     </div>
 
     <div class="settings-pane active" data-pane="general">
       <div class="setting-group">
-        <h4 data-i18n="settingsT.account">Account</h4>
+        <h4 data-i18n="account">Account</h4>
         <div class="setting-row">
           <div class="setting-row-info">
             <span class="setting-row-label" id="accountLabel" data-i18n="guestMode">Guest mode</span>
-            <span class="setting-row-sub" id="accountSub" data-i18n="settingsT.accountSub">Chats saved locally in this browser</span>
+            <span class="setting-row-sub" id="accountSub" data-i18n="accountSub">Chats saved locally in this browser</span>
           </div>
-          <button id="signInFromSettingsBtn" class="setting-mini-btn primary" type="button" data-i18n="settingsT.signIn">Sign in</button>
+          <button id="signInFromSettingsBtn" class="setting-mini-btn primary" type="button" data-i18n="signIn">Sign in</button>
         </div>
-        <button id="logoutBtn" class="modal-btn danger" type="button" style="display:none;margin-top:10px;" data-i18n="settingsT.signOut">Sign out</button>
+        <button id="logoutBtn" class="modal-btn danger" type="button" style="display:none;margin-top:10px;" data-i18n="signOut">Sign out</button>
       </div>
       <div class="setting-group">
-        <h4 data-i18n="settingsT.rewards">Rewards</h4>
+        <h4 data-i18n="rewards">Rewards</h4>
         <div class="setting-row">
           <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="settingsT.shareEarn">Share &amp; earn</span>
-            <span class="setting-row-sub" id="shareRowSub" data-i18n="settingsT.shareSub">Get 50k tokens + Pro/Ultra/Eclipse free for 7 days</span>
+            <span class="setting-row-label" data-i18n="shareEarn">Share &amp; earn</span>
+            <span class="setting-row-sub" id="shareRowSub" data-i18n="shareSub">Get 50k tokens + Pro/Ultra/Eclipse free for 7 days</span>
           </div>
-          <button id="shareFromSettingsBtn" class="setting-mini-btn primary" type="button"><i class="ri-share-forward-2-line"></i> <span data-i18n="settingsT.shareBtn">Share</span></button>
+          <button id="shareFromSettingsBtn" class="setting-mini-btn primary" type="button"><i class="ri-share-forward-2-line"></i> <span data-i18n="share">Share</span></button>
         </div>
       </div>
       <div class="setting-group">
-        <h4 data-i18n="settingsT.behavior">Behavior</h4>
+        <h4 data-i18n="behavior">Behavior</h4>
         <div class="setting-row">
-          <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="settingsT.autoScroll">Auto-scroll</span>
-            <span class="setting-row-sub" data-i18n="settingsT.autoScrollSub">Follow new messages as they arrive</span>
-          </div>
+          <div class="setting-row-info"><span class="setting-row-label" data-i18n="autoScroll">Auto-scroll</span><span class="setting-row-sub" data-i18n="autoScrollSub">Follow new messages</span></div>
           <label class="switch"><input type="checkbox" id="autoScrollToggle" checked><span class="switch-slider"></span></label>
         </div>
         <div class="setting-row">
-          <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="settingsT.enterSend">Send with Enter</span>
-            <span class="setting-row-sub" data-i18n="settingsT.enterSendSub">Use Shift+Enter for a new line</span>
-          </div>
+          <div class="setting-row-info"><span class="setting-row-label" data-i18n="enterSend">Send with Enter</span><span class="setting-row-sub" data-i18n="enterSendSub">Use Shift+Enter for new line</span></div>
           <label class="switch"><input type="checkbox" id="enterSendToggle" checked><span class="switch-slider"></span></label>
         </div>
         <div class="setting-row">
-          <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="settingsT.showThinking">Show thinking trace</span>
-            <span class="setting-row-sub" data-i18n="settingsT.showThinkingSub">Display the reasoning panel above replies</span>
-          </div>
-          <label class="switch"><input type="checkbox" id="showThinkingToggle" checked><span class="switch-slider"></span></label>
-        </div>
-        <div class="setting-row">
-          <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="settingsT.vision">Vision for images</span>
-            <span class="setting-row-sub" data-i18n="settingsT.visionSub">Send attached images to the AI (base64)</span>
-          </div>
+          <div class="setting-row-info"><span class="setting-row-label" data-i18n="vision">Vision for images</span><span class="setting-row-sub" data-i18n="visionSub">Send images to AI (base64)</span></div>
           <label class="switch"><input type="checkbox" id="visionToggle" checked><span class="switch-slider"></span></label>
         </div>
         <div class="setting-row">
-          <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="settingsT.compact">Compact mode</span>
-            <span class="setting-row-sub" data-i18n="settingsT.compactSub">Tighter spacing for dense chats</span>
-          </div>
+          <div class="setting-row-info"><span class="setting-row-label" data-i18n="compact">Compact mode</span><span class="setting-row-sub" data-i18n="compactSub">Tighter spacing</span></div>
           <label class="switch"><input type="checkbox" id="compactToggle"><span class="switch-slider"></span></label>
         </div>
       </div>
@@ -434,15 +352,15 @@
 
     <div class="settings-pane" data-pane="appearance">
       <div class="setting-group">
-        <h4 data-i18n="settingsT.mode">Mode</h4>
+        <h4 data-i18n="mode">Mode</h4>
         <div class="segmented" id="modeSegmented">
-          <button class="seg-btn" type="button" data-mode="light" data-i18n="settingsT.mode2.light">Light</button>
-          <button class="seg-btn" type="button" data-mode="dark" data-i18n="settingsT.mode2.dark">Dark</button>
-          <button class="seg-btn" type="button" data-mode="auto" data-i18n="settingsT.mode2.auto">Auto</button>
+          <button class="seg-btn" type="button" data-mode="light" data-i18n="light">Light</button>
+          <button class="seg-btn" type="button" data-mode="dark" data-i18n="dark">Dark</button>
+          <button class="seg-btn" type="button" data-mode="auto" data-i18n="auto">Auto</button>
         </div>
       </div>
       <div class="setting-group">
-        <h4 data-i18n="settingsT.accent">Accent color</h4>
+        <h4 data-i18n="accent">Accent color</h4>
         <div class="swatch-grid" id="accentSwatches">
           <button class="swatch" type="button" data-theme="default" style="--sw:#4d6bfe"></button>
           <button class="swatch" type="button" data-theme="sage" style="--sw:#16a34a"></button>
@@ -453,115 +371,26 @@
         </div>
       </div>
       <div class="setting-group">
-        <h4 data-i18n="settingsT.fontSize">Font size</h4>
+        <h4 data-i18n="fontSize">Font size</h4>
         <div class="segmented" id="fontSizeSegmented">
-          <button class="seg-btn" type="button" data-fontsize="sm" data-i18n="settingsT.font2.sm">Small</button>
-          <button class="seg-btn" type="button" data-fontsize="md" data-i18n="settingsT.font2.md">Medium</button>
-          <button class="seg-btn" type="button" data-fontsize="lg" data-i18n="settingsT.font2.lg">Large</button>
+          <button class="seg-btn" type="button" data-fontsize="sm" data-i18n="small">Small</button>
+          <button class="seg-btn" type="button" data-fontsize="md" data-i18n="medium">Medium</button>
+          <button class="seg-btn" type="button" data-fontsize="lg" data-i18n="large">Large</button>
         </div>
       </div>
       <div class="setting-group">
-        <h4 data-i18n="settingsT.animations">Animations</h4>
+        <h4 data-i18n="animations">Animations</h4>
         <div class="setting-row">
-          <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="settingsT.reduceMotion">Reduce motion</span>
-            <span class="setting-row-sub" data-i18n="settingsT.reduceMotionSub">Minimize animation across the app</span>
-          </div>
+          <div class="setting-row-info"><span class="setting-row-label" data-i18n="reduceMotion">Reduce motion</span><span class="setting-row-sub" data-i18n="reduceMotionSub">Minimize animations</span></div>
           <label class="switch"><input type="checkbox" id="reduceMotionToggle"><span class="switch-slider"></span></label>
         </div>
       </div>
     </div>
 
-    <div class="settings-pane" data-pane="persona">
-      <div class="setting-group">
-        <h4 data-i18n="settingsT.persona">Custom character</h4>
-        <p class="setting-help" data-i18n="settingsT.personaHelp">Describe how Mirox should behave — tone, style, expertise, quirks.</p>
-        <textarea id="personaInput" class="modal-textarea" rows="4" data-i18n-placeholder="settingsT.personaPlaceholder"></textarea>
-        <div class="persona-actions">
-          <button id="savePersonaBtn" class="modal-btn primary" type="button"><i class="ri-save-line"></i> <span data-i18n="settingsT.personaSave">Save persona</span></button>
-          <button id="clearPersonaBtn" class="modal-btn" type="button"><i class="ri-delete-bin-line"></i> <span data-i18n="settingsT.personaClear">Clear</span></button>
-          <span id="personaStatus" class="persona-status"></span>
-        </div>
-      </div>
-      <div class="setting-group">
-        <h4 data-i18n="settingsT.personaPresets">Preset personalities</h4>
-        <div class="persona-presets">
-          <button class="persona-preset" type="button" data-persona="You are a friendly, casual assistant. Keep replies short, warm and human."><i class="ri-chat-smile-2-line"></i><span data-i18n="settingsT.preset.casual">Casual</span></button>
-          <button class="persona-preset" type="button" data-persona="You are a senior software engineer. Give precise, production-quality code with brief explanations."><i class="ri-code-box-line"></i><span data-i18n="settingsT.preset.engineer">Engineer</span></button>
-          <button class="persona-preset" type="button" data-persona="You are a patient teacher. Explain step by step with analogies."><i class="ri-graduation-cap-line"></i><span data-i18n="settingsT.preset.teacher">Teacher</span></button>
-          <button class="persona-preset" type="button" data-persona="You are a creative writer. Vivid, evocative, punchy."><i class="ri-quill-pen-line"></i><span data-i18n="settingsT.preset.writer">Writer</span></button>
-          <button class="persona-preset" type="button" data-persona="You are a stoic philosopher. Answer with clarity and calm."><i class="ri-ancient-gate-line"></i><span data-i18n="settingsT.preset.philosopher">Philosopher</span></button>
-        </div>
-      </div>
-    </div>
-
-    <div class="settings-pane" data-pane="mcp">
-      <div class="setting-group">
-        <h4 data-i18n="settingsT.mcp.title">Model Context Protocol</h4>
-        <p class="setting-help" data-i18n="settingsT.mcp.help">Connect MCP servers so Mirox can use external tools.</p>
-        <div class="setting-row">
-          <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="settingsT.mcp.enable">Enable MCP</span>
-            <span class="setting-row-sub" data-i18n="settingsT.mcp.enableSub">Allow Mirox to call connected servers</span>
-          </div>
-          <label class="switch"><input type="checkbox" id="mcpEnableToggle"><span class="switch-slider"></span></label>
-        </div>
-      </div>
-      <div class="setting-group">
-        <h4 data-i18n="settingsT.mcp.add">Add server</h4>
-        <div class="mcp-form">
-          <input type="text" id="mcpNameInput" class="modal-input" data-i18n-placeholder="settingsT.mcp.name" maxlength="60">
-          <input type="text" id="mcpUrlInput" class="modal-input" data-i18n-placeholder="settingsT.mcp.url" spellcheck="false">
-          <input type="password" id="mcpKeyInput" class="modal-input" data-i18n-placeholder="settingsT.mcp.key" spellcheck="false">
-          <button id="mcpAddBtn" class="modal-btn primary" type="button"><i class="ri-add-line"></i> <span data-i18n="settingsT.mcp.addBtn">Add server</span></button>
-        </div>
-      </div>
-      <div class="setting-group">
-        <h4 data-i18n="settingsT.mcp.connected">Connected servers</h4>
-        <div id="mcpServerList" class="mcp-list"><div class="mcp-empty" data-i18n="settingsT.mcp.empty">No MCP servers configured.</div></div>
-      </div>
-    </div>
-
     <div class="settings-pane" data-pane="language">
       <div class="setting-group">
-        <h4 data-i18n="settingsT.lang.response">Preferred response language</h4>
-        <p class="setting-help" data-i18n="settingsT.lang.responseHelp">Mirox will reply in this language.</p>
-        <select id="languageSelect" class="modal-select">
-          <option value="auto" data-i18n="settingsT.lang.auto">Auto-detect</option>
-          <option value="en">English</option>
-          <option value="fa">فارسی — Persian (Farsi)</option>
-          <option value="ps">پښتو — Pashto</option>
-          <option value="de">Deutsch — German</option>
-          <option value="es-MX">Español (México)</option>
-          <option value="es">Español — Spanish</option>
-          <option value="fr">Français — French</option>
-          <option value="it">Italiano — Italian</option>
-          <option value="pt">Português</option>
-          <option value="ru">Русский</option>
-          <option value="ar">العربية</option>
-          <option value="he">עברית</option>
-          <option value="tr">Türkçe</option>
-          <option value="hi">हिन्दी</option>
-          <option value="ur">اردو</option>
-          <option value="bn">বাংলা</option>
-          <option value="zh-CN">简体中文</option>
-          <option value="zh-TW">繁體中文</option>
-          <option value="ja">日本語</option>
-          <option value="ko">한국어</option>
-          <option value="vi">Tiếng Việt</option>
-          <option value="th">ไทย</option>
-          <option value="id">Bahasa Indonesia</option>
-          <option value="pl">Polski</option>
-          <option value="nl">Nederlands</option>
-          <option value="sv">Svenska</option>
-          <option value="el">Ελληνικά</option>
-          <option value="cs">Čeština</option>
-          <option value="ro">Română</option>
-        </select>
-      </div>
-      <div class="setting-group">
-        <h4 data-i18n="settingsT.lang.ui">Interface language</h4>
-        <p class="setting-help" data-i18n="settingsT.lang.uiHelp">Language of buttons, menus and labels — applies immediately.</p>
+        <h4 data-i18n="interfaceLanguage">Interface language</h4>
+        <p class="setting-help" data-i18n="interfaceLanguageHelp">Powered by MyMemory API — free, no key. First switch may take a few seconds. Cached after.</p>
         <select id="uiLanguageSelect" class="modal-select">
           <option value="en">English</option>
           <option value="fa">فارسی — Farsi</option>
@@ -570,144 +399,107 @@
           <option value="es">Español — Spanish</option>
           <option value="es-MX">Español (México)</option>
           <option value="fr">Français — French</option>
+          <option value="it">Italiano — Italian</option>
+          <option value="pt">Português — Portuguese</option>
+          <option value="ru">Русский — Russian</option>
           <option value="ar">العربية — Arabic</option>
+          <option value="he">עברית — Hebrew</option>
+          <option value="tr">Türkçe — Turkish</option>
+          <option value="hi">हिन्दी — Hindi</option>
+          <option value="ur">اردو — Urdu</option>
+          <option value="bn">বাংলা — Bengali</option>
+          <option value="zh-CN">简体中文 — Chinese (Simplified)</option>
+          <option value="ja">日本語 — Japanese</option>
+          <option value="ko">한국어 — Korean</option>
+          <option value="vi">Tiếng Việt — Vietnamese</option>
+          <option value="th">ไทย — Thai</option>
+          <option value="id">Bahasa Indonesia</option>
+          <option value="nl">Nederlands — Dutch</option>
+          <option value="pl">Polski — Polish</option>
+          <option value="sv">Svenska — Swedish</option>
+          <option value="el">Ελληνικά — Greek</option>
+          <option value="cs">Čeština — Czech</option>
+          <option value="ro">Română — Romanian</option>
+          <option value="uk">Українська — Ukrainian</option>
+        </select>
+        <div id="translateStatus" class="translate-status"></div>
+      </div>
+      <div class="setting-group">
+        <h4 data-i18n="responseLanguage">Preferred response language</h4>
+        <select id="languageSelect" class="modal-select">
+          <option value="auto" data-i18n="autoDetect">Auto-detect</option>
+          <option value="en">English</option>
+          <option value="fa">فارسی</option>
+          <option value="ps">پښتو</option>
+          <option value="de">Deutsch</option>
+          <option value="es-MX">Español (México)</option>
+          <option value="es">Español</option>
+          <option value="fr">Français</option>
+          <option value="ru">Русский</option>
+          <option value="ar">العربية</option>
           <option value="zh-CN">简体中文</option>
           <option value="ja">日本語</option>
-          <option value="ru">Русский</option>
-          <option value="tr">Türkçe</option>
-          <option value="hi">हिन्दी</option>
-          <option value="ur">اردو</option>
         </select>
-      </div>
-      <div class="setting-group">
-        <h4 data-i18n="settingsT.lang.comments">Code comments</h4>
-        <div class="setting-row">
-          <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="settingsT.lang.translateComments">Translate code comments</span>
-            <span class="setting-row-sub" data-i18n="settingsT.lang.translateCommentsSub">Write code comments in preferred language</span>
-          </div>
-          <label class="switch"><input type="checkbox" id="translateCommentsToggle"><span class="switch-slider"></span></label>
-        </div>
-      </div>
-    </div>
-
-    <div class="settings-pane" data-pane="notifications">
-      <div class="setting-group">
-        <h4 data-i18n="settingsT.alerts.title">Notifications</h4>
-        <div class="setting-row">
-          <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="settingsT.alerts.desktop">Desktop notifications</span>
-            <span class="setting-row-sub" data-i18n="settingsT.alerts.desktopSub">Notify when a reply finishes in background</span>
-          </div>
-          <label class="switch"><input type="checkbox" id="desktopNotifyToggle"><span class="switch-slider"></span></label>
-        </div>
-        <div class="setting-row">
-          <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="settingsT.alerts.sound">Sound</span>
-            <span class="setting-row-sub" data-i18n="settingsT.alerts.soundSub">Play a soft chime when a reply arrives</span>
-          </div>
-          <label class="switch"><input type="checkbox" id="soundToggle" checked><span class="switch-slider"></span></label>
-        </div>
-        <div class="setting-row">
-          <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="settingsT.alerts.bonus">Bonus reminders</span>
-            <span class="setting-row-sub" data-i18n="settingsT.alerts.bonusSub">Remind me before my 50k bonus expires</span>
-          </div>
-          <label class="switch"><input type="checkbox" id="bonusReminderToggle" checked><span class="switch-slider"></span></label>
-        </div>
-        <div class="setting-row">
-          <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="settingsT.alerts.test">Test notification</span>
-            <span class="setting-row-sub" data-i18n="settingsT.alerts.testSub">Fire a sample chime + notification</span>
-          </div>
-          <button id="testNotifyBtn" class="setting-mini-btn" type="button" data-i18n="settingsT.alerts.testBtn">Test</button>
-        </div>
       </div>
     </div>
 
     <div class="settings-pane" data-pane="data">
       <div class="setting-group">
-        <h4 data-i18n="settingsT.data.chats">Chats</h4>
-        <button id="exportChatsBtn" class="modal-btn" type="button"><i class="ri-download-2-line"></i> <span data-i18n="settingsT.data.export">Export all chats (JSON)</span></button>
-        <button id="importChatsBtn" class="modal-btn" type="button"><i class="ri-upload-2-line"></i> <span data-i18n="settingsT.data.import">Import chats from file</span></button>
-        <input type="file" id="importChatsInput" accept=".json" hidden>
-        <button id="clearChatsBtn" class="modal-btn danger" type="button"><i class="ri-delete-bin-6-line"></i> <span data-i18n="settingsT.data.clearChats">Clear all chats</span></button>
+        <h4 data-i18n="chats">Chats</h4>
+        <button id="exportChatsBtn" class="modal-btn" type="button"><i class="ri-download-2-line"></i> <span data-i18n="exportChats">Export all chats (JSON)</span></button>
+        <button id="clearChatsBtn" class="modal-btn danger" type="button"><i class="ri-delete-bin-6-line"></i> <span data-i18n="clearChats">Clear all chats</span></button>
       </div>
       <div class="setting-group">
-        <h4 data-i18n="settingsT.data.local">Local data</h4>
-        <button id="clearAllDataBtn" class="modal-btn danger" type="button"><i class="ri-eraser-line"></i> <span data-i18n="settingsT.data.reset">Reset everything</span></button>
-      </div>
-    </div>
-
-    <div class="settings-pane" data-pane="developer">
-      <div class="setting-group">
-        <h4 data-i18n="settingsT.dev.console">Developer console</h4>
-        <a href="/developers/" class="modal-btn link-btn"><i class="ri-code-s-slash-line"></i> <span data-i18n="settingsT.dev.open">Open Developer Console</span></a>
-      </div>
-      <div class="setting-group">
-        <h4 data-i18n="settingsT.dev.diag">Diagnostics</h4>
-        <div class="setting-row">
-          <div class="setting-row-info">
-            <span class="setting-row-label" data-i18n="settingsT.dev.verbose">Verbose logging</span>
-            <span class="setting-row-sub" data-i18n="settingsT.dev.verboseSub">Log API requests to console</span>
-          </div>
-          <label class="switch"><input type="checkbox" id="verboseLogToggle"><span class="switch-slider"></span></label>
-        </div>
-        <button id="copyDiagBtn" class="modal-btn" type="button"><i class="ri-file-copy-line"></i> <span data-i18n="settingsT.dev.copyDiag">Copy diagnostic info</span></button>
-      </div>
-      <div class="setting-group">
-        <h4 data-i18n="settingsT.dev.guest">Guest identity</h4>
-        <div class="setting-row">
-          <div class="setting-row-info">
-            <span class="setting-row-label" id="guestIdLabel">—</span>
-            <span class="setting-row-sub" data-i18n="settingsT.dev.guestSub">Device-scoped ID for bonus verification</span>
-          </div>
-          <button id="resetGuestBtn" class="setting-mini-btn" type="button" data-i18n="settingsT.dev.reset">Reset</button>
-        </div>
+        <h4 data-i18n="translationCache">Translation cache</h4>
+        <button id="clearI18nCacheBtn" class="modal-btn" type="button"><i class="ri-eraser-line"></i> <span data-i18n="clearI18nCache">Clear translation cache</span></button>
       </div>
     </div>
   </div>
 </div>
 
+<!-- PLANS -->
 <div id="plansModal" class="modal-overlay">
   <div class="modal modal-wide">
     <button class="icon-btn modal-close" type="button" data-close="plansModal" data-i18n-title="close"><i class="ri-close-line"></i></button>
-    <h2 class="modal-title" data-i18n="plans.title">Plans</h2>
-    <p class="modal-sub" data-i18n="plans.sub">Luna and Gen are free and unlimited. Share to unlock Pro, Ultra and Eclipse for 7 days.</p>
+    <h2 class="modal-title" data-i18n="plans">Plans</h2>
+    <p class="modal-sub" data-i18n="plansSub">Luna and Gen are free. Share to unlock Pro, Ultra and Eclipse for 7 days.</p>
     <div id="plansGrid" class="plans-grid"></div>
   </div>
 </div>
 
+<!-- IMAGE STUDIO -->
 <div id="imageModal" class="modal-overlay">
   <div class="modal">
     <button class="icon-btn modal-close" type="button" data-close="imageModal" data-i18n-title="close"><i class="ri-close-line"></i></button>
-    <h2 class="modal-title" data-i18n="lumenal.title">Lumenal 1.0</h2>
-    <p class="modal-sub" data-i18n="lumenal.sub">Strong image generation, powered by Mirox.</p>
+    <h2 class="modal-title" data-i18n="lumenalTitle">Lumenal 1.0</h2>
+    <p class="modal-sub" data-i18n="lumenalSub">Strong image generation.</p>
     <div class="image-studio">
-      <textarea id="imagePrompt" class="modal-textarea" rows="3" data-i18n-placeholder="lumenal.prompt"></textarea>
-      <button id="generateImageBtn" class="modal-btn primary" type="button"><i class="ri-image-add-line"></i> <span data-i18n="lumenal.generate">Generate</span></button>
+      <textarea id="imagePrompt" class="modal-textarea" rows="3" data-i18n-placeholder="imagePrompt"></textarea>
+      <button id="generateImageBtn" class="modal-btn primary" type="button"><i class="ri-image-add-line"></i> <span data-i18n="generate">Generate</span></button>
       <div id="imageResult" class="image-result"></div>
     </div>
   </div>
 </div>
 
+<!-- SUPPORT -->
 <div id="supportModal" class="modal-overlay">
   <div class="modal">
     <button class="icon-btn modal-close" type="button" data-close="supportModal" data-i18n-title="close"><i class="ri-close-line"></i></button>
-    <h2 class="modal-title" data-i18n="support.title">Contact Support</h2>
+    <h2 class="modal-title" data-i18n="supportTitle">Contact Support</h2>
     <div class="support-form">
-      <input type="text" id="supportSubject" class="modal-input" data-i18n-placeholder="support.subject">
-      <textarea id="supportMessage" class="modal-textarea" rows="4" data-i18n-placeholder="support.message"></textarea>
-      <button id="submitReportBtn" class="modal-btn primary" type="button" data-i18n="support.submit">Submit</button>
+      <input type="text" id="supportSubject" class="modal-input" data-i18n-placeholder="subject">
+      <textarea id="supportMessage" class="modal-textarea" rows="4" data-i18n-placeholder="message"></textarea>
+      <button id="submitReportBtn" class="modal-btn primary" type="button" data-i18n="submit">Submit</button>
     </div>
   </div>
 </div>
 
+<!-- IMAGE VIEWER -->
 <div id="imageViewer" class="image-viewer">
   <div class="image-viewer-backdrop" data-iv-close></div>
   <div class="image-viewer-panel">
     <div class="image-viewer-top">
-      <div class="image-viewer-title" data-i18n="iv.title">Generated image</div>
+      <div class="image-viewer-title" data-i18n="generatedImage">Generated image</div>
       <button class="icon-btn" type="button" data-iv-close data-i18n-title="close"><i class="ri-close-line"></i></button>
     </div>
     <div class="image-viewer-canvas-wrap">
@@ -715,7 +507,7 @@
       <div class="image-viewer-watermark">MiroxAI · OpenSurr</div>
     </div>
     <div class="image-viewer-actions">
-      <button class="iv-btn" type="button" id="ivDownload"><i class="ri-download-2-line"></i> <span data-i18n="iv.download">Download</span></button>
+      <button class="iv-btn" type="button" id="ivDownload"><i class="ri-download-2-line"></i> <span data-i18n="download">Download</span></button>
     </div>
   </div>
 </div>
