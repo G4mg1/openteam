@@ -1,19 +1,16 @@
 (function () {
   'use strict';
 
-  /* ═══════════ i18n — strict whitelist ═══════════ */
+  /* ============================================================
+     MiroxAI frontend v98 — continuation fix + support chat
+     ============================================================ */
+
+  /* ---------- i18n ---------- */
   const I18N_CACHE_KEY = 'miroxai_i18n_cache_v6';
   const RTL_LANGS = ['fa','ar','he','ur'];
   const TRANSLATE_CONCURRENCY = 2;
-  const MYMEMORY_OK = new Set([
-    'es','fr','de','it','pt','ru','ja','ko','ar','hi','fa',
-    'tr','vi','th','id','nl','pl','sv','el','cs','ro','uk',
-    'he','zh-CN','es-MX'
-  ]);
-  function isTranslatable(code) {
-    if (!code || typeof code !== 'string') return false;
-    return MYMEMORY_OK.has(code.trim());
-  }
+  const MYMEMORY_OK = new Set(['es','fr','de','it','pt','ru','ja','ko','ar','hi','fa','tr','vi','th','id','nl','pl','sv','el','cs','ro','uk','he','zh-CN','es-MX']);
+  function isTranslatable(code) { return !!(code && typeof code === 'string' && MYMEMORY_OK.has(code.trim())); }
 
   let __i18nCache = {};
   let __translationQueue = [];
@@ -121,7 +118,7 @@
     });
   }
 
-  /* ═══════════ Loader ═══════════ */
+  /* ---------- Loader ---------- */
   let __loaderGone = false;
   function killLoader() {
     if (__loaderGone) return;
@@ -167,14 +164,13 @@
   const BRIDGE_OPTS_KEY = 'miroxai_bridge_opts_v1';
   const PASTE_ATTACH_THRESHOLD = 1024;
   const NET_TIMEOUT_MS = 15000;
-  const STREAM_TIMEOUT_MS = 120000;
+  const STREAM_TIMEOUT_MS = 240000;   // ⚡ increased from 120s to 240s
   const BASE_FREE_LIMIT = 10000;
   const BONUS_TOKENS = 50000;
-  // ⚡ Bonus is now 2 days (was 7)
   const BONUS_MS = 2 * 24 * 60 * 60 * 1000;
   const BONUS_VALID_DAYS = 2;
   const MAX_IMAGE_DIM = 1600;
-  const MAX_TEXT_FILE_BYTES = 300000; // 300 KB cap for text/code attachments
+  const MAX_TEXT_FILE_BYTES = 300000;
   const MAX_BRIDGE_ITER = 40;
   const MAX_AUTO_CONTINUES = 6;
   const MAX_DUP_COMMANDS = 3;
@@ -197,7 +193,12 @@
   let __bridgeAutoRun = true, __bridgeShowCode = false;
   let __voiceRecognition = null;
   let __voiceListening = false;
-  let __previewFileRef = null; // reference to file object being previewed
+  let __previewFileRef = null;
+
+  // ⚡ Support chat state
+  let __supportConv = null;
+  let __supportPollTimer = null;
+  let __supportSending = false;
 
   const uid = () => 'c_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
   const escapeHtml = (s) => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
@@ -206,9 +207,6 @@
   function safeRemove(k) { try { localStorage.removeItem(k); } catch {} }
   function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
   function setToken(tk) { try { tk ? localStorage.setItem(TOKEN_KEY, tk) : localStorage.removeItem(TOKEN_KEY); } catch {} }
-
-  // Only REAL API keys (mxk_live_...) are sent as Bearer tokens.
-  // Session logins rely on the HttpOnly cookie set by /api/auth/simple-login.
   function isApiKey(tk) { return typeof tk === 'string' && /^mxk_live_/.test(tk); }
 
   function getLocalUser() {
@@ -256,7 +254,7 @@
     } catch { return fallback; }
   }
 
-  /* ═══════════ BONUS ═══════════ */
+  /* ---------- Bonus ---------- */
   function loadBonusRaw() { const b = safeGet(BONUS_KEY, null); return (b && typeof b === 'object') ? b : null; }
   function saveBonusRaw(b) { b ? safeSet(BONUS_KEY, b) : safeRemove(BONUS_KEY); }
   function isBonusValid(b) {
@@ -290,7 +288,7 @@
     return Math.max(1, Math.floor(ms / 60000)) + 'm';
   }
 
-  /* ═══════════ PREFS ═══════════ */
+  /* ---------- Prefs ---------- */
   const DEFAULT_PREFS = { autoScroll: true, enterSend: true, vision: true, compact: false, reduceMotion: false, fontSize: 'md', mode: 'light', theme: 'default', responseLanguage: 'auto', uiLanguage: 'en' };
   function loadPrefs() {
     __prefs = Object.assign({}, DEFAULT_PREFS, safeGet(PREFS_KEY, {}));
@@ -327,7 +325,7 @@
     root.setAttribute('data-theme', __prefs.theme || 'default');
   }
 
-  /* ═══════════ MASCOT ═══════════ */
+  /* ---------- Mascot ---------- */
   const MOODS = ['idle','happy','thinking','coding','celebrate','error','learning','wink','study','searching','reading'];
   function blobSvg() {
     return `<svg class="blob-svg" viewBox="0 0 200 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mirox avatar">
@@ -394,7 +392,7 @@
     return 'Thinking';
   }
 
-  /* ═══════════ THINK PANEL ═══════════ */
+  /* ---------- Think panel ---------- */
   function createThinkPanel(label, steps, headline) {
     const el = document.createElement('div');
     el.className = 'think-wrap';
@@ -442,7 +440,7 @@
     };
   }
 
-  /* ═══════════ CONVERSATIONS ═══════════ */
+  /* ---------- Conversations ---------- */
   function currentConvo() { return __conversations.find((c) => c.id === currentConversationId) || null; }
   function saveChats() {
     const slim = __conversations.map((c) => ({
@@ -454,7 +452,6 @@
           name: f.name, size: f.size, type: f.type, mime: f.mime,
           dataUrl: (f.type === 'image' && f.dataUrl && f.dataUrl.length < 200000) ? f.dataUrl : undefined,
           width: f.width, height: f.height,
-          // Persist text file content so it survives a reload (up to 60KB per file)
           content: (f.type === 'text' && f.content && f.content.length < 60000) ? f.content : undefined,
         })),
       })),
@@ -540,9 +537,8 @@
   }
   function freeLimitReached(convo = currentConvo()) { return __tier === 'free' && conversationTokenUsage(convo) >= getFreeLimit(); }
   function fmtSize(n) { if (n == null) return ''; if (n < 1024) return n + ' B'; if (n < 1048576) return (n / 1024).toFixed(1) + ' KB'; return (n / 1048576).toFixed(1) + ' MB'; }
-  function fileIconHTML() { return '<span class="file-glyph" aria-hidden="true"><i class="ri-file-text-line"></i></span>'; }
 
-  /* ═══════════ FILE META ═══════════ */
+  /* ---------- File meta ---------- */
   function getFileMeta(name) {
     const m = String(name || '').match(/\.([a-z0-9]+)$/i);
     if (!m) return { label: 'TXT', icon: 'ri-file-text-line' };
@@ -584,7 +580,6 @@
     };
     return map[ext] || { label: ext.toUpperCase().slice(0, 4), icon: 'ri-file-text-line' };
   }
-  // Files we treat as text (readable content)
   const TEXT_EXTS = ['txt','md','json','csv','log','py','js','mjs','ts','tsx','jsx','html','htm','css','scss','yml','yaml','xml','sh','bash','sql','java','c','h','cpp','hpp','go','rs','rb','php','lua','svg'];
   function isTextFile(f) {
     const name = String(f.name || '').toLowerCase();
@@ -600,7 +595,7 @@
     return n;
   }
 
-  /* ═══════════ CODE LANG ═══════════ */
+  /* ---------- Code language ---------- */
   const LANG_META = {
     lua:{label:'LUA',icon:'devicon-lua-plain colored',hljs:'lua'},python:{label:'PY',icon:'devicon-python-plain colored',hljs:'python'},
     javascript:{label:'JS',icon:'devicon-javascript-plain colored',hljs:'javascript'},typescript:{label:'TS',icon:'devicon-typescript-plain colored',hljs:'typescript'},
@@ -627,7 +622,7 @@
     return `<div class="code-block" data-lang="${escapeHtml(meta.hljs)}"><div class="code-block-header"><span class="code-lang-badge"><i class="${meta.icon}"></i><span>${escapeHtml(meta.label)}</span></span>${btn}</div><pre><code class="hljs language-${escapeHtml(meta.hljs)}">${highlightCode(lang, raw)}</code></pre></div>`;
   }
 
-  /* ═══════════ MARKDOWN ═══════════ */
+  /* ---------- Markdown ---------- */
   function renderMarkdown(rawText) {
     if (!rawText) return '';
     const src = String(rawText);
@@ -641,8 +636,13 @@
     }
     const rest = src.slice(last);
     const openM = rest.match(/```([a-zA-Z0-9+#._-]*)\n?([\s\S]*)$/);
-    if (openM) { const before = rest.slice(0, openM.index); if (before) parts.push({ type: 'text', content: before }); parts.push({ type: 'code', lang: (openM[1] || '').trim(), content: openM[2], closed: false }); }
-    else if (rest) parts.push({ type: 'text', content: rest });
+    if (openM) {
+      const before = rest.slice(0, openM.index);
+      if (before) parts.push({ type: 'text', content: before });
+      parts.push({ type: 'code', lang: (openM[1] || '').trim(), content: openM[2], closed: false });
+    } else if (rest) {
+      parts.push({ type: 'text', content: rest });
+    }
     return parts.map((p) => p.type === 'code' ? renderCode(p.lang, p.content, p.closed) : renderText(p.content)).join('');
   }
   function renderText(text) {
@@ -697,14 +697,13 @@
     });
   }
 
-  /* ═══════════ MESSAGE DOM ═══════════ */
+  /* ---------- Message DOM ---------- */
   function renderAttachmentChip(f, forMessage) {
     if (f.type === 'image' && f.dataUrl) {
       const dims = f.width && f.height ? `<span class="attach-size">${f.width}×${f.height}</span>` : '';
       const vision = f.vision ? '<span class="attach-vision"><i class="ri-eye-line"></i> vision</span>' : '';
       return `<div class="attach-chip attach-chip-image"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name || '')}${dims}${vision}</div>`;
     }
-    // Text / code file
     const meta = getFileMeta(f.name);
     const lines = f.content ? countLines(f.content) : 0;
     const idx = pendingFiles.indexOf(f);
@@ -815,11 +814,21 @@
     saveChats(); renderHistory(); updateTokenUsage();
     sendToAPI(text, files, searchFlag);
   }
+
+  function countFences(text) {
+    let n = 0;
+    const s = String(text || '');
+    for (let i = 0; i < s.length - 2; i++) {
+      if (s.charCodeAt(i) === 96 && s.charCodeAt(i + 1) === 96 && s.charCodeAt(i + 2) === 96) { n++; i += 2; }
+    }
+    return n;
+  }
+
   function shouldShowContinue(full, convo, streamComplete) {
     if (!full) return false;
     if (freeLimitReached(convo)) return true;
     if (!streamComplete) return true;
-    const fences = (full.match(/```/g) || []).length;
+    const fences = countFences(full);
     if (fences % 2 === 1) return true;
     const trimmed = full.trim();
     if (/(\.\.\.|…|,|\bto be continued\b|\bcontinue\b|\bnext part\b)$/i.test(trimmed)) return true;
@@ -836,12 +845,34 @@
   async function continueAssistantMessage(msgEl, bubble, messageObj, btn) {
     if (isReplying || continuationBusy) return;
     continuationBusy = true;
-    btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line spin"></i><span>Continuing…</span>';
-    try { await sendToAPI('Continue your previous response from exactly where it stopped.', [], false, { existingMsgEl: msgEl, existingBubble: bubble, messageObj, continuation: true }); }
-    finally { continuationBusy = false; if (btn.isConnected) btn.remove(); }
+    btn.disabled = true;
+    btn.innerHTML = '<i class="ri-loader-4-line spin"></i><span>Continuing…</span>';
+    try {
+      await sendToAPI(
+        'Continue EXACTLY from where you stopped. Do NOT repeat any prior text. Do NOT add a preamble like "Sure" or "Continuing". Do NOT open a new code fence if the previous message ended inside one — just keep writing the remaining lines. Output only the raw continuation.',
+        [], false,
+        { existingMsgEl: msgEl, existingBubble: bubble, messageObj, continuation: true }
+      );
+    }
+    finally {
+      continuationBusy = false;
+      if (btn.isConnected) btn.remove();
+    }
   }
 
-  /* ═══════════ API ═══════════ */
+  /* ---------- Image edit intent ---------- */
+  function detectImageEditIntent(text, hasImage) {
+    if (!hasImage) return null;
+    const t = String(text || '').toLowerCase().trim();
+    if (!t) return null;
+    const editVerbs = /\b(edit|modify|change|make|turn|transform|adjust|retouch|enhance|fix|recolor|colour|colorize|swap|replace|add|remove|delete|paint|redraw|restyle|redesign|update|redo)\b/;
+    const refersToImage = /\b(image|photo|picture|pic|it|this|that|him|her|them|cat|dog|person|face|hair|background|color|colour|smile|eyes?|nose|mouth|shirt|clothes?)\b/;
+    if (!editVerbs.test(t)) return null;
+    if (!refersToImage.test(t)) return null;
+    return t;
+  }
+
+  /* ---------- Send to API (with fix) ---------- */
   async function sendToAPI(text, files, forceSearch, continuation = null) {
     const isContinuation = !!(continuation && continuation.continuation);
     const convoAtStart = currentConvo();
@@ -855,6 +886,10 @@
     container?.querySelector('.welcome-screen')?.remove();
     let msgEl, bubble, bubbleText, timeEl, panel, avatarMascot;
     const aiMsgId = isContinuation ? continuation.messageObj.id : uid();
+
+    // ⚡ CRITICAL: initialize `full` OUTSIDE the if/else
+    let full = '';
+
     if (isContinuation) {
       msgEl = continuation.existingMsgEl;
       bubble = continuation.existingBubble;
@@ -862,9 +897,14 @@
       timeEl = msgEl.querySelector('.message-time');
       avatarMascot = msgEl.querySelector('.message-avatar .mascot');
       bubble.querySelector('[data-continue]')?.remove();
-      panel = { el: document.createElement('span'), addStep() {}, addNarration() {}, addTool() { return { setStatus() {}, addResult() {}, addCode() {} }; }, setMood() {}, markWriting() {}, finish() {}, fail() {}, destroy() {} };
+      panel = {
+        el: document.createElement('span'),
+        addStep() {}, addNarration() {}, addTool() { return { setStatus() {}, addResult() {}, addCode() {} }; },
+        setMood() {}, markWriting() {}, finish() {}, fail() {}, destroy() {},
+      };
       const prev = String(continuation.messageObj.content || '');
-      var full = prev ? prev + '\n\n' : '';
+      // ⚡ NO '\n\n' separator — this was the bug that mangled code blocks
+      full = prev;
     } else {
       msgEl = document.createElement('div');
       msgEl.className = 'message ai';
@@ -884,20 +924,42 @@
       body.appendChild(timeEl);
       msgEl.appendChild(body);
       container?.appendChild(msgEl);
-      bubble = null; bubbleText = null; var full = '';
+      bubble = null; bubbleText = null;
       scrollToBottom(true);
     }
+
     const visionFiles = files.filter((f) => f.type === 'image' && f.dataUrl);
     const contentParts = [];
     if (text) contentParts.push({ type: 'text', text });
     for (const f of visionFiles) contentParts.push({ type: 'image_url', image_url: { url: f.pngDataUrl || f.dataUrl, detail: 'auto' } });
+
+    const hasAttachedImage = visionFiles.length > 0;
+    const editIntent = hasAttachedImage ? detectImageEditIntent(text, true) : null;
+    const sourceImage = editIntent ? (visionFiles[0].pngDataUrl || visionFiles[0].dataUrl) : null;
+
     activeStreamController = new AbortController();
     let generatedImage = null, gotToken = !!isContinuation, limitHit = false;
     let streamComplete = false;
     let renderTimer = null;
-    const renderStreamText = () => { renderTimer = null; if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); wireCopyButtons(bubbleText); } scrollToBottom(); };
-    const scheduleRender = () => { const now = performance.now(); if (renderTimer) return; renderTimer = setTimeout(renderStreamText, Math.max(50, 120 - (now - streamRenderAt))); streamRenderAt = now; };
+
+    const renderStreamText = () => {
+      renderTimer = null;
+      if (!bubbleText) return;
+      // ⚡ preserve scroll position: only auto-scroll if user was near bottom
+      const chat = $('#chatMessages');
+      const wasAtBottom = chat && (chat.scrollHeight - chat.scrollTop - chat.clientHeight < 120);
+      bubbleText.innerHTML = renderMarkdown(full);
+      wireCopyButtons(bubbleText);
+      if (wasAtBottom) scrollToBottom();
+    };
+    const scheduleRender = () => {
+      const now = performance.now();
+      if (renderTimer) return;
+      renderTimer = setTimeout(renderStreamText, Math.max(60, 140 - (now - streamRenderAt)));
+      streamRenderAt = now;
+    };
     const streamTimeout = setTimeout(() => { try { activeStreamController?.abort(); } catch {} }, STREAM_TIMEOUT_MS);
+
     try {
       const reqBody = {
         message: text,
@@ -912,15 +974,23 @@
           base64: f.base64 || null,
           svgText: f.svgText || null,
           vision: !!f.vision,
-          // Send the text content so the backend can pass it to the model
           content: f.type === 'text' ? f.content : undefined,
         })),
         content_parts: contentParts.length ? contentParts : null,
         guest_id: getGuestId(),
         bonus_active: isBonusActive(),
         language: __prefs.responseLanguage || 'auto',
+        edit_image: !!editIntent,
+        source_image: sourceImage,
+        continuation: !!isContinuation,
       };
-      const res = await fetch('/v1/chat/completions', { method: 'POST', headers: authHeaders(), credentials: 'same-origin', body: JSON.stringify(reqBody), signal: activeStreamController.signal });
+      const res = await fetch('/v1/chat/completions', {
+        method: 'POST',
+        headers: authHeaders(),
+        credentials: 'same-origin',
+        body: JSON.stringify(reqBody),
+        signal: activeStreamController.signal,
+      });
       if (!res.ok) {
         let detail = `HTTP ${res.status}`;
         try { const d = await res.json(); detail = d.error?.message || d.error || d.message || detail; } catch {}
@@ -930,7 +1000,13 @@
       const dec = new TextDecoder();
       let buf = '';
       const bodyEl = msgEl.querySelector('.message-body');
-      const ensureBubble = () => { if (!bubble) { bubble = document.createElement('div'); bubble.className = 'bubble'; bodyEl.insertBefore(bubble, timeEl); } };
+      const ensureBubble = () => {
+        if (!bubble) {
+          bubble = document.createElement('div');
+          bubble.className = 'bubble';
+          bodyEl.insertBefore(bubble, timeEl);
+        }
+      };
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
@@ -953,7 +1029,7 @@
             scrollToBottom(); continue;
           }
           if (o.d) {
-            full += o.d;
+            full += o.d;   // ⚡ simple append, no separator
             const limit = getFreeLimit();
             if (__tier === 'free' && convo && conversationTokenUsage(convo) + estimateTokens(full) >= limit) {
               full = full.slice(0, Math.max(0, (limit - conversationTokenUsage(convo)) * 4));
@@ -986,8 +1062,15 @@
       if (generatedImage) { imageKey = 'img:' + aiMsgId; await idb.set(imageKey, generatedImage).catch(() => { imageKey = null; }); }
       let savedMsg;
       if (convo) {
-        if (isContinuation) { savedMsg = convo.messages.find((m) => m.id === aiMsgId) || continuation.messageObj; savedMsg.content = full; savedMsg.ts = Date.now(); if (imageKey) savedMsg.imageKey = imageKey; }
-        else { savedMsg = { id: aiMsgId, role: 'assistant', content: full, ts: Date.now(), imageKey }; convo.messages.push(savedMsg); }
+        if (isContinuation) {
+          savedMsg = convo.messages.find((m) => m.id === aiMsgId) || continuation.messageObj;
+          savedMsg.content = full;
+          savedMsg.ts = Date.now();
+          if (imageKey) savedMsg.imageKey = imageKey;
+        } else {
+          savedMsg = { id: aiMsgId, role: 'assistant', content: full, ts: Date.now(), imageKey };
+          convo.messages.push(savedMsg);
+        }
       }
       saveChats(); updateTokenUsage();
       timeEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -1007,7 +1090,9 @@
         if (isContinuation && continuation.messageObj) savedMsg = continuation.messageObj;
         if (!savedMsg && convo) { savedMsg = { id: aiMsgId, role: 'assistant', content: full, ts: Date.now() }; convo.messages.push(savedMsg); }
         if (savedMsg) { savedMsg.content = full; saveChats(); attachContinueButton(msgEl, bubble, savedMsg); }
-      } else bubble.textContent = aborted ? '(stopped)' : 'Error: ' + msg;
+      } else {
+        bubble.textContent = aborted ? '(stopped)' : 'Error: ' + msg;
+      }
       toast(msg, 5000, 'err'); updateTokenUsage();
     } finally {
       clearTimeout(streamTimeout);
@@ -1033,7 +1118,7 @@
     setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 350); }, ms || 2200);
   }
 
-  /* ═══════════ VOICE ═══════════ */
+  /* ---------- Voice ---------- */
   function setupVoice() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     const btn = document.getElementById('voiceBtn');
@@ -1071,7 +1156,7 @@
     });
   }
 
-  /* ═══════════ SHARE ═══════════ */
+  /* ---------- Share ---------- */
   function loadShareState() { __shareState = safeGet(SHARE_KEY, { claimed: false, claimedAt: 0, dismissedAt: 0 }); }
   function saveShareState() { safeSet(SHARE_KEY, __shareState); }
   function shouldShowShareAd() { if (__tier !== 'free') return false; if (isBonusActive()) return false; if (__shareState.dismissedAt && Date.now() - __shareState.dismissedAt < 6 * 3600 * 1000) return false; return true; }
@@ -1113,7 +1198,7 @@
     setTimeout(() => { if (!resolved) { resolved = true; window.removeEventListener('focus', focusHandler); setShareStatus('No share detected.', 'warn'); if (btn) btn.disabled = false; } }, 90000);
   }
 
-  /* ═══════════ CONFETTI ═══════════ */
+  /* ---------- Confetti ---------- */
   function launchConfetti() {
     if (__prefs.reduceMotion) return;
     const canvas = document.createElement('canvas');
@@ -1156,7 +1241,7 @@
     setTimeout(() => { stopped = true; if (canvas.parentNode) canvas.remove(); }, 6000);
   }
 
-  /* ═══════════ IMAGES ═══════════ */
+  /* ---------- Images ---------- */
   function imageToBase64DataURL(file) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -1211,15 +1296,8 @@
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = () => {
-        // Slice to prevent huge payloads
         const text = String(reader.result || '').slice(0, MAX_TEXT_FILE_BYTES);
-        resolve({
-          type: 'text',
-          name: file.name,
-          size: file.size,
-          mime: file.type || 'text/plain',
-          content: text,
-        });
+        resolve({ type: 'text', name: file.name, size: file.size, mime: file.type || 'text/plain', content: text });
       };
       reader.onerror = () => resolve(null);
       reader.readAsText(file);
@@ -1244,7 +1322,7 @@
       if (isSvg) svgToVisionData(f).then((d) => { if (d) newFiles.push({ ...d, order: idx }); one(); }).catch(one);
       else if (isImg) imageToBase64DataURL(f).then((d) => { if (d) newFiles.push({ ...d, order: idx }); one(); }).catch(one);
       else if (isTxt) readTextFile(f).then((d) => { if (d) newFiles.push({ ...d, order: idx }); one(); }).catch(one);
-      else one(); // skip unsupported
+      else one();
     });
   }
   function updatePreview() {
@@ -1253,7 +1331,6 @@
     if (!pendingFiles.length) { p.style.display = 'none'; list.innerHTML = ''; return; }
     p.style.display = 'flex';
     list.innerHTML = pendingFiles.map((f) => renderAttachmentChip(f, false)).join('');
-    // Wire preview clicks
     list.querySelectorAll('[data-preview-file]').forEach((chip) => {
       chip.onclick = (e) => {
         e.stopPropagation();
@@ -1271,7 +1348,7 @@
     updatePreview(); updateSendButtonState();
   }
 
-  /* ═══════════ FILE PREVIEW ═══════════ */
+  /* ---------- File preview ---------- */
   function openFilePreview(file) {
     if (!file) return;
     __previewFileRef = file;
@@ -1305,20 +1382,12 @@
   }
   function closeImageViewer() { $('#imageViewer')?.classList.remove('open'); }
 
-  /* ═══════════ MODELS ═══════════ */
+  /* ---------- Models ---------- */
   function getModelsList() { return __config?.models?.length ? __config.models : FALLBACK_MODELS; }
   function canUseModel(tier) { if (__tier === 'free' && isBonusActive()) return true; if (tier === 'free') return true; if (__tier === 'ultimate') return true; if (__tier === 'pro' && tier === 'pro') return true; return false; }
   function modelAccessReason(tier) { if (__tier === 'free' && isBonusActive() && tier !== 'free') return 'bonus'; if (tier === 'free') return 'free'; if (__tier === 'ultimate' || (__tier === 'pro' && tier === 'pro')) return 'tier'; return 'locked'; }
-  function tierLabel(tier) {
-    if (tier === 'ultimate') return 'ULT';
-    if (tier === 'pro') return 'PRO';
-    return 'FREE';
-  }
-  function tierFullLabel(tier) {
-    if (tier === 'ultimate') return 'Ultimate';
-    if (tier === 'pro') return 'Pro';
-    return 'Free';
-  }
+  function tierLabel(tier) { if (tier === 'ultimate') return 'ULT'; if (tier === 'pro') return 'PRO'; return 'FREE'; }
+  function tierFullLabel(tier) { if (tier === 'ultimate') return 'Ultimate'; if (tier === 'pro') return 'Pro'; return 'Free'; }
   function renderModelPicker() {
     const menu = $('#modelPickerMenu'); if (!menu) return;
     const models = getModelsList(); const cur = __model || models[0].id;
@@ -1349,36 +1418,27 @@
   function openModelPicker() { $('#modelPicker')?.classList.add('open'); $('#modelPickerMenu')?.classList.add('open'); renderModelPicker(); }
   function closeModelPicker() { $('#modelPicker')?.classList.remove('open'); $('#modelPickerMenu')?.classList.remove('open'); }
 
-  /* ═══════════ ACCOUNT UI ═══════════ */
+  /* ---------- Account UI ---------- */
   function updateAccountUI() {
     const signedIn = !!__user;
-
     const chip = document.getElementById('userChip');
     const avatar = document.getElementById('userAvatar');
     const label = document.getElementById('accountLabel');
     const sub = document.getElementById('accountSub');
     const tierBadge = document.getElementById('accountTierBadge');
-
     const sLabel = document.getElementById('settingsAccountLabel');
     const sSub = document.getElementById('settingsAccountSub');
     const signInBtn = document.getElementById('signInFromSettingsBtn');
     const logoutBtn = document.getElementById('logoutBtn');
-
     if (signedIn) {
       const name = __user.name || __user.email || 'User';
       const email = __user.email || '';
       const initial = (name.trim().charAt(0) || '?').toUpperCase();
-
       if (label) label.textContent = name;
       if (sub) sub.textContent = email || 'Signed in';
       if (sLabel) sLabel.textContent = name;
       if (sSub) sSub.textContent = email || 'Signed in';
-      if (avatar) {
-        avatar.innerHTML = `<span>${escapeHtml(initial)}</span>`;
-        avatar.style.fontSize = '15px';
-        avatar.style.fontWeight = '600';
-      }
-      // ⚡ Tier badge next to name
+      if (avatar) { avatar.innerHTML = `<span>${escapeHtml(initial)}</span>`; avatar.style.fontSize = '15px'; avatar.style.fontWeight = '600'; }
       if (tierBadge) {
         const t = (__user.tier || 'free');
         tierBadge.textContent = tierLabel(t);
@@ -1393,11 +1453,7 @@
       if (sub) sub.textContent = 'Sign in to save chats';
       if (sLabel) sLabel.textContent = 'Guest mode';
       if (sSub) sSub.textContent = 'Chats saved locally in this browser';
-      if (avatar) {
-        avatar.innerHTML = '<i class="ri-user-line"></i>';
-        avatar.style.fontSize = '';
-        avatar.style.fontWeight = '';
-      }
+      if (avatar) { avatar.innerHTML = '<i class="ri-user-line"></i>'; avatar.style.fontSize = ''; avatar.style.fontWeight = ''; }
       if (tierBadge) tierBadge.style.display = 'none';
       if (chip) chip.classList.remove('signed-in');
       if (signInBtn) signInBtn.style.display = '';
@@ -1405,23 +1461,19 @@
     }
   }
 
-  /* ═══════════ USAGE ═══════════ */
+  /* ---------- Usage / config ---------- */
   async function refreshUsage() {
     const local = getLocalUser();
     const res = await jsonOr('/api/me', {}, null, 7000);
-
     let user = null;
     if (res && res.user) user = { ...res.user, local: false };
     else if (local) user = { name: local.name, email: local.email, tier: 'free', local: true };
-
     __user = user;
     __tier = user ? (user.tier || 'free') : 'free';
-
     updateAccountUI();
     renderModelPicker();
     updateTokenUsage();
   }
-
   async function loadConfig() {
     const data = await jsonOr('/api/config', {}, null, 7000);
     if (data && Array.isArray(data.models) && data.models.length) __config = data;
@@ -1429,7 +1481,7 @@
     __model = getModelsList()[0].id; renderModelPicker();
   }
 
-  /* ═══════════ LOGIN ═══════════ */
+  /* ---------- Login ---------- */
   function setLoginError(msg, kind) {
     const el = $('#loginError');
     if (!el) return;
@@ -1438,32 +1490,26 @@
     el.textContent = msg;
     el.classList.toggle('ok', kind === 'ok');
   }
-
   async function doLogin(e) {
     if (e) e.preventDefault();
     setLoginError('');
     const name = ($('#loginName')?.value || '').trim();
     const email = ($('#loginEmail')?.value || '').trim().toLowerCase();
     const btn = $('#loginSubmitBtn');
-
     if (!name) { setLoginError('Please enter your name.'); $('#loginName')?.focus(); return; }
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setLoginError('Please enter a valid email address.'); $('#loginEmail')?.focus(); return; }
-
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line spin"></i> Signing in…'; }
-
     setLocalUser({ name, email, signedIn: true, ts: Date.now() });
     __user = { name, email, tier: 'free', local: true };
     __tier = 'free';
     updateAccountUI();
-
     try {
       await netFetch('/api/auth/simple-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email }),
       }, 10000);
-    } catch { /* ignore — local sign-in stands */ }
-
+    } catch {}
     setLoginError('Signed in!', 'ok');
     if (btn) btn.innerHTML = '<i class="ri-check-line"></i> Welcome';
     setTimeout(async () => {
@@ -1474,7 +1520,6 @@
       if (btn) { btn.disabled = false; btn.innerHTML = '<span>Continue</span><i class="ri-arrow-right-line"></i>'; }
     }, 500);
   }
-
   async function doLogout() {
     try { await jsonOr('/api/logout', { method: 'POST' }, null, 4000); } catch {}
     setToken('');
@@ -1486,7 +1531,6 @@
     toast('Signed out', 1800, 'ok');
     refreshUsage().catch(() => {});
   }
-
   async function loadPlans() {
     const grid = $('#plansGrid'); if (!grid) return;
     grid.innerHTML = '<div class="studio-empty">Loading…</div>';
@@ -1503,7 +1547,6 @@
       </div>`;
     }).join('');
   }
-
   async function genImage() {
     const prompt = $('#imagePrompt')?.value.trim(); if (!prompt) return;
     const btn = $('#generateImageBtn'), result = $('#imageResult');
@@ -1518,60 +1561,128 @@
     finally { if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-image-add-line"></i> Generate'; } }
   }
 
-  /* ═══════════ SUPPORT ═══════════ */
-  function setSupportError(msg, kind) {
-    const el = $('#supportError');
+  /* ---------- SUPPORT CHAT (user side) ---------- */
+  function supportSetHead(status) {
+    const el = $('#supportHeadSub');
     if (!el) return;
-    if (!msg) { el.style.display = 'none'; el.textContent = ''; el.classList.remove('ok'); return; }
-    el.style.display = 'block'; el.textContent = msg; el.classList.toggle('ok', kind === 'ok');
+    if (!__user) { el.textContent = 'Sign in to chat with our team'; return; }
+    if (!__supportConv) { el.textContent = 'Live chat with our team'; return; }
+    if (__supportConv.status === 'closed') { el.textContent = 'Conversation closed'; return; }
+    el.textContent = 'Live · usually replies in a few hours';
   }
-  async function submitSupport() {
-    setSupportError('');
-    const category = ($('#supportCategory')?.value || 'other').trim();
-    const subject = ($('#supportSubject')?.value || '').trim();
-    const message = ($('#supportMessage')?.value || '').trim();
-    const emailInput = ($('#supportEmail')?.value || '').trim().toLowerCase();
-    const userEmail = (__user && __user.email) || '';
-    const email = emailInput || userEmail || '';
-    const btn = $('#submitReportBtn');
-
-    if (!subject) { setSupportError('Please enter a subject.'); $('#supportSubject')?.focus(); return; }
-    if (!message || message.length < 5) { setSupportError('Please describe your issue (at least 5 characters).'); $('#supportMessage')?.focus(); return; }
-
-    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line spin"></i> Sending…'; }
-    const payload = { category, subject, message, email, guest_id: getGuestId(), url: location.href, ua: navigator.userAgent, ts: Date.now() };
-    let ok = false;
-    try {
-      const r = await netFetch('/api/support', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, 15000);
-      const data = await r.json().catch(() => null);
-      if (r.ok && data && data.ok !== false) ok = true;
-      else if (r.status === 404) ok = false;
-      else if (!r.ok) setSupportError((data && (data.error || data.message)) || ('Server error (HTTP ' + r.status + ')'));
-      else ok = true;
-    } catch (e) { /* fall through */ }
-
-    if (!ok && !($('#supportError')?.textContent)) {
-      const ms = encodeURIComponent(`[MiroxAI ${category}] ${subject}`);
-      const mb = encodeURIComponent(`${message}\n\n— — —\nCategory: ${category}\nFrom: ${email || '(not provided)'}\nURL: ${location.href}\nGuest: ${getGuestId()}\nUA: ${navigator.userAgent}`);
-      window.location.href = `mailto:support@miroxai.org?subject=${ms}&body=${mb}`;
-      setSupportError('Opening your email client…', 'ok');
-      if (btn) { btn.disabled = false; btn.innerHTML = 'Submit'; }
+  function supportUpdateComposeState() {
+    const input = $('#supportInput');
+    const send = $('#supportSendBtn');
+    const catRow = $('#supportCatRow');
+    const resolveBtn = $('#supportResolveBtn');
+    const hint = $('#supportInputHint');
+    const conv = __supportConv;
+    const closed = conv && conv.status === 'closed';
+    const canChat = !!__user;
+    if (input) {
+      input.disabled = !canChat || closed;
+      input.placeholder = !canChat ? 'Sign in to send a message…' : (closed ? 'This conversation is closed.' : 'Type your message…');
+    }
+    if (send) {
+      const enabled = canChat && !closed && (input?.value || '').trim().length > 0;
+      send.classList.toggle('is-disabled', !enabled);
+      send.setAttribute('aria-disabled', String(!enabled));
+    }
+    if (catRow) catRow.style.display = (conv ? 'none' : (canChat ? '' : 'none'));
+    if (resolveBtn) resolveBtn.style.display = (conv && conv.status === 'open') ? '' : 'none';
+    if (hint) hint.textContent = !canChat ? 'Sign in to chat with support' : (closed ? 'Conversation closed. Start a new one any time.' : 'Enter to send · Shift+Enter for a new line');
+  }
+  function supportRenderMessages() {
+    const box = $('#supportChatMessages');
+    if (!box) return;
+    const conv = __supportConv;
+    if (!conv || !conv.messages || !conv.messages.length) {
+      box.innerHTML = `
+        <div class="support-chat-empty">
+          <div class="support-chat-empty-icon"><i class="ri-chat-smile-2-line"></i></div>
+          <div class="support-chat-empty-title">${__user ? 'How can we help?' : 'Sign in to chat'}</div>
+          <div class="support-chat-empty-sub">${__user ? 'Send us a message and a member of our team will reply right here.' : 'Sign in with your name and email so we can help you.'}</div>
+        </div>`;
       return;
     }
-    if (ok) {
-      setSupportError('Thanks! Your message was sent.', 'ok');
-      if (btn) btn.innerHTML = '✓ Sent';
-      setTimeout(() => {
-        closeModal('supportModal');
-        $('#supportSubject').value = ''; $('#supportMessage').value = '';
-        setSupportError('');
-        if (btn) { btn.disabled = false; btn.innerHTML = 'Submit'; }
-      }, 1500);
-      toast('Message sent.', 2600, 'ok');
-    } else if (btn) { btn.disabled = false; btn.innerHTML = 'Submit'; }
+    const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 100;
+    box.innerHTML = conv.messages.map((m) => {
+      const role = m.role === 'agent' ? 'agent' : (m.role === 'system' ? 'system' : 'user');
+      const author = role === 'agent' ? 'Support' : (role === 'system' ? '' : 'You');
+      const time = m.ts ? new Date(m.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+      return `<div class="support-msg ${role}">
+        ${role === 'agent' ? `<div class="support-msg-author">${escapeHtml(author)}</div>` : ''}
+        <div class="support-bubble">${escapeHtml(m.content || '').replace(/\n/g, '<br>')}</div>
+        ${role !== 'system' ? `<div class="support-msg-meta">${time}</div>` : ''}
+      </div>`;
+    }).join('');
+    if (nearBottom) box.scrollTop = box.scrollHeight;
+  }
+  async function supportLoad() {
+    if (!__user) { __supportConv = null; supportSetHead(); supportUpdateComposeState(); supportRenderMessages(); return; }
+    const data = await jsonOr('/api/support/conversation', {}, null, 10000);
+    if (data && data.ok) __supportConv = data.conversation;
+    supportSetHead();
+    supportUpdateComposeState();
+    supportRenderMessages();
+  }
+  async function supportSend() {
+    if (!__user) { toast('Sign in to chat with support'); return; }
+    if (__supportSending) return;
+    const input = $('#supportInput');
+    const content = (input?.value || '').trim();
+    if (!content) return;
+    const category = ($('#supportCategory')?.value || 'other');
+    __supportSending = true;
+    const send = $('#supportSendBtn');
+    if (send) send.classList.add('is-disabled');
+    const r = await netFetch('/api/support/message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, category }),
+    }, 15000).catch(() => null);
+    __supportSending = false;
+    if (!r || !r.ok) {
+      const d = r ? await r.json().catch(() => ({})) : null;
+      toast((d && d.error) || 'Could not send', 3000, 'err');
+      supportUpdateComposeState();
+      return;
+    }
+    const d = await r.json().catch(() => ({}));
+    if (d && d.ok) {
+      if (input) { input.value = ''; input.style.height = 'auto'; }
+      __supportConv = d.conversation;
+      supportSetHead();
+      supportUpdateComposeState();
+      supportRenderMessages();
+    }
+  }
+  async function supportResolve() {
+    if (!__user) return;
+    if (!confirm('Mark this conversation as resolved?')) return;
+    await jsonOr('/api/support/close', { method: 'POST' }, null, 10000);
+    await supportLoad();
+  }
+  function supportStartPolling() {
+    if (__supportPollTimer) return;
+    __supportPollTimer = setInterval(() => {
+      if ($('#supportModal')?.classList.contains('open')) supportLoad();
+    }, 6000);
+  }
+  function supportStopPolling() {
+    if (__supportPollTimer) { clearInterval(__supportPollTimer); __supportPollTimer = null; }
+  }
+  function openSupportModal() {
+    openModal('supportModal');
+    supportLoad();
+    supportStartPolling();
+  }
+  function closeSupportModal() {
+    closeModal('supportModal');
+    supportStopPolling();
   }
 
-  /* ═══════════ BRIDGE ═══════════ */
+  /* ---------- BRIDGE ---------- */
   function loadBridgeOpts() { const o = safeGet(BRIDGE_OPTS_KEY, {}); if (typeof o.autoRun === 'boolean') __bridgeAutoRun = o.autoRun; if (typeof o.showCode === 'boolean') __bridgeShowCode = o.showCode; }
   function saveBridgeOpts() { safeSet(BRIDGE_OPTS_KEY, { autoRun: __bridgeAutoRun, showCode: __bridgeShowCode }); }
   function renderBridgeStatus() {
@@ -1597,8 +1708,14 @@
     __bridge.name = name; __bridge.port = port;
     setBwHint('Connecting…');
     const res = await testBridge(port);
-    if (res.ok) { __bridge.connected = true; __bridge.baseUrl = res.base; __bridge.env = await fetchEnv(res.base); renderBridgeStatus(); $('#bridgeEmpty')?.remove(); setBwHint(`Connected · Home: ${__bridge.env?.home || '?'}`, 'ok'); addBridgeSystemMsg(`Connected. Home: ${__bridge.env?.home || '?'}`); }
-    else { __bridge.connected = false; setBwHint(`Could not reach port ${port}.`, 'err'); renderBridgeStatus(); }
+    if (res.ok) {
+      __bridge.connected = true; __bridge.baseUrl = res.base; __bridge.env = await fetchEnv(res.base);
+      renderBridgeStatus(); $('#bridgeEmpty')?.remove();
+      setBwHint(`Connected · Home: ${__bridge.env?.home || '?'}`, 'ok');
+      addBridgeSystemMsg(`Connected. Home: ${__bridge.env?.home || '?'}`);
+    } else {
+      __bridge.connected = false; setBwHint(`Could not reach port ${port}.`, 'err'); renderBridgeStatus();
+    }
   }
   function stopBridge() { __bridge.connected = false; __bridge.baseUrl = null; __bridge.env = null; __sudoPassword = ''; renderBridgeStatus(); setBwHint(''); }
   async function bridgeCall(endpoint, payload) {
@@ -1659,12 +1776,35 @@
     if (t2 === 'read') return { icon: 'ri-file-text-line', iconClass: 'read', label: `Reading <code>${escapeHtml(base)}</code>` };
     if (t2 === 'list') return { icon: 'ri-folder-line', iconClass: 'list', label: `Listing <code>${escapeHtml(base)}</code>` };
     if (t2 === 'delete') return { icon: 'ri-delete-bin-line', iconClass: 'exec', label: `Deleting <code>${escapeHtml(base)}</code>` };
+    if (t2 === 'move') return { icon: 'ri-drag-move-line', iconClass: 'list', label: 'Moving path' };
+    if (t2 === 'copy') return { icon: 'ri-file-copy-2-line', iconClass: 'list', label: 'Copying path' };
+    if (t2 === 'sysinfo') return { icon: 'ri-computer-line', iconClass: 'read', label: 'System info' };
+    if (t2 === 'syscheck') return { icon: 'ri-heart-pulse-line', iconClass: 'read', label: 'System check' };
+    if (t2 === 'processes') return { icon: 'ri-list-check-3', iconClass: 'read', label: 'Listing processes' };
+    if (t2 === 'email') return { icon: 'ri-mail-send-line', iconClass: 'exec', label: `Emailing ${escapeHtml(cmd.to || '')}` };
+    if (t2 === 'http') return { icon: 'ri-global-line', iconClass: 'read', label: `${escapeHtml(cmd.method || 'GET')} request` };
+    if (t2 === 'clipboard-get') return { icon: 'ri-clipboard-line', iconClass: 'read', label: 'Reading clipboard' };
+    if (t2 === 'clipboard-set') return { icon: 'ri-clipboard-line', iconClass: 'write', label: 'Writing clipboard' };
+    if (t2 === 'screenshot') return { icon: 'ri-screenshot-line', iconClass: 'read', label: 'Taking screenshot' };
+    if (t2 === 'git') return { icon: 'ri-git-branch-line', iconClass: 'exec', label: `git ${escapeHtml(cmd.action || '')}` };
+    if (t2 === 'pkgs') return { icon: 'ri-box-3-line', iconClass: 'read', label: `Listing ${escapeHtml(cmd.type || '')} packages` };
+    if (t2 === 'kde-refresh') return { icon: 'ri-refresh-line', iconClass: 'read', label: 'KDE Connect · refresh' };
+    if (t2 === 'kde-list') return { icon: 'ri-smartphone-line', iconClass: 'read', label: 'KDE Connect · list devices' };
+    if (t2 === 'kde-my-id') return { icon: 'ri-fingerprint-line', iconClass: 'read', label: 'KDE Connect · my id' };
+    if (t2 === 'kde-ping') return { icon: 'ri-notification-2-line', iconClass: 'exec', label: `KDE ping ${escapeHtml(cmd.device || '')}` };
+    if (t2 === 'kde-ring') return { icon: 'ri-volume-up-line', iconClass: 'exec', label: `Ring ${escapeHtml(cmd.device || '')}` };
+    if (t2 === 'kde-share') return { icon: 'ri-share-forward-line', iconClass: 'exec', label: `Share to ${escapeHtml(cmd.device || '')}` };
+    if (t2 === 'kde-share-text') return { icon: 'ri-share-forward-2-line', iconClass: 'exec', label: `Share text to ${escapeHtml(cmd.device || '')}` };
+    if (t2 === 'kde-sms') return { icon: 'ri-message-2-line', iconClass: 'exec', label: `SMS to ${escapeHtml(cmd.number || '')}` };
+    if (t2 === 'kde-lock') return { icon: 'ri-lock-2-line', iconClass: 'exec', label: `Lock ${escapeHtml(cmd.device || '')}` };
+    if (t2 === 'kde-notifications') return { icon: 'ri-notification-badge-line', iconClass: 'read', label: `Notifications on ${escapeHtml(cmd.device || '')}` };
     return { icon: 'ri-terminal-line', iconClass: '', label: 'Working' };
   }
   function setProgressText(text) { const el = $('#bwProgressText'); if (el && text) el.textContent = text; }
   function updateBridgeProgress(pct, text) { const np = Math.max(0, Math.min(100, Math.round(pct))); if (np > bridgeProgress) bridgeProgress = np; const bar = $('#bwProgress'), fill = $('#bwProgressFill'), pctEl = $('#bwProgressPct'); if (bar) bar.style.display = 'block'; if (fill) { fill.style.width = bridgeProgress + '%'; fill.classList.toggle('done', bridgeProgress >= 100); } if (pctEl) pctEl.textContent = bridgeProgress + '%'; if (text) setProgressText(text); }
   function extractBridgeCommands(text) {
-    const cmds = []; const add = (type, mm, extra) => cmds.push(Object.assign({ type, index: mm.index }, extra));
+    const cmds = [];
+    const add = (type, mm, extra) => cmds.push(Object.assign({ type, index: mm.index }, extra));
     const rules = [
       [/<bridge-sudo>([\s\S]*?)<\/bridge-sudo>/g, 'sudo', (m) => ({ command: m[1].trim() })],
       [/<bridge-exec>([\s\S]*?)<\/bridge-exec>/g, 'exec', (m) => ({ command: m[1].trim() })],
@@ -1673,6 +1813,28 @@
       [/<bridge-delete\s+path="([^"]+)"\s*\/>/g, 'delete', (m) => ({ path: m[1] })],
       [/<bridge-read\s+path="([^"]+)"\s*\/>/g, 'read', (m) => ({ path: m[1] })],
       [/<bridge-list\s+path="([^"]+)"\s*\/>/g, 'list', (m) => ({ path: m[1] })],
+      [/<bridge-move\s+from="([^"]+)"\s+to="([^"]+)"\s*\/>/g, 'move', (m) => ({ from: m[1], to: m[2] })],
+      [/<bridge-copy\s+from="([^"]+)"\s+to="([^"]+)"\s*\/>/g, 'copy', (m) => ({ from: m[1], to: m[2] })],
+      [/<bridge-sysinfo\s*\/>/g, 'sysinfo', () => ({})],
+      [/<bridge-syscheck\s*\/>/g, 'syscheck', () => ({})],
+      [/<bridge-processes\s*\/>/g, 'processes', () => ({})],
+      [/<bridge-email\s+to="([^"]+)"\s+subject="([^"]*)">([\s\S]*?)<\/bridge-email>/g, 'email', (m) => ({ to: m[1], subject: m[2], body: m[3] })],
+      [/<bridge-http\s+url="([^"]+)"(?:\s+method="([^"]*)")?(?:\s+body="([^"]*)")?\s*\/>/g, 'http', (m) => ({ url: m[1], method: m[2] || 'GET', body: m[3] || '' })],
+      [/<bridge-clipboard\s+action="get"\s*\/>/g, 'clipboard-get', () => ({})],
+      [/<bridge-clipboard\s+action="set">([\s\S]*?)<\/bridge-clipboard>/g, 'clipboard-set', (m) => ({ content: m[1] })],
+      [/<bridge-screenshot(?:\s+path="([^"]+)")?\s*\/>/g, 'screenshot', (m) => ({ path: m[1] || '' })],
+      [/<bridge-git\s+action="([^"]+)"(?:\s+cwd="([^"]*)")?(?:\s+message="([^"]*)")?\s*\/>/g, 'git', (m) => ({ action: m[1], cwd: m[2] || '', message: m[3] || '' })],
+      [/<bridge-pkgs\s+type="([^"]+)"\s*\/>/g, 'pkgs', (m) => ({ type: m[1] })],
+      [/<bridge-kde-refresh\s*\/>/g, 'kde-refresh', () => ({})],
+      [/<bridge-kde-list\s*\/>/g, 'kde-list', () => ({})],
+      [/<bridge-kde-my-id\s*\/>/g, 'kde-my-id', () => ({})],
+      [/<bridge-kde-ping\s+device="([^"]+)"(?:\s+message="([^"]*)")?\s*\/>/g, 'kde-ping', (m) => ({ device: m[1], message: m[2] || '' })],
+      [/<bridge-kde-ring\s+device="([^"]+)"\s*\/>/g, 'kde-ring', (m) => ({ device: m[1] })],
+      [/<bridge-kde-share\s+device="([^"]+)"\s+path="([^"]+)"\s*\/>/g, 'kde-share', (m) => ({ device: m[1], path: m[2] })],
+      [/<bridge-kde-share-text\s+device="([^"]+)">([\s\S]*?)<\/bridge-kde-share-text>/g, 'kde-share-text', (m) => ({ device: m[1], text: m[2] })],
+      [/<bridge-kde-sms\s+device="([^"]+)"\s+number="([^"]+)">([\s\S]*?)<\/bridge-kde-sms>/g, 'kde-sms', (m) => ({ device: m[1], number: m[2], message: m[3] })],
+      [/<bridge-kde-lock\s+device="([^"]+)"\s*\/>/g, 'kde-lock', (m) => ({ device: m[1] })],
+      [/<bridge-kde-notifications\s+device="([^"]+)"\s*\/>/g, 'kde-notifications', (m) => ({ device: m[1] })],
     ];
     for (const [re, type, fn] of rules) { re.lastIndex = 0; let m; while ((m = re.exec(text)) !== null) add(type, m, fn(m)); }
     cmds.sort((a, b) => a.index - b.index);
@@ -1691,12 +1853,44 @@
   async function executeBridgeCommand(cmd) {
     const home = __bridge.env?.home || '';
     if (cmd.path) cmd.path = absBridgePath(cmd.path, home);
+    if (cmd.from) cmd.from = absBridgePath(cmd.from, home);
+    if (cmd.to) cmd.to = absBridgePath(cmd.to, home);
     const t2 = cmd.type;
-    if (t2 === 'sudo') { const sudo = await askSudo(cmd.command); if (!sudo || !sudo.password) return { ok: false, cancelled: true }; try { return await bridgeCall('/sudo-exec', { command: cmd.command, password: sudo.password, timeout: 120 }); } catch (e) { return { ok: false, error: e.message }; } }
+    if (t2 === 'sudo') {
+      const sudo = await askSudo(cmd.command);
+      if (!sudo || !sudo.password) return { ok: false, cancelled: true };
+      try { return await bridgeCall('/sudo-exec', { command: cmd.command, password: sudo.password, timeout: 120 }); }
+      catch (e) { return { ok: false, error: e.message }; }
+    }
     if (t2 === 'exec') return bridgeCall('/exec', { command: cmd.command });
-    const map = { write: ['/write', { path: cmd.path, content: cmd.content }], append: ['/append', { path: cmd.path, content: cmd.content }], delete: ['/delete', { path: cmd.path }], read: ['/read', { path: cmd.path }], list: ['/list', { path: cmd.path }] };
-    if (map[t2]) return bridgeCall(map[t2][0], map[t2][1]);
-    return { ok: false, error: 'Unknown command' };
+    if (t2 === 'write') return bridgeCall('/write', { path: cmd.path, content: cmd.content });
+    if (t2 === 'append') return bridgeCall('/append', { path: cmd.path, content: cmd.content });
+    if (t2 === 'delete') return bridgeCall('/delete', { path: cmd.path });
+    if (t2 === 'read') return bridgeCall('/read', { path: cmd.path });
+    if (t2 === 'list') return bridgeCall('/list', { path: cmd.path });
+    if (t2 === 'move') return bridgeCall('/move', { from: cmd.from, to: cmd.to });
+    if (t2 === 'copy') return bridgeCall('/copy', { from: cmd.from, to: cmd.to });
+    if (t2 === 'sysinfo') return bridgeCall('/sysinfo', {});
+    if (t2 === 'syscheck') return bridgeCall('/syscheck', {});
+    if (t2 === 'processes') return bridgeCall('/processes', {});
+    if (t2 === 'email') return bridgeCall('/email', { to: cmd.to, subject: cmd.subject, body: cmd.body });
+    if (t2 === 'http') return bridgeCall('/http', { url: cmd.url, method: cmd.method, body: cmd.body });
+    if (t2 === 'clipboard-get') return bridgeCall('/clipboard', { action: 'get' });
+    if (t2 === 'clipboard-set') return bridgeCall('/clipboard', { action: 'set', content: cmd.content });
+    if (t2 === 'screenshot') return bridgeCall('/screenshot', { path: cmd.path || '' });
+    if (t2 === 'git') return bridgeCall('/git', { action: cmd.action, cwd: cmd.cwd, message: cmd.message });
+    if (t2 === 'pkgs') return bridgeCall('/pkgs', { type: cmd.type });
+    if (t2 === 'kde-refresh') return bridgeCall('/kde/refresh', {});
+    if (t2 === 'kde-list') return bridgeCall('/kde/list', {});
+    if (t2 === 'kde-my-id') return bridgeCall('/kde/my-id', {});
+    if (t2 === 'kde-ping') return bridgeCall('/kde/ping', { device: cmd.device, message: cmd.message });
+    if (t2 === 'kde-ring') return bridgeCall('/kde/ring', { device: cmd.device });
+    if (t2 === 'kde-share') return bridgeCall('/kde/share', { device: cmd.device, path: cmd.path });
+    if (t2 === 'kde-share-text') return bridgeCall('/kde/share-text', { device: cmd.device, text: cmd.text });
+    if (t2 === 'kde-sms') return bridgeCall('/kde/sms', { device: cmd.device, number: cmd.number, message: cmd.message });
+    if (t2 === 'kde-lock') return bridgeCall('/kde/lock', { device: cmd.device });
+    if (t2 === 'kde-notifications') return bridgeCall('/kde/notifications', { device: cmd.device });
+    return { ok: false, error: 'Unknown command type: ' + t2 };
   }
   function formatResultForAI(cmd, result) {
     if (!result || !result.ok) return `[${cmd.type}] ERROR: ${(result && result.error) || 'unknown'}`;
@@ -1704,13 +1898,37 @@
     switch (cmd.type) {
       case 'sudo': case 'exec': return `[exec] exit=${result.exit_code}\nSTDOUT:\n${trunc(result.stdout)}\nSTDERR:\n${trunc(result.stderr, 1500)}`;
       case 'write': return `[write] ok path=${result.path} bytes=${result.bytes}`;
+      case 'append': return `[append] ok path=${result.path}`;
       case 'read': return `[read] path=${result.path}\n${trunc(result.content)}`;
       case 'list': return `[list] path=${result.path}\n` + (result.items || []).map((i) => (i.is_dir ? 'D ' : 'F ') + i.name).join('\n');
+      case 'move': return `[move] from=${result.from} to=${result.to}`;
+      case 'copy': return `[copy] from=${result.from} to=${result.to}`;
+      case 'delete': return `[delete] ok path=${result.path}`;
+      case 'sysinfo': return `[sysinfo] platform=${result.platform} release=${result.release} cpu=${result.cpu_count} home=${result.home} disk=${JSON.stringify(result.disk || {})} node=${result.node || ''}`;
+      case 'syscheck': return `[syscheck] healthy=${result.healthy}\n${JSON.stringify(result.check, null, 2).slice(0, 2000)}`;
+      case 'processes': return `[processes]\n${trunc(result.raw, 2000)}`;
+      case 'email': return `[email] sent to=${result.sent_to} subject=${result.subject}`;
+      case 'http': return `[http] status=${result.status}\n${trunc(result.body, 2000)}`;
+      case 'clipboard-get': return `[clipboard] content:\n${trunc(result.content, 2000)}`;
+      case 'clipboard-set': return `[clipboard] set`;
+      case 'screenshot': return `[screenshot] saved to=${result.path}`;
+      case 'git': return `[git] exit_ok=${result.ok}\n${trunc(result.stdout)}\n${trunc(result.stderr, 1000)}`;
+      case 'pkgs': return `[pkgs] ${trunc(result.raw, 2000)}`;
+      case 'kde-list': return `[kde-list] installed=${result.installed} devices=${JSON.stringify(result.devices)}`;
+      case 'kde-my-id': return `[kde-my-id] id=${result.id}`;
+      case 'kde-ping': return `[kde-ping] ok=${result.ok} device=${cmd.device}`;
+      case 'kde-ring': return `[kde-ring] ok=${result.ok} device=${cmd.device}`;
+      case 'kde-share': return `[kde-share] ok=${result.ok} device=${cmd.device} was_dir=${result.was_dir}`;
+      case 'kde-share-text': return `[kde-share-text] ok=${result.ok} device=${cmd.device}`;
+      case 'kde-sms': return `[kde-sms] ok=${result.ok} number=${cmd.number}`;
+      case 'kde-lock': return `[kde-lock] ok=${result.ok} device=${cmd.device}`;
+      case 'kde-notifications': return `[kde-notifications]\n${trunc(result.raw, 1500)}`;
+      case 'kde-refresh': return `[kde-refresh] ok=${result.ok}`;
       default: return `[${cmd.type}] ok`;
     }
   }
   function newTurnState() { return { runs: 0, plannedFiles: new Set(), writtenFiles: new Set(), commandLog: new Map(), failedSignatures: new Set(), lastReplyFingerprint: '', lastReplyCount: 0 }; }
-  function cmdSignature(cmd) { const t2 = cmd.type; if (t2 === 'exec' || t2 === 'sudo') return t2 + ':' + (cmd.command || '').trim(); if (t2 === 'write' || t2 === 'append') return t2 + ':' + cmd.path + ':' + (cmd.content || '').length; return t2 + ':' + (cmd.path || ''); }
+  function cmdSignature(cmd) { const t2 = cmd.type; if (t2 === 'exec' || t2 === 'sudo') return t2 + ':' + (cmd.command || '').trim(); if (t2 === 'write' || t2 === 'append') return t2 + ':' + cmd.path + ':' + (cmd.content || '').length; if (t2 === 'http') return 'http:' + (cmd.url || ''); return t2 + ':' + (cmd.path || cmd.device || cmd.number || cmd.to || ''); }
   function shouldBlockSignature(sig) { if (!bridgeTurn) return false; if (bridgeTurn.failedSignatures.has(sig)) return true; return (bridgeTurn.commandLog.get(sig) || 0) >= MAX_DUP_COMMANDS; }
   function fingerprintReply(text) { return String(text || '').replace(/<bridge-[^>]+>[\s\S]*?<\/bridge-[^>]+>/g, '').replace(/<bridge-[^>]+\s+[^>]*\/>/g, '').replace(/\s+/g, ' ').trim().slice(0, 400); }
   async function fetchBridgeReply(history) {
@@ -1722,6 +1940,7 @@
     return data.reply || '';
   }
   function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
   async function runBridgeTurn(userText, isResume = false) {
     if (!__bridge.connected || !IS_PC) return;
     if (bridgeRunning) return;
@@ -1822,6 +2041,51 @@
     updateBridgeSendBtn();
     runBridgeTurn(text, false);
   }
+
+  function resolveRelativePath(baseFile, rel) {
+    if (!rel) return '';
+    if (/^([a-z]+:)?\/\//i.test(rel) || rel.startsWith('data:')) return rel;
+    const baseDir = baseFile.replace(/\/[^/]*$/, '');
+    if (rel.startsWith('/')) return baseDir + rel;
+    const parts = (baseDir + '/' + rel).split('/');
+    const out = [];
+    for (const p of parts) {
+      if (!p || p === '.') continue;
+      if (p === '..') out.pop();
+      else out.push(p);
+    }
+    return '/' + out.join('/');
+  }
+  async function inlineLocalAssets(html, htmlPath) {
+    let out = html;
+    const linkRe = /<link\b[^>]*\brel=["']stylesheet["'][^>]*>/gi;
+    const links = [...out.matchAll(linkRe)];
+    for (const m of links) {
+      const tag = m[0];
+      const hrefMatch = tag.match(/\bhref=["']([^"']+)["']/i);
+      if (!hrefMatch) continue;
+      const href = hrefMatch[1];
+      if (/^([a-z]+:)?\/\//i.test(href) || href.startsWith('data:')) continue;
+      const cssPath = resolveRelativePath(htmlPath, href);
+      try {
+        const cr = await bridgeCall('/read', { path: cssPath });
+        if (cr && cr.ok) out = out.replace(tag, `<style>\n${cr.content}\n</style>`);
+      } catch {}
+    }
+    const scriptRe = /<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*><\/script>/gi;
+    const scripts = [...out.matchAll(scriptRe)];
+    for (const m of scripts) {
+      const tag = m[0];
+      const src = m[1];
+      if (/^([a-z]+:)?\/\//i.test(src) || src.startsWith('data:')) continue;
+      const jsPath = resolveRelativePath(htmlPath, src);
+      try {
+        const jr = await bridgeCall('/read', { path: jsPath });
+        if (jr && jr.ok) out = out.replace(tag, `<script>\n${jr.content}\n</script>`);
+      } catch {}
+    }
+    return out;
+  }
   async function openPreview(pathOrEmpty) {
     const modal = $('#bwPreviewModal'); if (!modal) return;
     const frame = $('#bwPreviewFrame'); const subtitle = $('#bwPreviewSubtitle'); const pathInput = $('#bwPreviewPath');
@@ -1833,8 +2097,14 @@
     try {
       const r = await bridgeCall('/read', { path: targetPath });
       if (!r || !r.ok) throw new Error(r?.error || 'could not read file');
-      if (frame) frame.srcdoc = r.content || '';
-    } catch (e) { if (frame) frame.srcdoc = `<html><body style="font-family:system-ui;padding:40px;color:#b91c1c"><h2>Preview failed</h2><p>${escapeHtml(e.message)}</p></body></html>`; }
+      let html = r.content || '';
+      if (/\.html?$/i.test(targetPath)) {
+        html = await inlineLocalAssets(html, targetPath);
+      }
+      if (frame) frame.srcdoc = html;
+    } catch (e) {
+      if (frame) frame.srcdoc = `<html><body style="font-family:system-ui;padding:40px;color:#b91c1c"><h2>Preview failed</h2><p>${escapeHtml(e.message)}</p></body></html>`;
+    }
   }
   function closePreview() { $('#bwPreviewModal')?.classList.remove('open'); }
 
@@ -1843,7 +2113,7 @@
   function openSidebar() { $('#sidebar')?.classList.add('open'); $('#sidebarScrim')?.classList.add('open'); }
   function closeSidebar() { $('#sidebar')?.classList.remove('open'); $('#sidebarScrim')?.classList.remove('open'); }
 
-  /* ═══════════ WIRING ═══════════ */
+  /* ---------- Wiring ---------- */
   function wireAll() {
     on('#hamburgerBtn', 'click', openSidebar);
     on('#sidebarCloseBtn', 'click', closeSidebar);
@@ -1883,17 +2153,30 @@
     on('#searchModeBtn', 'click', (e) => { e.preventDefault(); forceSearchNext = !forceSearchNext; $('#searchModeBtn')?.classList.toggle('active', forceSearchNext); });
     on('#imageModeBtn', 'click', () => openModal('imageModal'));
     on('#plansModeBtn', 'click', () => { openModal('plansModal'); loadPlans(); });
-    on('#supportModeBtn', 'click', (e) => { e.preventDefault(); setSupportError(''); openModal('supportModal'); });
-    on('#supportModeBtn2', 'click', () => { setSupportError(''); openModal('supportModal'); });
+    on('#supportModeBtn', 'click', (e) => { e.preventDefault(); openSupportModal(); });
+    on('#supportModeBtn2', 'click', () => openSupportModal());
     on('#bridgeModeBtn', 'click', openBridgeWorkspace);
     on('#bridgeOpenBtn', 'click', openBridgeWorkspace);
     on('#generateImageBtn', 'click', genImage);
-    on('#submitReportBtn', 'click', submitSupport);
     on('#settingsBtn', 'click', (e) => { e.preventDefault(); openSettingsModal(); });
     on('#logoutBtn', 'click', doLogout);
     on('#signInFromSettingsBtn', 'click', () => { closeModal('settingsModal'); setLoginError(''); openModal('loginModal'); });
     on('#shareFromSettingsBtn', 'click', () => { closeModal('settingsModal'); setTimeout(() => openShareAd(), 100); });
-    $('#supportMessage')?.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); submitSupport(); } });
+
+    // Support chat
+    on('#supportResolveBtn', 'click', supportResolve);
+    on('#supportSendBtn', 'click', supportSend);
+    const supInput = $('#supportInput');
+    if (supInput) {
+      supInput.addEventListener('input', () => {
+        supInput.style.height = 'auto';
+        supInput.style.height = Math.min(supInput.scrollHeight, 140) + 'px';
+        supportUpdateComposeState();
+      });
+      supInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); supportSend(); }
+      });
+    }
 
     $$('.settings-tab').forEach((tab) => {
       tab.onclick = () => {
@@ -1905,17 +2188,14 @@
     $$('#modeSegmented .seg-btn').forEach((b) => { b.onclick = () => { __prefs.mode = b.dataset.mode; savePrefs(); applyAppearanceFromPrefs(); applyPrefs(); }; });
     $$('#accentSwatches .swatch').forEach((b) => { b.onclick = () => { __prefs.theme = b.dataset.theme; savePrefs(); applyAppearanceFromPrefs(); applyPrefs(); }; });
     $$('#fontSizeSegmented .seg-btn').forEach((b) => { b.onclick = () => { __prefs.fontSize = b.dataset.fontsize; savePrefs(); applyPrefs(); }; });
-
     const bindToggle = (id, key) => { const el = document.getElementById(id); if (!el) return; el.addEventListener('change', () => { __prefs[key] = el.checked; savePrefs(); applyPrefs(); }); };
     bindToggle('autoScrollToggle', 'autoScroll');
     bindToggle('enterSendToggle', 'enterSend');
     bindToggle('visionToggle', 'vision');
     bindToggle('compactToggle', 'compact');
     bindToggle('reduceMotionToggle', 'reduceMotion');
-
     on('#uiLanguageSelect', 'change', (e) => { __prefs.uiLanguage = e.target.value; savePrefs(); if (isTranslatable(__prefs.uiLanguage)) toast('Translating…'); applyTranslations(); });
     on('#languageSelect', 'change', (e) => { __prefs.responseLanguage = e.target.value; savePrefs(); });
-
     on('#exportChatsBtn', 'click', () => {
       const blob = new Blob([JSON.stringify(__conversations, null, 2)], { type: 'application/json' });
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `mirox-chats-${Date.now()}.json`;
@@ -1942,16 +2222,26 @@
     on('#sudoSkipBtn', 'click', skipSudo);
     on('#sudoCloseBtn', 'click', skipSudo);
     on('#sudoPasswordInput', 'keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitSudo(); } });
-
     const bwInp = $('#bridgeInput');
-    if (bwInp) { bwInp.addEventListener('input', () => { bwInp.style.height = 'auto'; bwInp.style.height = Math.min(bwInp.scrollHeight, 140) + 'px'; updateBridgeSendBtn(); }); bwInp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); handleBridgeSend(); } }); }
+    if (bwInp) {
+      bwInp.addEventListener('input', () => { bwInp.style.height = 'auto'; bwInp.style.height = Math.min(bwInp.scrollHeight, 140) + 'px'; updateBridgeSendBtn(); });
+      bwInp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); handleBridgeSend(); } });
+    }
     on('#bridgeSendBtn', 'click', handleBridgeSend);
     $$('.bw-quick').forEach((btn) => { btn.onclick = () => { const inp2 = $('#bridgeInput'); if (inp2) { inp2.value = btn.dataset.q; updateBridgeSendBtn(); } handleBridgeSend(); }; });
 
     document.addEventListener('click', (e) => {
       const cb = e.target.closest('[data-close]');
-      if (cb) { closeModal(cb.dataset.close); return; }
-      if (e.target.classList.contains('modal-overlay')) e.target.classList.remove('open');
+      if (cb) {
+        const target = cb.dataset.close;
+        if (target === 'supportModal') { closeSupportModal(); return; }
+        closeModal(target);
+        return;
+      }
+      if (e.target.classList.contains('modal-overlay')) {
+        if (e.target.id === 'supportModal') { closeSupportModal(); return; }
+        e.target.classList.remove('open');
+      }
       if (e.target.closest('[data-iv-close]')) closeImageViewer();
     });
     on('#userChip', 'click', () => { if (!__user) { setLoginError(''); openModal('loginModal'); } });
@@ -1962,7 +2252,6 @@
     on('#shareAdIgnoreBtn', 'click', () => closeShareAd(true));
     on('#shareAdCloseBtn', 'click', () => closeShareAd(true));
 
-    // File preview actions
     on('#filePreviewCopyBtn', 'click', async () => {
       if (!__previewFileRef) return;
       try { await navigator.clipboard.writeText(__previewFileRef.content || ''); toast('Copied file content', 1800, 'ok'); } catch {}
@@ -1989,6 +2278,7 @@
         if ($('#shareAdModal')?.classList.contains('open')) { closeShareAd(true); return; }
         if ($('#bridgeWorkspace')?.classList.contains('open')) { closeBridgeWorkspace(); return; }
         if ($('#sudoModal')?.classList.contains('open')) { skipSudo(); return; }
+        if ($('#supportModal')?.classList.contains('open')) { closeSupportModal(); return; }
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); $('#messageInput')?.focus(); }
     });
@@ -2029,13 +2319,14 @@
       r.onsuccess = () => res(r.result);
       r.onerror = () => rej(r.error);
     }));
-    return { async set(k, v) { const db = await open(); return new Promise((res, rej) => { const t2 = db.transaction('kv', 'readwrite'); t2.objectStore('kv').put(v, k); t2.oncomplete = () => res(true); t2.onerror = () => rej(t2.error); }); }, async get(k) { const db = await open(); return new Promise((res, rej) => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result || null); q.onerror = () => rej(q.error); }); } };
+    return {
+      async set(k, v) { const db = await open(); return new Promise((res, rej) => { const t2 = db.transaction('kv', 'readwrite'); t2.objectStore('kv').put(v, k); t2.oncomplete = () => res(true); t2.onerror = () => rej(t2.error); }); },
+      async get(k) { const db = await open(); return new Promise((res, rej) => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result || null); q.onerror = () => rej(q.error); }); }
+    };
   })();
 
   async function init() {
     try {
-      // One-time cleanup: drop any non-API-key value that older versions
-      // accidentally stored under mirox_token (caused "Invalid API key").
       try {
         const t = localStorage.getItem('mirox_token');
         if (t && !isApiKey(t)) localStorage.removeItem('mirox_token');
