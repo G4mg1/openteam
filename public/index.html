@@ -79,6 +79,7 @@
     <div class="sidebar-links">
       <a href="#" id="settingsBtn" class="sidebar-link"><i class="ri-settings-3-line"></i> <span>Settings</span></a>
       <a href="#" id="supportModeBtn" class="sidebar-link"><i class="ri-customer-service-2-line"></i> <span>Support</span></a>
+      <a href="/developers" class="sidebar-link" target="_blank" rel="noopener"><i class="ri-code-s-slash-line"></i> <span>Developers</span></a>
     </div>
     <div class="made-by">Made by OpenSurr</div>
   </div>
@@ -311,7 +312,6 @@
     </div>
     <h2 class="auth-title">Sign in</h2>
     <p class="auth-sub">Continue with your name and email.</p>
-
     <form id="simpleLoginForm" class="auth-form" autocomplete="on" novalidate>
       <div class="auth-field">
         <label for="loginName">Name</label>
@@ -485,6 +485,10 @@
         <h4>Translation cache</h4>
         <button id="clearI18nCacheBtn" class="modal-btn" type="button"><i class="ri-eraser-line"></i> <span>Clear translation cache</span></button>
       </div>
+      <div class="setting-group">
+        <h4>Developers</h4>
+        <a href="/developers" target="_blank" rel="noopener" class="modal-btn" style="text-decoration:none;"><i class="ri-code-s-slash-line"></i> <span>Open Developer Docs</span></a>
+      </div>
     </div>
   </div>
 </div>
@@ -513,27 +517,53 @@
   </div>
 </div>
 
-<!-- SUPPORT -->
+<!-- SUPPORT CHAT (real agent conversation) -->
 <div id="supportModal" class="modal-overlay">
-  <div class="modal">
+  <div class="modal modal-support">
     <button class="icon-btn modal-close" type="button" data-close="supportModal"><i class="ri-close-line"></i></button>
-    <h2 class="modal-title">Contact Support</h2>
-    <p class="modal-sub">Send us a message. We usually reply within 24 hours.</p>
-    <div class="support-form">
-      <label class="support-label">Category</label>
-      <select id="supportCategory" class="modal-select">
-        <option value="bug">Bug report</option>
-        <option value="feedback">Feedback</option>
-        <option value="billing">Billing</option>
-        <option value="abuse">Report abuse</option>
-        <option value="other">Other</option>
-      </select>
-      <input type="text" id="supportSubject" class="modal-input" placeholder="Subject" maxlength="120">
-      <input type="email" id="supportEmail" class="modal-input" placeholder="Your email (optional)" maxlength="120">
-      <textarea id="supportMessage" class="modal-textarea" rows="5" placeholder="Describe your issue…" maxlength="4000"></textarea>
-      <div id="supportError" class="modal-error" role="alert" style="display:none;"></div>
-      <button id="submitReportBtn" class="modal-btn primary" type="button">Submit</button>
-      <div class="support-hint">Prefer email? Write to <a href="mailto:support@miroxai.org">support@miroxai.org</a></div>
+
+    <div class="support-head">
+      <div class="support-head-icon"><i class="ri-customer-service-2-line"></i></div>
+      <div class="support-head-text">
+        <div class="support-head-title">Support</div>
+        <div class="support-head-sub" id="supportHeadSub">Live chat with our team</div>
+      </div>
+      <button id="supportResolveBtn" class="support-resolve-btn" type="button" style="display:none;" title="Mark as resolved">
+        <i class="ri-check-double-line"></i> <span>Resolve</span>
+      </button>
+    </div>
+
+    <div class="support-chat-body">
+      <div class="support-chat-messages" id="supportChatMessages">
+        <div class="support-chat-empty">
+          <div class="support-chat-empty-icon"><i class="ri-chat-smile-2-line"></i></div>
+          <div class="support-chat-empty-title">How can we help?</div>
+          <div class="support-chat-empty-sub">Send us a message and a member of our team will reply right here.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="support-compose">
+      <div class="support-cat-row" id="supportCatRow">
+        <label class="support-cat-label">Category</label>
+        <select id="supportCategory" class="modal-select">
+          <option value="bug">Bug report</option>
+          <option value="feedback">Feedback</option>
+          <option value="billing">Billing</option>
+          <option value="abuse">Report abuse</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="support-input-row">
+        <textarea id="supportInput" rows="1" placeholder="Type your message…"></textarea>
+        <button id="supportSendBtn" class="send-btn is-disabled" type="button" aria-disabled="true" title="Send"><i class="ri-arrow-up-line"></i></button>
+      </div>
+      <div class="support-input-hint" id="supportInputHint">Enter to send · Shift+Enter for a new line</div>
+    </div>
+
+    <div class="support-foot">
+      <span>Prefer email? <a href="mailto:support@miroxai.org">support@miroxai.org</a></span>
+      <a href="/developers" class="support-dev-link" target="_blank" rel="noopener"><i class="ri-code-s-slash-line"></i> Developers</a>
     </div>
   </div>
 </div>
