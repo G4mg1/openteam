@@ -1,6 +1,5 @@
 /* ============================================================
-   MiroxAI Backend v96 — boot-safe rebuild
-   Matches the v26 frontend (index.html, script.js, style.css)
+   MiroxAI Backend v98 — support chat + bridge + image editing
    ============================================================ */
 import express from 'express';
 import cors from 'cors';
@@ -15,7 +14,6 @@ process.on('uncaughtException', (e) => console.error('[uncaughtException]', e?.m
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
-/* ---------- Config: everything comes from environment variables ---------- */
 const env = (k, d = '') => String(process.env[k] ?? d).trim();
 
 const PORT = env('PORT', '3000');
@@ -46,7 +44,6 @@ if (!env('SECRET_KEY')) console.warn('[Mirox] SECRET_KEY not set: sessions reset
 const GENERIC_ERR = 'Mirox AI encountered an error';
 const DAY = 24 * 3600;
 
-/* ---------- Models, plans, providers ---------- */
 const MIROX_MODELS = {
   'mirox-luna-1.2':    { label: 'Luna',    tier: 'free',     tokens: 1400, basePrompt: 'You are Luna by OpenSurr. Concise, helpful. Fenced code blocks for code.' },
   'mirox-gen-1':       { label: 'Gen',     tier: 'free',     tokens: 1000, basePrompt: 'You are Gen by OpenSurr. Ultra concise. Fenced code blocks for code.' },
@@ -71,6 +68,7 @@ const HF_VISION = ['meta-llama/Llama-3.2-11B-Vision-Instruct:together', 'Qwen/Qw
 const PL_CHAT = ['openai', 'openai-fast', 'mistral'];
 const PL_VISION = ['openai', 'openai-fast'];
 const PL_IMG_MODELS = ['flux', 'turbo'];
+const PL_EDIT_MODELS = ['kontext', 'flux'];
 const VISION_MODELS = new Set([...HF_VISION, ...PL_VISION]);
 
 const IDENTITY_GUARD = `Background rules (do not narrate them):
@@ -88,8 +86,27 @@ RULE 1 — Never paste code into visible text. File contents go inside <bridge-w
 RULE 2 — Always close tags.
 RULE 3 — Long files: write the first chunk with <bridge-write>, then add the rest with <bridge-append>.
 RULE 4 — Never ask the user to confirm small steps. Keep building.
-RULE 5 — Prefer portable relative paths such as ".", "./src/app.js", or "~/project/file.js". The local bridge safely resolves these aliases under the configured home directory. Do not reveal or repeat the user's real absolute home path unless explicitly needed.
-RULE 6 — Do NOT repeat the same sentence, tool call or file write more than once. If a step succeeded, move on.
+RULE 5 — Prefer portable relative paths such as ".", "./src/app.js", or "~/project/file.js".
+RULE 6 — Do NOT repeat the same sentence, tool call or file write more than once.
+
+DESIGN RULES (projects must LOOK GOOD, not be raw text):
+- Every project must include real, modern styling. NEVER ship unstyled HTML with default browser looks.
+- Prefer a SINGLE self-contained index.html with inline <style> and <script> for simple projects.
+- Use system fonts, CSS variables, flexbox/grid, generous spacing, rounded corners, subtle shadows, hover states.
+- Include working JavaScript interactions — no dead buttons.
+- Responsive with clamp() and a mobile breakpoint.
+
+WHEN TO USE NON-FILE TOOLS:
+- <bridge-kde-list/> then <bridge-kde-ring device="ID"/> / <bridge-kde-ping device="ID"/> / <bridge-kde-sms device="ID" number="+1...">…</bridge-kde-sms> / <bridge-kde-lock device="ID"/> / <bridge-kde-notifications device="ID"/>
+- <bridge-kde-share device="ID" path="…"/> or <bridge-kde-share-text device="ID">…</bridge-kde-share-text>
+- <bridge-email to="x@y.com" subject="Hi">body</bridge-email>
+- <bridge-http url="https://…" method="GET"/>
+- <bridge-clipboard action="get"/> / <bridge-clipboard action="set">text</bridge-clipboard>
+- <bridge-screenshot path="/abs/shot.png"/>
+- <bridge-git action="status" cwd="/abs/dir"/> / "log" / "add-all" / commit message="…" / "pull" / "push"
+- <bridge-pkgs type="pip"/> or type="npm"
+- <bridge-sysinfo/> <bridge-syscheck/> <bridge-processes/>
+- <bridge-move from="…" to="…"/> <bridge-copy from="…" to="…"/>
 
 When finished, reply DONE on its own line plus a one-line summary.
 
@@ -104,23 +121,18 @@ TAGS:
   <bridge-exec>cd /abs/dir && ls -la</bridge-exec>
   <bridge-sudo>apt install foo</bridge-sudo>
   <bridge-sysinfo/>  <bridge-syscheck/>  <bridge-processes/>
-  <bridge-designs><design id="1" name="Dark"><html>...</html></design>...</bridge-designs>
-  <bridge-ask>Question text
-  - Option A
-  - Option B</bridge-ask>
-  <bridge-kde-refresh/>  <bridge-kde-list/>  <bridge-kde-ping device="ID"/>  <bridge-kde-ring device="ID"/>
-  <bridge-kde-share device="ID" path="/abs/path"/>
-  <bridge-kde-share-text device="ID">text</bridge-kde-share-text>
-  <bridge-kde-sms device="ID" number="+1...">hi</bridge-kde-sms>
-  <bridge-kde-lock device="ID"/>  <bridge-kde-notifications device="ID"/>  <bridge-kde-my-id/>
   <bridge-email to="x@y.com" subject="Hi">body</bridge-email>
   <bridge-http url="https://..." method="GET"/>
   <bridge-clipboard action="get"/>  <bridge-clipboard action="set">text</bridge-clipboard>
   <bridge-screenshot path="/abs/shot.png"/>
   <bridge-git action="status" cwd="/abs/dir"/>
-  <bridge-pkgs type="pip"/>`;
+  <bridge-pkgs type="pip"/>
+  <bridge-kde-refresh/>  <bridge-kde-list/>  <bridge-kde-ping device="ID"/>  <bridge-kde-ring device="ID"/>
+  <bridge-kde-share device="ID" path="/abs/path"/>
+  <bridge-kde-share-text device="ID">text</bridge-kde-share-text>
+  <bridge-kde-sms device="ID" number="+1...">hi</bridge-kde-sms>
+  <bridge-kde-lock device="ID"/>  <bridge-kde-notifications device="ID"/>  <bridge-kde-my-id/>`;
 
-/* ---------- Small helpers ---------- */
 const safeStr = (v, max = 100000) => {
   if (v == null) return '';
   const s = typeof v === 'string' ? v : JSON.stringify(v);
@@ -150,24 +162,24 @@ function extractReplyText(data) {
   return typeof c === 'string' ? c : '';
 }
 
-/* ============================================================
-   DATABASE
-   ============================================================ */
+/* ---------- DB ---------- */
 let db = null;
 let dbOk = false;
 let dbLoading = null;
 let writeChain = Promise.resolve();
 
-const emptyDb = () => ({ users: {}, keys: {}, chats: [], events: [] });
+const emptyDb = () => ({ users: {}, keys: {}, chats: [], events: [], tickets: [] });
 
 function normalize(raw) {
   const d = Object.assign(emptyDb(), raw && typeof raw === 'object' ? raw : {});
-  delete d.images;
-  delete d.apiKeys;
-  delete d.counters;
+  delete d.images; delete d.apiKeys; delete d.counters;
   if (!d.users || typeof d.users !== 'object') d.users = {};
   d.chats = Array.isArray(d.chats) ? d.chats.slice(-300) : [];
   d.events = Array.isArray(d.events) ? d.events.slice(-300) : [];
+  d.tickets = Array.isArray(d.tickets) ? d.tickets.slice(-200) : [];
+  for (const t of d.tickets) {
+    if (!Array.isArray(t.messages)) t.messages = [];
+  }
   for (const u of Object.values(d.users)) {
     if (!Array.isArray(u.keys)) u.keys = Array.isArray(u.api_keys) ? u.api_keys : [];
     delete u.api_keys;
@@ -210,9 +222,7 @@ async function loadDb() {
       console.error('[db] load failed, writes disabled:', e.message);
       if (!db) db = normalize(null);
       dbOk = false;
-    } finally {
-      dbLoading = null;
-    }
+    } finally { dbLoading = null; }
     return db;
   })();
   return dbLoading;
@@ -263,11 +273,8 @@ function logChat(entry) {
   if (db.chats.length > 300) db.chats.splice(0, db.chats.length - 300);
 }
 
-/* ============================================================
-   BLOB STORAGE (generated images)
-   ============================================================ */
+/* ---------- Blob storage ---------- */
 const BLOB_ID = /^[a-f0-9]{32}$/;
-
 async function blobPut(id, value) {
   if (KV_ON) return kv(['SET', 'mirox:img:' + id, value, 'EX', String(60 * DAY)]);
   await fs.mkdir(IMG_DIR, { recursive: true });
@@ -287,7 +294,6 @@ async function blobDel(id) {
     else await fs.unlink(path.join(IMG_DIR, id + '.txt'));
   } catch {}
 }
-
 async function saveImage(u, prompt, dataUrl) {
   const id = crypto.randomBytes(16).toString('hex');
   const isRemote = dataUrl.startsWith('http');
@@ -303,9 +309,7 @@ async function saveImage(u, prompt, dataUrl) {
   return true;
 }
 
-/* ============================================================
-   SESSIONS (HMAC-signed cookie)
-   ============================================================ */
+/* ---------- Sessions ---------- */
 function signSession(data) {
   const p = Buffer.from(JSON.stringify(data)).toString('base64url');
   const s = crypto.createHmac('sha256', SECRET).update(p).digest('base64url');
@@ -345,13 +349,11 @@ function setSessionCookie(req, res, uid) {
 function clearSessionCookie(req, res) {
   res.append('Set-Cookie', `mirox_sess=; ${cookieAttrs(req, 0)}`);
 }
-
 async function ensureDb(req) {
   if (req && req.__dbReady) return;
   await loadDb();
   if (req) req.__dbReady = true;
 }
-
 async function currentUser(req) {
   await ensureDb(req);
   if (!dbOk) return null;
@@ -359,7 +361,6 @@ async function currentUser(req) {
   if (!s || !s.uid) return null;
   return userFor(s.uid);
 }
-
 async function authFromRequest(req) {
   const h = String(req.headers.authorization || '');
   if (!h) return { user: await currentUser(req), viaKey: false };
@@ -376,11 +377,8 @@ async function authFromRequest(req) {
   return { user: userFor(owner), viaKey: true };
 }
 
-/* ============================================================
-   WEB SEARCH
-   ============================================================ */
+/* ---------- Web search ---------- */
 const SEARCH_TIMEOUT_MS = 14000;
-
 const stripHtml = (s) => String(s || '')
   .replace(/<[^>]+>/g, '')
   .replace(/&amp;/g, '&').replace(/&#x27;/g, "'").replace(/&#39;/g, "'")
@@ -414,22 +412,15 @@ async function duckSearch(query, max = 5) {
     return out;
   } catch { return []; }
 }
-
 async function ddgInstantAnswer(query) {
   try {
     const r = await fetchT(`https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`, {}, 8000);
     if (!r.ok) return null;
     const d = await r.json();
     if (!(d.Abstract || d.Answer || d.Definition)) return null;
-    return {
-      heading: d.Heading || '',
-      text: d.Abstract || d.Answer || d.Definition || '',
-      source: d.AbstractSource || 'DuckDuckGo',
-      url: d.AbstractURL || '',
-    };
+    return { heading: d.Heading || '', text: d.Abstract || d.Answer || d.Definition || '', source: d.AbstractSource || 'DuckDuckGo', url: d.AbstractURL || '' };
   } catch { return null; }
 }
-
 async function wikiSearch(query) {
   try {
     const r = await fetchT(`https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(query)}&srlimit=3&origin=*`, {}, 8000);
@@ -443,7 +434,6 @@ async function wikiSearch(query) {
     }));
   } catch { return []; }
 }
-
 async function wikiSummary(title) {
   try {
     const r = await fetchT(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`, {}, 7000);
@@ -453,7 +443,6 @@ async function wikiSummary(title) {
     return { source: 'Wikipedia', heading: d.title || title, text: d.extract, url: d.content_urls?.desktop?.page || '' };
   } catch { return null; }
 }
-
 async function webSearch(query, max = 5) {
   const [organic, instant] = await Promise.all([duckSearch(query, max), ddgInstantAnswer(query)]);
   let results = organic.length ? organic : await wikiSearch(query);
@@ -466,7 +455,6 @@ async function webSearch(query, max = 5) {
   }
   return { results, overview };
 }
-
 function formatSearchContext(query, data) {
   const parts = [];
   if (data.overview?.text) parts.push(`[OVERVIEW — ${data.overview.source}${data.overview.url ? ' (' + data.overview.url + ')' : ''}]\n${data.overview.text}`);
@@ -476,7 +464,6 @@ function formatSearchContext(query, data) {
   }
   return parts.length ? `Web search results for "${query}":\n\n` + parts.join('\n\n') : `Web search for "${query}" returned no usable results.`;
 }
-
 function detectSearchIntent(text) {
   const t = String(text || '').trim();
   if (!t) return null;
@@ -486,7 +473,6 @@ function detectSearchIntent(text) {
   if (m && m[1]) return m[1].trim();
   return null;
 }
-
 function detectImageIntent(text) {
   const t = String(text || '').trim();
   if (!t) return null;
@@ -497,9 +483,7 @@ function detectImageIntent(text) {
   return null;
 }
 
-/* ============================================================
-   MODEL PROVIDERS
-   ============================================================ */
+/* ---------- Providers ---------- */
 function stripImages(messages) {
   return messages.map((m) => ({
     role: m.role,
@@ -508,7 +492,6 @@ function stripImages(messages) {
       : String(m.content || ''),
   }));
 }
-
 async function callProvider(kind, modelId, messages, maxTokens, stream) {
   const url = kind === 'hf' ? HF_URL : PL_URL;
   const key = kind === 'hf' ? HF_API_KEY : PL_KEY;
@@ -525,7 +508,6 @@ async function callProvider(kind, modelId, messages, maxTokens, stream) {
   if (!res.ok) throw new Error(`${kind}_${res.status}`);
   return res;
 }
-
 async function airouteText(messages, { fast = true, model } = {}) {
   const flat = stripImages(messages);
   let idx = -1;
@@ -543,7 +525,6 @@ async function airouteText(messages, { fast = true, model } = {}) {
   if (!r.ok) throw new Error('airoute_' + r.status);
   return extractReplyText(await r.json().catch(() => ({})));
 }
-
 function textToSSEStream(text) {
   const enc = new TextEncoder();
   const words = String(text || '').split(/(\s+)/);
@@ -559,7 +540,6 @@ function textToSSEStream(text) {
     },
   });
 }
-
 async function miroxChatChain({ messages, cfg, stream, vision }) {
   const tries = [];
   if (vision) {
@@ -574,25 +554,19 @@ async function miroxChatChain({ messages, cfg, stream, vision }) {
       const msgs = VISION_MODELS.has(modelId) ? messages : stripImages(messages);
       const res = await callProvider(kind, modelId, msgs, cfg.tokens, stream);
       return { res, provider: kind };
-    } catch (e) {
-      console.warn('[provider]', kind, modelId, e.message);
-    }
+    } catch (e) { console.warn('[provider]', kind, modelId, e.message); }
   }
-
   if (AIROUTE_KEY) {
     for (const opts of [{ fast: true }, { fast: false, model: 'meta-llama/Llama-3.3-70B-Instruct' }]) {
       try {
         const text = await airouteText(messages, opts);
         if (!text) throw new Error('empty reply');
         return { res: { body: textToSSEStream(text), json: async () => ({ reply: text }) }, provider: 'airoute' };
-      } catch (e) {
-        console.warn('[airoute]', e.message);
-      }
+      } catch (e) { console.warn('[airoute]', e.message); }
     }
   }
   throw new Error(GENERIC_ERR);
 }
-
 async function pipeProviderStream(body, onDelta, isClosed, onLimit = () => {}) {
   const reader = body.getReader();
   const dec = new TextDecoder();
@@ -618,11 +592,10 @@ async function pipeProviderStream(body, onDelta, isClosed, onLimit = () => {}) {
         } catch {}
       }
     }
-  } finally {
-    try { reader.releaseLock(); } catch {}
-  }
+  } finally { try { reader.releaseLock(); } catch {} }
 }
 
+/* ---------- Images ---------- */
 async function generateImage(prompt) {
   const deadline = Date.now() + 55000;
   for (const mid of PL_IMG_MODELS) {
@@ -653,6 +626,27 @@ async function generateImage(prompt) {
   }
   throw new Error(GENERIC_ERR);
 }
+async function editImageWithSource(sourceDataUrl, editPrompt) {
+  const deadline = Date.now() + 55000;
+  for (const mid of PL_EDIT_MODELS) {
+    if (Date.now() > deadline - 5000) break;
+    try {
+      const params = new URLSearchParams({ model: mid, width: '1024', height: '1024', nologo: 'true', seed: String(Math.floor(Math.random() * 99999)) });
+      if (mid === 'kontext' && sourceDataUrl) params.set('image', sourceDataUrl);
+      const headers = { Accept: 'image/png' };
+      if (PL_KEY) headers.Authorization = `Bearer ${PL_KEY}`;
+      const url = `${PL_IMG}/${encodeURIComponent(editPrompt.slice(0, 1000))}?${params}`;
+      const res = await fetchT(url, { headers }, 45000);
+      if (!res.ok) continue;
+      const ct = res.headers.get('content-type') || '';
+      if (!ct.startsWith('image/')) continue;
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (buf.length < 1000) continue;
+      return `data:${ct.split(';')[0]};base64,${buf.toString('base64')}`;
+    } catch (e) { console.warn('[edit-image]', mid, e.message); }
+  }
+  return generateImage(editPrompt);
+}
 
 function sseInit(res) {
   res.status(200);
@@ -676,13 +670,12 @@ function buildSystemPrompt(cfg, bridge, searchUsed, persona) {
   if (searchUsed) p += '\n\nWEB SEARCH MODE: live results follow in a system message. Use them and cite sources as [1], [2] when relevant.';
   if (persona) p += `\n\nUser preference: ${persona}`;
   if (bridge) {
-    const env = bridge.env || {};
+    const e2 = bridge.env || {};
     p += '\n\n' + BRIDGE_PROMPT;
-    p += `\n\n=== [Bridge environment] ===\nuser=${env.user || '(unknown)'}\nhome=~\ncwd=.\nplatform=${env.platform || '(unknown)'}\nallowed_dirs=home and explicitly configured project folders\nkdeConnect=${env.kde_connect_available ? 'true' : 'false'}`;
+    p += `\n\n=== [Bridge environment] ===\nuser=${e2.user || '(unknown)'}\nhome=~\ncwd=.\nplatform=${e2.platform || '(unknown)'}\nallowed_dirs=home and explicitly configured project folders\nkdeConnect=${e2.kde_connect_available ? 'true' : 'false'}`;
   }
   return p;
 }
-
 function buildEnvBlock(env) {
   return [
     '[Bridge environment]',
@@ -695,14 +688,12 @@ function buildEnvBlock(env) {
   ].join('\n');
 }
 
-/* ============================================================
-   APP
-   ============================================================ */
+/* ---------- App ---------- */
 const app = express();
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json({ limit: '8mb' }));
+app.use(express.json({ limit: '12mb' }));
 app.use(express.static(PUBLIC_DIR, { index: 'index.html' }));
 app.use(async (req, res, next) => { await ensureDb(req).catch(() => {}); next(); });
 
@@ -721,7 +712,7 @@ const publicKey = (k) => ({ id: k.id, name: k.name, key: k.key, created: k.creat
 
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
   res.json({
-    ok: true, app: 'MiroxAI', version: 'v96',
+    ok: true, app: 'MiroxAI', version: 'v98',
     providers: { hf: !!HF_API_KEY, pl: !!PL_KEY, airoute: !!AIROUTE_KEY },
     db: { durable: KV_ON, writable: dbOk },
     time: nowS(),
@@ -741,14 +732,16 @@ app.get(['/api/config', '/config'], (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tier: m.tier }));
   res.json({
-    app: { name: 'MiroxAI', version: 'v96' },
+    app: { name: 'MiroxAI', version: 'v98' },
     models, default_model: models[0].id, plans: PLANS,
     tts_available: !!F_API,
-    search_available: true, vision_available: true, image_intent: true,
+    search_available: true, vision_available: true, image_intent: true, image_edit: true,
     loginment_available: !!LM_CLIENT_ID,
     email_login_available: ALLOW_EMAIL_LOGIN,
     airoute_available: !!AIROUTE_KEY,
     kde_connect_available: true,
+    support_chat_available: true,
+    developers_url: '/developers',
   });
 });
 
@@ -769,9 +762,7 @@ app.get(['/api/subscription/plans', '/subscription/plans'], (req, res) => {
   });
 });
 
-/* ============================================================
-   AUTH
-   ============================================================ */
+/* ---------- AUTH ---------- */
 app.get('/api/auth/loginment/start', (req, res) => {
   if (!LM_CLIENT_ID) return res.status(503).send('Loginment is not configured.');
   const state = crypto.randomBytes(16).toString('hex');
@@ -779,7 +770,6 @@ app.get('/api/auth/loginment/start', (req, res) => {
   const redirect = encodeURIComponent(PUBLIC_ORIGIN + '/callback');
   res.redirect(`${LM_DOMAIN}/authorize?client_id=${encodeURIComponent(LM_CLIENT_ID)}&redirect_uri=${redirect}&state=${state}`);
 });
-
 app.get('/api/auth/loginment/url', (req, res) => {
   if (!LM_CLIENT_ID) return res.status(503).json({ ok: false, error: 'Loginment is not configured.' });
   const state = crypto.randomBytes(16).toString('hex');
@@ -787,7 +777,6 @@ app.get('/api/auth/loginment/url', (req, res) => {
   const redirect = encodeURIComponent(PUBLIC_ORIGIN + '/callback');
   res.json({ ok: true, url: `${LM_DOMAIN}/authorize?client_id=${encodeURIComponent(LM_CLIENT_ID)}&redirect_uri=${redirect}&state=${state}` });
 });
-
 app.get(['/callback', '/api/auth/loginment/callback'], async (req, res) => {
   try {
     const code = safeStr(req.query.code, 300);
@@ -796,7 +785,6 @@ app.get(['/callback', '/api/auth/loginment/callback'], async (req, res) => {
     res.append('Set-Cookie', `mirox_lm_state=; ${cookieAttrs(req, 0)}`);
     if (!code || !state || !saved || !safeEq(state, saved)) return res.status(400).send('Login state invalid. Please try again.');
     if (!LM_CLIENT_ID || !LM_API_KEY) return res.status(503).send('Loginment is not configured.');
-
     const r = await fetchT(`${LM_DOMAIN}/api/public/v1/token`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${LM_API_KEY}`, 'Content-Type': 'application/json' },
@@ -804,10 +792,8 @@ app.get(['/callback', '/api/auth/loginment/callback'], async (req, res) => {
     }, 15000);
     const data = await r.json().catch(() => ({}));
     if (!r.ok || !data.success || !data.user?.email) return res.status(401).send('Login failed.');
-
     await ensureDb(req);
     if (!dbOk) return res.status(503).send('Storage is unavailable. Try again shortly.');
-
     const email = String(data.user.email).toLowerCase();
     const u = userFor(email);
     u.name = data.user.name || u.name;
@@ -818,12 +804,8 @@ app.get(['/callback', '/api/auth/loginment/callback'], async (req, res) => {
     if (!(await persist())) return res.status(503).send('Could not save your account. Try again.');
     setSessionCookie(req, res, email);
     res.redirect('/');
-  } catch (e) {
-    console.error('[callback]', e.message);
-    res.status(500).send('Server error');
-  }
+  } catch (e) { console.error('[callback]', e.message); res.status(500).send('Server error'); }
 });
-
 app.post(['/api/auth/simple-login', '/auth/simple-login'], async (req, res) => {
   if (!ALLOW_EMAIL_LOGIN) return res.status(403).json({ ok: false, error: 'Email login is disabled. Use Loginment.' });
   const name = safeStr(req.body?.name, 60).trim();
@@ -839,22 +821,17 @@ app.post(['/api/auth/simple-login', '/auth/simple-login'], async (req, res) => {
   const token = setSessionCookie(req, res, email);
   res.json({ ok: true, token, user: { id: email, email, name, tier: u.tier } });
 });
-
 app.post(['/api/logout', '/logout'], (req, res) => {
   clearSessionCookie(req, res);
   res.json({ ok: true });
 });
-
 app.get(['/api/me', '/me'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   try {
     const u = await currentUser(req);
     res.json({ user: u ? publicUser(u) : null });
-  } catch {
-    res.json({ user: null });
-  }
+  } catch { res.json({ user: null }); }
 });
-
 app.get('/api/persona', async (req, res) => {
   const u = await currentUser(req);
   res.json({ ok: true, persona: u?.persona || '' });
@@ -867,9 +844,60 @@ app.post('/api/persona', async (req, res) => {
   res.json({ ok: true });
 });
 
-/* ============================================================
-   API KEYS
-   ============================================================ */
+/* ---------- SUPPORT CHAT (user side) ---------- */
+app.get('/api/support/conversation', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    const u = await currentUser(req);
+    if (!u) return res.json({ ok: true, conversation: null, signedIn: false });
+    const conv = (db.tickets || []).find((t) => t.email === u.email && t.status === 'open');
+    res.json({ ok: true, conversation: conv || null, signedIn: true });
+  } catch { res.json({ ok: true, conversation: null, signedIn: false }); }
+});
+app.post('/api/support/message', async (req, res) => {
+  const u = await currentUser(req);
+  if (!u) return res.status(401).json({ ok: false, error: 'Sign in to chat with support.' });
+  const content = safeStr(req.body?.content, 4000).trim();
+  if (!content) return res.status(400).json({ ok: false, error: 'Message required' });
+  const category = safeStr(req.body?.category, 40).trim() || 'other';
+  let conv = (db.tickets || []).find((t) => t.email === u.email && t.status === 'open');
+  if (!conv) {
+    conv = {
+      id: 'tk_' + crypto.randomBytes(6).toString('hex'),
+      email: u.email,
+      name: u.name || u.email,
+      subject: content.slice(0, 80),
+      category,
+      status: 'open',
+      unread_for_agent: 0,
+      unread_for_user: 0,
+      created: nowS(),
+      updated: nowS(),
+      messages: [],
+    };
+    db.tickets.push(conv);
+  }
+  conv.messages.push({ role: 'user', content, ts: nowS() });
+  conv.updated = nowS();
+  conv.unread_for_agent = (conv.unread_for_agent || 0) + 1;
+  logEvent({ email: u.email, event: 'support_message', ticket: conv.id });
+  await persist();
+  res.json({ ok: true, conversation: conv });
+});
+app.post('/api/support/close', async (req, res) => {
+  const u = await currentUser(req);
+  if (!u) return res.status(401).json({ ok: false, error: 'Sign in required' });
+  const conv = (db.tickets || []).find((t) => t.email === u.email && t.status === 'open');
+  if (conv) {
+    conv.status = 'closed';
+    conv.updated = nowS();
+    conv.messages.push({ role: 'system', content: 'Conversation resolved by the user.', ts: nowS() });
+    await persist();
+  }
+  res.json({ ok: true });
+});
+
+/* ---------- API KEYS ---------- */
 app.get(['/api/keys', '/keys'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const u = await currentUser(req);
@@ -877,7 +905,6 @@ app.get(['/api/keys', '/keys'], async (req, res) => {
   const keys = u.keys.map(publicKey);
   res.json({ ok: true, keys, limit: maxKeys(u.tier), active: keys.filter((k) => !k.revoked).length, tier: u.tier });
 });
-
 app.post(['/api/keys', '/keys'], async (req, res) => {
   const u = await currentUser(req);
   if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
@@ -893,7 +920,6 @@ app.post(['/api/keys', '/keys'], async (req, res) => {
   if (!(await persist())) return res.status(503).json({ ok: false, error: 'Could not save the key. Try again.' });
   res.json({ ok: true, key: publicKey(key) });
 });
-
 app.post(['/api/keys/rename', '/keys/rename'], async (req, res) => {
   const u = await currentUser(req);
   if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
@@ -906,7 +932,6 @@ app.post(['/api/keys/rename', '/keys/rename'], async (req, res) => {
   await persist();
   res.json({ ok: true, key: publicKey(key) });
 });
-
 app.post(['/api/keys/revoke', '/keys/revoke'], async (req, res) => {
   const u = await currentUser(req);
   if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
@@ -917,7 +942,6 @@ app.post(['/api/keys/revoke', '/keys/revoke'], async (req, res) => {
   await persist();
   res.json({ ok: true });
 });
-
 app.post(['/api/keys/delete', '/keys/delete'], async (req, res) => {
   const u = await currentUser(req);
   if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
@@ -930,41 +954,33 @@ app.post(['/api/keys/delete', '/keys/delete'], async (req, res) => {
   res.json({ ok: true });
 });
 
-/* ============================================================
-   IMAGE HISTORY
-   ============================================================ */
+/* ---------- IMAGE HISTORY ---------- */
 app.get(['/api/images/history', '/images/history'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const u = await currentUser(req);
   if (!u) return res.json({ ok: true, images: [] });
   const items = await Promise.all(u.images.slice(0, 30).map(async (it) => ({
-    ts: it.ts,
-    prompt: it.prompt,
-    image: it.remote || (await blobGet(it.id)),
+    ts: it.ts, prompt: it.prompt, image: it.remote || (await blobGet(it.id)),
   })));
   res.json({ ok: true, images: items.filter((x) => x.image) });
 });
 
-/* ============================================================
-   SEARCH ENDPOINT
-   ============================================================ */
+/* ---------- SEARCH ---------- */
 app.get(['/api/search', '/search'], async (req, res) => {
   const q = safeStr(req.query.q, 400).trim();
   if (!q) return res.status(400).json({ ok: false, error: 'Query required' });
   try {
     const data = await webSearch(q, 8);
     res.json({ ok: true, query: q, results: data.results, overview: data.overview });
-  } catch {
-    res.status(500).json({ ok: false, error: 'Search failed' });
-  }
+  } catch { res.status(500).json({ ok: false, error: 'Search failed' }); }
 });
 
-/* ============================================================
-   IMAGE GENERATION API
-   ============================================================ */
+/* ---------- IMAGE GEN API ---------- */
 app.post('/v1/images/generations', async (req, res) => {
   try {
     const prompt = safeStr(req.body?.prompt, 2000).trim();
+    const source = safeStr(req.body?.source_image, 12 * 1024 * 1024);
+    const isEdit = !!(req.body?.edit === true && source && source.startsWith('data:image/'));
     if (!prompt) return res.status(400).json({ error: { message: 'Prompt required' } });
     const auth = await authFromRequest(req);
     if (auth.error) return res.status(401).json({ error: { message: 'Invalid API key' } });
@@ -972,21 +988,16 @@ app.post('/v1/images/generations', async (req, res) => {
     if (!u) return res.status(401).json({ error: { message: 'Sign in to generate images' } });
     const plan = PLANS[u.tier] || PLANS.free;
     if (u.image_used >= plan.image_limit) return res.status(429).json({ error: { message: 'Daily image limit reached' } });
-
-    const dataUrl = await generateImage(prompt);
+    const dataUrl = isEdit ? await editImageWithSource(source, prompt) : await generateImage(prompt);
     u.image_used += 1;
     await saveImage(u, prompt, dataUrl);
-    logEvent({ email: u.email, event: 'image_generated', prompt: prompt.slice(0, 300) });
+    logEvent({ email: u.email, event: isEdit ? 'image_edited' : 'image_generated', prompt: prompt.slice(0, 300) });
     await persist();
     res.json({ ok: true, image: dataUrl });
-  } catch {
-    res.status(502).json({ error: { message: GENERIC_ERR } });
-  }
+  } catch { res.status(502).json({ error: { message: GENERIC_ERR } }); }
 });
 
-/* ============================================================
-   CHAT COMPLETIONS
-   ============================================================ */
+/* ---------- CHAT COMPLETIONS ---------- */
 app.post('/v1/chat/completions', async (req, res) => {
   const t0 = Date.now();
   let closed = false;
@@ -1001,9 +1012,10 @@ app.post('/v1/chat/completions', async (req, res) => {
   const history = Array.isArray(body.history) ? body.history.slice(-14) : [];
   const bridge = body.bridge && body.bridge.connected ? body.bridge : null;
   const forceSearch = body.search === true;
+  const editImage = body.edit_image === true;
+  const sourceImage = safeStr(body.source_image, 12 * 1024 * 1024);
 
   const fail = (code, message) => res.status(code).json({ error: { message } });
-
   const fixedReply = (message) => {
     if (!wantStream) return res.json({ reply: message, _ms: Date.now() - t0, provider: 'mirox' });
     sseInit(res);
@@ -1033,9 +1045,27 @@ app.post('/v1/chat/completions', async (req, res) => {
     }
     if (!text && !files.length) return fail(400, 'Empty message');
 
+    if (editImage && sourceImage && sourceImage.startsWith('data:image/')) {
+      if (!u) return fixedReply('Sign in to edit images.');
+      if (u.image_used >= plan.image_limit) return fixedReply(`Daily image limit reached for the ${plan.label} plan.`);
+      try {
+        const dataUrl = await editImageWithSource(sourceImage, text || 'Improve this image.');
+        u.image_used += 1;
+        await saveImage(u, text || 'image edit', dataUrl);
+        logEvent({ email: u.email, event: 'image_edited_chat', prompt: (text || '').slice(0, 300) });
+        await persist();
+        if (!wantStream) return res.json({ reply: '', image: dataUrl, _ms: Date.now() - t0 });
+        sseInit(res);
+        sseWrite(res, { img: dataUrl });
+        sseWrite(res, { done: true });
+        sseDone(res);
+        return res.end();
+      } catch { return fixedReply('Image edit failed. Please try again in a moment.'); }
+    }
+
     const imagePrompt = files.length ? null : detectImageIntent(text);
     if (imagePrompt) {
-      if (!u) return fixedReply('Sign in to generate images. Your daily image allowance is tied to your account.');
+      if (!u) return fixedReply('Sign in to generate images.');
       if (u.image_used >= plan.image_limit) return fixedReply(`Daily image limit reached for the ${plan.label} plan.`);
       try {
         const dataUrl = await generateImage(imagePrompt);
@@ -1049,9 +1079,7 @@ app.post('/v1/chat/completions', async (req, res) => {
         sseWrite(res, { done: true });
         sseDone(res);
         return res.end();
-      } catch {
-        return fixedReply('Image generation failed. Please try again in a moment.');
-      }
+      } catch { return fixedReply('Image generation failed. Please try again in a moment.'); }
     }
 
     const searchQuery = forceSearch ? text : detectSearchIntent(text);
@@ -1140,45 +1168,34 @@ app.post('/v1/chat/completions', async (req, res) => {
   }
 });
 
-/* ============================================================
-   ADMIN
-   ============================================================ */
+/* ---------- ADMIN ---------- */
 function signAdmin() { return signSession({ admin: true, exp: nowS() + 6 * 3600 }); }
-
 function requireAdmin(req, res, next) {
   if (!ADMIN_PASS) return res.status(503).json({ ok: false, error: 'ADMIN_PASSWORD is not set' });
   const d = readSession(String(req.headers['x-admin-token'] || ''));
   if (!d || !d.admin) return res.status(401).json({ ok: false, error: 'Admin auth required' });
   next();
 }
-
 app.post(['/api/admin/auth', '/admin/auth'], (req, res) => {
   if (!ADMIN_PASS) return res.status(503).json({ ok: false, error: 'ADMIN_PASSWORD is not set' });
   const pass = safeStr(req.body?.password, 200);
   if (!pass || !safeEq(pass, ADMIN_PASS)) return res.status(401).json({ ok: false, error: 'Invalid password' });
   res.json({ ok: true, token: signAdmin() });
 });
-
 app.get(['/api/admin/stats', '/admin/stats'], requireAdmin, async (req, res) => {
   await ensureDb(req);
   const users = Object.values(db.users);
-
-  // image-related events (both API and chat) with prompts
   const imgEvents = db.events
-    .filter((e) => e.event === 'image_generated' || e.event === 'image_generated_chat')
-    .slice(-60)
-    .reverse()
+    .filter((e) => /image_(generated|edited)/.test(e.event || ''))
+    .slice(-60).reverse()
     .map((e) => ({ ts: e.ts, email: e.email || '—', prompt: e.prompt || '' }));
-
+  const openTickets = (db.tickets || []).filter((t) => t.status === 'open').length;
+  const unreadSupport = (db.tickets || []).reduce((s, t) => s + (t.unread_for_agent || 0), 0);
   res.json({
-    ok: true,
-    durable: KV_ON,
-    db_writable: dbOk,
-    warning: KV_ON ? null : 'No durable store configured. Plans can reset on serverless cold starts. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.',
-    users: users.length,
-    chats: db.chats.length,
-    events: db.events.length,
-    images: imgEvents.length,
+    ok: true, durable: KV_ON, db_writable: dbOk,
+    warning: KV_ON ? null : 'No durable store configured. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.',
+    users: users.length, chats: db.chats.length, events: db.events.length, images: imgEvents.length,
+    open_tickets: openTickets, unread_support: unreadSupport,
     users_data: Object.fromEntries(users.map((u) => [u.email, {
       name: u.name, tier: u.tier, daily_used: u.daily_used, image_used: u.image_used,
       eclipse_used: u.eclipse_used, last_login: u.last_login,
@@ -1188,7 +1205,6 @@ app.get(['/api/admin/stats', '/admin/stats'], requireAdmin, async (req, res) => 
     images_data: imgEvents,
   });
 });
-
 app.post(['/api/admin/set-tier', '/admin/set-tier'], requireAdmin, async (req, res) => {
   await ensureDb(req);
   if (!dbOk) return res.status(503).json({ ok: false, error: 'Storage is not readable. Refusing to change tiers.' });
@@ -1203,40 +1219,75 @@ app.post(['/api/admin/set-tier', '/admin/set-tier'], requireAdmin, async (req, r
   res.json({ ok: true, email, tier });
 });
 
-/* ============================================================
-   BRIDGE CLIENT DOWNLOAD
-   ============================================================ */
+/* ---------- ADMIN SUPPORT ---------- */
+app.get(['/api/admin/support/conversations', '/admin/support/conversations'], requireAdmin, async (req, res) => {
+  await ensureDb(req);
+  const list = (db.tickets || []).slice().sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  res.json({ ok: true, conversations: list });
+});
+app.post(['/api/admin/support/reply', '/admin/support/reply'], requireAdmin, async (req, res) => {
+  await ensureDb(req);
+  const id = safeStr(req.body?.id, 60);
+  const content = safeStr(req.body?.content, 4000).trim();
+  if (!id || !content) return res.status(400).json({ ok: false, error: 'id and content required' });
+  const conv = (db.tickets || []).find((t) => t.id === id);
+  if (!conv) return res.status(404).json({ ok: false, error: 'Not found' });
+  conv.messages.push({ role: 'agent', content, ts: nowS() });
+  conv.updated = nowS();
+  conv.unread_for_user = (conv.unread_for_user || 0) + 1;
+  conv.unread_for_agent = 0;
+  logEvent({ email: conv.email, event: 'support_reply', ticket: conv.id });
+  await persist();
+  res.json({ ok: true, conversation: conv });
+});
+app.post(['/api/admin/support/close', '/admin/support/close'], requireAdmin, async (req, res) => {
+  await ensureDb(req);
+  const id = safeStr(req.body?.id, 60);
+  const conv = (db.tickets || []).find((t) => t.id === id);
+  if (!conv) return res.status(404).json({ ok: false, error: 'Not found' });
+  conv.status = 'closed';
+  conv.updated = nowS();
+  conv.unread_for_agent = 0;
+  conv.messages.push({ role: 'system', content: 'Conversation closed by support.', ts: nowS() });
+  await persist();
+  res.json({ ok: true });
+});
+app.post(['/api/admin/support/reopen', '/admin/support/reopen'], requireAdmin, async (req, res) => {
+  await ensureDb(req);
+  const id = safeStr(req.body?.id, 60);
+  const conv = (db.tickets || []).find((t) => t.id === id);
+  if (!conv) return res.status(404).json({ ok: false, error: 'Not found' });
+  conv.status = 'open';
+  conv.updated = nowS();
+  conv.messages.push({ role: 'system', content: 'Conversation reopened.', ts: nowS() });
+  await persist();
+  res.json({ ok: true });
+});
+
+/* ---------- BRIDGE DOWNLOAD ---------- */
 app.get('/api/bridge/download', async (req, res) => {
   let archiver;
   try { archiver = (await import('archiver')).default; }
-  catch { return res.status(500).json({ ok: false, error: 'archiver is not installed. Run npm i archiver.' }); }
-
+  catch { return res.status(500).json({ ok: false, error: 'archiver is not installed.' }); }
   let runner;
   try { runner = await fs.readFile(path.join(__dirname, 'mirox_client_bridge', 'runner.py'), 'utf8'); }
   catch { return res.status(500).json({ ok: false, error: 'runner.py is missing from the deployment.' }); }
-
   const name = safeStr(req.query.name, 60).trim() || 'My Laptop';
   const port = Number(req.query.port) || 8765;
-  const readme = '# MiroxAI Bridge\n\n1. pip install aiohttp\n2. (optional) pip install pillow pyperclip\n3. (optional) sudo apt install kdeconnect\n4. python runner.py\n5. Open MiroxAI -> Bridge -> Connect\n';
-
+  const readme = '# MiroxAI Bridge\n\n1. pip install aiohttp\n2. (optional) pip install pillow pyperclip\n3. (optional) sudo apt install kdeconnect\n4. python runner.py\n';
   res.setHeader('Content-Type', 'application/zip');
   res.setHeader('Content-Disposition', 'attachment; filename="mirox_client_bridge.zip"');
   res.setHeader('Cache-Control', 'no-store');
   const archive = archiver('zip', { zlib: { level: 9 } });
   archive.on('error', () => { try { res.end(); } catch {} });
   archive.pipe(res);
-  archive.append(JSON.stringify({
-    bridge_name: name, port, allowed_dirs: ['~'], max_output_bytes: 200000,
-    smtp: { enabled: false, host: '', port: 587, user: '', pass: '', from: '', use_tls: true },
-  }, null, 2), { name: 'mirox_client_bridge/config.json' });
+  archive.append(JSON.stringify({ bridge_name: name, port, allowed_dirs: ['~'], max_output_bytes: 200000, smtp: { enabled: false, host: '', port: 587, user: '', pass: '', from: '', use_tls: true } }, null, 2), { name: 'mirox_client_bridge/config.json' });
   archive.append(runner, { name: 'mirox_client_bridge/runner.py' });
   archive.append(readme, { name: 'mirox_client_bridge/README.md' });
   await archive.finalize();
 });
 
-/* ============================================================
-   FALLBACKS & ERRORS
-   ============================================================ */
+/* ---------- FALLBACKS ---------- */
 app.use((req, res) => {
   if (req.path.startsWith('/api') || req.path.startsWith('/v1')) {
     return res.status(404).json({ ok: false, error: 'Not found' });
@@ -1245,7 +1296,6 @@ app.use((req, res) => {
     if (err) res.status(404).send('Not found');
   });
 });
-
 app.use((err, req, res, next) => {
   if (err && err.type === 'entity.parse.failed') return res.status(400).json({ ok: false, error: 'Invalid JSON body' });
   if (err && err.type === 'entity.too.large') return res.status(413).json({ ok: false, error: 'Request too large' });
@@ -1253,7 +1303,7 @@ app.use((err, req, res, next) => {
   if (!res.headersSent) res.status(500).json({ ok: false, error: GENERIC_ERR });
 });
 
-console.log('[Mirox] v96 · durable store:', KV_ON, '· providers:', { hf: !!HF_API_KEY, pl: !!PL_KEY, airoute: !!AIROUTE_KEY });
+console.log('[Mirox] v98 · durable store:', KV_ON, '· providers:', { hf: !!HF_API_KEY, pl: !!PL_KEY, airoute: !!AIROUTE_KEY });
 
 if (!process.env.VERCEL) {
   app.listen(PORT, () => console.log('[Mirox] Server at http://localhost:' + PORT));
