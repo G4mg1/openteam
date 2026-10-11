@@ -7,8 +7,8 @@
   <link href="https://cdn.jsdelivr.net/npm/remixicon@4.9.0/fonts/remixicon.css" rel="stylesheet">
   <style>
     *,*::before,*::after{box-sizing:border-box}
-    :root{--bg:#fafafb;--panel:#fff;--panel-2:#f7f7fa;--border:#e8e8ef;--text:#0a0a0c;--text-muted:#64646f;--text-faint:#9494a0;--accent:#c4694b;--accent-hover:#a8503a;--accent-soft:rgba(196,105,75,.10);--radius:10px;--radius-lg:14px;--radius-xl:20px;--shadow-lg:0 8px 28px rgba(20,20,40,.09);--danger:#dc2626;--ok:#16a34a}
-    :root[data-mode="dark"]{--bg:#0a0a0d;--panel:#15151b;--panel-2:#1d1d24;--border:#26262f;--text:#f4f4f8;--text-muted:#a0a0ab;--text-faint:#6a6a75}
+    :root{--bg:#fafafb;--panel:#fff;--panel-2:#f7f7fa;--panel-3:#eeeef3;--border:#e8e8ef;--text:#0a0a0c;--text-muted:#64646f;--text-faint:#9494a0;--accent:#c4694b;--accent-hover:#a8503a;--accent-soft:rgba(196,105,75,.10);--radius:10px;--radius-lg:14px;--radius-xl:20px;--shadow-lg:0 8px 28px rgba(20,20,40,.09);--danger:#dc2626;--ok:#16a34a}
+    :root[data-mode="dark"]{--bg:#0a0a0d;--panel:#15151b;--panel-2:#1d1d24;--panel-3:#26262f;--border:#26262f;--text:#f4f4f8;--text-muted:#a0a0ab;--text-faint:#6a6a75}
     html{min-height:100%;background:var(--bg)}
     body{margin:0;min-height:100vh;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased;padding:24px}
     button,input,select,textarea{font:inherit;color:inherit}
@@ -19,10 +19,12 @@
     .stat-card{padding:16px;border-radius:var(--radius-lg);border:1px solid var(--border);background:var(--panel)}
     .stat-card h3{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint);margin:0 0 6px}
     .stat-card .value{font-size:26px;font-weight:700;line-height:1.1}
+    .stat-card.highlight .value{color:var(--accent)}
     .tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:18px;overflow-x:auto}
-    .tab{padding:9px 16px;border:none;background:transparent;color:var(--text-muted);font-size:14px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
+    .tab{padding:9px 16px;border:none;background:transparent;color:var(--text-muted);font-size:14px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
     .tab:hover{color:var(--text)}
     .tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+    .tab .tab-badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 6px;background:var(--accent);color:#fff;font-size:10.5px;font-weight:700;border-radius:99px}
     .tab-content{display:none}
     .tab-content.active{display:block}
     .section{margin-bottom:22px}
@@ -66,7 +68,45 @@
     .gate-btn:hover{background:var(--accent-hover)}
     .gate-btn:disabled{opacity:.5;cursor:not-allowed}
     .gate-err{color:var(--danger);font-size:13px;margin-top:10px;min-height:18px}
-    @media (max-width:640px){body{padding:14px}.admin-header h1{font-size:17px}.grid{grid-template-columns:1fr 1fr}.stat-card .value{font-size:22px}table.log{font-size:12px}table.log th,table.log td{padding:6px 8px}}
+
+    /* Support layout */
+    .sup-layout{display:grid;grid-template-columns:320px 1fr;gap:14px;min-height:560px}
+    .sup-list{border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--panel);overflow-y:auto;max-height:640px}
+    .sup-item{padding:12px 14px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;transition:background .12s}
+    .sup-item:hover{background:var(--panel-2)}
+    .sup-item.active{background:var(--accent-soft)}
+    .sup-item.has-unread::after{content:'';position:absolute;right:12px;top:14px;width:8px;height:8px;border-radius:50%;background:var(--accent)}
+    .sup-item-email{font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .sup-item-subject{font-size:12px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px}
+    .sup-item-time{font-size:10.5px;color:var(--text-faint);margin-top:4px}
+    .sup-item-badge{display:inline-block;font-size:9.5px;font-weight:700;padding:2px 6px;border-radius:4px;margin-left:6px;background:var(--panel-3);color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em}
+    .sup-item-badge.closed{background:rgba(220,38,38,.12);color:#dc2626}
+    .sup-item-badge.open{background:rgba(22,163,74,.12);color:#16a34a}
+    .sup-view{border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--panel);display:flex;flex-direction:column;max-height:640px}
+    .sup-view-head{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px}
+    .sup-view-title{flex:1;min-width:0}
+    .sup-view-email{font-size:12.5px;color:var(--text-muted)}
+    .sup-view-subject{font-size:15px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .sup-view-actions{display:flex;gap:6px;flex-wrap:wrap}
+    .sup-messages{flex:1;overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:10px}
+    .sup-msg{display:flex}
+    .sup-msg.user{justify-content:flex-start}
+    .sup-msg.agent{justify-content:flex-end}
+    .sup-msg.system{justify-content:center}
+    .sup-bubble{max-width:76%;padding:10px 14px;font-size:13.5px;line-height:1.55;border-radius:14px;word-wrap:break-word;overflow-wrap:anywhere;white-space:pre-wrap}
+    .sup-msg.user .sup-bubble{background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:14px 14px 14px 4px}
+    .sup-msg.agent .sup-bubble{background:var(--accent-soft);border:1px solid var(--accent);color:var(--text);border-radius:14px 14px 4px 14px}
+    .sup-msg.system .sup-bubble{background:var(--panel-3);color:var(--text-faint);font-size:11.5px;padding:5px 12px;border-radius:99px;max-width:90%}
+    .sup-meta{font-size:10.5px;color:var(--text-faint);margin-top:4px;padding:0 6px;text-align:right}
+    .sup-msg.user .sup-meta{text-align:left}
+    .sup-author{font-size:10.5px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;padding:0 6px}
+    .sup-msg.agent .sup-author{text-align:right}
+    .sup-compose{border-top:1px solid var(--border);padding:12px 14px;display:flex;gap:8px;align-items:flex-end}
+    .sup-compose textarea{flex:1;resize:none;min-height:44px;max-height:140px;border:1px solid var(--border);border-radius:12px;padding:10px 12px;font-size:13.5px;font-family:inherit;background:var(--panel-2);color:var(--text);outline:none}
+    .sup-compose textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+    .sup-empty{padding:40px;text-align:center;color:var(--text-faint);font-size:13px;flex:1;display:flex;align-items:center;justify-content:center}
+
+    @media (max-width:640px){body{padding:14px}.admin-header h1{font-size:17px}.grid{grid-template-columns:1fr 1fr}.stat-card .value{font-size:22px}table.log{font-size:12px}table.log th,table.log td{padding:6px 8px}.sup-layout{grid-template-columns:1fr}.sup-list{max-height:220px}}
   </style>
 </head>
 <body>
@@ -94,12 +134,15 @@
     <div class="grid">
       <div class="stat-card"><h3>Total Users</h3><div class="value" id="statUsers">—</div></div>
       <div class="stat-card"><h3>Chats Total</h3><div class="value" id="statChats">—</div></div>
-      <div class="stat-card"><h3>Images Generated</h3><div class="value" id="statImages">—</div></div>
-      <div class="stat-card"><h3>User Events</h3><div class="value" id="statEvents">—</div></div>
+      <div class="stat-card"><h3>Images</h3><div class="value" id="statImages">—</div></div>
+      <div class="stat-card"><h3>Events</h3><div class="value" id="statEvents">—</div></div>
+      <div class="stat-card highlight"><h3>Open Tickets</h3><div class="value" id="statOpenTickets">—</div></div>
+      <div class="stat-card highlight"><h3>Unread Support</h3><div class="value" id="statUnreadSupport">—</div></div>
     </div>
 
     <div class="tabs">
       <button class="tab active" data-tab="users">Users</button>
+      <button class="tab" data-tab="support"><i class="ri-customer-service-2-line"></i> Support <span class="tab-badge" id="supportBadge" style="display:none;">0</span></button>
       <button class="tab" data-tab="chats">Chat Logs</button>
       <button class="tab" data-tab="images">Image Logs</button>
       <button class="tab" data-tab="events">User Events</button>
@@ -126,6 +169,18 @@
       </div>
     </div>
 
+    <div class="tab-content" id="tab-support">
+      <div class="section">
+        <h2>Support conversations</h2>
+        <div class="sup-layout">
+          <div class="sup-list" id="supList"><div class="sup-empty">Loading…</div></div>
+          <div class="sup-view" id="supView">
+            <div class="sup-empty">Select a conversation on the left.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="tab-content" id="tab-chats">
       <div class="section">
         <h2>Recent chat activity</h2>
@@ -141,7 +196,7 @@
     <div class="tab-content" id="tab-images">
       <div class="section">
         <h2>Recent image prompts</h2>
-        <p class="muted" style="font-size:13px;margin:0 0 12px;">Only the prompt is stored. Click <b>Regenerate</b> to render a preview from the logged prompt.</p>
+        <p class="muted" style="font-size:13px;margin:0 0 12px;">Click <b>Regenerate</b> to render a preview from the logged prompt.</p>
         <div style="overflow-x:auto;">
           <table class="log" id="imageTable">
             <thead><tr><th>Preview</th><th>When</th><th>User</th><th>Prompt</th><th style="text-align:right;">Action</th></tr></thead>
@@ -173,6 +228,9 @@
 
     let loading = false;
     let lastStats = null;
+    let supportConvs = [];
+    let currentSupportId = null;
+    let supportPollTimer = null;
 
     function getAdminToken() { try { return sessionStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
     function setAdminToken(t) { try { t ? sessionStorage.setItem(TOKEN_KEY, t) : sessionStorage.removeItem(TOKEN_KEY); } catch {} }
@@ -182,13 +240,17 @@
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
-
     function formatTs(v) {
       if (v === undefined || v === null || v === '') return '—';
       let n = Number(v);
       if (!isFinite(n) || n <= 0) return '—';
       if (n < 1e12) n *= 1000;
       try { return new Date(n).toLocaleString(); } catch { return '—'; }
+    }
+    function formatShort(ts) {
+      if (!ts) return '';
+      try { return new Date(ts * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); }
+      catch { return ''; }
     }
 
     async function adminFetch(path, opts = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
@@ -203,14 +265,12 @@
         clearTimeout(timer);
       }
     }
-
-    async function readJson(res) {
-      try { return await res.json(); } catch { return null; }
-    }
+    async function readJson(res) { try { return await res.json(); } catch { return null; } }
 
     function showGate() {
       $('#gate').classList.remove('hidden');
       $('#adminWrap').style.display = 'none';
+      if (supportPollTimer) { clearInterval(supportPollTimer); supportPollTimer = null; }
     }
     function showAdminShell() {
       $('#gate').classList.add('hidden');
@@ -231,6 +291,7 @@
           setAdminToken(data.token);
           showAdminShell();
           await refreshStats();
+          await loadSupportConversations();
         } else {
           err.textContent = (data && data.error) || 'Invalid password';
         }
@@ -240,7 +301,6 @@
         btn.disabled = false; btn.textContent = 'Unlock';
       }
     }
-
     $('#gateBtn')?.addEventListener('click', tryUnlock);
     $('#gatePass')?.addEventListener('keydown', e => { if (e.key === 'Enter') tryUnlock(); });
 
@@ -249,13 +309,13 @@
       $('#gatePass').value = ''; $('#gateErr').textContent = '';
       showGate();
     });
-
-    $('#adminRefresh')?.addEventListener('click', () => refreshStats());
+    $('#adminRefresh')?.addEventListener('click', () => { refreshStats(); loadSupportConversations(); });
 
     $$('.tab').forEach(t => t.addEventListener('click', () => {
       const target = t.dataset.tab;
       $$('.tab').forEach(x => x.classList.toggle('active', x === t));
       $$('.tab-content').forEach(c => c.classList.toggle('active', c.id === 'tab-' + target));
+      if (target === 'support') loadSupportConversations();
     }));
 
     function renderWarning(warning) {
@@ -263,18 +323,14 @@
       if (!warning) { box.innerHTML = ''; return; }
       box.innerHTML = `<div class="warn"><b>Heads up:</b> ${esc(warning)}</div>`;
     }
-
     function setStatsPlaceholder(text) {
-      ['statUsers','statChats','statImages','statEvents'].forEach(id => $('#' + id).textContent = text);
+      ['statUsers','statChats','statImages','statEvents','statOpenTickets','statUnreadSupport'].forEach(id => { const el = $('#'+id); if (el) el.textContent = text; });
     }
 
     function renderUsers(users) {
       const tbody = $('#userTable tbody');
       const entries = Object.entries(users || {}).filter(([_, u]) => u && typeof u === 'object');
-      if (!entries.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="muted">No users yet</td></tr>';
-        return;
-      }
+      if (!entries.length) { tbody.innerHTML = '<tr><td colspan="7" class="muted">No users yet</td></tr>'; return; }
       tbody.innerHTML = entries.map(([email, u]) => {
         const tier = u.tier || 'free';
         const tierClass = ['free','pro','ultimate'].includes(tier) ? tier : 'free';
@@ -295,7 +351,6 @@
           </td>
         </tr>`;
       }).join('');
-
       tbody.querySelectorAll('[data-save-tier]').forEach(btn => {
         btn.addEventListener('click', async () => {
           const tr = btn.closest('tr');
@@ -321,13 +376,9 @@
         });
       });
     }
-
     function renderChats(list) {
       const tbody = $('#chatTable tbody');
-      if (!list || !list.length) {
-        tbody.innerHTML = '<tr><td colspan="4" class="muted">No chat logs yet</td></tr>';
-        return;
-      }
+      if (!list || !list.length) { tbody.innerHTML = '<tr><td colspan="4" class="muted">No chat logs yet</td></tr>'; return; }
       tbody.innerHTML = list.slice(0, 100).map(c => `
         <tr>
           <td style="white-space:nowrap;">${esc(formatTs(c.ts))}</td>
@@ -336,13 +387,9 @@
           <td class="prompt-cell">${esc(c.message || '—')}</td>
         </tr>`).join('');
     }
-
     function renderImages(list) {
       const tbody = $('#imageTable tbody');
-      if (!list || !list.length) {
-        tbody.innerHTML = '<tr><td colspan="5" class="muted">No image logs yet</td></tr>';
-        return;
-      }
+      if (!list || !list.length) { tbody.innerHTML = '<tr><td colspan="5" class="muted">No image logs yet</td></tr>'; return; }
       tbody.innerHTML = list.slice(0, 60).map((img, i) => `
         <tr data-idx="${i}">
           <td><div class="thumb-loading" data-thumb>idle</div></td>
@@ -351,7 +398,6 @@
           <td class="prompt-cell" data-prompt="${esc(img.prompt || '')}">${esc(img.prompt || '—')}</td>
           <td style="text-align:right;"><button class="btn small" data-regen>Regenerate</button></td>
         </tr>`).join('');
-
       tbody.querySelectorAll('[data-regen]').forEach(btn => {
         btn.addEventListener('click', async () => {
           const tr = btn.closest('tr');
@@ -362,31 +408,20 @@
           thumb.className = 'thumb-loading'; thumb.textContent = 'rendering';
           try {
             const res = await fetch('/v1/images/generations', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ prompt }),
             });
             const data = await res.json();
-            if (data && data.image) {
-              thumb.outerHTML = `<img class="thumb" data-thumb src="${esc(data.image)}" alt="">`;
-            } else {
-              thumb.className = 'thumb-loading'; thumb.textContent = 'failed';
-            }
-          } catch {
-            thumb.className = 'thumb-loading'; thumb.textContent = 'error';
-          } finally {
-            btn.disabled = false; btn.textContent = 'Regenerate';
-          }
+            if (data && data.image) thumb.outerHTML = `<img class="thumb" data-thumb src="${esc(data.image)}" alt="">`;
+            else { thumb.className = 'thumb-loading'; thumb.textContent = 'failed'; }
+          } catch { thumb.className = 'thumb-loading'; thumb.textContent = 'error'; }
+          finally { btn.disabled = false; btn.textContent = 'Regenerate'; }
         });
       });
     }
-
     function renderEvents(list) {
       const tbody = $('#eventTable tbody');
-      if (!list || !list.length) {
-        tbody.innerHTML = '<tr><td colspan="4" class="muted">No events yet</td></tr>';
-        return;
-      }
+      if (!list || !list.length) { tbody.innerHTML = '<tr><td colspan="4" class="muted">No events yet</td></tr>'; return; }
       tbody.innerHTML = list.slice(0, 100).map(e => {
         const details = { ...e };
         delete details.email; delete details.ts; delete details._ts; delete details.event;
@@ -406,7 +441,13 @@
       $('#statChats').textContent  = data.chats  ?? 0;
       $('#statImages').textContent = data.images ?? 0;
       $('#statEvents').textContent = data.events ?? 0;
-
+      $('#statOpenTickets').textContent = data.open_tickets ?? 0;
+      $('#statUnreadSupport').textContent = data.unread_support ?? 0;
+      const badge = $('#supportBadge');
+      if (badge) {
+        if (data.unread_support > 0) { badge.textContent = String(data.unread_support); badge.style.display = ''; }
+        else badge.style.display = 'none';
+      }
       renderUsers(data.users_data);
       renderChats(data.chats_data);
       renderImages(data.images_data);
@@ -420,35 +461,185 @@
       try {
         if (refreshBtn) refreshBtn.disabled = true;
         setStatsPlaceholder('…');
-        $('#userTable tbody').innerHTML = '<tr><td colspan="7" class="muted">Loading…</td></tr>';
-        $('#chatTable tbody').innerHTML = '<tr><td colspan="4" class="muted">Loading…</td></tr>';
-        $('#imageTable tbody').innerHTML = '<tr><td colspan="5" class="muted">Loading…</td></tr>';
-        $('#eventTable tbody').innerHTML = '<tr><td colspan="4" class="muted">Loading…</td></tr>';
-
         const res = await adminFetch('/stats');
         if (res.status === 401) { setAdminToken(''); showGate(); return; }
-        if (!res.ok) {
-          setStatsPlaceholder('—');
-          $('#userTable tbody').innerHTML = `<tr><td colspan="7" class="err">Server error (HTTP ${res.status})</td></tr>`;
-          return;
-        }
+        if (!res.ok) { setStatsPlaceholder('—'); return; }
         const data = await readJson(res);
-        if (!data || !data.ok) {
-          setStatsPlaceholder('—');
-          $('#userTable tbody').innerHTML = '<tr><td colspan="7" class="err">Invalid response from server</td></tr>';
-          return;
-        }
+        if (!data || !data.ok) { setStatsPlaceholder('—'); return; }
         applyStats(data);
       } catch (e) {
-        const msg = e && e.name === 'AbortError' ? 'Request timed out' : 'Failed to load stats';
         setStatsPlaceholder('—');
-        $('#userTable tbody').innerHTML = `<tr><td colspan="7" class="err">${esc(msg)}</td></tr>`;
       } finally {
         loading = false;
         if (refreshBtn) refreshBtn.disabled = false;
       }
     }
 
+    /* ---------- Support tab ---------- */
+    async function loadSupportConversations() {
+      const list = $('#supList');
+      if (!list) return;
+      try {
+        const res = await adminFetch('/support/conversations');
+        if (res.status === 401) { setAdminToken(''); showGate(); return; }
+        const data = await readJson(res);
+        if (!data || !data.ok) { list.innerHTML = '<div class="sup-empty">Failed to load.</div>'; return; }
+        supportConvs = data.conversations || [];
+        if (!supportConvs.length) {
+          list.innerHTML = '<div class="sup-empty">No conversations yet.</div>';
+          return;
+        }
+        list.innerHTML = supportConvs.map(c => {
+          const unread = (c.unread_for_agent || 0) > 0;
+          const last = c.messages && c.messages.length ? c.messages[c.messages.length - 1] : null;
+          const preview = last ? String(last.content || '').slice(0, 90) : '(no messages)';
+          const active = c.id === currentSupportId;
+          return `<div class="sup-item${unread ? ' has-unread' : ''}${active ? ' active' : ''}" data-id="${esc(c.id)}">
+            <div class="sup-item-email">${esc(c.email || '—')}
+              <span class="sup-item-badge ${c.status === 'closed' ? 'closed' : 'open'}">${esc(c.status || 'open')}</span>
+            </div>
+            <div class="sup-item-subject">${esc(c.subject || 'Support')}</div>
+            <div class="sup-item-time">${esc(formatShort(c.updated))} · ${esc(preview)}</div>
+          </div>`;
+        }).join('');
+        list.querySelectorAll('.sup-item').forEach(el => {
+          el.addEventListener('click', () => openSupportConversation(el.dataset.id));
+        });
+      } catch {
+        list.innerHTML = '<div class="sup-empty">Failed to load.</div>';
+      }
+    }
+
+    async function openSupportConversation(id) {
+      currentSupportId = id;
+      const view = $('#supView');
+      if (!view) return;
+      view.innerHTML = '<div class="sup-empty">Loading…</div>';
+      try {
+        const res = await adminFetch('/support/conversations');
+        const data = await readJson(res);
+        if (!data || !data.ok) { view.innerHTML = '<div class="sup-empty">Failed.</div>'; return; }
+        const conv = (data.conversations || []).find(c => c.id === id);
+        if (!conv) { view.innerHTML = '<div class="sup-empty">Not found.</div>'; return; }
+        // mark read by opening (server clears unread_for_agent on list? we'll do it here by refetch later)
+        renderSupportConversation(conv);
+        // highlight list item
+        $$('.sup-item').forEach(el => el.classList.toggle('active', el.dataset.id === id));
+        if (supportPollTimer) clearInterval(supportPollTimer);
+        supportPollTimer = setInterval(() => silentRefreshSupport(), 5000);
+      } catch {
+        view.innerHTML = '<div class="sup-empty">Failed.</div>';
+      }
+    }
+
+    function renderSupportConversation(conv) {
+      const view = $('#supView');
+      const closed = conv.status === 'closed';
+      view.innerHTML = `
+        <div class="sup-view-head">
+          <div class="sup-view-title">
+            <div class="sup-view-subject">${esc(conv.subject || 'Support')}</div>
+            <div class="sup-view-email">${esc(conv.email || '')} · ${esc(conv.name || '')} · ${esc(conv.category || 'other')}</div>
+          </div>
+          <div class="sup-view-actions">
+            ${closed
+              ? '<button class="btn ghost small" data-reopen><i class="ri-refresh-line"></i> Reopen</button>'
+              : '<button class="btn ghost small" data-close><i class="ri-check-double-line"></i> Close</button>'}
+          </div>
+        </div>
+        <div class="sup-messages" id="supMessages"></div>
+        <div class="sup-compose">
+          <textarea id="supReplyInput" placeholder="${closed ? 'Conversation is closed.' : 'Reply as support…'}" ${closed ? 'disabled' : ''}></textarea>
+          <button class="btn" id="supReplyBtn" ${closed ? 'disabled' : ''}><i class="ri-send-plane-fill"></i></button>
+        </div>`;
+      renderSupportMessages(conv.messages || []);
+      $('#supReplyBtn')?.addEventListener('click', () => sendSupportReply(conv.id));
+      const inp = $('#supReplyInput');
+      if (inp) {
+        inp.addEventListener('input', () => { inp.style.height = 'auto'; inp.style.height = Math.min(inp.scrollHeight, 140) + 'px'; });
+        inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendSupportReply(conv.id); } });
+      }
+      view.querySelector('[data-close]')?.addEventListener('click', () => setSupportStatus(conv.id, 'close'));
+      view.querySelector('[data-reopen]')?.addEventListener('click', () => setSupportStatus(conv.id, 'reopen'));
+    }
+
+    function renderSupportMessages(messages) {
+      const box = $('#supMessages');
+      if (!box) return;
+      if (!messages.length) {
+        box.innerHTML = '<div class="sup-empty">No messages yet.</div>';
+        return;
+      }
+      box.innerHTML = messages.map(m => {
+        const role = m.role || 'user';
+        const cls = role === 'agent' ? 'agent' : (role === 'system' ? 'system' : 'user');
+        const author = role === 'agent' ? 'Support' : (role === 'system' ? '' : 'User');
+        return `<div class="sup-msg ${cls}">
+          <div class="sup-bubble">
+            ${author ? `<div class="sup-author">${esc(author)}</div>` : ''}
+            ${esc(m.content || '').replace(/\n/g, '<br>')}
+            <div class="sup-meta">${esc(formatShort(m.ts))}</div>
+          </div>
+        </div>`;
+      }).join('');
+      box.scrollTop = box.scrollHeight;
+    }
+
+    async function sendSupportReply(id) {
+      const inp = $('#supReplyInput');
+      if (!inp) return;
+      const content = (inp.value || '').trim();
+      if (!content) return;
+      const btn = $('#supReplyBtn');
+      if (btn) btn.disabled = true;
+      try {
+        const res = await adminFetch('/support/reply', { method: 'POST', body: JSON.stringify({ id, content }) });
+        const data = await readJson(res);
+        if (data && data.ok) {
+          inp.value = ''; inp.style.height = 'auto';
+          renderSupportConversation(data.conversation);
+          await loadSupportConversations();
+          await refreshStats();
+        } else {
+          alert((data && data.error) || 'Failed to send');
+        }
+      } catch { alert('Network error'); }
+      finally { if (btn) btn.disabled = false; }
+    }
+
+    async function setSupportStatus(id, action) {
+      try {
+        const res = await adminFetch('/support/' + action, { method: 'POST', body: JSON.stringify({ id }) });
+        const data = await readJson(res);
+        if (data && data.ok) {
+          await loadSupportConversations();
+          await openSupportConversation(id);
+          await refreshStats();
+        }
+      } catch {}
+    }
+
+    async function silentRefreshSupport() {
+      if (!currentSupportId) return;
+      try {
+        const res = await adminFetch('/support/conversations');
+        const data = await readJson(res);
+        if (!data || !data.ok) return;
+        supportConvs = data.conversations || [];
+        const conv = supportConvs.find(c => c.id === currentSupportId);
+        if (conv) {
+          // Update just the messages area to avoid wiping typing state
+          const box = $('#supMessages');
+          if (box) {
+            const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+            renderSupportMessages(conv.messages || []);
+            if (!atBottom) box.scrollTop = Math.max(0, box.scrollHeight - box.clientHeight - 100);
+          }
+        }
+      } catch {}
+    }
+
+    /* ---------- Tier setting ---------- */
     $('#setTierBtn')?.addEventListener('click', async () => {
       const email = $('#newUserEmail').value.trim().toLowerCase();
       const tier = $('#newUserTier').value;
@@ -469,15 +660,13 @@
           $('#newUserEmail').value = '';
           await refreshStats();
         } else {
-          msg.textContent = (data && data.error) || `Failed (HTTP ${res.status})`;
+          msg.textContent = (data && data.error) || 'Failed';
           msg.className = 'msg err';
         }
       } catch (e) {
-        msg.textContent = e && e.name === 'AbortError' ? 'Request timed out' : 'Server error';
+        msg.textContent = 'Server error';
         msg.className = 'msg err';
-      } finally {
-        btn.disabled = false;
-      }
+      } finally { btn.disabled = false; }
     });
 
     (async function boot() {
@@ -491,9 +680,8 @@
         if (!data || !data.ok) { setAdminToken(''); showGate(); return; }
         showAdminShell();
         applyStats(data);
-      } catch {
-        showGate();
-      }
+        loadSupportConversations();
+      } catch { showGate(); }
     })();
   </script>
 </body>
