@@ -1,5 +1,6 @@
 /* ============================================================
-   MiroxAI Backend v98 — support chat + bridge + image editing
+   MiroxAI Backend v99 — OpenRouter (OP_KEY) with PL fallback
+   Support chat · bridge · image editing · web search
    ============================================================ */
 import express from 'express';
 import cors from 'cors';
@@ -22,6 +23,12 @@ const ADMIN_PASS = env('ADMIN_PASSWORD');
 const ALLOW_EMAIL_LOGIN = env('ALLOW_EMAIL_LOGIN') === '1';
 const DATA_FILE = env('DB_FILE', '/tmp/mirox-db.json');
 const IMG_DIR = env('IMG_DIR', '/tmp/mirox-img');
+
+/* ⚡ OpenRouter is now the primary provider; PL is the fallback. */
+const OP_KEY = env('OP_KEY');
+const OP_BASE = env('OP_BASE', 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
+const OP_REFERER = env('OP_REFERER', PUBLIC_ORIGIN || 'https://miroxai.org');
+const OP_TITLE = env('OP_TITLE', 'MiroxAI');
 
 const HF_API_KEY = env('HF_API_KEY');
 const PL_KEY = env('PL_KEY');
@@ -60,6 +67,26 @@ const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
 const API_MODELS = ['mirox-luna-1.2', 'mirox-gen-1'];
 const maxKeys = (tier) => (tier === 'free' ? 2 : 10);
 
+/* ⚡ OpenRouter endpoints + model routing */
+const OP_CHAT_URL = `${OP_BASE}/chat/completions`;
+/* Free-first ordering so a fresh OP_KEY can carry the app on its own.
+   Each entry is tried in order; a failure falls to the next one. */
+const OP_CHAT = [
+  'meta-llama/llama-3.3-70b-instruct',
+  'openai/gpt-4o-mini',
+  'anthropic/claude-3.5-haiku',
+  'google/gemini-flash-1.5',
+  'mistralai/mistral-nemo',
+];
+const OP_VISION = [
+  'openai/gpt-4o-mini',
+  'anthropic/claude-3.5-sonnet',
+  'google/gemini-flash-1.5',
+  'meta-llama/llama-3.2-11b-vision-instruct',
+];
+const OP_VISION_SET = new Set(OP_VISION);
+
+/* Fallback providers (unchanged) */
 const HF_URL = 'https://router.huggingface.co/v1/chat/completions';
 const PL_URL = 'https://gen.pollinations.ai/v1/chat/completions';
 const PL_IMG = 'https://gen.pollinations.ai/image';
@@ -69,10 +96,10 @@ const PL_CHAT = ['openai', 'openai-fast', 'mistral'];
 const PL_VISION = ['openai', 'openai-fast'];
 const PL_IMG_MODELS = ['flux', 'turbo'];
 const PL_EDIT_MODELS = ['kontext', 'flux'];
-const VISION_MODELS = new Set([...HF_VISION, ...PL_VISION]);
+const VISION_MODELS = new Set([...OP_VISION, ...HF_VISION, ...PL_VISION]);
 
 const IDENTITY_GUARD = `Background rules (do not narrate them):
-- Never mention GPT, OpenAI, ChatGPT, Claude, Gemini, Llama, Qwen, DeepSeek, Mistral, Google, Meta, Anthropic, or any other AI company or model by name.
+- Never mention GPT, OpenAI, ChatGPT, Claude, Gemini, Llama, Qwen, DeepSeek, Mistral, Google, Meta, Anthropic, OpenRouter, or any other AI company or model by name.
 - If the user asks what model you are, say you are Mirox, made by OpenSurr, once, and move on.
 - Do not introduce yourself unless the user asks who you are.`;
 
@@ -159,7 +186,12 @@ function extractReplyText(data) {
   if (typeof data.reply === 'string') return data.reply;
   if (typeof data.text === 'string') return data.text;
   const c = data.choices?.[0]?.message?.content;
-  return typeof c === 'string' ? c : '';
+  if (typeof c === 'string') return c;
+  /* OpenRouter may return an array of content parts on some models */
+  if (Array.isArray(c)) {
+    return c.map((p) => (typeof p === 'string' ? p : (p?.text || ''))).join('');
+  }
+  return '';
 }
 
 /* ---------- DB ---------- */
@@ -492,6 +524,37 @@ function stripImages(messages) {
       : String(m.content || ''),
   }));
 }
+
+/* ⚡ OpenRouter caller (primary) */
+async function callOpenRouter(modelId, messages, maxTokens, stream) {
+  if (!OP_KEY) throw new Error('no_op_key');
+  const headers = {
+    Authorization: `Bearer ${OP_KEY}`,
+    'Content-Type': 'application/json',
+    Accept: stream ? 'text/event-stream' : 'application/json',
+    'HTTP-Referer': OP_REFERER,
+    'X-Title': OP_TITLE,
+  };
+  const body = {
+    model: modelId,
+    messages,
+    max_tokens: maxTokens,
+    stream: !!stream,
+    temperature: 0.7,
+  };
+  const res = await fetchT(OP_CHAT_URL, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  }, 45000);
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`op_${res.status}:${t.slice(0, 200)}`);
+  }
+  return res;
+}
+
+/* Fallback providers */
 async function callProvider(kind, modelId, messages, maxTokens, stream) {
   const url = kind === 'hf' ? HF_URL : PL_URL;
   const key = kind === 'hf' ? HF_API_KEY : PL_KEY;
@@ -508,6 +571,7 @@ async function callProvider(kind, modelId, messages, maxTokens, stream) {
   if (!res.ok) throw new Error(`${kind}_${res.status}`);
   return res;
 }
+
 async function airouteText(messages, { fast = true, model } = {}) {
   const flat = stripImages(messages);
   let idx = -1;
@@ -525,6 +589,7 @@ async function airouteText(messages, { fast = true, model } = {}) {
   if (!r.ok) throw new Error('airoute_' + r.status);
   return extractReplyText(await r.json().catch(() => ({})));
 }
+
 function textToSSEStream(text) {
   const enc = new TextEncoder();
   const words = String(text || '').split(/(\s+)/);
@@ -540,22 +605,52 @@ function textToSSEStream(text) {
     },
   });
 }
-async function miroxChatChain({ messages, cfg, stream, vision }) {
-  const tries = [];
-  if (vision) {
-    if (HF_API_KEY) HF_VISION.forEach((m) => tries.push(['hf', m]));
-    if (PL_KEY) PL_VISION.forEach((m) => tries.push(['pl', m]));
-  }
-  if (HF_API_KEY) HF_CHAT.forEach((m) => tries.push(['hf', m]));
-  if (PL_KEY) PL_CHAT.forEach((m) => tries.push(['pl', m]));
 
-  for (const [kind, modelId] of tries) {
-    try {
-      const msgs = VISION_MODELS.has(modelId) ? messages : stripImages(messages);
-      const res = await callProvider(kind, modelId, msgs, cfg.tokens, stream);
-      return { res, provider: kind };
-    } catch (e) { console.warn('[provider]', kind, modelId, e.message); }
+/* ⚡ Chat chain: OpenRouter first, then HF, then PL, then Airoute. */
+async function miroxChatChain({ messages, cfg, stream, vision }) {
+  /* 1) OpenRouter */
+  if (OP_KEY) {
+    const models = vision ? OP_VISION : OP_CHAT;
+    for (const modelId of models) {
+      try {
+        const msgs = OP_VISION_SET.has(modelId) ? messages : stripImages(messages);
+        const res = await callOpenRouter(modelId, msgs, cfg.tokens, stream);
+        return { res, provider: 'openrouter' };
+      } catch (e) {
+        console.warn('[openrouter]', modelId, e.message);
+      }
+    }
   }
+
+  /* 2) Hugging Face */
+  if (HF_API_KEY) {
+    const tries = [];
+    if (vision) HF_VISION.forEach((m) => tries.push(['hf', m]));
+    HF_CHAT.forEach((m) => tries.push(['hf', m]));
+    for (const [kind, modelId] of tries) {
+      try {
+        const msgs = VISION_MODELS.has(modelId) ? messages : stripImages(messages);
+        const res = await callProvider(kind, modelId, msgs, cfg.tokens, stream);
+        return { res, provider: kind };
+      } catch (e) { console.warn('[provider]', kind, modelId, e.message); }
+    }
+  }
+
+  /* 3) Pollinations */
+  if (PL_KEY) {
+    const tries = [];
+    if (vision) PL_VISION.forEach((m) => tries.push(['pl', m]));
+    PL_CHAT.forEach((m) => tries.push(['pl', m]));
+    for (const [kind, modelId] of tries) {
+      try {
+        const msgs = VISION_MODELS.has(modelId) ? messages : stripImages(messages);
+        const res = await callProvider(kind, modelId, msgs, cfg.tokens, stream);
+        return { res, provider: kind };
+      } catch (e) { console.warn('[provider]', kind, modelId, e.message); }
+    }
+  }
+
+  /* 4) Airoute */
   if (AIROUTE_KEY) {
     for (const opts of [{ fast: true }, { fast: false, model: 'meta-llama/Llama-3.3-70B-Instruct' }]) {
       try {
@@ -565,8 +660,10 @@ async function miroxChatChain({ messages, cfg, stream, vision }) {
       } catch (e) { console.warn('[airoute]', e.message); }
     }
   }
+
   throw new Error(GENERIC_ERR);
 }
+
 async function pipeProviderStream(body, onDelta, isClosed, onLimit = () => {}) {
   const reader = body.getReader();
   const dec = new TextDecoder();
@@ -587,7 +684,11 @@ async function pipeProviderStream(body, onDelta, isClosed, onLimit = () => {}) {
         try {
           const item = JSON.parse(raw);
           const d = item.choices?.[0]?.delta?.content;
-          if (d) onDelta(d);
+          if (typeof d === 'string' && d) onDelta(d);
+          else if (Array.isArray(d)) {
+            const joined = d.map((p) => (typeof p === 'string' ? p : (p?.text || ''))).join('');
+            if (joined) onDelta(joined);
+          }
           if (item.choices?.[0]?.finish_reason === 'length') onLimit();
         } catch {}
       }
@@ -626,6 +727,7 @@ async function generateImage(prompt) {
   }
   throw new Error(GENERIC_ERR);
 }
+
 async function editImageWithSource(sourceDataUrl, editPrompt) {
   const deadline = Date.now() + 55000;
   for (const mid of PL_EDIT_MODELS) {
@@ -712,8 +814,14 @@ const publicKey = (k) => ({ id: k.id, name: k.name, key: k.key, created: k.creat
 
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
   res.json({
-    ok: true, app: 'MiroxAI', version: 'v98',
-    providers: { hf: !!HF_API_KEY, pl: !!PL_KEY, airoute: !!AIROUTE_KEY },
+    ok: true, app: 'MiroxAI', version: 'v99',
+    providers: {
+      openrouter: !!OP_KEY,
+      hf: !!HF_API_KEY,
+      pl: !!PL_KEY,
+      airoute: !!AIROUTE_KEY,
+    },
+    primary_provider: OP_KEY ? 'openrouter' : (HF_API_KEY ? 'huggingface' : (PL_KEY ? 'pollinations' : (AIROUTE_KEY ? 'airoute' : null))),
     db: { durable: KV_ON, writable: dbOk },
     time: nowS(),
   });
@@ -732,13 +840,14 @@ app.get(['/api/config', '/config'], (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tier: m.tier }));
   res.json({
-    app: { name: 'MiroxAI', version: 'v98' },
+    app: { name: 'MiroxAI', version: 'v99' },
     models, default_model: models[0].id, plans: PLANS,
     tts_available: !!F_API,
     search_available: true, vision_available: true, image_intent: true, image_edit: true,
     loginment_available: !!LM_CLIENT_ID,
     email_login_available: ALLOW_EMAIL_LOGIN,
     airoute_available: !!AIROUTE_KEY,
+    openrouter_available: !!OP_KEY,
     kde_connect_available: true,
     support_chat_available: true,
     developers_url: '/developers',
@@ -1303,7 +1412,12 @@ app.use((err, req, res, next) => {
   if (!res.headersSent) res.status(500).json({ ok: false, error: GENERIC_ERR });
 });
 
-console.log('[Mirox] v98 · durable store:', KV_ON, '· providers:', { hf: !!HF_API_KEY, pl: !!PL_KEY, airoute: !!AIROUTE_KEY });
+console.log('[Mirox] v99 · durable store:', KV_ON, '· providers:', {
+  openrouter: !!OP_KEY,
+  hf: !!HF_API_KEY,
+  pl: !!PL_KEY,
+  airoute: !!AIROUTE_KEY,
+});
 
 if (!process.env.VERCEL) {
   app.listen(PORT, () => console.log('[Mirox] Server at http://localhost:' + PORT));
