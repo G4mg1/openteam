@@ -2,7 +2,7 @@
   'use strict';
 
   /* ============================================================
-     MiroxAI frontend v104 — think panel fix + image history fix
+     MiroxAI frontend v105 — no dots · single text thinking · bug fixes
      ============================================================ */
 
   /* ---------- i18n ---------- */
@@ -119,7 +119,7 @@
   const LOCAL_USER_KEY = 'mirox_local_user_v3';
   const GUEST_KEY = 'miroxai_guest_id_v1';
   const APPEARANCE_KEY = 'miroxai_appearance_v50';
-  const PREFS_KEY = 'miroxai_prefs_v14';
+  const PREFS_KEY = 'miroxai_prefs_v15';
   const BRIDGE_OPTS_KEY = 'miroxai_bridge_opts_v1';
   const PASTE_ATTACH_THRESHOLD = 1024;
   const NET_TIMEOUT_MS = 15000;
@@ -270,11 +270,7 @@
     }, 6000);
   }
 
-  /* ═══════════ THINK PANEL — streaming-safe ═══════════
-     While streaming: complete sentences are appended once, the trailing
-     partial sentence is shown as ONE live line that gets updated in place.
-     This prevents mid-word/mid-sentence fragmentation gibberish.
-  */
+  /* ═══════════ THINK PANEL — single flowing text, no dots ═══════════ */
   function createThinkPanel(deep) {
     const el = document.createElement('div');
     el.className = 'think-panel';
@@ -291,21 +287,21 @@
         </button>
       </div>
       <div class="think-body-wrap">
-        <div class="think-body" data-think-body></div>
+        <div class="think-body">
+          <div class="think-text" data-think-text></div>
+        </div>
       </div>`;
 
     const titleTextEl = el.querySelector('.think-title-text');
     const timerPill = el.querySelector('.think-timer-pill');
     const toggle = el.querySelector('.think-toggle');
-    const body = el.querySelector('.think-body');
+    const bodyEl = el.querySelector('.think-body');
+    const textEl = el.querySelector('[data-think-text]');
     const iconEl = el.querySelector('.think-icon i');
 
     const t0 = performance.now();
     let done = false;
-    let lockedCount = 0;          // number of stable sentences already rendered
-    let liveLine = null;          // trailing (in-progress) sentence element
-    let liveTextEl = null;
-    let lastRenderedText = '';    // raw text we last rendered from
+    let lastText = '';
 
     toggle.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -320,83 +316,15 @@
       timerPill.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
     }, 100);
 
-    function findSentenceBoundaries(text) {
-      // returns array of end-indices for complete sentences (after trailing whitespace)
-      const bounds = [];
-      const re = /[.!?]+["'”’)\]]*\s+/g;
-      let m;
-      while ((m = re.exec(text)) !== null) {
-        bounds.push(m.index + m[0].length);
-      }
-      return bounds;
-    }
-
-    function makeStableLine(text) {
-      const line = document.createElement('div');
-      line.className = 'think-line';
-      line.innerHTML = `<span class="think-line-dot"></span><span class="think-line-text"></span>`;
-      line.querySelector('.think-line-text').textContent = text;
-      return line;
-    }
-
-    function makeLiveLine() {
-      const line = document.createElement('div');
-      line.className = 'think-line';
-      line.style.animation = 'none';
-      line.style.opacity = '1';
-      line.style.transform = 'none';
-      line.innerHTML = `<span class="think-line-dot"></span><span class="think-line-text"></span>`;
-      return line;
-    }
-
-    function scrollBodyIfNeeded() {
-      if (body.scrollHeight > body.clientHeight + 4) {
-        body.scrollTop = body.scrollHeight;
-      }
-    }
-
     function replaceText(full) {
       const text = String(full || '');
-      if (text === lastRenderedText) return;
-      lastRenderedText = text;
-
-      const bounds = findSentenceBoundaries(text);
-
-      // Rebuild from scratch if content shrank (rare)
-      if (bounds.length < lockedCount) {
-        body.innerHTML = '';
-        lockedCount = 0;
-        liveLine = null;
-        liveTextEl = null;
+      if (text === lastText) return;
+      lastText = text;
+      textEl.textContent = text;
+      // Auto-scroll thinking area when it overflows
+      if (bodyEl.scrollHeight > bodyEl.clientHeight + 4) {
+        bodyEl.scrollTop = bodyEl.scrollHeight;
       }
-
-      // Append new complete sentences
-      for (let i = lockedCount; i < bounds.length; i++) {
-        const start = i === 0 ? 0 : bounds[i - 1];
-        const end = bounds[i];
-        const sentence = text.slice(start, end).trim();
-        if (sentence) body.appendChild(makeStableLine(sentence));
-      }
-      lockedCount = bounds.length;
-
-      // Trailing partial sentence = everything after the last boundary
-      const tailStart = bounds.length > 0 ? bounds[bounds.length - 1] : 0;
-      const tail = text.slice(tailStart).trim();
-
-      if (tail) {
-        if (!liveLine || !liveLine.isConnected) {
-          liveLine = makeLiveLine();
-          liveTextEl = liveLine.querySelector('.think-line-text');
-          body.appendChild(liveLine);
-        }
-        if (liveTextEl.textContent !== tail) liveTextEl.textContent = tail;
-      } else if (liveLine) {
-        liveLine.remove();
-        liveLine = null;
-        liveTextEl = null;
-      }
-
-      scrollBodyIfNeeded();
     }
 
     function setState(next) {
@@ -420,22 +348,14 @@
       clearInterval(timer);
       const secs = ((performance.now() - t0) / 1000).toFixed(1);
       timerPill.textContent = secs + 's';
-
-      // Freeze the live line — it becomes a stable line visually
-      if (liveLine) {
-        liveLine.style.animation = 'none';
-        liveLine.style.opacity = '1';
-        liveLine.style.transform = 'none';
-        liveLine = null;
-        liveTextEl = null;
-      }
-      scrollBodyIfNeeded();
       setState('done');
+      // Auto-collapse — quick for simple mode, slower for deep mode
+      const collapseDelay = deep ? 2200 : 900;
       setTimeout(() => {
         if (el.isConnected && el.dataset.collapsed === 'false') {
           el.dataset.collapsed = 'true';
         }
-      }, 1400);
+      }, collapseDelay);
     }
 
     function fail(msg) {
@@ -445,14 +365,8 @@
       const secs = ((performance.now() - t0) / 1000).toFixed(1);
       timerPill.textContent = secs + 's';
       if (msg) {
-        const line = document.createElement('div');
-        line.className = 'think-line';
-        line.style.animation = 'none';
-        line.style.opacity = '1';
-        line.style.transform = 'none';
-        line.innerHTML = `<span class="think-line-dot"></span><span class="think-line-text"></span>`;
-        line.querySelector('.think-line-text').textContent = msg;
-        body.appendChild(line);
+        const sep = lastText ? '\n\n' : '';
+        textEl.textContent = lastText + sep + msg;
       }
       setState('failed');
     }
@@ -471,7 +385,7 @@
     };
   }
 
-  /* ---------- Canvas watermark — small ---------- */
+  /* ---------- Canvas watermark ---------- */
   const WM_TEXT = 'Mirox AI';
   function paintWatermark(canvas, img) {
     const ctx = canvas.getContext('2d');
@@ -569,7 +483,7 @@
   }
   function closeImageViewer() { $('#imageViewer')?.classList.remove('open'); }
 
-  /* ═══════════ IMAGE HISTORY (sidebar) ═══════════ */
+  /* ---------- Image history ---------- */
   async function loadImageHistory() {
     const grid = $('#sidebarImageHistory');
     if (!grid) return;
@@ -581,10 +495,7 @@
       if (res.status === 401) { grid.innerHTML = '<div class="sidebar-image-empty">Sign in to see your images.</div>'; return; }
       const data = await res.json().catch(() => null);
       const images = (data && Array.isArray(data.images)) ? data.images : [];
-      if (!images.length) {
-        grid.innerHTML = '<div class="sidebar-image-empty"><i class="ri-image-line"></i> No images yet.</div>';
-        return;
-      }
+      if (!images.length) { grid.innerHTML = '<div class="sidebar-image-empty"><i class="ri-image-line"></i> No images yet.</div>'; return; }
       grid.innerHTML = '';
       images.slice(0, 24).forEach((it) => {
         const item = document.createElement('div');
@@ -599,19 +510,14 @@
         item.onclick = () => openImageViewer(it.image);
         grid.appendChild(item);
       });
-      if (!grid.children.length) {
-        grid.innerHTML = '<div class="sidebar-image-empty">No images yet.</div>';
-      }
+      if (!grid.children.length) grid.innerHTML = '<div class="sidebar-image-empty">No images yet.</div>';
     } catch {
       grid.innerHTML = '<div class="sidebar-image-empty">Could not load images.</div>';
     } finally {
       __imageHistoryLoading = false;
     }
   }
-  // call after any new image is generated (fire & forget)
-  function refreshImageHistorySoon() {
-    setTimeout(() => { loadImageHistory().catch(() => {}); }, 500);
-  }
+  function refreshImageHistorySoon() { setTimeout(() => { loadImageHistory().catch(() => {}); }, 500); }
 
   /* ---------- Conversations ---------- */
   function currentConvo() { return __conversations.find((c) => c.id === currentConversationId) || null; }
@@ -1174,11 +1080,13 @@
         const closeIdx = s.indexOf('</thinking>');
         if (openIdx >= 0 && closeIdx > openIdx) {
           thinkingText = s.slice(openIdx + '<thinking>'.length, closeIdx).trim();
-          answerText = s.slice(closeIdx + '</thinking>'.length).replace(/^\s+/, '');
+          const before = s.slice(0, openIdx);
+          const after = s.slice(closeIdx + '</thinking>'.length);
+          answerText = (before + after).replace(/^\s+/, '');
           thinkingClosed = true;
         } else if (openIdx >= 0) {
           thinkingText = s.slice(openIdx + '<thinking>'.length);
-          answerText = '';
+          answerText = s.slice(0, openIdx).trim();
           thinkingClosed = false;
         } else {
           thinkingText = '';
@@ -2252,7 +2160,6 @@
       updateTokenUsage();
       applyTranslations();
       applyDeepThinkUI();
-      // Preload image history in background so the tab is ready
       setTimeout(() => loadImageHistory().catch(() => {}), 800);
     } catch (e) { console.error('[Mirox init]', e); }
     finally { killLoader(); }
