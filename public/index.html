@@ -107,7 +107,7 @@
       <button id="removeAttachmentBtn" class="icon-btn" type="button" title="Remove"><i class="ri-close-line"></i></button>
     </div>
     <div class="tools-row">
-      <button id="deepThinkBtn" class="tool-btn" type="button" title="DeepThink: model reasons longer before answering">
+      <button id="deepThinkBtn" class="tool-btn tool-deep" type="button" title="DeepThink: model reasons longer before answering">
         <i class="ri-brain-line"></i><span>DeepThink</span>
       </button>
       <button id="searchModeBtn" class="tool-btn" type="button"><i class="ri-global-line"></i><span>Search</span></button>
@@ -128,7 +128,7 @@
   </div>
 </main>
 
-<!-- HTML RUNNER / DEBUGGER -->
+<!-- HTML RUNNER -->
 <div id="htmlRunnerModal" class="modal-overlay html-runner-modal">
   <div class="modal modal-html-runner">
     <button class="icon-btn modal-close" type="button" data-close="htmlRunnerModal"><i class="ri-close-line"></i></button>
@@ -145,12 +145,8 @@
       </div>
     </div>
     <div class="html-runner-body">
-      <div class="html-runner-pane" data-hr-pane="preview">
-        <iframe id="hrIframe" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"></iframe>
-      </div>
-      <div class="html-runner-pane" data-hr-pane="source" style="display:none;">
-        <pre class="html-runner-source" id="hrSource"></pre>
-      </div>
+      <div class="html-runner-pane" data-hr-pane="preview"><iframe id="hrIframe" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"></iframe></div>
+      <div class="html-runner-pane" data-hr-pane="source" style="display:none;"><pre class="html-runner-source" id="hrSource"></pre></div>
     </div>
   </div>
 </div>
