@@ -2,7 +2,7 @@
   'use strict';
 
   /* ============================================================
-     MiroxAI frontend v103 — smaller watermark · accent-matched DeepThink
+     MiroxAI frontend v104 — think panel fix + image history fix
      ============================================================ */
 
   /* ---------- i18n ---------- */
@@ -119,7 +119,7 @@
   const LOCAL_USER_KEY = 'mirox_local_user_v3';
   const GUEST_KEY = 'miroxai_guest_id_v1';
   const APPEARANCE_KEY = 'miroxai_appearance_v50';
-  const PREFS_KEY = 'miroxai_prefs_v13';
+  const PREFS_KEY = 'miroxai_prefs_v14';
   const BRIDGE_OPTS_KEY = 'miroxai_bridge_opts_v1';
   const PASTE_ATTACH_THRESHOLD = 1024;
   const NET_TIMEOUT_MS = 15000;
@@ -152,6 +152,7 @@
   let __supportPollTimer = null;
   let __supportSending = false;
   let __hrCurrentCode = '';
+  let __imageHistoryLoading = false;
 
   const uid = () => 'c_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
   const escapeHtml = (s) => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
@@ -269,7 +270,11 @@
     }, 6000);
   }
 
-  /* ═══════════ THINK PANEL — polished ═══════════ */
+  /* ═══════════ THINK PANEL — streaming-safe ═══════════
+     While streaming: complete sentences are appended once, the trailing
+     partial sentence is shown as ONE live line that gets updated in place.
+     This prevents mid-word/mid-sentence fragmentation gibberish.
+  */
   function createThinkPanel(deep) {
     const el = document.createElement('div');
     el.className = 'think-panel';
@@ -297,8 +302,10 @@
 
     const t0 = performance.now();
     let done = false;
-    let lastRenderedSentences = 0;
-    let lastRenderedText = '';
+    let lockedCount = 0;          // number of stable sentences already rendered
+    let liveLine = null;          // trailing (in-progress) sentence element
+    let liveTextEl = null;
+    let lastRenderedText = '';    // raw text we last rendered from
 
     toggle.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -313,11 +320,39 @@
       timerPill.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
     }, 100);
 
-    function splitSentences(text) {
-      return String(text || '')
-        .split(/(?<=[.!?])\s+/)
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
+    function findSentenceBoundaries(text) {
+      // returns array of end-indices for complete sentences (after trailing whitespace)
+      const bounds = [];
+      const re = /[.!?]+["'”’)\]]*\s+/g;
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        bounds.push(m.index + m[0].length);
+      }
+      return bounds;
+    }
+
+    function makeStableLine(text) {
+      const line = document.createElement('div');
+      line.className = 'think-line';
+      line.innerHTML = `<span class="think-line-dot"></span><span class="think-line-text"></span>`;
+      line.querySelector('.think-line-text').textContent = text;
+      return line;
+    }
+
+    function makeLiveLine() {
+      const line = document.createElement('div');
+      line.className = 'think-line';
+      line.style.animation = 'none';
+      line.style.opacity = '1';
+      line.style.transform = 'none';
+      line.innerHTML = `<span class="think-line-dot"></span><span class="think-line-text"></span>`;
+      return line;
+    }
+
+    function scrollBodyIfNeeded() {
+      if (body.scrollHeight > body.clientHeight + 4) {
+        body.scrollTop = body.scrollHeight;
+      }
     }
 
     function replaceText(full) {
@@ -325,23 +360,43 @@
       if (text === lastRenderedText) return;
       lastRenderedText = text;
 
-      const sentences = splitSentences(text);
+      const bounds = findSentenceBoundaries(text);
 
-      // If sentence count shrank (rare), rebuild from scratch
-      if (sentences.length < lastRenderedSentences) {
+      // Rebuild from scratch if content shrank (rare)
+      if (bounds.length < lockedCount) {
         body.innerHTML = '';
-        lastRenderedSentences = 0;
+        lockedCount = 0;
+        liveLine = null;
+        liveTextEl = null;
       }
 
-      // Append any new sentences only — this keeps existing lines stable
-      for (let i = lastRenderedSentences; i < sentences.length; i++) {
-        const line = document.createElement('div');
-        line.className = 'think-line';
-        line.style.animationDelay = '0ms';
-        line.innerHTML = `<span class="think-line-dot"></span><span class="think-line-text">${escapeHtml(sentences[i])}</span>`;
-        body.appendChild(line);
+      // Append new complete sentences
+      for (let i = lockedCount; i < bounds.length; i++) {
+        const start = i === 0 ? 0 : bounds[i - 1];
+        const end = bounds[i];
+        const sentence = text.slice(start, end).trim();
+        if (sentence) body.appendChild(makeStableLine(sentence));
       }
-      lastRenderedSentences = sentences.length;
+      lockedCount = bounds.length;
+
+      // Trailing partial sentence = everything after the last boundary
+      const tailStart = bounds.length > 0 ? bounds[bounds.length - 1] : 0;
+      const tail = text.slice(tailStart).trim();
+
+      if (tail) {
+        if (!liveLine || !liveLine.isConnected) {
+          liveLine = makeLiveLine();
+          liveTextEl = liveLine.querySelector('.think-line-text');
+          body.appendChild(liveLine);
+        }
+        if (liveTextEl.textContent !== tail) liveTextEl.textContent = tail;
+      } else if (liveLine) {
+        liveLine.remove();
+        liveLine = null;
+        liveTextEl = null;
+      }
+
+      scrollBodyIfNeeded();
     }
 
     function setState(next) {
@@ -365,8 +420,17 @@
       clearInterval(timer);
       const secs = ((performance.now() - t0) / 1000).toFixed(1);
       timerPill.textContent = secs + 's';
+
+      // Freeze the live line — it becomes a stable line visually
+      if (liveLine) {
+        liveLine.style.animation = 'none';
+        liveLine.style.opacity = '1';
+        liveLine.style.transform = 'none';
+        liveLine = null;
+        liveTextEl = null;
+      }
+      scrollBodyIfNeeded();
       setState('done');
-      // Auto-collapse after a brief pause
       setTimeout(() => {
         if (el.isConnected && el.dataset.collapsed === 'false') {
           el.dataset.collapsed = 'true';
@@ -380,16 +444,17 @@
       clearInterval(timer);
       const secs = ((performance.now() - t0) / 1000).toFixed(1);
       timerPill.textContent = secs + 's';
-      setState('failed');
       if (msg) {
         const line = document.createElement('div');
         line.className = 'think-line';
         line.style.animation = 'none';
         line.style.opacity = '1';
         line.style.transform = 'none';
-        line.innerHTML = `<span class="think-line-dot"></span><span class="think-line-text">${escapeHtml(msg)}</span>`;
+        line.innerHTML = `<span class="think-line-dot"></span><span class="think-line-text"></span>`;
+        line.querySelector('.think-line-text').textContent = msg;
         body.appendChild(line);
       }
+      setState('failed');
     }
 
     function hide() {
@@ -406,7 +471,7 @@
     };
   }
 
-  /* ---------- Canvas watermark — smaller, cleaner ---------- */
+  /* ---------- Canvas watermark — small ---------- */
   const WM_TEXT = 'Mirox AI';
   function paintWatermark(canvas, img) {
     const ctx = canvas.getContext('2d');
@@ -414,18 +479,14 @@
     ctx.drawImage(img, 0, 0, W, H);
 
     const minDim = Math.min(W, H);
-
-    // Smaller sizing: ~2% of min dimension for text
     const textSize = Math.max(9, Math.round(minDim * 0.020));
     const pad = Math.max(6, Math.round(minDim * 0.012));
     const blobR = textSize * 0.55;
     const blobW = blobR * 2;
     const blobH = blobR * 1.7;
-
     const bx = pad + blobR;
     const by = H - pad - blobR;
 
-    // Very subtle vignette so the mark stays legible without being heavy
     const gradH = textSize * 1.8;
     const grad = ctx.createLinearGradient(0, H - gradH, 0, H);
     grad.addColorStop(0, 'rgba(0,0,0,0)');
@@ -436,7 +497,6 @@
     ctx.save();
     ctx.globalAlpha = 0.72;
 
-    // Blob body
     ctx.fillStyle = '#d97757';
     const radius = blobR * 0.5;
     const bxL = bx - blobR;
@@ -458,13 +518,11 @@
     }
     ctx.fill();
 
-    // Eyes
     ctx.fillStyle = 'rgba(255,255,255,0.95)';
     const eyeW = blobR * 0.24, eyeH = blobR * 0.66;
     ctx.fillRect(bx - blobR * 0.45, by - blobR * 0.30, eyeW, eyeH);
     ctx.fillRect(bx + blobR * 0.20, by - blobR * 0.30, eyeW, eyeH);
 
-    // Text
     ctx.font = `700 ${textSize}px Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
     ctx.textBaseline = 'middle';
     ctx.fillStyle = 'rgba(255,255,255,0.94)';
@@ -475,7 +533,6 @@
     const ty = by + textSize * 0.02;
     ctx.fillText(WM_TEXT, tx, ty);
 
-    // Tiny tagline
     ctx.shadowBlur = Math.max(2, textSize * 0.12);
     ctx.font = `500 ${Math.round(textSize * 0.58)}px Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
     ctx.fillStyle = 'rgba(255,255,255,0.62)';
@@ -483,7 +540,6 @@
 
     ctx.restore();
   }
-
   function watermarkedDataUrl(srcDataUrl) {
     return new Promise((resolve) => {
       if (!srcDataUrl) return resolve('');
@@ -512,6 +568,50 @@
     img.src = url;
   }
   function closeImageViewer() { $('#imageViewer')?.classList.remove('open'); }
+
+  /* ═══════════ IMAGE HISTORY (sidebar) ═══════════ */
+  async function loadImageHistory() {
+    const grid = $('#sidebarImageHistory');
+    if (!grid) return;
+    if (__imageHistoryLoading) return;
+    __imageHistoryLoading = true;
+    grid.innerHTML = '<div class="sidebar-image-empty"><i class="ri-loader-4-line spin"></i> Loading…</div>';
+    try {
+      const res = await netFetch('/api/images/history', { method: 'GET' }, 12000);
+      if (res.status === 401) { grid.innerHTML = '<div class="sidebar-image-empty">Sign in to see your images.</div>'; return; }
+      const data = await res.json().catch(() => null);
+      const images = (data && Array.isArray(data.images)) ? data.images : [];
+      if (!images.length) {
+        grid.innerHTML = '<div class="sidebar-image-empty"><i class="ri-image-line"></i> No images yet.</div>';
+        return;
+      }
+      grid.innerHTML = '';
+      images.slice(0, 24).forEach((it) => {
+        const item = document.createElement('div');
+        item.className = 'sidebar-image-item';
+        item.title = it.prompt || '';
+        const img = document.createElement('img');
+        img.src = it.image;
+        img.alt = it.prompt || 'generated image';
+        img.loading = 'lazy';
+        img.onerror = () => { item.style.display = 'none'; };
+        item.appendChild(img);
+        item.onclick = () => openImageViewer(it.image);
+        grid.appendChild(item);
+      });
+      if (!grid.children.length) {
+        grid.innerHTML = '<div class="sidebar-image-empty">No images yet.</div>';
+      }
+    } catch {
+      grid.innerHTML = '<div class="sidebar-image-empty">Could not load images.</div>';
+    } finally {
+      __imageHistoryLoading = false;
+    }
+  }
+  // call after any new image is generated (fire & forget)
+  function refreshImageHistorySoon() {
+    setTimeout(() => { loadImageHistory().catch(() => {}); }, 500);
+  }
 
   /* ---------- Conversations ---------- */
   function currentConvo() { return __conversations.find((c) => c.id === currentConversationId) || null; }
@@ -870,7 +970,6 @@
     if (!text && !pendingFiles.length) return;
     const hasImageFile = pendingFiles.some((f) => f.type === 'image');
 
-    /* DeepThink disables image generation */
     if (__prefs.deepThink && !hasImageFile && looksLikeImageRequest(text)) {
       toast('Image generation is disabled while DeepThink is on. Turn it off to generate images.', 4500, 'err');
       return;
@@ -1122,11 +1221,9 @@
           if (o.d) {
             rawAll += o.d;
             updateSplit();
-            // Feed thinking text to the panel live
             if (thinkPanel && thinkPanel.isConnected() && !thinkingClosed) {
               thinkPanel.replaceText(thinkingText);
             }
-            // Only create the answer bubble when we actually have answer text
             if (answerText.length > 0) {
               if (!gotToken) {
                 gotToken = true;
@@ -1145,14 +1242,12 @@
       clearTimeout(streamTimeout);
       if (signinTriggered) { try { reader.cancel(); } catch {} }
 
-      // Final state of the thinking panel
       updateSplit();
       if (thinkPanel && thinkPanel.isConnected()) {
         if (/<thinking>/.test(rawAll)) {
           thinkPanel.replaceText(thinkingText);
           thinkPanel.finalize();
         } else {
-          // Model didn't think — hide the panel entirely
           thinkPanel.hide();
         }
       }
@@ -1163,7 +1258,6 @@
       if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); wireCodeButtons(bubbleText); }
       wireMessageActions(msgEl);
 
-      // Watermark generated image
       let imageKey = null;
       if (generatedImage) {
         const wm = await watermarkedDataUrl(generatedImage);
@@ -1172,6 +1266,7 @@
         if (imgEl) { imgEl.src = wm; imgEl.onclick = () => openImageViewer(wm); }
         imageKey = 'img:' + aiMsgId;
         await idb.set(imageKey, wm).catch(() => { imageKey = null; });
+        refreshImageHistorySoon();
       }
 
       let savedMsg;
@@ -1505,6 +1600,7 @@
       toast('Welcome, ' + name + '!', 2400, 'ok');
       setLoginError('');
       if (btn) { btn.disabled = false; btn.innerHTML = '<span>Continue</span><i class="ri-arrow-right-line"></i>'; }
+      loadImageHistory().catch(() => {});
     }, 500);
   }
   async function doLogout() {
@@ -1515,6 +1611,7 @@
     closeModal('settingsModal');
     toast('Signed out', 1800, 'ok');
     refreshUsage().catch(() => {});
+    loadImageHistory().catch(() => {});
   }
   async function loadPlans() {
     const grid = $('#plansGrid'); if (!grid) return;
@@ -1540,6 +1637,7 @@
       if (res.ok && data.ok && data.image) {
         const wm = await watermarkedDataUrl(data.image);
         if (result) { result.innerHTML = `<img src="${wm}" alt="">`; result.querySelector('img').onclick = () => openImageViewer(wm); }
+        refreshImageHistorySoon();
       } else if (res.status === 401) {
         closeModal('imageModal'); requireSignIn('Sign in to generate images with Mirox.');
       } else { if (result) result.innerHTML = `<div class="studio-error">Failed</div>`; }
@@ -1614,7 +1712,7 @@
   function openSupportModal() { openModal('supportModal'); supportLoad(); supportStartPolling(); }
   function closeSupportModal() { closeModal('supportModal'); supportStopPolling(); }
 
-  /* ---------- Bridge (unchanged core, trimmed) ---------- */
+  /* ---------- Bridge ---------- */
   function loadBridgeOpts() { const o = safeGet(BRIDGE_OPTS_KEY, {}); if (typeof o.autoRun === 'boolean') __bridgeAutoRun = o.autoRun; if (typeof o.showCode === 'boolean') __bridgeShowCode = o.showCode; }
   function saveBridgeOpts() { safeSet(BRIDGE_OPTS_KEY, { autoRun: __bridgeAutoRun, showCode: __bridgeShowCode }); }
   function renderBridgeStatus() {
@@ -1711,9 +1809,6 @@
       [/<bridge-delete\s+path="([^"]+)"\s*\/>/g, 'delete', (m) => ({ path: m[1] })],
       [/<bridge-read\s+path="([^"]+)"\s*\/>/g, 'read', (m) => ({ path: m[1] })],
       [/<bridge-list\s+path="([^"]+)"\s*\/>/g, 'list', (m) => ({ path: m[1] })],
-      [/<bridge-sysinfo\s*\/>/g, 'sysinfo', () => ({})],
-      [/<bridge-syscheck\s*\/>/g, 'syscheck', () => ({})],
-      [/<bridge-processes\s*\/>/g, 'processes', () => ({})],
     ];
     for (const [re, type, fn] of rules) { re.lastIndex = 0; let m; while ((m = re.exec(text)) !== null) add(type, m, fn(m)); }
     cmds.sort((a, b) => a.index - b.index);
@@ -1849,7 +1944,6 @@
     updateBridgeSendBtn();
     runBridgeTurn(text, false);
   }
-
   function resolveRelativePath(baseFile, rel) {
     if (!rel) return '';
     if (/^([a-z]+:)?\/\//i.test(rel) || rel.startsWith('data:')) return rel;
@@ -1918,6 +2012,7 @@
         const tabKey = tab.dataset.tab;
         $$('.sidebar-tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === tabKey));
         $$('.sidebar-section').forEach((s) => { s.style.display = s.dataset.pane === tabKey ? '' : 'none'; });
+        if (tabKey === 'images') loadImageHistory().catch(() => {});
       };
     });
     on('#historyList', 'click', (e) => {
@@ -1975,7 +2070,6 @@
       supInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); supportSend(); } });
     }
 
-    /* HTML Runner */
     $$('.html-runner-tab').forEach((t) => {
       t.onclick = () => {
         $$('.html-runner-tab').forEach((x) => x.classList.toggle('active', x === t));
@@ -2158,6 +2252,8 @@
       updateTokenUsage();
       applyTranslations();
       applyDeepThinkUI();
+      // Preload image history in background so the tab is ready
+      setTimeout(() => loadImageHistory().catch(() => {}), 800);
     } catch (e) { console.error('[Mirox init]', e); }
     finally { killLoader(); }
     loadConfig().catch(() => {});
