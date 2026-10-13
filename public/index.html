@@ -106,7 +106,7 @@
     <div class="welcome-screen">
       <div class="welcome-mascot"><div class="mascot mascot-lg" id="welcomeMascot" data-mood="idle"></div></div>
       <h1 class="welcome-title">Hi, I'm Mirox</h1>
-      <p class="welcome-sub">Luna and Gen are unlimited and free. Share to unlock <strong>Pro, Ultra &amp; Eclipse</strong> free for 2 days.</p>
+      <p class="welcome-sub">Luna and Gen are unlimited and free. <strong>Sign in</strong> to use Pro, Ultra, Eclipse and image generation.</p>
       <div class="suggestion-grid">
         <button class="suggestion-card" type="button" data-prompt="Show me a simple Lua script that prints numbers 1 to 5"><i class="ri-code-box-line"></i><span>Write a Lua script</span></button>
         <button class="suggestion-card" type="button" data-prompt="Show me an HTML example with a table"><i class="ri-html5-line"></i><span>Show an HTML table</span></button>
@@ -141,27 +141,6 @@
     <div class="composer-note">Attach code or text files (.py, .js, .txt, .md, …) and ask Mirox to explain, fix, or rewrite them.</div>
   </div>
 </main>
-
-<!-- SHARE AD -->
-<div id="shareAdModal" class="share-ad-overlay">
-  <div class="share-ad-panel">
-    <button class="icon-btn share-ad-close" type="button" id="shareAdCloseBtn"><i class="ri-close-line"></i></button>
-    <div class="share-ad-icon"><i class="ri-gift-2-line"></i></div>
-    <h2 class="share-ad-title">Share our site, get 50k tokens</h2>
-    <p class="share-ad-sub">Get <strong>50k tokens for 2 days</strong> and unlock <strong>Pro, Ultra &amp; Eclipse</strong> models free.</p>
-    <ul class="share-ad-perks">
-      <li><i class="ri-check-line"></i> <span>50,000 bonus tokens</span></li>
-      <li><i class="ri-check-line"></i> <span>Valid for 2 days</span></li>
-      <li><i class="ri-vip-crown-fill"></i> <span>Pro · Ultra · Eclipse unlocked</span></li>
-    </ul>
-    <div class="share-ad-actions">
-      <button class="share-ad-btn primary" type="button" id="shareAdShareBtn"><i class="ri-share-forward-2-line"></i> <span>Share now</span></button>
-      <button class="share-ad-btn" type="button" id="shareAdIgnoreBtn">Ignore</button>
-    </div>
-    <div class="share-ad-status" id="shareAdStatus"></div>
-    <div class="share-ad-hint">We verify shares through your device's native share sheet.</div>
-  </div>
-</div>
 
 <!-- FILE PREVIEW -->
 <div id="filePreviewModal" class="modal-overlay">
@@ -311,7 +290,7 @@
       <span>MiroxAI</span>
     </div>
     <h2 class="auth-title">Sign in</h2>
-    <p class="auth-sub">Continue with your name and email.</p>
+    <p class="auth-sub" id="loginModalSub">Continue with your name and email.</p>
     <form id="simpleLoginForm" class="auth-form" autocomplete="on" novalidate>
       <div class="auth-field">
         <label for="loginName">Name</label>
@@ -354,16 +333,6 @@
           <button id="signInFromSettingsBtn" class="setting-mini-btn primary" type="button">Sign in</button>
         </div>
         <button id="logoutBtn" class="modal-btn danger" type="button" style="display:none;margin-top:10px;">Sign out</button>
-      </div>
-      <div class="setting-group">
-        <h4>Rewards</h4>
-        <div class="setting-row">
-          <div class="setting-row-info">
-            <span class="setting-row-label">Share &amp; earn</span>
-            <span class="setting-row-sub">Get 50k tokens + Pro/Ultra/Eclipse free for 2 days</span>
-          </div>
-          <button id="shareFromSettingsBtn" class="setting-mini-btn primary" type="button"><i class="ri-share-forward-2-line"></i> <span>Share</span></button>
-        </div>
       </div>
       <div class="setting-group">
         <h4>Behavior</h4>
@@ -498,7 +467,7 @@
   <div class="modal modal-wide">
     <button class="icon-btn modal-close" type="button" data-close="plansModal"><i class="ri-close-line"></i></button>
     <h2 class="modal-title">Plans</h2>
-    <p class="modal-sub">Luna and Gen are free. Share to unlock Pro, Ultra and Eclipse for 2 days.</p>
+    <p class="modal-sub">Luna and Gen are free. Pro, Ultra and Eclipse are available on paid plans.</p>
     <div id="plansGrid" class="plans-grid"></div>
   </div>
 </div>
@@ -508,7 +477,7 @@
   <div class="modal">
     <button class="icon-btn modal-close" type="button" data-close="imageModal"><i class="ri-close-line"></i></button>
     <h2 class="modal-title">Lumenal 1.0</h2>
-    <p class="modal-sub">Strong image generation.</p>
+    <p class="modal-sub">Strong image generation — watermarked with Mirox AI.</p>
     <div class="image-studio">
       <textarea id="imagePrompt" class="modal-textarea" rows="3" placeholder="Describe an image…"></textarea>
       <button id="generateImageBtn" class="modal-btn primary" type="button"><i class="ri-image-add-line"></i> <span>Generate</span></button>
@@ -517,7 +486,7 @@
   </div>
 </div>
 
-<!-- SUPPORT CHAT (real agent conversation) -->
+<!-- SUPPORT CHAT -->
 <div id="supportModal" class="modal-overlay">
   <div class="modal modal-support">
     <button class="icon-btn modal-close" type="button" data-close="supportModal"><i class="ri-close-line"></i></button>
