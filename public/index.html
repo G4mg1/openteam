@@ -77,7 +77,7 @@
     <button id="hamburgerBtn" class="icon-btn hamburger" type="button" title="Menu"><i class="ri-menu-line"></i></button>
     <h2 id="chatTitle" class="chat-title">New chat</h2>
     <div class="chat-header-actions">
-      <div id="tokenUsage" class="token-usage"><i class="ri-cpu-line"></i><span>0 / 10k</span></div>
+      <div id="tokenUsage" class="token-usage"><i class="ri-cpu-line"></i><span>0 tokens</span></div>
       <div id="modelPicker" class="model-picker-wrap">
         <button id="modelPickerBtn" class="model-picker-btn" type="button"><i class="ri-sparkling-2-line"></i><span id="currentModelLabel">Luna</span><i class="ri-arrow-down-s-line"></i></button>
         <div id="modelPickerMenu" class="model-picker-menu"></div>
@@ -89,7 +89,7 @@
     <div class="welcome-screen">
       <div class="welcome-mascot"><div class="mascot mascot-lg" id="welcomeMascot" data-mood="idle"></div></div>
       <h1 class="welcome-title">Hi, I'm Mirox</h1>
-      <p class="welcome-sub">Luna and Gen are unlimited and free. <strong>Sign in</strong> to use Pro, Ultra, Eclipse and image generation.</p>
+      <p class="welcome-sub">Luna and Gen are unlimited and free. <strong>Sign in</strong> to use Pro, Ultra, Eclipse, image generation and DeepThink.</p>
       <div class="suggestion-grid">
         <button class="suggestion-card" type="button" data-prompt="Show me a simple Lua script that prints numbers 1 to 5"><i class="ri-code-box-line"></i><span>Write a Lua script</span></button>
         <button class="suggestion-card" type="button" data-prompt="Show me an HTML example with a table"><i class="ri-html5-line"></i><span>Show an HTML table</span></button>
@@ -107,6 +107,9 @@
       <button id="removeAttachmentBtn" class="icon-btn" type="button" title="Remove"><i class="ri-close-line"></i></button>
     </div>
     <div class="tools-row">
+      <button id="deepThinkBtn" class="tool-btn" type="button" title="DeepThink: model reasons longer before answering">
+        <i class="ri-brain-line"></i><span>DeepThink</span>
+      </button>
       <button id="searchModeBtn" class="tool-btn" type="button"><i class="ri-global-line"></i><span>Search</span></button>
       <button id="imageModeBtn" class="tool-btn" type="button"><i class="ri-image-line"></i><span>Lumenal</span></button>
       <button id="bridgeModeBtn" class="tool-btn pc-only" type="button"><i class="ri-link"></i><span>Bridge</span></button>
@@ -124,6 +127,33 @@
     <div class="composer-note">Attach code or text files (.py, .js, .txt, .md, …) and ask Mirox to explain, fix, or rewrite them.</div>
   </div>
 </main>
+
+<!-- HTML RUNNER / DEBUGGER -->
+<div id="htmlRunnerModal" class="modal-overlay html-runner-modal">
+  <div class="modal modal-html-runner">
+    <button class="icon-btn modal-close" type="button" data-close="htmlRunnerModal"><i class="ri-close-line"></i></button>
+    <div class="html-runner-header">
+      <div class="html-runner-title"><i class="ri-window-2-line"></i><span>HTML Runner</span></div>
+      <div class="html-runner-tabs">
+        <button class="html-runner-tab active" data-hr-tab="preview"><i class="ri-eye-line"></i> Preview</button>
+        <button class="html-runner-tab" data-hr-tab="source"><i class="ri-code-line"></i> Source</button>
+      </div>
+      <div class="html-runner-actions">
+        <button class="icon-btn" id="hrReloadBtn" title="Reload"><i class="ri-refresh-line"></i></button>
+        <button class="icon-btn" id="hrOpenBtn" title="Open in new tab"><i class="ri-external-link-line"></i></button>
+        <button class="icon-btn" id="hrCopyBtn" title="Copy source"><i class="ri-file-copy-line"></i></button>
+      </div>
+    </div>
+    <div class="html-runner-body">
+      <div class="html-runner-pane" data-hr-pane="preview">
+        <iframe id="hrIframe" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"></iframe>
+      </div>
+      <div class="html-runner-pane" data-hr-pane="source" style="display:none;">
+        <pre class="html-runner-source" id="hrSource"></pre>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- FILE PREVIEW -->
 <div id="filePreviewModal" class="modal-overlay">
@@ -269,6 +299,13 @@
           <button id="signInFromSettingsBtn" class="setting-mini-btn primary" type="button">Sign in</button>
         </div>
         <button id="logoutBtn" class="modal-btn danger" type="button" style="display:none;margin-top:10px;">Sign out</button>
+      </div>
+      <div class="setting-group">
+        <h4>Reasoning</h4>
+        <div class="setting-row">
+          <div class="setting-row-info"><span class="setting-row-label">DeepThink</span><span class="setting-row-sub">Model reasons longer before answering. Image generation is disabled while DeepThink is on.</span></div>
+          <label class="switch"><input type="checkbox" id="deepThinkToggle"><span class="switch-slider"></span></label>
+        </div>
       </div>
       <div class="setting-group">
         <h4>Behavior</h4>
