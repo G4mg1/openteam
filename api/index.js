@@ -1,10 +1,9 @@
 /* ============================================================
-   MiroxAI Backend v100 — binary-watermarked images · OP_KEY primary
+   MiroxAI Backend v101 — real thinking + watermarked images
    ============================================================ */
 import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
-import zlib from 'node:zlib';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -14,7 +13,6 @@ process.on('uncaughtException', (e) => console.error('[uncaughtException]', e?.m
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
-
 const env = (k, d = '') => String(process.env[k] ?? d).trim();
 
 const PORT = env('PORT', '3000');
@@ -51,11 +49,11 @@ const GENERIC_ERR = 'Mirox AI encountered an error';
 const DAY = 24 * 3600;
 
 const MIROX_MODELS = {
-  'mirox-luna-1.2':    { label: 'Luna',    tier: 'free',     tokens: 1400, basePrompt: 'You are Luna by OpenSurr. Concise, helpful. Fenced code blocks for code.' },
-  'mirox-gen-1':       { label: 'Gen',     tier: 'free',     tokens: 1000, basePrompt: 'You are Gen by OpenSurr. Ultra concise. Fenced code blocks for code.' },
-  'mirox-pro-5':       { label: 'Pro',     tier: 'pro',      tokens: 2000, basePrompt: 'You are Pro by OpenSurr. Balanced depth. Fenced code blocks for code.' },
-  'mirox-ultra-10':    { label: 'Ultra',   tier: 'pro',      tokens: 2500, basePrompt: 'You are Ultra by OpenSurr. Deep reasoning. Fenced code blocks for code.' },
-  'mirox-eclipse-2.0': { label: 'Eclipse', tier: 'ultimate', tokens: 3200, basePrompt: 'You are Eclipse by OpenSurr. Best quality. Fenced code blocks for code.' },
+  'mirox-luna-1.2':    { label: 'Luna',    tier: 'free',     tokens: 1600, basePrompt: 'You are Luna by OpenSurr. Concise, helpful. Fenced code blocks for code.' },
+  'mirox-gen-1':       { label: 'Gen',     tier: 'free',     tokens: 1200, basePrompt: 'You are Gen by OpenSurr. Ultra concise. Fenced code blocks for code.' },
+  'mirox-pro-5':       { label: 'Pro',     tier: 'pro',      tokens: 2400, basePrompt: 'You are Pro by OpenSurr. Balanced depth. Fenced code blocks for code.' },
+  'mirox-ultra-10':    { label: 'Ultra',   tier: 'pro',      tokens: 2800, basePrompt: 'You are Ultra by OpenSurr. Deep reasoning. Fenced code blocks for code.' },
+  'mirox-eclipse-2.0': { label: 'Eclipse', tier: 'ultimate', tokens: 3600, basePrompt: 'You are Eclipse by OpenSurr. Best quality. Fenced code blocks for code.' },
 };
 const PLANS = {
   free:     { label: 'Free',     vision_limit: 10,   image_limit: 10,   eclipse_daily_limit: 5,   price_usd: 0,     api_keys: 2 },
@@ -98,11 +96,24 @@ const IDENTITY_GUARD = `Background rules (do not narrate them):
 - If the user asks what model you are, say you are Mirox, made by OpenSurr, once, and move on.
 - Do not introduce yourself unless the user asks who you are.`;
 
+/* ⚡ Real thinking instruction */
+const THINKING_RULE = `BEFORE you answer, write your actual reasoning inside <thinking>...</thinking> tags.
+
+Write it in first person, natural internal monologue style, short fragments — like:
+"User asked what my model is. I shouldn't reveal any specific model. I should just say I'm Mirox by OpenSurr. Keep it short. Ok, do it."
+
+Rules:
+- 1 to 6 short sentences. No lists, no headings, no code inside <thinking>.
+- It must be genuine reasoning: what the user wants, what approach you'll take, any gotchas.
+- Do NOT restate the final answer inside <thinking>.
+- Then close with </thinking> and write the actual answer immediately after.
+- If the user's request is trivial (hi, thanks), you can skip thinking entirely.`;
+
 const BRIDGE_PROMPT = `BRIDGE MODE — You are Mirox, working on the user's machine.
 
 You receive a [Bridge environment] block at the top of every user message.
 
-RULE 0 — Think out loud briefly before writing code.
+RULE 0 — Think out loud briefly inside <thinking>...</thinking> before writing code.
 RULE 1 — Never paste code into visible text. Use <bridge-write> or <bridge-append>.
 RULE 2 — Always close tags.
 RULE 3 — Long files: first chunk with <bridge-write>, rest with <bridge-append>.
@@ -168,12 +179,10 @@ async function fetchT(url, opts = {}, ms = 20000) {
   try { return await fetch(url, { ...opts, signal: ctrl.signal }); }
   finally { clearTimeout(timer); }
 }
-
 function safeEq(a, b) {
   const x = Buffer.from(String(a)), y = Buffer.from(String(b));
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
-
 function extractReplyText(data) {
   if (!data || typeof data !== 'object') return '';
   if (typeof data.reply === 'string') return data.reply;
@@ -184,16 +193,8 @@ function extractReplyText(data) {
   return '';
 }
 
-/* ============================================================
-   BINARY WATERMARK — detectable via `grep -a MIROXAI-WATERMARK`
-   - PNG:   injects a tEXt chunk before IEND
-   - JPEG:  injects a COM segment right after SOI
-   - Other: appends a trailing marker after the logical end
-   ============================================================ */
-const WM_KEYWORD = 'MiroxAI';
-const WM_TEXT = 'mirox-ai-watermark-v1-logo';
+/* ⚡ Binary marker (still injected server-side, kept for API users) */
 const WM_MARKER = Buffer.from('\n\x00MIROXAI-WATERMARK-v1-LOGO\x00\n', 'binary');
-
 const _CRC_TABLE = (() => {
   const t = new Uint32Array(256);
   for (let n = 0; n < 256; n++) {
@@ -208,15 +209,10 @@ function crc32(buf) {
   for (let i = 0; i < buf.length; i++) crc = _CRC_TABLE[(crc ^ buf[i]) & 0xff] ^ (crc >>> 8);
   return (crc ^ 0xffffffff) >>> 0;
 }
-
 function watermarkPng(buffer) {
   const SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
   if (buffer.length < 8 || !buffer.slice(0, 8).equals(SIG)) return null;
-  const data = Buffer.concat([
-    Buffer.from(WM_KEYWORD, 'latin1'),
-    Buffer.from([0]),
-    Buffer.from(WM_TEXT, 'latin1'),
-  ]);
+  const data = Buffer.concat([Buffer.from('MiroxAI', 'latin1'), Buffer.from([0]), Buffer.from('mirox-ai-watermark-v1-logo', 'latin1')]);
   const type = Buffer.from('tEXt', 'latin1');
   const lenBuf = Buffer.alloc(4); lenBuf.writeUInt32BE(data.length, 0);
   const crcBuf = Buffer.alloc(4); crcBuf.writeUInt32BE(crc32(Buffer.concat([type, data])), 0);
@@ -226,32 +222,20 @@ function watermarkPng(buffer) {
   const insertAt = iend - 4;
   return Buffer.concat([buffer.slice(0, insertAt), chunk, buffer.slice(insertAt)]);
 }
-
 function watermarkJpeg(buffer) {
   if (buffer.length < 2 || buffer[0] !== 0xff || buffer[1] !== 0xd8) return null;
-  const payload = Buffer.from(`MiroxAI:${WM_TEXT}`, 'latin1');
+  const payload = Buffer.from('MiroxAI:mirox-ai-watermark-v1-logo', 'latin1');
   const len = payload.length + 2;
   if (len > 0xffff) return null;
   const head = Buffer.alloc(4);
   head[0] = 0xff; head[1] = 0xfe; head.writeUInt16BE(len, 2);
   return Buffer.concat([buffer.slice(0, 2), head, payload, buffer.slice(2)]);
 }
-
-function appendMarker(buffer) {
-  return Buffer.concat([buffer, WM_MARKER]);
-}
-
 function applyWatermark(buffer, mime) {
   const m = String(mime || '').toLowerCase();
-  if (m.includes('png')) {
-    const r = watermarkPng(buffer);
-    return appendMarker(r || buffer);
-  }
-  if (m.includes('jpeg') || m.includes('jpg')) {
-    const r = watermarkJpeg(buffer);
-    return appendMarker(r || buffer);
-  }
-  return appendMarker(buffer);
+  if (m.includes('png')) { const r = watermarkPng(buffer); return Buffer.concat([r || buffer, WM_MARKER]); }
+  if (m.includes('jpeg') || m.includes('jpg')) { const r = watermarkJpeg(buffer); return Buffer.concat([r || buffer, WM_MARKER]); }
+  return Buffer.concat([buffer, WM_MARKER]);
 }
 
 /* ---------- DB ---------- */
@@ -259,7 +243,6 @@ let db = null;
 let dbOk = false;
 let dbLoading = null;
 let writeChain = Promise.resolve();
-
 const emptyDb = () => ({ users: {}, keys: {}, chats: [], events: [], tickets: [] });
 
 function normalize(raw) {
@@ -276,30 +259,21 @@ function normalize(raw) {
     if (!Array.isArray(u.images)) u.images = [];
   }
   d.keys = {};
-  for (const u of Object.values(d.users)) {
-    for (const k of u.keys) if (k && k.key) d.keys[k.key] = u.email;
-  }
+  for (const u of Object.values(d.users)) for (const k of u.keys) if (k && k.key) d.keys[k.key] = u.email;
   return d;
 }
-
 async function kv(cmd) {
-  const r = await fetchT(KV_URL, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(cmd),
-  }, 8000);
+  const r = await fetchT(KV_URL, { method: 'POST', headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' }, body: JSON.stringify(cmd) }, 8000);
   if (!r.ok) throw new Error('kv_' + r.status);
   const d = await r.json();
   if (d.error) throw new Error('kv: ' + d.error);
   return d.result;
 }
-
 async function readMain() {
   if (KV_ON) return await kv(['GET', KV_DB_KEY]);
   try { return await fs.readFile(DATA_FILE, 'utf8'); }
   catch (e) { if (e.code === 'ENOENT') return null; throw e; }
 }
-
 async function loadDb() {
   if (db && dbOk && !KV_ON) return db;
   if (dbLoading) return dbLoading;
@@ -308,30 +282,22 @@ async function loadDb() {
       const raw = await readMain();
       db = normalize(raw ? JSON.parse(raw) : null);
       dbOk = true;
-    } catch (e) {
-      console.error('[db] load failed, writes disabled:', e.message);
-      if (!db) db = normalize(null);
-      dbOk = false;
-    } finally { dbLoading = null; }
+    } catch (e) { console.error('[db] load failed:', e.message); if (!db) db = normalize(null); dbOk = false; }
+    finally { dbLoading = null; }
     return db;
   })();
   return dbLoading;
 }
-
 function persist() {
   if (!db || !dbOk) return Promise.resolve(false);
   const snap = JSON.stringify(db);
   const job = writeChain.then(async () => {
-    try {
-      if (KV_ON) await kv(['SET', KV_DB_KEY, snap]);
-      else await fs.writeFile(DATA_FILE, snap, 'utf8');
-      return true;
-    } catch (e) { console.error('[db] write failed:', e.message); return false; }
+    try { if (KV_ON) await kv(['SET', KV_DB_KEY, snap]); else await fs.writeFile(DATA_FILE, snap, 'utf8'); return true; }
+    catch (e) { console.error('[db] write failed:', e.message); return false; }
   });
   writeChain = job.then(() => undefined);
   return job;
 }
-
 function userFor(email) {
   let u = db.users[email];
   if (!u) u = db.users[email] = { email, name: email.split('@')[0], tier: 'free', provider: 'email', created_at: nowS(), last_login: 0 };
@@ -339,26 +305,14 @@ function userFor(email) {
   if (!['free', 'pro', 'ultimate'].includes(u.tier)) u.tier = 'free';
   if (!Array.isArray(u.keys)) u.keys = [];
   if (!Array.isArray(u.images)) u.images = [];
-  if (u.daily_day !== today()) {
-    u.daily_day = today();
-    u.daily_used = 0; u.vision_used = 0; u.image_used = 0; u.eclipse_used = 0;
-  }
-  for (const f of ['daily_used', 'vision_used', 'image_used', 'eclipse_used']) {
-    if (typeof u[f] !== 'number') u[f] = 0;
-  }
+  if (u.daily_day !== today()) { u.daily_day = today(); u.daily_used = 0; u.vision_used = 0; u.image_used = 0; u.eclipse_used = 0; }
+  for (const f of ['daily_used', 'vision_used', 'image_used', 'eclipse_used']) if (typeof u[f] !== 'number') u[f] = 0;
   return u;
 }
+function logEvent(ev) { db.events.push({ ts: nowS(), ...ev }); if (db.events.length > 300) db.events.splice(0, db.events.length - 300); }
+function logChat(entry) { db.chats.push({ ts: nowS(), ...entry }); if (db.chats.length > 300) db.chats.splice(0, db.chats.length - 300); }
 
-function logEvent(ev) {
-  db.events.push({ ts: nowS(), ...ev });
-  if (db.events.length > 300) db.events.splice(0, db.events.length - 300);
-}
-function logChat(entry) {
-  db.chats.push({ ts: nowS(), ...entry });
-  if (db.chats.length > 300) db.chats.splice(0, db.chats.length - 300);
-}
-
-/* ---------- Blob storage ---------- */
+/* ---------- Blob ---------- */
 const BLOB_ID = /^[a-f0-9]{32}$/;
 async function blobPut(id, value) {
   if (KV_ON) return kv(['SET', 'mirox:img:' + id, value, 'EX', String(60 * DAY)]);
@@ -367,30 +321,18 @@ async function blobPut(id, value) {
 }
 async function blobGet(id) {
   if (!BLOB_ID.test(id)) return null;
-  try {
-    if (KV_ON) return await kv(['GET', 'mirox:img:' + id]);
-    return await fs.readFile(path.join(IMG_DIR, id + '.txt'), 'utf8');
-  } catch { return null; }
+  try { if (KV_ON) return await kv(['GET', 'mirox:img:' + id]); return await fs.readFile(path.join(IMG_DIR, id + '.txt'), 'utf8'); } catch { return null; }
 }
 async function blobDel(id) {
   if (!BLOB_ID.test(id)) return;
-  try {
-    if (KV_ON) await kv(['DEL', 'mirox:img:' + id]);
-    else await fs.unlink(path.join(IMG_DIR, id + '.txt'));
-  } catch {}
+  try { if (KV_ON) await kv(['DEL', 'mirox:img:' + id]); else await fs.unlink(path.join(IMG_DIR, id + '.txt')); } catch {}
 }
 async function saveImage(u, prompt, dataUrl) {
   const id = crypto.randomBytes(16).toString('hex');
   const isRemote = dataUrl.startsWith('http');
-  if (!isRemote) {
-    try { await blobPut(id, dataUrl); }
-    catch (e) { console.warn('[blob] save failed:', e.message); return false; }
-  }
+  if (!isRemote) { try { await blobPut(id, dataUrl); } catch (e) { console.warn('[blob] save failed:', e.message); return false; } }
   u.images.unshift({ id: isRemote ? null : id, remote: isRemote ? dataUrl : null, prompt: prompt.slice(0, 300), ts: nowS(), watermarked: true });
-  while (u.images.length > 30) {
-    const old = u.images.pop();
-    if (old && old.id) blobDel(old.id);
-  }
+  while (u.images.length > 30) { const old = u.images.pop(); if (old && old.id) blobDel(old.id); }
   return true;
 }
 
@@ -407,18 +349,12 @@ function readSession(token) {
   const p = token.slice(0, i), s = token.slice(i + 1);
   const expect = crypto.createHmac('sha256', SECRET).update(p).digest('base64url');
   if (!safeEq(expect, s)) return null;
-  try {
-    const d = JSON.parse(Buffer.from(p, 'base64url').toString());
-    if (d.exp && d.exp < nowS()) return null;
-    return d;
-  } catch { return null; }
+  try { const d = JSON.parse(Buffer.from(p, 'base64url').toString()); if (d.exp && d.exp < nowS()) return null; return d; } catch { return null; }
 }
 function getCookie(req, name) {
   for (const part of String(req.headers.cookie || '').split(';')) {
     const i = part.indexOf('=');
-    if (i > -1 && part.slice(0, i).trim() === name) {
-      try { return decodeURIComponent(part.slice(i + 1).trim()); } catch { return ''; }
-    }
+    if (i > -1 && part.slice(0, i).trim() === name) { try { return decodeURIComponent(part.slice(i + 1).trim()); } catch { return ''; } }
   }
   return '';
 }
@@ -431,14 +367,8 @@ function setSessionCookie(req, res, uid) {
   res.append('Set-Cookie', `mirox_sess=${token}; ${cookieAttrs(req, 30 * DAY)}`);
   return token;
 }
-function clearSessionCookie(req, res) {
-  res.append('Set-Cookie', `mirox_sess=; ${cookieAttrs(req, 0)}`);
-}
-async function ensureDb(req) {
-  if (req && req.__dbReady) return;
-  await loadDb();
-  if (req) req.__dbReady = true;
-}
+function clearSessionCookie(req, res) { res.append('Set-Cookie', `mirox_sess=; ${cookieAttrs(req, 0)}`); }
+async function ensureDb(req) { if (req && req.__dbReady) return; await loadDb(); if (req) req.__dbReady = true; }
 async function currentUser(req) {
   await ensureDb(req);
   if (!dbOk) return null;
@@ -457,27 +387,16 @@ async function authFromRequest(req) {
   const u = owner ? db.users[owner] : null;
   const k = u ? u.keys.find((x) => x.key === m[1]) : null;
   if (!u || !k || k.revoked) return { error: 'invalid' };
-  k.last_used = nowS();
-  persist();
+  k.last_used = nowS(); persist();
   return { user: userFor(owner), viaKey: true };
 }
 
-/* ---------- Web search ---------- */
+/* ---------- Search ---------- */
 const SEARCH_TIMEOUT_MS = 14000;
-const stripHtml = (s) => String(s || '')
-  .replace(/<[^>]+>/g, '')
-  .replace(/&amp;/g, '&').replace(/&#x27;/g, "'").replace(/&#39;/g, "'")
-  .replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ')
-  .replace(/\s+/g, ' ').trim();
-
+const stripHtml = (s) => String(s || '').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&#x27;/g, "'").replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
 async function duckSearch(query, max = 5) {
   try {
-    const r = await fetchT(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-    }, SEARCH_TIMEOUT_MS);
+    const r = await fetchT(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, { headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36', 'Accept-Language': 'en-US,en;q=0.9' } }, SEARCH_TIMEOUT_MS);
     if (!r.ok) return [];
     const html = await r.text();
     const out = [];
@@ -511,12 +430,7 @@ async function wikiSearch(query) {
     const r = await fetchT(`https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(query)}&srlimit=3&origin=*`, {}, 8000);
     if (!r.ok) return [];
     const d = await r.json();
-    return (d?.query?.search || []).map((h) => ({
-      title: h.title,
-      url: `https://en.wikipedia.org/wiki/${encodeURIComponent(h.title.replace(/ /g, '_'))}`,
-      snippet: stripHtml(h.snippet),
-      domain: 'en.wikipedia.org',
-    }));
+    return (d?.query?.search || []).map((h) => ({ title: h.title, url: `https://en.wikipedia.org/wiki/${encodeURIComponent(h.title.replace(/ /g, '_'))}`, snippet: stripHtml(h.snippet), domain: 'en.wikipedia.org' }));
   } catch { return []; }
 }
 async function wikiSummary(title) {
@@ -534,10 +448,7 @@ async function webSearch(query, max = 5) {
   const seen = new Set();
   results = results.filter((r) => (seen.has(r.url) ? false : (seen.add(r.url), true))).slice(0, max);
   let overview = instant && instant.text ? { ...instant, kind: 'instant' } : null;
-  if (!overview) {
-    const ws = await wikiSummary(results[0]?.title || query);
-    if (ws) overview = { ...ws, kind: 'wiki' };
-  }
+  if (!overview) { const ws = await wikiSummary(results[0]?.title || query); if (ws) overview = { ...ws, kind: 'wiki' }; }
   return { results, overview };
 }
 function formatSearchContext(query, data) {
@@ -572,50 +483,24 @@ function detectImageIntent(text) {
 function stripImages(messages) {
   return messages.map((m) => ({
     role: m.role,
-    content: Array.isArray(m.content)
-      ? m.content.filter((p) => p.type === 'text').map((p) => p.text).join('\n')
-      : String(m.content || ''),
+    content: Array.isArray(m.content) ? m.content.filter((p) => p.type === 'text').map((p) => p.text).join('\n') : String(m.content || ''),
   }));
 }
-
 async function callOpenRouter(modelId, messages, maxTokens, stream) {
   if (!OP_KEY) throw new Error('no_op_key');
-  const headers = {
-    Authorization: `Bearer ${OP_KEY}`,
-    'Content-Type': 'application/json',
-    Accept: stream ? 'text/event-stream' : 'application/json',
-    'HTTP-Referer': OP_REFERER,
-    'X-Title': OP_TITLE,
-  };
-  const res = await fetchT(OP_CHAT_URL, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ model: modelId, messages, max_tokens: maxTokens, stream: !!stream, temperature: 0.7 }),
-  }, 45000);
-  if (!res.ok) {
-    const t = await res.text().catch(() => '');
-    throw new Error(`op_${res.status}:${t.slice(0, 200)}`);
-  }
+  const headers = { Authorization: `Bearer ${OP_KEY}`, 'Content-Type': 'application/json', Accept: stream ? 'text/event-stream' : 'application/json', 'HTTP-Referer': OP_REFERER, 'X-Title': OP_TITLE };
+  const res = await fetchT(OP_CHAT_URL, { method: 'POST', headers, body: JSON.stringify({ model: modelId, messages, max_tokens: maxTokens, stream: !!stream, temperature: 0.7 }) }, 45000);
+  if (!res.ok) { const t = await res.text().catch(() => ''); throw new Error(`op_${res.status}:${t.slice(0, 200)}`); }
   return res;
 }
-
 async function callProvider(kind, modelId, messages, maxTokens, stream) {
   const url = kind === 'hf' ? HF_URL : PL_URL;
   const key = kind === 'hf' ? HF_API_KEY : PL_KEY;
   if (!key) throw new Error('no_key');
-  const res = await fetchT(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${key}`,
-      'Content-Type': 'application/json',
-      Accept: stream ? 'text/event-stream' : 'application/json',
-    },
-    body: JSON.stringify({ model: modelId, messages, max_tokens: maxTokens, stream: !!stream, temperature: 0.7 }),
-  }, 25000);
+  const res = await fetchT(url, { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Accept: stream ? 'text/event-stream' : 'application/json' }, body: JSON.stringify({ model: modelId, messages, max_tokens: maxTokens, stream: !!stream, temperature: 0.7 }) }, 25000);
   if (!res.ok) throw new Error(`${kind}_${res.status}`);
   return res;
 }
-
 async function airouteText(messages, { fast = true, model } = {}) {
   const flat = stripImages(messages);
   let idx = -1;
@@ -625,15 +510,10 @@ async function airouteText(messages, { fast = true, model } = {}) {
   const systems = before.filter((m) => m.role === 'system').map((m) => m.content);
   const history = before.filter((m) => m.role !== 'system').slice(-40);
   const body = { prompt: [...systems, prompt].filter(Boolean).join('\n\n'), history, ...(fast ? { fast: true } : {}), ...(model ? { model } : {}) };
-  const r = await fetchT(`${AIROUTE_BASE}/api/public/v1/chat`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${AIROUTE_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  }, 90000);
+  const r = await fetchT(`${AIROUTE_BASE}/api/public/v1/chat`, { method: 'POST', headers: { Authorization: `Bearer ${AIROUTE_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, 90000);
   if (!r.ok) throw new Error('airoute_' + r.status);
   return extractReplyText(await r.json().catch(() => ({})));
 }
-
 function textToSSEStream(text) {
   const enc = new TextEncoder();
   const words = String(text || '').split(/(\s+)/);
@@ -649,16 +529,12 @@ function textToSSEStream(text) {
     },
   });
 }
-
 async function miroxChatChain({ messages, cfg, stream, vision }) {
   if (OP_KEY) {
     const models = vision ? OP_VISION : OP_CHAT;
     for (const modelId of models) {
-      try {
-        const msgs = OP_VISION_SET.has(modelId) ? messages : stripImages(messages);
-        const res = await callOpenRouter(modelId, msgs, cfg.tokens, stream);
-        return { res, provider: 'openrouter' };
-      } catch (e) { console.warn('[openrouter]', modelId, e.message); }
+      try { const msgs = OP_VISION_SET.has(modelId) ? messages : stripImages(messages); const res = await callOpenRouter(modelId, msgs, cfg.tokens, stream); return { res, provider: 'openrouter' }; }
+      catch (e) { console.warn('[openrouter]', modelId, e.message); }
     }
   }
   if (HF_API_KEY) {
@@ -666,11 +542,8 @@ async function miroxChatChain({ messages, cfg, stream, vision }) {
     if (vision) HF_VISION.forEach((m) => tries.push(['hf', m]));
     HF_CHAT.forEach((m) => tries.push(['hf', m]));
     for (const [kind, modelId] of tries) {
-      try {
-        const msgs = VISION_MODELS.has(modelId) ? messages : stripImages(messages);
-        const res = await callProvider(kind, modelId, msgs, cfg.tokens, stream);
-        return { res, provider: kind };
-      } catch (e) { console.warn('[provider]', kind, modelId, e.message); }
+      try { const msgs = VISION_MODELS.has(modelId) ? messages : stripImages(messages); const res = await callProvider(kind, modelId, msgs, cfg.tokens, stream); return { res, provider: kind }; }
+      catch (e) { console.warn('[provider]', kind, modelId, e.message); }
     }
   }
   if (PL_KEY) {
@@ -678,25 +551,18 @@ async function miroxChatChain({ messages, cfg, stream, vision }) {
     if (vision) PL_VISION.forEach((m) => tries.push(['pl', m]));
     PL_CHAT.forEach((m) => tries.push(['pl', m]));
     for (const [kind, modelId] of tries) {
-      try {
-        const msgs = VISION_MODELS.has(modelId) ? messages : stripImages(messages);
-        const res = await callProvider(kind, modelId, msgs, cfg.tokens, stream);
-        return { res, provider: kind };
-      } catch (e) { console.warn('[provider]', kind, modelId, e.message); }
+      try { const msgs = VISION_MODELS.has(modelId) ? messages : stripImages(messages); const res = await callProvider(kind, modelId, msgs, cfg.tokens, stream); return { res, provider: kind }; }
+      catch (e) { console.warn('[provider]', kind, modelId, e.message); }
     }
   }
   if (AIROUTE_KEY) {
     for (const opts of [{ fast: true }, { fast: false, model: 'meta-llama/Llama-3.3-70B-Instruct' }]) {
-      try {
-        const text = await airouteText(messages, opts);
-        if (!text) throw new Error('empty reply');
-        return { res: { body: textToSSEStream(text), json: async () => ({ reply: text }) }, provider: 'airoute' };
-      } catch (e) { console.warn('[airoute]', e.message); }
+      try { const text = await airouteText(messages, opts); if (!text) throw new Error('empty reply'); return { res: { body: textToSSEStream(text), json: async () => ({ reply: text }) }, provider: 'airoute' }; }
+      catch (e) { console.warn('[airoute]', e.message); }
     }
   }
   throw new Error(GENERIC_ERR);
 }
-
 async function pipeProviderStream(body, onDelta, isClosed, onLimit = () => {}) {
   const reader = body.getReader();
   const dec = new TextDecoder();
@@ -729,7 +595,7 @@ async function pipeProviderStream(body, onDelta, isClosed, onLimit = () => {}) {
   } finally { try { reader.releaseLock(); } catch {} }
 }
 
-/* ---------- Images (with binary watermark) ---------- */
+/* ---------- Images ---------- */
 async function generateImage(prompt) {
   const deadline = Date.now() + 55000;
   for (const mid of PL_IMG_MODELS) {
@@ -751,11 +617,7 @@ async function generateImage(prompt) {
   }
   if (AIROUTE_KEY) {
     try {
-      const r = await fetchT(`${AIROUTE_BASE}/api/public/v1/images`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${AIROUTE_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'black-forest-labs/FLUX.1-schnell', prompt: prompt.slice(0, 2000) }),
-      }, 50000);
+      const r = await fetchT(`${AIROUTE_BASE}/api/public/v1/images`, { method: 'POST', headers: { Authorization: `Bearer ${AIROUTE_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'black-forest-labs/FLUX.1-schnell', prompt: prompt.slice(0, 2000) }) }, 50000);
       const d = await r.json().catch(() => ({}));
       if (typeof d.image === 'string') {
         if (d.image.startsWith('http')) return d.image;
@@ -771,7 +633,6 @@ async function generateImage(prompt) {
   }
   throw new Error(GENERIC_ERR);
 }
-
 async function editImageWithSource(sourceDataUrl, editPrompt) {
   const deadline = Date.now() + 55000;
   for (const mid of PL_EDIT_MODELS) {
@@ -808,13 +669,10 @@ function sseWrite(res, obj) {
   if (res.writableEnded || res.destroyed) return;
   try { res.write('data: ' + JSON.stringify(obj) + '\n\n'); } catch {}
 }
-function sseDone(res) {
-  if (res.writableEnded || res.destroyed) return;
-  try { res.write('data: [DONE]\n\n'); } catch {}
-}
+function sseDone(res) { if (res.writableEnded || res.destroyed) return; try { res.write('data: [DONE]\n\n'); } catch {} }
 
 function buildSystemPrompt(cfg, bridge, searchUsed, persona) {
-  let p = IDENTITY_GUARD + '\n\n' + cfg.basePrompt;
+  let p = IDENTITY_GUARD + '\n\n' + THINKING_RULE + '\n\n' + cfg.basePrompt;
   if (searchUsed) p += '\n\nWEB SEARCH MODE: cite sources as [1], [2] when relevant.';
   if (persona) p += `\n\nUser preference: ${persona}`;
   if (bridge) {
@@ -825,15 +683,7 @@ function buildSystemPrompt(cfg, bridge, searchUsed, persona) {
   return p;
 }
 function buildEnvBlock(env) {
-  return [
-    '[Bridge environment]',
-    `user=${env.user || '?'}`,
-    'home=~',
-    'cwd=.',
-    `platform=${env.platform || '?'}`,
-    'allowed_dirs=home and explicitly configured project folders',
-    `kdeConnect=${env.kde_connect_available ? 'true' : 'false'}`,
-  ].join('\n');
+  return ['[Bridge environment]', `user=${env.user || '?'}`, 'home=~', 'cwd=.', `platform=${env.platform || '?'}`, 'allowed_dirs=home and explicitly configured project folders', `kdeConnect=${env.kde_connect_available ? 'true' : 'false'}`].join('\n');
 }
 
 /* ---------- App ---------- */
@@ -860,10 +710,11 @@ const publicKey = (k) => ({ id: k.id, name: k.name, key: k.key, created: k.creat
 
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
   res.json({
-    ok: true, app: 'MiroxAI', version: 'v100',
+    ok: true, app: 'MiroxAI', version: 'v101',
     providers: { openrouter: !!OP_KEY, hf: !!HF_API_KEY, pl: !!PL_KEY, airoute: !!AIROUTE_KEY },
     primary_provider: OP_KEY ? 'openrouter' : (HF_API_KEY ? 'huggingface' : (PL_KEY ? 'pollinations' : (AIROUTE_KEY ? 'airoute' : null))),
     watermark: 'MIROXAI-WATERMARK-v1-LOGO',
+    thinking: true,
     db: { durable: KV_ON, writable: dbOk },
     time: nowS(),
   });
@@ -871,10 +722,7 @@ app.get(['/api/health', '/health', '/ping'], (req, res) => {
 
 app.get('/api/web/status', async (req, res) => {
   const t0 = Date.now();
-  const [ddg, wiki] = await Promise.all([
-    duckSearch('test', 1).then((r) => r.length > 0).catch(() => false),
-    wikiSearch('Python').then((r) => r.length > 0).catch(() => false),
-  ]);
+  const [ddg, wiki] = await Promise.all([duckSearch('test', 1).then((r) => r.length > 0).catch(() => false), wikiSearch('Python').then((r) => r.length > 0).catch(() => false)]);
   res.json({ ok: true, duckduckgo: ddg, wikipedia: wiki, ms: Date.now() - t0 });
 });
 
@@ -882,12 +730,11 @@ app.get(['/api/config', '/config'], (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tier: m.tier }));
   res.json({
-    app: { name: 'MiroxAI', version: 'v100' },
+    app: { name: 'MiroxAI', version: 'v101' },
     models, default_model: models[0].id, plans: PLANS,
     tts_available: !!F_API,
     search_available: true, vision_available: true, image_intent: true, image_edit: true,
-    image_requires_signin: true,
-    watermark: true,
+    image_requires_signin: true, watermark: true, thinking: true,
     loginment_available: !!LM_CLIENT_ID,
     email_login_available: ALLOW_EMAIL_LOGIN,
     airoute_available: !!AIROUTE_KEY,
@@ -905,17 +752,10 @@ app.get(['/api/subscription/plans', '/subscription/plans'], (req, res) => {
     ultimate: ['Eclipse — best model', '2000 image uploads/gens/day', '10 API keys', 'Web search', 'Vision', 'KDE Connect'],
   };
   const tagline = { free: 'Free forever', pro: 'Most popular', ultimate: 'Power users' };
-  res.json({
-    ok: true,
-    plans: Object.entries(PLANS).map(([id, p]) => ({
-      id, label: p.label, tagline: tagline[id],
-      vision_limit: p.vision_limit, image_limit: p.image_limit, eclipse_limit: p.eclipse_daily_limit,
-      price_usd: p.price_usd, api_keys_limit: p.api_keys, perks: perks[id],
-    })),
-  });
+  res.json({ ok: true, plans: Object.entries(PLANS).map(([id, p]) => ({ id, label: p.label, tagline: tagline[id], vision_limit: p.vision_limit, image_limit: p.image_limit, eclipse_limit: p.eclipse_daily_limit, price_usd: p.price_usd, api_keys_limit: p.api_keys, perks: perks[id] })) });
 });
 
-/* ---------- AUTH ---------- */
+/* AUTH */
 app.get('/api/auth/loginment/start', (req, res) => {
   if (!LM_CLIENT_ID) return res.status(503).send('Loginment is not configured.');
   const state = crypto.randomBytes(16).toString('hex');
@@ -938,15 +778,11 @@ app.get(['/callback', '/api/auth/loginment/callback'], async (req, res) => {
     res.append('Set-Cookie', `mirox_lm_state=; ${cookieAttrs(req, 0)}`);
     if (!code || !state || !saved || !safeEq(state, saved)) return res.status(400).send('Login state invalid. Please try again.');
     if (!LM_CLIENT_ID || !LM_API_KEY) return res.status(503).send('Loginment is not configured.');
-    const r = await fetchT(`${LM_DOMAIN}/api/public/v1/token`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${LM_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code }),
-    }, 15000);
+    const r = await fetchT(`${LM_DOMAIN}/api/public/v1/token`, { method: 'POST', headers: { Authorization: `Bearer ${LM_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) }, 15000);
     const data = await r.json().catch(() => ({}));
     if (!r.ok || !data.success || !data.user?.email) return res.status(401).send('Login failed.');
     await ensureDb(req);
-    if (!dbOk) return res.status(503).send('Storage is unavailable. Try again shortly.');
+    if (!dbOk) return res.status(503).send('Storage is unavailable.');
     const email = String(data.user.email).toLowerCase();
     const u = userFor(email);
     u.name = data.user.name || u.name;
@@ -954,7 +790,7 @@ app.get(['/callback', '/api/auth/loginment/callback'], async (req, res) => {
     u.lm_user_id = data.user.id || null;
     u.last_login = nowS();
     logEvent({ email, event: 'login', provider: u.provider });
-    if (!(await persist())) return res.status(503).send('Could not save your account. Try again.');
+    if (!(await persist())) return res.status(503).send('Could not save your account.');
     setSessionCookie(req, res, email);
     res.redirect('/');
   } catch (e) { console.error('[callback]', e.message); res.status(500).send('Server error'); }
@@ -965,7 +801,7 @@ app.post(['/api/auth/simple-login', '/auth/simple-login'], async (req, res) => {
   const email = safeStr(req.body?.email, 120).trim().toLowerCase();
   if (!name || !email || !email.includes('@')) return res.status(400).json({ ok: false, error: 'Name and email required' });
   await ensureDb(req);
-  if (!dbOk) return res.status(503).json({ ok: false, error: 'Storage is unavailable. Try again shortly.' });
+  if (!dbOk) return res.status(503).json({ ok: false, error: 'Storage is unavailable.' });
   const u = userFor(email);
   u.name = name;
   u.last_login = nowS();
@@ -977,15 +813,10 @@ app.post(['/api/auth/simple-login', '/auth/simple-login'], async (req, res) => {
 app.post(['/api/logout', '/logout'], (req, res) => { clearSessionCookie(req, res); res.json({ ok: true }); });
 app.get(['/api/me', '/me'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  try {
-    const u = await currentUser(req);
-    res.json({ user: u ? publicUser(u) : null });
-  } catch { res.json({ user: null }); }
+  try { const u = await currentUser(req); res.json({ user: u ? publicUser(u) : null }); }
+  catch { res.json({ user: null }); }
 });
-app.get('/api/persona', async (req, res) => {
-  const u = await currentUser(req);
-  res.json({ ok: true, persona: u?.persona || '' });
-});
+app.get('/api/persona', async (req, res) => { const u = await currentUser(req); res.json({ ok: true, persona: u?.persona || '' }); });
 app.post('/api/persona', async (req, res) => {
   const u = await currentUser(req);
   if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
@@ -994,7 +825,7 @@ app.post('/api/persona', async (req, res) => {
   res.json({ ok: true });
 });
 
-/* ---------- SUPPORT CHAT (user side) ---------- */
+/* SUPPORT */
 app.get('/api/support/conversation', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   try {
@@ -1012,13 +843,7 @@ app.post('/api/support/message', async (req, res) => {
   const category = safeStr(req.body?.category, 40).trim() || 'other';
   let conv = (db.tickets || []).find((t) => t.email === u.email && t.status === 'open');
   if (!conv) {
-    conv = {
-      id: 'tk_' + crypto.randomBytes(6).toString('hex'),
-      email: u.email, name: u.name || u.email,
-      subject: content.slice(0, 80), category, status: 'open',
-      unread_for_agent: 0, unread_for_user: 0,
-      created: nowS(), updated: nowS(), messages: [],
-    };
+    conv = { id: 'tk_' + crypto.randomBytes(6).toString('hex'), email: u.email, name: u.name || u.email, subject: content.slice(0, 80), category, status: 'open', unread_for_agent: 0, unread_for_user: 0, created: nowS(), updated: nowS(), messages: [] };
     db.tickets.push(conv);
   }
   conv.messages.push({ role: 'user', content, ts: nowS() });
@@ -1032,16 +857,11 @@ app.post('/api/support/close', async (req, res) => {
   const u = await currentUser(req);
   if (!u) return res.status(401).json({ ok: false, error: 'Sign in required' });
   const conv = (db.tickets || []).find((t) => t.email === u.email && t.status === 'open');
-  if (conv) {
-    conv.status = 'closed';
-    conv.updated = nowS();
-    conv.messages.push({ role: 'system', content: 'Conversation resolved by the user.', ts: nowS() });
-    await persist();
-  }
+  if (conv) { conv.status = 'closed'; conv.updated = nowS(); conv.messages.push({ role: 'system', content: 'Conversation resolved by the user.', ts: nowS() }); await persist(); }
   res.json({ ok: true });
 });
 
-/* ---------- API KEYS ---------- */
+/* KEYS */
 app.get(['/api/keys', '/keys'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const u = await currentUser(req);
@@ -1061,14 +881,13 @@ app.post(['/api/keys', '/keys'], async (req, res) => {
   u.keys.push(key);
   db.keys[raw] = u.email;
   logEvent({ email: u.email, event: 'key_created', id: key.id });
-  if (!(await persist())) return res.status(503).json({ ok: false, error: 'Could not save the key. Try again.' });
+  if (!(await persist())) return res.status(503).json({ ok: false, error: 'Could not save the key.' });
   res.json({ ok: true, key: publicKey(key) });
 });
 app.post(['/api/keys/rename', '/keys/rename'], async (req, res) => {
   const u = await currentUser(req);
   if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
-  const id = safeStr(req.body?.id, 40);
-  const name = safeStr(req.body?.name, 60).trim();
+  const id = safeStr(req.body?.id, 40), name = safeStr(req.body?.name, 60).trim();
   if (!id || !name) return res.status(400).json({ ok: false, error: 'id and name required' });
   const key = u.keys.find((k) => k.id === id);
   if (!key) return res.status(404).json({ ok: false, error: 'Key not found' });
@@ -1098,29 +917,24 @@ app.post(['/api/keys/delete', '/keys/delete'], async (req, res) => {
   res.json({ ok: true });
 });
 
-/* ---------- IMAGE HISTORY ---------- */
+/* HISTORY */
 app.get(['/api/images/history', '/images/history'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const u = await currentUser(req);
   if (!u) return res.json({ ok: true, images: [] });
-  const items = await Promise.all(u.images.slice(0, 30).map(async (it) => ({
-    ts: it.ts, prompt: it.prompt, image: it.remote || (await blobGet(it.id)),
-    watermarked: it.watermarked === true,
-  })));
+  const items = await Promise.all(u.images.slice(0, 30).map(async (it) => ({ ts: it.ts, prompt: it.prompt, image: it.remote || (await blobGet(it.id)), watermarked: it.watermarked === true })));
   res.json({ ok: true, images: items.filter((x) => x.image) });
 });
 
-/* ---------- SEARCH ---------- */
+/* SEARCH */
 app.get(['/api/search', '/search'], async (req, res) => {
   const q = safeStr(req.query.q, 400).trim();
   if (!q) return res.status(400).json({ ok: false, error: 'Query required' });
-  try {
-    const data = await webSearch(q, 8);
-    res.json({ ok: true, query: q, results: data.results, overview: data.overview });
-  } catch { res.status(500).json({ ok: false, error: 'Search failed' }); }
+  try { const data = await webSearch(q, 8); res.json({ ok: true, query: q, results: data.results, overview: data.overview }); }
+  catch { res.status(500).json({ ok: false, error: 'Search failed' }); }
 });
 
-/* ---------- IMAGE GEN API ---------- */
+/* IMAGE GEN API */
 app.post('/v1/images/generations', async (req, res) => {
   try {
     const prompt = safeStr(req.body?.prompt, 2000).trim();
@@ -1142,7 +956,7 @@ app.post('/v1/images/generations', async (req, res) => {
   } catch { res.status(502).json({ error: { message: GENERIC_ERR } }); }
 });
 
-/* ---------- CHAT COMPLETIONS ---------- */
+/* CHAT */
 app.post('/v1/chat/completions', async (req, res) => {
   const t0 = Date.now();
   let closed = false;
@@ -1161,7 +975,6 @@ app.post('/v1/chat/completions', async (req, res) => {
   const sourceImage = safeStr(body.source_image, 12 * 1024 * 1024);
 
   const fail = (code, message) => res.status(code).json({ error: { message } });
-
   const signinReply = (message) => {
     if (!wantStream) return res.json({ reply: message, signin_required: true, _ms: Date.now() - t0, provider: 'mirox' });
     sseInit(res);
@@ -1171,7 +984,6 @@ app.post('/v1/chat/completions', async (req, res) => {
     sseDone(res);
     res.end();
   };
-
   const fixedReply = (message) => {
     if (!wantStream) return res.json({ reply: message, _ms: Date.now() - t0, provider: 'mirox' });
     sseInit(res);
@@ -1201,7 +1013,6 @@ app.post('/v1/chat/completions', async (req, res) => {
     }
     if (!text && !files.length) return fail(400, 'Empty message');
 
-    /* Image edit requires sign-in */
     if (editImage && sourceImage && sourceImage.startsWith('data:image/')) {
       if (!u) return signinReply('Sign in to edit images with Mirox.');
       if (u.image_used >= plan.image_limit) return fixedReply(`Daily image limit reached for the ${plan.label} plan.`);
@@ -1220,7 +1031,6 @@ app.post('/v1/chat/completions', async (req, res) => {
       } catch { return fixedReply('Image edit failed. Please try again in a moment.'); }
     }
 
-    /* Image generation from text intent requires sign-in */
     const imagePrompt = files.length ? null : detectImageIntent(text);
     if (imagePrompt) {
       if (!u) return signinReply('Sign in to generate images with Mirox.');
@@ -1269,31 +1079,17 @@ app.post('/v1/chat/completions', async (req, res) => {
       if (wantStream) sseWrite(res, { search: { query: searchQuery } });
       searchData = await webSearch(searchQuery, 5).catch(() => ({ results: [], overview: null }));
       if (wantStream) {
-        if (searchData.overview?.text) {
-          sseWrite(res, { overview: { source: searchData.overview.source, heading: searchData.overview.heading || '', text: searchData.overview.text, url: searchData.overview.url || '' } });
-        }
-        for (const r of searchData.results) {
-          if (closed) break;
-          sseWrite(res, { source: { title: r.title, url: r.url, domain: r.domain || '' } });
-          await sleep(60);
-        }
+        if (searchData.overview?.text) sseWrite(res, { overview: { source: searchData.overview.source, heading: searchData.overview.heading || '', text: searchData.overview.text, url: searchData.overview.url || '' } });
+        for (const r of searchData.results) { if (closed) break; sseWrite(res, { source: { title: r.title, url: r.url, domain: r.domain || '' } }); await sleep(60); }
         sseWrite(res, { search_done: true, count: searchData.results.length });
       }
       const hasData = searchData.results.length || searchData.overview;
-      msgs.push({
-        role: 'system',
-        content: hasData ? formatSearchContext(searchQuery, searchData)
-          : `Web search for "${searchQuery}" returned no results. Answer from your own knowledge and say you could not verify.`,
-      });
+      msgs.push({ role: 'system', content: hasData ? formatSearchContext(searchQuery, searchData) : `Web search for "${searchQuery}" returned no results. Answer from your own knowledge and say you could not verify.` });
     }
 
     const finishUsage = async () => {
       logChat({ email: u ? u.email : 'guest', model, message: (text || '(vision)').slice(0, 200) });
-      if (u) {
-        u.daily_used += 1;
-        if (visionUsed) u.vision_used += 1;
-        if (model === 'mirox-eclipse-2.0') u.eclipse_used += 1;
-      }
+      if (u) { u.daily_used += 1; if (visionUsed) u.vision_used += 1; if (model === 'mirox-eclipse-2.0') u.eclipse_used += 1; }
       await persist();
     };
 
@@ -1303,10 +1099,7 @@ app.post('/v1/chat/completions', async (req, res) => {
       const data = await result.res.json().catch(() => ({}));
       const reply = extractReplyText(data) || '(empty)';
       await finishUsage();
-      return res.json({
-        reply, _ms: Date.now() - t0, provider: result.provider,
-        search: searchQuery ? { query: searchQuery, results: searchData.results, overview: searchData.overview } : null,
-      });
+      return res.json({ reply, _ms: Date.now() - t0, provider: result.provider, search: searchQuery ? { query: searchQuery, results: searchData.results, overview: searchData.overview } : null });
     }
 
     sseWrite(res, { p: result.provider });
@@ -1317,16 +1110,12 @@ app.post('/v1/chat/completions', async (req, res) => {
     res.end();
   } catch (e) {
     console.warn('[chat]', e.message);
-    if (res.headersSent) {
-      if (wantStream) { sseWrite(res, { error: { message: GENERIC_ERR } }); sseDone(res); }
-      try { res.end(); } catch {}
-    } else {
-      res.status(502).json({ error: { message: GENERIC_ERR } });
-    }
+    if (res.headersSent) { if (wantStream) { sseWrite(res, { error: { message: GENERIC_ERR } }); sseDone(res); } try { res.end(); } catch {} }
+    else res.status(502).json({ error: { message: GENERIC_ERR } });
   }
 });
 
-/* ---------- ADMIN ---------- */
+/* ADMIN */
 function signAdmin() { return signSession({ admin: true, exp: nowS() + 6 * 3600 }); }
 function requireAdmin(req, res, next) {
   if (!ADMIN_PASS) return res.status(503).json({ ok: false, error: 'ADMIN_PASSWORD is not set' });
@@ -1343,10 +1132,7 @@ app.post(['/api/admin/auth', '/admin/auth'], (req, res) => {
 app.get(['/api/admin/stats', '/admin/stats'], requireAdmin, async (req, res) => {
   await ensureDb(req);
   const users = Object.values(db.users);
-  const imgEvents = db.events
-    .filter((e) => /image_(generated|edited)/.test(e.event || ''))
-    .slice(-60).reverse()
-    .map((e) => ({ ts: e.ts, email: e.email || '—', prompt: e.prompt || '' }));
+  const imgEvents = db.events.filter((e) => /image_(generated|edited)/.test(e.event || '')).slice(-60).reverse().map((e) => ({ ts: e.ts, email: e.email || '—', prompt: e.prompt || '' }));
   const openTickets = (db.tickets || []).filter((t) => t.status === 'open').length;
   const unreadSupport = (db.tickets || []).reduce((s, t) => s + (t.unread_for_agent || 0), 0);
   res.json({
@@ -1354,10 +1140,7 @@ app.get(['/api/admin/stats', '/admin/stats'], requireAdmin, async (req, res) => 
     warning: KV_ON ? null : 'No durable store configured. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.',
     users: users.length, chats: db.chats.length, events: db.events.length, images: imgEvents.length,
     open_tickets: openTickets, unread_support: unreadSupport,
-    users_data: Object.fromEntries(users.map((u) => [u.email, {
-      name: u.name, tier: u.tier, daily_used: u.daily_used, image_used: u.image_used,
-      eclipse_used: u.eclipse_used, last_login: u.last_login,
-    }])),
+    users_data: Object.fromEntries(users.map((u) => [u.email, { name: u.name, tier: u.tier, daily_used: u.daily_used, image_used: u.image_used, eclipse_used: u.eclipse_used, last_login: u.last_login }])),
     chats_data: db.chats.slice(-100).reverse(),
     events_data: db.events.slice(-100).reverse(),
     images_data: imgEvents,
@@ -1365,7 +1148,7 @@ app.get(['/api/admin/stats', '/admin/stats'], requireAdmin, async (req, res) => 
 });
 app.post(['/api/admin/set-tier', '/admin/set-tier'], requireAdmin, async (req, res) => {
   await ensureDb(req);
-  if (!dbOk) return res.status(503).json({ ok: false, error: 'Storage is not readable. Refusing to change tiers.' });
+  if (!dbOk) return res.status(503).json({ ok: false, error: 'Storage is not readable.' });
   const email = safeStr(req.body?.email, 200).trim().toLowerCase();
   const tier = safeStr(req.body?.tier, 20).trim();
   if (!email || !email.includes('@')) return res.status(400).json({ ok: false, error: 'Valid email required' });
@@ -1373,11 +1156,9 @@ app.post(['/api/admin/set-tier', '/admin/set-tier'], requireAdmin, async (req, r
   const u = userFor(email);
   u.tier = tier;
   logEvent({ email, event: 'tier_set', tier });
-  if (!(await persist())) return res.status(500).json({ ok: false, error: 'Save failed. Tier not changed.' });
+  if (!(await persist())) return res.status(500).json({ ok: false, error: 'Save failed.' });
   res.json({ ok: true, email, tier });
 });
-
-/* ---------- ADMIN SUPPORT ---------- */
 app.get(['/api/admin/support/conversations', '/admin/support/conversations'], requireAdmin, async (req, res) => {
   await ensureDb(req);
   const list = (db.tickets || []).slice().sort((a, b) => (b.updated || 0) - (a.updated || 0));
@@ -1403,9 +1184,7 @@ app.post(['/api/admin/support/close', '/admin/support/close'], requireAdmin, asy
   const id = safeStr(req.body?.id, 60);
   const conv = (db.tickets || []).find((t) => t.id === id);
   if (!conv) return res.status(404).json({ ok: false, error: 'Not found' });
-  conv.status = 'closed';
-  conv.updated = nowS();
-  conv.unread_for_agent = 0;
+  conv.status = 'closed'; conv.updated = nowS(); conv.unread_for_agent = 0;
   conv.messages.push({ role: 'system', content: 'Conversation closed by support.', ts: nowS() });
   await persist();
   res.json({ ok: true });
@@ -1415,21 +1194,18 @@ app.post(['/api/admin/support/reopen', '/admin/support/reopen'], requireAdmin, a
   const id = safeStr(req.body?.id, 60);
   const conv = (db.tickets || []).find((t) => t.id === id);
   if (!conv) return res.status(404).json({ ok: false, error: 'Not found' });
-  conv.status = 'open';
-  conv.updated = nowS();
+  conv.status = 'open'; conv.updated = nowS();
   conv.messages.push({ role: 'system', content: 'Conversation reopened.', ts: nowS() });
   await persist();
   res.json({ ok: true });
 });
 
-/* ---------- BRIDGE DOWNLOAD ---------- */
+/* BRIDGE DOWNLOAD */
 app.get('/api/bridge/download', async (req, res) => {
   let archiver;
-  try { archiver = (await import('archiver')).default; }
-  catch { return res.status(500).json({ ok: false, error: 'archiver is not installed.' }); }
+  try { archiver = (await import('archiver')).default; } catch { return res.status(500).json({ ok: false, error: 'archiver is not installed.' }); }
   let runner;
-  try { runner = await fs.readFile(path.join(__dirname, 'mirox_client_bridge', 'runner.py'), 'utf8'); }
-  catch { return res.status(500).json({ ok: false, error: 'runner.py is missing from the deployment.' }); }
+  try { runner = await fs.readFile(path.join(__dirname, 'mirox_client_bridge', 'runner.py'), 'utf8'); } catch { return res.status(500).json({ ok: false, error: 'runner.py is missing.' }); }
   const name = safeStr(req.query.name, 60).trim() || 'My Laptop';
   const port = Number(req.query.port) || 8765;
   const readme = '# MiroxAI Bridge\n\n1. pip install aiohttp\n2. (optional) pip install pillow pyperclip\n3. (optional) sudo apt install kdeconnect\n4. python runner.py\n';
@@ -1445,11 +1221,9 @@ app.get('/api/bridge/download', async (req, res) => {
   await archive.finalize();
 });
 
-/* ---------- FALLBACKS ---------- */
+/* FALLBACKS */
 app.use((req, res) => {
-  if (req.path.startsWith('/api') || req.path.startsWith('/v1')) {
-    return res.status(404).json({ ok: false, error: 'Not found' });
-  }
+  if (req.path.startsWith('/api') || req.path.startsWith('/v1')) return res.status(404).json({ ok: false, error: 'Not found' });
   res.sendFile(path.join(PUBLIC_DIR, 'index.html'), (err) => { if (err) res.status(404).send('Not found'); });
 });
 app.use((err, req, res, next) => {
@@ -1459,9 +1233,7 @@ app.use((err, req, res, next) => {
   if (!res.headersSent) res.status(500).json({ ok: false, error: GENERIC_ERR });
 });
 
-console.log('[Mirox] v100 · watermark:', 'MIROXAI-WATERMARK-v1-LOGO', '· durable:', KV_ON, '· providers:', {
-  openrouter: !!OP_KEY, hf: !!HF_API_KEY, pl: !!PL_KEY, airoute: !!AIROUTE_KEY,
-});
+console.log('[Mirox] v101 · watermark:', 'MIROXAI-WATERMARK-v1-LOGO', '· thinking: on · durable:', KV_ON, '· providers:', { openrouter: !!OP_KEY, hf: !!HF_API_KEY, pl: !!PL_KEY, airoute: !!AIROUTE_KEY });
 
 if (!process.env.VERCEL) {
   app.listen(PORT, () => console.log('[Mirox] Server at http://localhost:' + PORT));
