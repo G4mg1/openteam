@@ -2,7 +2,10 @@
   'use strict';
 
   /* ============================================================
-     MiroxAI frontend v105 — no dots · single text thinking · bug fixes
+     MiroxAI frontend v106
+     · REAL thinking panel (separate from answer, no mixing)
+     · Like / Copy / Read-aloud buttons
+     · Call mode (STT → AI → TTS loop, any language)
      ============================================================ */
 
   /* ---------- i18n ---------- */
@@ -115,11 +118,12 @@
     { id: 'mirox-eclipse-2.0', label: 'Eclipse', tier: 'ultimate', tagline: 'Most powerful', icon: 'ri-sun-fill' },
   ];
   const LS_KEY = 'miroxai_conversations_v50';
+  const LIKES_KEY = 'miroxai_likes_v1';
   const TOKEN_KEY = 'mirox_token';
   const LOCAL_USER_KEY = 'mirox_local_user_v3';
   const GUEST_KEY = 'miroxai_guest_id_v1';
   const APPEARANCE_KEY = 'miroxai_appearance_v50';
-  const PREFS_KEY = 'miroxai_prefs_v15';
+  const PREFS_KEY = 'miroxai_prefs_v16';
   const BRIDGE_OPTS_KEY = 'miroxai_bridge_opts_v1';
   const PASTE_ATTACH_THRESHOLD = 1024;
   const NET_TIMEOUT_MS = 15000;
@@ -131,6 +135,26 @@
   const MAX_DUP_COMMANDS = 3;
   const MAX_DUP_REPLIES = 2;
 
+  const THINK_INSTRUCTION = `ALWAYS think before answering.
+Write your reasoning inside <thinking>...</thinking> tags, then close the tags, then write your final answer.
+
+Rules:
+1. Inside <thinking> write a short, natural, first-person internal monologue — 1 to 4 short sentences. Like: "User is asking X. I should focus on Y and keep it short. Ok."
+2. Never write the final answer inside <thinking>.
+3. After </thinking>, immediately write the answer. No "here is my answer" preamble.
+4. If the request is trivial (hi, thanks), keep thinking to a single short line.
+5. Never output the tag names or talk about the tags.
+
+Example:
+<thinking>
+User wants a short Lua loop. I'll write a for loop from 1 to 5 with a clear variable name. Keep it minimal, no extra prose.
+</thinking>
+\`\`\`lua
+for i = 1, 5 do
+  print(i)
+end
+\`\`\``;
+
   let __config = null, __user = null, __tier = 'free', __model = 'mirox-luna-1.2';
   let currentConversationId = null, isReplying = false;
   let continuationBusy = false, streamRenderAt = 0, userIsAtBottom = true;
@@ -139,6 +163,7 @@
   let forceSearchNext = false, __historyQuery = '';
   let __ivDataUrl = '';
   let __prefs = {};
+  let __likes = {};
   let __bridge = { name: 'My Laptop', port: 8765, connected: false, baseUrl: null, env: null };
   let bridgeRunning = false, bridgeAbort = false, bridgeConversation = [], bridgeProgress = 0;
   let bridgeTurn = null, bridgeTaskComplete = true, bridgeWaitingForUser = false;
@@ -153,6 +178,21 @@
   let __supportSending = false;
   let __hrCurrentCode = '';
   let __imageHistoryLoading = false;
+
+  /* Call state */
+  let __call = {
+    active: false,
+    lang: 'en-US',
+    phase: 'idle',     // idle | listening | thinking | speaking
+    recog: null,
+    shouldListen: false,
+    muted: false,
+    currentUtter: null,
+    currentHistory: [],
+  };
+
+  /* Speak/TTS state */
+  let __currentSpeakMsgId = null;
 
   const uid = () => 'c_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
   const escapeHtml = (s) => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
@@ -194,7 +234,7 @@
   }
 
   /* ---------- Prefs ---------- */
-  const DEFAULT_PREFS = { autoScroll: true, enterSend: true, vision: true, compact: false, reduceMotion: false, fontSize: 'md', mode: 'light', theme: 'default', responseLanguage: 'auto', uiLanguage: 'en', deepThink: false };
+  const DEFAULT_PREFS = { autoScroll: true, enterSend: true, vision: true, compact: false, reduceMotion: false, fontSize: 'md', mode: 'light', theme: 'default', responseLanguage: 'auto', uiLanguage: 'en', deepThink: false, autoSpeak: false, ttsVoice: '' };
   function loadPrefs() {
     __prefs = Object.assign({}, DEFAULT_PREFS, safeGet(PREFS_KEY, {}));
     const app = safeGet(APPEARANCE_KEY, {});
@@ -215,6 +255,7 @@
     syncChk('compactToggle', __prefs.compact);
     syncChk('reduceMotionToggle', __prefs.reduceMotion);
     syncChk('deepThinkToggle', __prefs.deepThink);
+    syncChk('autoSpeakToggle', __prefs.autoSpeak);
     $$('#modeSegmented .seg-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === (__prefs.mode || 'light')));
     $$('#fontSizeSegmented .seg-btn').forEach((b) => b.classList.toggle('active', b.dataset.fontsize === (__prefs.fontSize || 'md')));
     $$('#accentSwatches .swatch').forEach((b) => b.classList.toggle('active', b.dataset.theme === (__prefs.theme || 'default')));
@@ -236,6 +277,110 @@
     if (btn) btn.classList.toggle('active', !!__prefs.deepThink);
     const inp = document.getElementById('messageInput');
     if (inp) inp.placeholder = __prefs.deepThink ? 'DeepThink is on — ask anything complex…' : 'How can I help you today?';
+  }
+
+  /* ---------- Likes ---------- */
+  function loadLikes() { __likes = safeGet(LIKES_KEY, {}); if (typeof __likes !== 'object' || !__likes) __likes = {}; }
+  function saveLikes() { safeSet(LIKES_KEY, __likes); }
+  function msgLikeKey(msg) { return (msg.ts || 0) + ':' + String(msg.content || '').slice(0, 60); }
+
+  /* ---------- TTS (SpeechSynthesis) ---------- */
+  const ttsAvailable = typeof window !== 'undefined' && 'speechSynthesis' in window;
+  let __voices = [];
+
+  function loadVoices() {
+    if (!ttsAvailable) return;
+    __voices = speechSynthesis.getVoices() || [];
+    const sel = document.getElementById('ttsVoiceSelect');
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">Auto (match language)</option>';
+    for (const v of __voices) {
+      const opt = document.createElement('option');
+      opt.value = v.name;
+      opt.textContent = `${v.name} — ${v.lang}${v.default ? ' · default' : ''}`;
+      sel.appendChild(opt);
+    }
+    if (__prefs.ttsVoice) sel.value = __prefs.ttsVoice;
+    else if (cur) sel.value = cur;
+  }
+  if (ttsAvailable) {
+    speechSynthesis.onvoiceschanged = loadVoices;
+    setTimeout(loadVoices, 250);
+    setTimeout(loadVoices, 900);
+  }
+
+  function pickVoiceForLang(lang) {
+    if (!ttsAvailable) return null;
+    if (__prefs.ttsVoice) {
+      const v = __voices.find((x) => x.name === __prefs.ttsVoice);
+      if (v) return v;
+    }
+    const norm = String(lang || '').toLowerCase();
+    // try exact, then primary subtag
+    let v = __voices.find((x) => String(x.lang || '').toLowerCase() === norm);
+    if (v) return v;
+    const primary = norm.split('-')[0];
+    v = __voices.find((x) => String(x.lang || '').toLowerCase().startsWith(primary + '-'));
+    if (v) return v;
+    v = __voices.find((x) => String(x.lang || '').toLowerCase() === primary);
+    if (v) return v;
+    return null;
+  }
+
+  function stopSpeaking() {
+    if (!ttsAvailable) return;
+    try { speechSynthesis.cancel(); } catch {}
+    __currentSpeakMsgId = null;
+    $$('.action-btn.speaking').forEach((b) => b.classList.remove('speaking'));
+  }
+
+  function speak(text, lang, msgId) {
+    if (!ttsAvailable) {
+      toast('Your browser does not support text-to-speech.', 3000, 'err');
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      stopSpeaking();
+      const clean = String(text || '').replace(/```[\s\S]*?```/g, ' [code] ').replace(/\s+/g, ' ').trim();
+      if (!clean) return resolve();
+      // Chunk into ~220 char pieces so browsers speak smoothly
+      const parts = [];
+      let buf = '';
+      for (const sentence of clean.split(/(?<=[.!?۔।])\s+/)) {
+        if ((buf + ' ' + sentence).length > 220) { if (buf) parts.push(buf); buf = sentence; }
+        else buf = buf ? buf + ' ' + sentence : sentence;
+      }
+      if (buf) parts.push(buf);
+      if (!parts.length) return resolve();
+
+      const voice = pickVoiceForLang(lang || __prefs.responseLanguage || 'en');
+      let i = 0;
+      __currentSpeakMsgId = msgId || null;
+      if (msgId) {
+        const btn = document.querySelector(`.message[data-msg-id="${msgId}"] .action-btn[data-action="speak"]`);
+        if (btn) btn.classList.add('speaking');
+      }
+      const next = () => {
+        if (i >= parts.length) {
+          if (msgId) {
+            const btn = document.querySelector(`.message[data-msg-id="${msgId}"] .action-btn[data-action="speak"]`);
+            if (btn) btn.classList.remove('speaking');
+          }
+          __currentSpeakMsgId = null;
+          resolve();
+          return;
+        }
+        const u = new SpeechSynthesisUtterance(parts[i++]);
+        if (voice) u.voice = voice;
+        u.lang = (voice && voice.lang) || lang || 'en-US';
+        u.rate = 1; u.pitch = 1; u.volume = 1;
+        u.onend = next;
+        u.onerror = next;
+        try { speechSynthesis.speak(u); } catch { next(); }
+      };
+      next();
+    });
   }
 
   /* ---------- Mascot ---------- */
@@ -270,7 +415,7 @@
     }, 6000);
   }
 
-  /* ═══════════ THINK PANEL — single flowing text, no dots ═══════════ */
+  /* ═══════════ THINK PANEL — clean, no dots, single text ═══════════ */
   function createThinkPanel(deep) {
     const el = document.createElement('div');
     el.className = 'think-panel';
@@ -321,10 +466,7 @@
       if (text === lastText) return;
       lastText = text;
       textEl.textContent = text;
-      // Auto-scroll thinking area when it overflows
-      if (bodyEl.scrollHeight > bodyEl.clientHeight + 4) {
-        bodyEl.scrollTop = bodyEl.scrollHeight;
-      }
+      if (bodyEl.scrollHeight > bodyEl.clientHeight + 4) bodyEl.scrollTop = bodyEl.scrollHeight;
     }
 
     function setState(next) {
@@ -349,12 +491,9 @@
       const secs = ((performance.now() - t0) / 1000).toFixed(1);
       timerPill.textContent = secs + 's';
       setState('done');
-      // Auto-collapse — quick for simple mode, slower for deep mode
       const collapseDelay = deep ? 2200 : 900;
       setTimeout(() => {
-        if (el.isConnected && el.dataset.collapsed === 'false') {
-          el.dataset.collapsed = 'true';
-        }
+        if (el.isConnected && el.dataset.collapsed === 'false') el.dataset.collapsed = 'true';
       }, collapseDelay);
     }
 
@@ -377,12 +516,8 @@
       clearInterval(timer);
     }
 
-    return {
-      el, replaceText, finalize, fail, hide,
-      isDone() { return done; },
-      isConnected() { return el.isConnected; },
-      destroy() { clearInterval(timer); },
-    };
+    function isConnected() { return el.isConnected; }
+    return { el, replaceText, finalize, fail, hide, isConnected, isDone() { return done; }, destroy() { clearInterval(timer); } };
   }
 
   /* ---------- Canvas watermark ---------- */
@@ -391,30 +526,23 @@
     const ctx = canvas.getContext('2d');
     const W = canvas.width, H = canvas.height;
     ctx.drawImage(img, 0, 0, W, H);
-
     const minDim = Math.min(W, H);
     const textSize = Math.max(9, Math.round(minDim * 0.020));
     const pad = Math.max(6, Math.round(minDim * 0.012));
     const blobR = textSize * 0.55;
-    const blobW = blobR * 2;
-    const blobH = blobR * 1.7;
-    const bx = pad + blobR;
-    const by = H - pad - blobR;
-
+    const blobW = blobR * 2, blobH = blobR * 1.7;
+    const bx = pad + blobR, by = H - pad - blobR;
     const gradH = textSize * 1.8;
     const grad = ctx.createLinearGradient(0, H - gradH, 0, H);
     grad.addColorStop(0, 'rgba(0,0,0,0)');
     grad.addColorStop(1, 'rgba(0,0,0,0.16)');
     ctx.fillStyle = grad;
     ctx.fillRect(0, H - gradH, W, gradH);
-
     ctx.save();
     ctx.globalAlpha = 0.72;
-
     ctx.fillStyle = '#d97757';
     const radius = blobR * 0.5;
-    const bxL = bx - blobR;
-    const byT = by - blobR * 0.85;
+    const bxL = bx - blobR, byT = by - blobR * 0.85;
     ctx.beginPath();
     if (typeof ctx.roundRect === 'function') ctx.roundRect(bxL, byT, blobW, blobH, radius);
     else {
@@ -431,12 +559,10 @@
       ctx.closePath();
     }
     ctx.fill();
-
     ctx.fillStyle = 'rgba(255,255,255,0.95)';
     const eyeW = blobR * 0.24, eyeH = blobR * 0.66;
     ctx.fillRect(bx - blobR * 0.45, by - blobR * 0.30, eyeW, eyeH);
     ctx.fillRect(bx + blobR * 0.20, by - blobR * 0.30, eyeW, eyeH);
-
     ctx.font = `700 ${textSize}px Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
     ctx.textBaseline = 'middle';
     ctx.fillStyle = 'rgba(255,255,255,0.94)';
@@ -446,12 +572,10 @@
     const tx = bx + blobR + textSize * 0.5;
     const ty = by + textSize * 0.02;
     ctx.fillText(WM_TEXT, tx, ty);
-
     ctx.shadowBlur = Math.max(2, textSize * 0.12);
     ctx.font = `500 ${Math.round(textSize * 0.58)}px Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
     ctx.fillStyle = 'rgba(255,255,255,0.62)';
     ctx.fillText('miroxai.org', tx, ty + textSize * 0.78);
-
     ctx.restore();
   }
   function watermarkedDataUrl(srcDataUrl) {
@@ -485,8 +609,7 @@
 
   /* ---------- Image history ---------- */
   async function loadImageHistory() {
-    const grid = $('#sidebarImageHistory');
-    if (!grid) return;
+    const grid = $('#sidebarImageHistory'); if (!grid) return;
     if (__imageHistoryLoading) return;
     __imageHistoryLoading = true;
     grid.innerHTML = '<div class="sidebar-image-empty"><i class="ri-loader-4-line spin"></i> Loading…</div>';
@@ -502,9 +625,7 @@
         item.className = 'sidebar-image-item';
         item.title = it.prompt || '';
         const img = document.createElement('img');
-        img.src = it.image;
-        img.alt = it.prompt || 'generated image';
-        img.loading = 'lazy';
+        img.src = it.image; img.alt = it.prompt || 'generated image'; img.loading = 'lazy';
         img.onerror = () => { item.style.display = 'none'; };
         item.appendChild(img);
         item.onclick = () => openImageViewer(it.image);
@@ -513,9 +634,7 @@
       if (!grid.children.length) grid.innerHTML = '<div class="sidebar-image-empty">No images yet.</div>';
     } catch {
       grid.innerHTML = '<div class="sidebar-image-empty">Could not load images.</div>';
-    } finally {
-      __imageHistoryLoading = false;
-    }
+    } finally { __imageHistoryLoading = false; }
   }
   function refreshImageHistorySoon() { setTimeout(() => { loadImageHistory().catch(() => {}); }, 500); }
 
@@ -750,8 +869,7 @@
   function openHtmlRunner(code) {
     __hrCurrentCode = code || '';
     const modal = $('#htmlRunnerModal'); if (!modal) return;
-    const iframe = $('#hrIframe');
-    const src = $('#hrSource');
+    const iframe = $('#hrIframe'), src = $('#hrSource');
     if (iframe) iframe.srcdoc = __hrCurrentCode;
     if (src) src.textContent = __hrCurrentCode;
     $$('.html-runner-tab').forEach((t) => t.classList.toggle('active', t.dataset.hrTab === 'preview'));
@@ -773,6 +891,19 @@
     const previewAttr = forMessage ? '' : ` data-preview-file="${idx}"`;
     return `<div class="attach-chip attach-chip-file"${previewAttr} title="${escapeHtml(f.name || 'file')}${lines ? ` · ${lines} lines` : ''}"><span class="attach-file-badge"><i class="${meta.icon}"></i> ${escapeHtml(meta.label)}</span><span class="attach-chip-file-name">${escapeHtml(f.name || 'file')}</span>${f.size ? `<span class="attach-size">${fmtSize(f.size)}</span>` : ''}${lines > 1 ? `<span class="attach-lines">${lines} lines</span>` : ''}</div>`;
   }
+
+  function buildAiActions(role, msgId, liked) {
+    if (role === 'user') {
+      return `<button class="action-btn" data-action="copy" aria-label="Copy" title="Copy"><i class="ri-file-copy-line"></i></button>`;
+    }
+    return `
+      <button class="action-btn${liked ? ' active-liked' : ''}" data-action="like" aria-label="Like" title="Like"><i class="${liked ? 'ri-thumb-up-fill' : 'ri-thumb-up-line'}"></i><span>${liked ? 'Liked' : 'Like'}</span></button>
+      <button class="action-btn" data-action="copy" aria-label="Copy" title="Copy"><i class="ri-file-copy-line"></i></button>
+      <button class="action-btn" data-action="speak" aria-label="Read aloud" title="Read aloud"><i class="ri-volume-up-line"></i></button>
+      <button class="action-btn" data-action="retry" aria-label="Regenerate" title="Regenerate"><i class="ri-refresh-line"></i></button>
+    `;
+  }
+
   function addMessageToDOM(role, content, ts, msgId, files, image, thinking) {
     const container = $('#chatMessages'); if (!container) return null;
     container.querySelector('.welcome-screen')?.remove();
@@ -800,24 +931,27 @@
     }
     if (role === 'ai' && image) inner += `<div class="gen-image"><img src="${image}" draggable="false" alt=""></div>`;
     inner += '<div class="bubble-text"></div>';
+
+    const liked = !!(__likes[id]);
+
     el.innerHTML = `
       ${avatar}
       <div class="message-body">
         <div class="bubble">${inner}</div>
-        <div class="message-actions">
-          <button class="action-btn" data-action="copy" aria-label="Copy"><i class="ri-file-copy-line"></i></button>
-          ${role === 'ai' ? '<button class="action-btn" data-action="retry" aria-label="Retry"><i class="ri-refresh-line"></i></button>' : ''}
-        </div>
+        <div class="message-actions">${buildAiActions(role, id, liked)}</div>
         <div class="message-time">${ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</div>
       </div>`;
     container.appendChild(el);
-    if (role === 'ai' && thinking) {
+
+    // Insert thinking panel ABOVE the bubble ONLY if there's actual thinking text
+    if (role === 'ai' && thinking && thinking.trim()) {
       const panel = createThinkPanel(false);
       panel.replaceText(thinking);
       panel.finalize();
       const bodyEl = el.querySelector('.message-body');
       bodyEl.insertBefore(panel.el, bodyEl.firstChild);
     }
+
     const bt = el.querySelector('.bubble-text');
     if (role === 'user') { bt.textContent = content || ''; if (!content) bt.style.display = 'none'; }
     else if (content) { bt.innerHTML = renderMarkdown(content); wireCodeButtons(bt); }
@@ -826,16 +960,51 @@
     scrollToBottom();
     return el;
   }
+
   function wireMessageActions(el) {
+    const msgId = el.dataset.msgId;
+    const role = el.dataset.role;
     el.querySelectorAll('.action-btn').forEach((btn) => {
       if (btn.__wired) return; btn.__wired = true;
-      btn.onclick = async () => {
+      btn.onclick = async (e) => {
+        e.stopPropagation();
         const action = btn.dataset.action;
-        if (action === 'copy') { try { await navigator.clipboard.writeText(el.querySelector('.bubble')?.innerText || ''); btn.innerHTML = '<i class="ri-check-line"></i>'; setTimeout(() => { btn.innerHTML = '<i class="ri-file-copy-line"></i>'; }, 1200); } catch {} }
-        else if (action === 'retry') { if (!isReplying) handleRetry(el); }
+        if (action === 'copy') {
+          const text = el.querySelector('.bubble')?.innerText || '';
+          try {
+            await navigator.clipboard.writeText(text);
+            const old = btn.innerHTML;
+            btn.innerHTML = '<i class="ri-check-line"></i>';
+            setTimeout(() => { btn.innerHTML = old; }, 1200);
+          } catch {}
+        } else if (action === 'speak') {
+          const text = el.querySelector('.bubble-text')?.innerText || '';
+          const convo = currentConvo();
+          const msg = convo?.messages.find((m) => m.id === msgId);
+          const lang = __prefs.responseLanguage && __prefs.responseLanguage !== 'auto'
+            ? __prefs.responseLanguage
+            : (msg && msg.lang) || 'en';
+          if (__currentSpeakMsgId === msgId) {
+            stopSpeaking();
+          } else {
+            speak(text, lang, msgId);
+          }
+        } else if (action === 'like') {
+          const likedNow = !__likes[msgId];
+          __likes[msgId] = likedNow;
+          if (!likedNow) delete __likes[msgId];
+          saveLikes();
+          btn.classList.toggle('active-liked', !!likedNow);
+          btn.classList.add('liked-pop');
+          setTimeout(() => btn.classList.remove('liked-pop'), 450);
+          btn.innerHTML = `<i class="${likedNow ? 'ri-thumb-up-fill' : 'ri-thumb-up-line'}"></i><span>${likedNow ? 'Liked' : 'Like'}</span>`;
+        } else if (action === 'retry') {
+          if (!isReplying) handleRetry(el);
+        }
       };
     });
   }
+
   async function handleRetry(el) {
     if (isReplying) return;
     const convo = currentConvo(); if (!convo) return;
@@ -849,6 +1018,7 @@
     el.remove();
     sendToAPI(userMsg.content, userMsg.files || []);
   }
+
   function updateSendButtonState() {
     const btn = $('#sendBtn'), inp = $('#messageInput');
     if (!btn || !inp) return;
@@ -875,9 +1045,8 @@
     const text = inp.value.trim();
     if (!text && !pendingFiles.length) return;
     const hasImageFile = pendingFiles.some((f) => f.type === 'image');
-
     if (__prefs.deepThink && !hasImageFile && looksLikeImageRequest(text)) {
-      toast('Image generation is disabled while DeepThink is on. Turn it off to generate images.', 4500, 'err');
+      toast('Image generation is disabled while DeepThink is on.', 4500, 'err');
       return;
     }
     if (!__user && looksLikeImageRequest(text)) { requireSignIn('Sign in to generate images with Mirox.'); return; }
@@ -930,7 +1099,7 @@
     btn.innerHTML = '<i class="ri-loader-4-line spin"></i><span>Continuing…</span>';
     try {
       await sendToAPI(
-        'Continue EXACTLY from where you stopped. Do NOT repeat any prior text. Do NOT add a preamble. Do NOT open a new code fence if the previous message ended inside one — just keep writing. Output only the raw continuation.',
+        'Continue EXACTLY from where you stopped. Do NOT repeat any prior text. Do NOT add a preamble. Do NOT open a new code fence if the previous message ended inside one — just keep writing.',
         [], false,
         { existingMsgEl: msgEl, existingBubble: bubble, messageObj, continuation: true }
       );
@@ -1026,6 +1195,9 @@
     const streamTimeout = setTimeout(() => { try { activeStreamController?.abort(); } catch {} }, STREAM_TIMEOUT_MS);
 
     try {
+      const sysMsgs = [
+        { role: 'system', content: THINK_INSTRUCTION },
+      ];
       const reqBody = {
         message: text,
         history,
@@ -1033,6 +1205,7 @@
         stream: true,
         search: !!forceSearch,
         deep_think: !!__prefs.deepThink,
+        system_extra: THINK_INSTRUCTION,
         files: files.map((f) => ({
           name: f.name, size: f.size, type: f.type, mime: f.mime,
           width: f.width, height: f.height,
@@ -1079,13 +1252,13 @@
         const openIdx = s.indexOf('<thinking>');
         const closeIdx = s.indexOf('</thinking>');
         if (openIdx >= 0 && closeIdx > openIdx) {
-          thinkingText = s.slice(openIdx + '<thinking>'.length, closeIdx).trim();
+          thinkingText = s.slice(openIdx + 10, closeIdx).trim();
           const before = s.slice(0, openIdx);
-          const after = s.slice(closeIdx + '</thinking>'.length);
+          const after = s.slice(closeIdx + 11);
           answerText = (before + after).replace(/^\s+/, '');
           thinkingClosed = true;
         } else if (openIdx >= 0) {
-          thinkingText = s.slice(openIdx + '<thinking>'.length);
+          thinkingText = s.slice(openIdx + 10);
           answerText = s.slice(0, openIdx).trim();
           thinkingClosed = false;
         } else {
@@ -1129,8 +1302,9 @@
           if (o.d) {
             rawAll += o.d;
             updateSplit();
-            if (thinkPanel && thinkPanel.isConnected() && !thinkingClosed) {
-              thinkPanel.replaceText(thinkingText);
+            if (thinkPanel && thinkPanel.isConnected()) {
+              if (!thinkingClosed) thinkPanel.replaceText(thinkingText);
+              else if (/<thinking>/.test(rawAll)) thinkPanel.replaceText(thinkingText);
             }
             if (answerText.length > 0) {
               if (!gotToken) {
@@ -1151,11 +1325,14 @@
       if (signinTriggered) { try { reader.cancel(); } catch {} }
 
       updateSplit();
+
+      // Finalize think panel
       if (thinkPanel && thinkPanel.isConnected()) {
         if (/<thinking>/.test(rawAll)) {
           thinkPanel.replaceText(thinkingText);
           thinkPanel.finalize();
         } else {
+          // No <thinking> tag at all — hide the panel so it doesn't mix with the answer
           thinkPanel.hide();
         }
       }
@@ -1164,6 +1341,12 @@
       if (avatarMascot) setMascotMood('happy', avatarMascot.parentElement.parentElement);
       if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
       if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); wireCodeButtons(bubbleText); }
+      wireMessageActions(msgEl);
+
+      // Update the actions bar to reflect latest state
+      const liked = !!__likes[aiMsgId];
+      const actionsBar = msgEl.querySelector('.message-actions');
+      if (actionsBar) actionsBar.innerHTML = buildAiActions('ai', aiMsgId, liked);
       wireMessageActions(msgEl);
 
       let imageKey = null;
@@ -1186,7 +1369,7 @@
           savedMsg.ts = Date.now();
           if (imageKey) savedMsg.imageKey = imageKey;
         } else {
-          savedMsg = { id: aiMsgId, role: 'assistant', content: full, thinking: thinkingText, ts: Date.now(), imageKey };
+          savedMsg = { id: aiMsgId, role: 'assistant', content: full, thinking: thinkingText, ts: Date.now(), imageKey, lang: __prefs.responseLanguage || 'auto' };
           convo.messages.push(savedMsg);
         }
       }
@@ -1195,6 +1378,12 @@
       if (savedMsg && shouldShowContinue(full, streamComplete)) {
         ensureBubble();
         attachContinueButton(msgEl, bubble, savedMsg);
+      }
+
+      // Auto-speak if enabled
+      if (__prefs.autoSpeak && full && !__call.active) {
+        const lang = (__prefs.responseLanguage && __prefs.responseLanguage !== 'auto') ? __prefs.responseLanguage : (savedMsg && savedMsg.lang) || 'en';
+        setTimeout(() => { speak(full, lang, aiMsgId); }, 250);
       }
     } catch (e) {
       clearTimeout(streamTimeout);
@@ -1224,6 +1413,7 @@
       updateSendButtonState(); updateTokenUsage();
     }
   }
+
   function stopStreaming() {
     if (activeStreamController) { try { activeStreamController.abort(); } catch {} activeStreamController = null; }
     isReplying = false;
@@ -1239,13 +1429,17 @@
     setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 350); }, ms || 2200);
   }
 
-  /* ---------- Voice ---------- */
+  /* ---------- Voice typing (input mic) ---------- */
   function setupVoice() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     const btn = document.getElementById('voiceBtn');
     if (!SR || !btn) { if (btn) { btn.disabled = true; btn.title = 'Voice input is not supported'; btn.style.opacity = '0.4'; } return; }
     const recog = new SR();
-    recog.continuous = false; recog.interimResults = true; recog.lang = (navigator.language || 'en-US');
+    recog.continuous = false; recog.interimResults = true;
+    const lang = () => (__prefs.responseLanguage && __prefs.responseLanguage !== 'auto')
+      ? __prefs.responseLanguage
+      : (navigator.language || 'en-US');
+    recog.lang = lang();
     recog.onstart = () => { __voiceListening = true; btn.classList.add('listening'); btn.innerHTML = '<i class="ri-mic-fill"></i>'; };
     recog.onend = () => { __voiceListening = false; btn.classList.remove('listening'); btn.innerHTML = '<i class="ri-mic-line"></i>'; };
     recog.onerror = (e) => { __voiceListening = false; btn.classList.remove('listening'); btn.innerHTML = '<i class="ri-mic-line"></i>'; if (e.error === 'not-allowed') toast('Microphone permission denied.', 3000, 'err'); else if (e.error !== 'no-speech') toast('Voice error: ' + e.error, 3000, 'err'); };
@@ -1263,6 +1457,7 @@
     btn.addEventListener('click', () => {
       const inp = document.getElementById('messageInput'); if (!inp) return;
       if (__voiceListening) { try { recog.stop(); } catch {} return; }
+      recog.lang = lang();
       inp.dataset.voiceBase = inp.value || '';
       try { recog.start(); } catch (e) { toast('Could not start voice: ' + e.message, 3000, 'err'); }
     });
@@ -1553,6 +1748,206 @@
     finally { if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-image-add-line"></i> Generate'; } }
   }
 
+  /* ═══════════ CALL MODE ═══════════ */
+  function setCallPhase(phase) {
+    __call.phase = phase;
+    const statusEl = $('#callStatus');
+    const avatar = $('#callAvatar');
+    if (!statusEl || !avatar) return;
+    avatar.classList.remove('listening','thinking','speaking');
+    if (phase === 'listening') { statusEl.textContent = 'Listening…'; statusEl.className = 'call-status listening'; avatar.classList.add('listening'); setMascotMood('searching', avatar); }
+    else if (phase === 'thinking') { statusEl.textContent = 'Thinking…'; statusEl.className = 'call-status thinking'; avatar.classList.add('thinking'); setMascotMood('thinking', avatar); }
+    else if (phase === 'speaking') { statusEl.textContent = 'Speaking…'; statusEl.className = 'call-status speaking'; avatar.classList.add('speaking'); setMascotMood('happy', avatar); }
+    else { statusEl.textContent = 'Tap the mic to start'; statusEl.className = 'call-status'; setMascotMood('idle', avatar); }
+  }
+
+  function callStopRecog() {
+    if (__call.recog) {
+      try { __call.recog.onend = null; __call.recog.stop(); } catch {}
+      __call.recog = null;
+    }
+  }
+
+  function startCallRecognition() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const transcriptEl = $('#callTranscript');
+    if (!SR) { toast('Your browser does not support speech recognition.', 4000, 'err'); return; }
+    if (!__call.active || !__call.shouldListen) return;
+    callStopRecog();
+    const recog = new SR();
+    recog.lang = __call.lang;
+    recog.continuous = false;
+    recog.interimResults = true;
+    recog.maxAlternatives = 1;
+    let lastFinal = '';
+    let silenceTimer = null;
+    recog.onstart = () => { setCallPhase('listening'); };
+    recog.onresult = (event) => {
+      let interim = '', final = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const r = event.results[i];
+        if (r.isFinal) final += r[0].transcript;
+        else interim += r[0].transcript;
+      }
+      if (interim && transcriptEl) { transcriptEl.textContent = interim; transcriptEl.classList.add('interim'); }
+      if (final) {
+        lastFinal = (lastFinal + ' ' + final).trim();
+        if (transcriptEl) { transcriptEl.textContent = lastFinal; transcriptEl.classList.remove('interim'); }
+        // small delay so user can add more
+        clearTimeout(silenceTimer);
+        silenceTimer = setTimeout(() => {
+          if (lastFinal.trim()) {
+            __call.shouldListen = false;
+            callStopRecog();
+            callSendToAI(lastFinal.trim());
+          }
+        }, 700);
+      }
+    };
+    recog.onerror = (e) => {
+      if (e.error === 'not-allowed') { toast('Microphone permission denied.', 3000, 'err'); endCall(); return; }
+      if (e.error === 'no-speech' || e.error === 'aborted') return;
+    };
+    recog.onend = () => {
+      clearTimeout(silenceTimer);
+      __call.recog = null;
+      // If nothing was captured, and we should still listen, restart
+      if (__call.active && __call.shouldListen) setTimeout(startCallRecognition, 350);
+    };
+    __call.recog = recog;
+    try { recog.start(); } catch (e) { /* ignore */ }
+  }
+
+  async function callSendToAI(userText) {
+    if (!__call.active) return;
+    setCallPhase('thinking');
+    const replyEl = $('#callReply');
+    if (replyEl) replyEl.textContent = '';
+
+    // Build a short history for the call
+    __call.currentHistory.push({ role: 'user', content: userText });
+    if (__call.currentHistory.length > 12) __call.currentHistory.splice(0, __call.currentHistory.length - 12);
+
+    const langTag = __call.lang.split('-')[0];
+    const callSystem = `You are Mirox, an AI by OpenSurr, on a VOICE CALL. Your reply is spoken aloud — so:
+- Reply ONLY in the language with code "${langTag}".
+- Keep it SHORT and conversational — usually 1-3 short sentences.
+- No code blocks, no markdown, no emojis, no bullet lists.
+- Do NOT use <thinking> tags in voice mode.
+- Be warm, natural, like a helpful friend on a call.`;
+
+    let fullReply = '';
+    let streamComplete = false;
+    let controller = new AbortController();
+    __call.currentUtter = controller;
+    try {
+      const res = await fetch('/v1/chat/completions', {
+        method: 'POST',
+        headers: authHeaders(),
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          message: userText,
+          history: __call.currentHistory.slice(0, -1).map((m) => ({ role: m.role, content: m.content })),
+          model: __model || 'mirox-luna-1.2',
+          stream: true,
+          deep_think: false,
+          system_extra: callSystem,
+          call_mode: true,
+          guest_id: getGuestId(),
+          language: langTag,
+        }),
+        signal: controller.signal,
+      });
+      if (!res.ok || !res.body) throw new Error('call_failed');
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let idx;
+        while ((idx = buf.indexOf('\n')) !== -1) {
+          const line = buf.slice(0, idx).trim(); buf = buf.slice(idx + 1);
+          if (!line.startsWith('data:')) continue;
+          const pl = line.slice(5).trim(); if (!pl || pl === '[DONE]') { if (pl === '[DONE]') streamComplete = true; continue; }
+          let o; try { o = JSON.parse(pl); } catch { continue; }
+          if (o.d) {
+            fullReply += o.d;
+            // Strip thinking tags if any leaked
+            const clean = fullReply.replace(/<thinking>[\s\S]*?<\/thinking>/g, '').replace(/<\/?thinking>/g, '').trim();
+            if (replyEl) replyEl.textContent = clean;
+          }
+        }
+      }
+
+      const finalReply = fullReply.replace(/<thinking>[\s\S]*?<\/thinking>/g, '').replace(/<\/?thinking>/g, '').replace(/```[\s\S]*?```/g, '').trim() || 'Sorry, I did not catch that.';
+      __call.currentHistory.push({ role: 'assistant', content: finalReply });
+      if (replyEl) replyEl.textContent = finalReply;
+
+      if (!__call.active) return;
+      if (__call.muted) {
+        // Do not speak, but continue listening
+        __call.shouldListen = true;
+        setCallPhase('idle');
+        startCallRecognition();
+        return;
+      }
+      setCallPhase('speaking');
+      await speak(finalReply, __call.lang);
+      if (__call.active) {
+        __call.shouldListen = true;
+        setCallPhase('idle');
+        startCallRecognition();
+      }
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;
+      if (replyEl) replyEl.textContent = 'Connection error.';
+      setCallPhase('idle');
+      // retry listening after a moment
+      if (__call.active) setTimeout(() => { __call.shouldListen = true; startCallRecognition(); }, 1200);
+    }
+  }
+
+  function startCall() {
+    if (!('SpeechRecognition' in window) && !('webkitSpeechRecognition' in window)) {
+      toast('Your browser does not support speech recognition. Try Chrome or Edge.', 4500, 'err'); return;
+    }
+    if (!ttsAvailable) { toast('Your browser does not support text-to-speech.', 4000, 'err'); return; }
+    __call.active = true;
+    __call.shouldListen = true;
+    __call.muted = false;
+    __call.currentHistory = [];
+    const overlay = $('#callOverlay');
+    if (overlay) overlay.classList.add('open');
+    const langSel = $('#callLangSelect');
+    if (langSel) {
+      // default to user's preferred response language if set
+      const pref = (__prefs.responseLanguage && __prefs.responseLanguage !== 'auto') ? __prefs.responseLanguage : (navigator.language || 'en-US');
+      const match = Array.from(langSel.options).find((o) => o.value.toLowerCase().startsWith(pref.toLowerCase().split('-')[0]));
+      if (match) langSel.value = match.value;
+      __call.lang = langSel.value || 'en-US';
+    }
+    const transcriptEl = $('#callTranscript');
+    if (transcriptEl) transcriptEl.textContent = '';
+    const replyEl = $('#callReply');
+    if (replyEl) replyEl.textContent = '';
+    setCallPhase('idle');
+    const muteBtn = $('#callMuteBtn'); if (muteBtn) { muteBtn.classList.remove('active'); muteBtn.innerHTML = '<i class="ri-volume-up-line"></i>'; }
+    const micBtn = $('#callMicBtn'); if (micBtn) micBtn.classList.remove('active');
+    setTimeout(() => startCallRecognition(), 400);
+  }
+
+  function endCall() {
+    __call.active = false;
+    __call.shouldListen = false;
+    callStopRecog();
+    if (__call.currentUtter) { try { __call.currentUtter.abort(); } catch {} __call.currentUtter = null; }
+    stopSpeaking();
+    const overlay = $('#callOverlay'); if (overlay) overlay.classList.remove('open');
+    setCallPhase('idle');
+  }
+
   /* ---------- Support ---------- */
   function supportSetHead() {
     const el = $('#supportHeadSub'); if (!el) return;
@@ -1620,7 +2015,7 @@
   function openSupportModal() { openModal('supportModal'); supportLoad(); supportStartPolling(); }
   function closeSupportModal() { closeModal('supportModal'); supportStopPolling(); }
 
-  /* ---------- Bridge ---------- */
+  /* ---------- Bridge (trimmed) ---------- */
   function loadBridgeOpts() { const o = safeGet(BRIDGE_OPTS_KEY, {}); if (typeof o.autoRun === 'boolean') __bridgeAutoRun = o.autoRun; if (typeof o.showCode === 'boolean') __bridgeShowCode = o.showCode; }
   function saveBridgeOpts() { safeSet(BRIDGE_OPTS_KEY, { autoRun: __bridgeAutoRun, showCode: __bridgeShowCode }); }
   function renderBridgeStatus() {
@@ -1666,23 +2061,11 @@
   function addBridgeUserMsg(text) { const c = $('#bridgeMessages'); if (!c) return; $('#bridgeEmpty')?.remove(); const el = document.createElement('div'); el.className = 'bridge-msg user'; el.innerHTML = `<div class="bridge-bubble">${escapeHtml(text).replace(/\n/g, '<br>')}</div><div class="bridge-meta">You</div>`; c.appendChild(el); scrollBridgeBottom(); }
   function addBridgeAiMsg(text) { if (!text) return; const c = $('#bridgeMessages'); if (!c) return; $('#bridgeEmpty')?.remove(); const el = document.createElement('div'); el.className = 'bridge-msg ai'; el.innerHTML = `<div class="bridge-bubble">${escapeHtml(text).replace(/\n/g, '<br>')}</div><div class="bridge-meta">Mirox</div>`; c.appendChild(el); scrollBridgeBottom(); }
   function addBridgeSystemMsg(text) { const c = $('#bridgeMessages'); if (!c) return; $('#bridgeEmpty')?.remove(); const el = document.createElement('div'); el.className = 'bridge-msg system'; el.innerHTML = `<div class="bridge-bubble">${escapeHtml(text)}</div>`; c.appendChild(el); scrollBridgeBottom(); }
-  function addBridgeSuccessMsg(text, extras) {
-    const c = $('#bridgeMessages'); if (!c) return;
-    const e = extras || {};
-    let buttons = '';
-    if (e.previewPath) buttons += `<button class="bridge-success-btn" data-preview="${escapeHtml(e.previewPath)}"><i class="ri-eye-line"></i> Preview</button>`;
-    if (e.folder) buttons += `<button class="bridge-success-btn" data-copy-folder="${escapeHtml(e.folder)}"><i class="ri-folder-open-line"></i> Copy path</button>`;
-    const el = document.createElement('div'); el.className = 'bridge-msg ai';
-    el.innerHTML = `<div class="bridge-success"><div class="bridge-success-head"><i class="ri-checkbox-circle-fill"></i><span>${escapeHtml(text)}</span></div>${buttons ? `<div class="bridge-success-actions">${buttons}</div>` : ''}</div>`;
-    el.querySelectorAll('[data-preview]').forEach((b) => { b.onclick = () => openPreview(b.dataset.preview); });
-    el.querySelectorAll('[data-copy-folder]').forEach((b) => { b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copyFolder); toast('Copied'); } catch {} }; });
-    c.appendChild(el); scrollBridgeBottom();
-  }
   function addBridgeActionBubble(cmd) {
     const c = $('#bridgeMessages'); if (!c) return null;
     const data = getActionData(cmd);
     const el = document.createElement('div'); el.className = 'bridge-msg ai';
-    el.innerHTML = `<div class="bridge-action"><div class="bridge-action-head"><div class="bridge-action-icon ${data.iconClass}"><i class="${data.icon}"></i></div><div class="bridge-action-label">${data.label}</div><span class="bridge-action-status working"><i class="ri-loader-4-line spin"></i> Working</span></div></div>`;
+    el.innerHTML = `<div class="bridge-action"><div class="bridge-action-head"><div class="bridge-action-icon"><i class="${data.icon}"></i></div><div class="bridge-action-label">${data.label}</div><span class="bridge-action-status"><i class="ri-loader-4-line spin"></i> Working</span></div></div>`;
     c.appendChild(el); scrollBridgeBottom(); return el;
   }
   function updateBridgeActionBubble(el, cmd, result) {
@@ -1695,14 +2078,11 @@
   function getBaseName(p) { if (!p) return ''; const parts = String(p).split('/'); return parts[parts.length - 1] || p; }
   function getActionData(cmd) {
     const t2 = cmd.type; const base = getBaseName(cmd.path) || '';
-    if (t2 === 'write') return { icon: 'ri-file-add-line', iconClass: 'write', label: `Writing <code>${escapeHtml(base)}</code>` };
-    if (t2 === 'append') return { icon: 'ri-file-edit-line', iconClass: 'write', label: `Appending <code>${escapeHtml(base)}</code>` };
-    if (t2 === 'exec') return { icon: 'ri-terminal-box-line', iconClass: 'exec', label: 'Running command' };
-    if (t2 === 'sudo') return { icon: 'ri-shield-keyhole-line', iconClass: 'exec', label: 'sudo' };
-    if (t2 === 'read') return { icon: 'ri-file-text-line', iconClass: 'read', label: `Reading <code>${escapeHtml(base)}</code>` };
-    if (t2 === 'list') return { icon: 'ri-folder-line', iconClass: 'list', label: `Listing <code>${escapeHtml(base)}</code>` };
-    if (t2 === 'delete') return { icon: 'ri-delete-bin-line', iconClass: 'exec', label: `Deleting <code>${escapeHtml(base)}</code>` };
-    return { icon: 'ri-terminal-line', iconClass: '', label: 'Working' };
+    if (t2 === 'write') return { icon: 'ri-file-add-line', label: `Writing <code>${escapeHtml(base)}</code>` };
+    if (t2 === 'append') return { icon: 'ri-file-edit-line', label: `Appending <code>${escapeHtml(base)}</code>` };
+    if (t2 === 'exec') return { icon: 'ri-terminal-box-line', label: 'Running command' };
+    if (t2 === 'sudo') return { icon: 'ri-shield-keyhole-line', label: 'sudo' };
+    return { icon: 'ri-terminal-line', label: 'Working' };
   }
   function setProgressText(text) { const el = $('#bwProgressText'); if (el && text) el.textContent = text; }
   function updateBridgeProgress(pct, text) { const np = Math.max(0, Math.min(100, Math.round(pct))); if (np > bridgeProgress) bridgeProgress = np; const bar = $('#bwProgress'), fill = $('#bwProgressFill'), pctEl = $('#bwProgressPct'); if (bar) bar.style.display = 'block'; if (fill) { fill.style.width = bridgeProgress + '%'; fill.classList.toggle('done', bridgeProgress >= 100); } if (pctEl) pctEl.textContent = bridgeProgress + '%'; if (text) setProgressText(text); }
@@ -1780,8 +2160,6 @@
       while (iter++ < MAX_BRIDGE_ITER) {
         if (bridgeAbort) { addBridgeSystemMsg('Stopped.'); break; }
         bridgeTurn.runs++;
-        const lastUser = bridgeConversation.filter((h) => h.role === 'user').slice(-1)[0];
-        const userLast = lastUser?.content || '';
         let reply = '';
         try { reply = await fetchBridgeReply(bridgeConversation); }
         catch (e) { addBridgeSystemMsg('AI error: ' + e.message); break; }
@@ -1821,21 +2199,7 @@
         if (truncatedWrite) { if (__bridgeAutoRun && autoContinues < MAX_AUTO_CONTINUES) { autoContinues++; bridgeConversation.push({ role: 'user', content: `[System] Continue with <bridge-append path="${lastPath}">.` }); continue; } bridgeWaitingForUser = true; break; }
         const hasPlan = bridgeTurn.plannedFiles.size > 0;
         const allFilesWritten = hasPlan && bridgeTurn.writtenFiles.size >= bridgeTurn.plannedFiles.size;
-        if (saidDone && (allFilesWritten || !hasPlan)) {
-          updateBridgeProgress(100, 'Complete');
-          const toVerify = [...bridgeTurn.writtenFiles];
-          if (toVerify.length) {
-            const rows = [];
-            for (const p of toVerify) { let exists = false; try { const res = await bridgeCall('/read', { path: p }); if (res && res.ok) exists = true; } catch {} rows.push({ path: p, exists }); }
-            const allOk = rows.every((r) => r.exists);
-            const projRoot = toVerify[0]?.replace(/\/[^/]*$/, '') || __bridge.env?.home || '';
-            __lastBuildFolder = projRoot;
-            __lastPreviewFile = toVerify.find((p) => /index\.html?$/i.test(p)) || toVerify[0];
-            addBridgeSuccessMsg(allOk ? `Project complete · ${rows.length} files` : `Finished · ${rows.filter((r) => r.exists).length}/${rows.length}`, { folder: projRoot, previewPath: __lastPreviewFile || '' });
-            renderBuildStatus();
-          } else addBridgeSuccessMsg('Task complete');
-          bridgeTaskComplete = true; break;
-        }
+        if (saidDone && (allFilesWritten || !hasPlan)) { updateBridgeProgress(100, 'Complete'); bridgeTaskComplete = true; break; }
         if (!saidDone) { if (__bridgeAutoRun && autoContinues < MAX_AUTO_CONTINUES) { autoContinues++; await sleep(600); bridgeConversation.push({ role: 'user', content: '[System] Continue.' }); continue; } bridgeWaitingForUser = true; break; }
       }
     } catch (e) { addBridgeSystemMsg('Bridge error: ' + e.message); }
@@ -1852,39 +2216,6 @@
     updateBridgeSendBtn();
     runBridgeTurn(text, false);
   }
-  function resolveRelativePath(baseFile, rel) {
-    if (!rel) return '';
-    if (/^([a-z]+:)?\/\//i.test(rel) || rel.startsWith('data:')) return rel;
-    const baseDir = baseFile.replace(/\/[^/]*$/, '');
-    if (rel.startsWith('/')) return baseDir + rel;
-    const parts = (baseDir + '/' + rel).split('/');
-    const out = [];
-    for (const p of parts) { if (!p || p === '.') continue; if (p === '..') out.pop(); else out.push(p); }
-    return '/' + out.join('/');
-  }
-  async function inlineLocalAssets(html, htmlPath) {
-    let out = html;
-    const linkRe = /<link\b[^>]*\brel=["']stylesheet["'][^>]*>/gi;
-    const links = [...out.matchAll(linkRe)];
-    for (const m of links) {
-      const tag = m[0];
-      const hrefMatch = tag.match(/\bhref=["']([^"']+)["']/i);
-      if (!hrefMatch) continue;
-      const href = hrefMatch[1];
-      if (/^([a-z]+:)?\/\//i.test(href) || href.startsWith('data:')) continue;
-      const cssPath = resolveRelativePath(htmlPath, href);
-      try { const cr = await bridgeCall('/read', { path: cssPath }); if (cr && cr.ok) out = out.replace(tag, `<style>\n${cr.content}\n</style>`); } catch {}
-    }
-    const scriptRe = /<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*><\/script>/gi;
-    const scripts = [...out.matchAll(scriptRe)];
-    for (const m of scripts) {
-      const tag = m[0]; const src = m[1];
-      if (/^([a-z]+:)?\/\//i.test(src) || src.startsWith('data:')) continue;
-      const jsPath = resolveRelativePath(htmlPath, src);
-      try { const jr = await bridgeCall('/read', { path: jsPath }); if (jr && jr.ok) out = out.replace(tag, `<script>\n${jr.content}\n</script>`); } catch {}
-    }
-    return out;
-  }
   async function openPreview(pathOrEmpty) {
     const modal = $('#bwPreviewModal'); if (!modal) return;
     const frame = $('#bwPreviewFrame'); const subtitle = $('#bwPreviewSubtitle'); const pathInput = $('#bwPreviewPath');
@@ -1896,9 +2227,7 @@
     try {
       const r = await bridgeCall('/read', { path: targetPath });
       if (!r || !r.ok) throw new Error(r?.error || 'could not read file');
-      let html = r.content || '';
-      if (/\.html?$/i.test(targetPath)) html = await inlineLocalAssets(html, targetPath);
-      if (frame) frame.srcdoc = html;
+      if (frame) frame.srcdoc = r.content || '';
     } catch (e) { if (frame) frame.srcdoc = `<html><body style="font-family:system-ui;padding:40px;color:#b91c1c"><h2>Preview failed</h2><p>${escapeHtml(e.message)}</p></body></html>`; }
   }
   function closePreview() { $('#bwPreviewModal')?.classList.remove('open'); }
@@ -1961,6 +2290,31 @@
       if (!__user) { requireSignIn('Sign in to use Lumenal and generate images.'); return; }
       openModal('imageModal');
     });
+
+    /* Call */
+    on('#callModeBtn', 'click', startCall);
+    on('#callEndBtn', 'click', endCall);
+    on('#callLangSelect', 'change', (e) => {
+      __call.lang = e.target.value;
+      if (__call.active) { __call.shouldListen = true; callStopRecog(); setTimeout(startCallRecognition, 200); }
+    });
+    on('#callMicBtn', 'click', () => {
+      if (!__call.active) { startCall(); return; }
+      __call.shouldListen = true;
+      stopSpeaking();
+      callStopRecog();
+      setTimeout(startCallRecognition, 200);
+    });
+    on('#callMuteBtn', 'click', () => {
+      __call.muted = !__call.muted;
+      const b = $('#callMuteBtn');
+      if (b) {
+        b.classList.toggle('active', __call.muted);
+        b.innerHTML = __call.muted ? '<i class="ri-volume-mute-line"></i>' : '<i class="ri-volume-up-line"></i>';
+      }
+      if (__call.muted) stopSpeaking();
+    });
+
     on('#plansModeBtn', 'click', () => { openModal('plansModal'); loadPlans(); });
     on('#supportModeBtn', 'click', (e) => { e.preventDefault(); openSupportModal(); });
     on('#supportModeBtn2', 'click', () => openSupportModal());
@@ -2008,6 +2362,9 @@
     bindToggle('compactToggle', 'compact');
     bindToggle('reduceMotionToggle', 'reduceMotion');
     bindToggle('deepThinkToggle', 'deepThink');
+    bindToggle('autoSpeakToggle', 'autoSpeak');
+    const ttsSel = document.getElementById('ttsVoiceSelect');
+    if (ttsSel) ttsSel.addEventListener('change', () => { __prefs.ttsVoice = ttsSel.value; savePrefs(); });
     on('#uiLanguageSelect', 'change', (e) => { __prefs.uiLanguage = e.target.value; savePrefs(); if (isTranslatable(__prefs.uiLanguage)) toast('Translating…'); applyTranslations(); });
     on('#languageSelect', 'change', (e) => { __prefs.responseLanguage = e.target.value; savePrefs(); });
     on('#exportChatsBtn', 'click', () => {
@@ -2090,7 +2447,8 @@
     bindSuggestionClicks();
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
-        closeImageViewer(); closeModelPicker();
+        if ($('#callOverlay')?.classList.contains('open')) { endCall(); return; }
+        closeImageViewer(); closeModelPicker(); stopSpeaking();
         if ($('#filePreviewModal')?.classList.contains('open')) { closeFilePreview(); return; }
         if ($('#htmlRunnerModal')?.classList.contains('open')) { closeHtmlRunner(); return; }
         if ($('#bridgeWorkspace')?.classList.contains('open')) { closeBridgeWorkspace(); return; }
@@ -2101,9 +2459,10 @@
     });
     window.addEventListener('resize', () => { if (window.innerWidth > 860) closeSidebar(); });
     if (!IS_PC) document.querySelectorAll('#bridgeModeBtn, #bridgeOpenBtn, [data-pane="bridge"], .sidebar-tab[data-tab="bridge"]').forEach((el) => { el.style.display = 'none'; });
+    document.addEventListener('visibilitychange', () => { if (document.hidden && __call.active) { /* keep call going */ } });
   }
 
-  function openSettingsModal() { applyPrefs(); updateAccountUI(); openModal('settingsModal'); }
+  function openSettingsModal() { applyPrefs(); updateAccountUI(); loadVoices(); openModal('settingsModal'); }
 
   async function openConversation(id) {
     const convo = __conversations.find((c) => c.id === id);
@@ -2144,12 +2503,14 @@
       try { const t = localStorage.getItem('mirox_token'); if (t && !isApiKey(t)) localStorage.removeItem('mirox_token'); } catch {}
       loadPrefs();
       loadI18nCache();
+      loadLikes();
       applyAppearanceFromPrefs();
       applyPrefs();
       loadChats();
       loadBridgeOpts();
       wireAll();
       setupVoice();
+      if (ttsAvailable) loadVoices();
       const local = getLocalUser();
       if (local) { __user = { name: local.name, email: local.email, tier: 'free', local: true }; __tier = 'free'; }
       updateAccountUI();
