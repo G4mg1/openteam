@@ -49,9 +49,7 @@
     </div>
   </div>
   <div class="sidebar-section" data-pane="images" style="display:none;">
-    <div class="sidebar-images-panel">
-      <div id="sidebarImageHistory" class="sidebar-image-grid"><div class="sidebar-image-empty">No images yet.</div></div>
-    </div>
+    <div class="sidebar-images-panel"><div id="sidebarImageHistory" class="sidebar-image-grid"><div class="sidebar-image-empty">No images yet.</div></div></div>
   </div>
   <div class="sidebar-footer">
     <div id="userChip" class="user-chip">
@@ -114,6 +112,7 @@
       </button>
       <button id="searchModeBtn" class="tool-btn" type="button"><i class="ri-global-line"></i><span>Search</span></button>
       <button id="imageModeBtn" class="tool-btn" type="button"><i class="ri-image-line"></i><span>Lumenal</span></button>
+      <button id="callModeBtn" class="tool-btn" type="button"><i class="ri-phone-line"></i><span>Call</span></button>
       <button id="bridgeModeBtn" class="tool-btn pc-only" type="button"><i class="ri-link"></i><span>Bridge</span></button>
       <button id="plansModeBtn" class="tool-btn" type="button"><i class="ri-vip-crown-line"></i><span>Plans</span></button>
       <button id="supportModeBtn2" class="tool-btn" type="button"><i class="ri-question-line"></i><span>Help</span></button>
@@ -129,6 +128,61 @@
     <div class="composer-note">Attach code or text files (.py, .js, .txt, .md, …) and ask Mirox to explain, fix, or rewrite them.</div>
   </div>
 </main>
+
+<!-- CALL OVERLAY -->
+<div id="callOverlay" class="call-overlay">
+  <div class="call-bg"></div>
+  <div class="call-top">
+    <div class="call-title"><i class="ri-phone-line"></i> <span>Voice Call</span></div>
+    <div class="call-lang-wrap">
+      <i class="ri-translate-2"></i>
+      <select id="callLangSelect" class="call-lang-select">
+        <option value="en-US">English</option>
+        <option value="fa-IR">فارسی — Farsi</option>
+        <option value="ar-SA">العربية — Arabic</option>
+        <option value="tr-TR">Türkçe — Turkish</option>
+        <option value="de-DE">Deutsch — German</option>
+        <option value="fr-FR">Français — French</option>
+        <option value="es-ES">Español — Spanish</option>
+        <option value="es-MX">Español (México)</option>
+        <option value="it-IT">Italiano — Italian</option>
+        <option value="pt-BR">Português — Portuguese</option>
+        <option value="ru-RU">Русский — Russian</option>
+        <option value="hi-IN">हिन्दी — Hindi</option>
+        <option value="zh-CN">简体中文 — Chinese</option>
+        <option value="ja-JP">日本語 — Japanese</option>
+        <option value="ko-KR">한국어 — Korean</option>
+        <option value="vi-VN">Tiếng Việt — Vietnamese</option>
+        <option value="th-TH">ไทย — Thai</option>
+        <option value="id-ID">Bahasa Indonesia</option>
+        <option value="nl-NL">Nederlands — Dutch</option>
+        <option value="pl-PL">Polski — Polish</option>
+        <option value="sv-SE">Svenska — Swedish</option>
+        <option value="el-GR">Ελληνικά — Greek</option>
+        <option value="cs-CZ">Čeština — Czech</option>
+        <option value="ro-RO">Română — Romanian</option>
+        <option value="uk-UA">Українська — Ukrainian</option>
+        <option value="he-IL">עברית — Hebrew</option>
+      </select>
+    </div>
+  </div>
+  <div class="call-center">
+    <div class="call-avatar" id="callAvatar">
+      <div class="mascot mascot-xl m-idle" data-mood="idle"></div>
+      <div class="call-ripple"></div>
+      <div class="call-ripple delay"></div>
+    </div>
+    <div class="call-status" id="callStatus">Tap the mic to start</div>
+    <div class="call-transcript" id="callTranscript"></div>
+    <div class="call-reply" id="callReply"></div>
+  </div>
+  <div class="call-controls">
+    <button id="callMicBtn" class="call-btn mic" type="button" title="Speak"><i class="ri-mic-line"></i></button>
+    <button id="callMuteBtn" class="call-btn ghost" type="button" title="Mute AI"><i class="ri-volume-up-line"></i></button>
+    <button id="callEndBtn" class="call-btn end" type="button" title="End call"><i class="ri-phone-fill"></i></button>
+  </div>
+  <div class="call-hint">Speak in any language. Mirox will reply in the same language.</div>
+</div>
 
 <!-- HTML RUNNER -->
 <div id="htmlRunnerModal" class="modal-overlay html-runner-modal">
@@ -303,6 +357,17 @@
         <div class="setting-row">
           <div class="setting-row-info"><span class="setting-row-label">DeepThink</span><span class="setting-row-sub">Model reasons longer before answering. Image generation is disabled while DeepThink is on.</span></div>
           <label class="switch"><input type="checkbox" id="deepThinkToggle"><span class="switch-slider"></span></label>
+        </div>
+      </div>
+      <div class="setting-group">
+        <h4>Voice</h4>
+        <div class="setting-row">
+          <div class="setting-row-info"><span class="setting-row-label">Auto-play replies</span><span class="setting-row-sub">Read AI replies aloud</span></div>
+          <label class="switch"><input type="checkbox" id="autoSpeakToggle"><span class="switch-slider"></span></label>
+        </div>
+        <div class="setting-row">
+          <div class="setting-row-info"><span class="setting-row-label">Voice</span><span class="setting-row-sub">Preferred TTS voice</span></div>
+          <select id="ttsVoiceSelect" class="modal-select" style="max-width:220px;"></select>
         </div>
       </div>
       <div class="setting-group">
