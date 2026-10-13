@@ -2,7 +2,7 @@
   'use strict';
 
   /* ============================================================
-     MiroxAI frontend v100 — share removed, sign-in gating for images
+     MiroxAI frontend v101 — real thinking panel + canvas watermark
      ============================================================ */
 
   /* ---------- i18n ---------- */
@@ -11,19 +11,13 @@
   const TRANSLATE_CONCURRENCY = 2;
   const MYMEMORY_OK = new Set(['es','fr','de','it','pt','ru','ja','ko','ar','hi','fa','tr','vi','th','id','nl','pl','sv','el','cs','ro','uk','he','zh-CN','es-MX']);
   function isTranslatable(code) { return !!(code && typeof code === 'string' && MYMEMORY_OK.has(code.trim())); }
-
   let __i18nCache = {};
   let __translationQueue = [];
   let __translating = false;
   let __translationStatusEl = null;
-
   function loadI18nCache() { try { __i18nCache = JSON.parse(localStorage.getItem(I18N_CACHE_KEY) || '{}') || {}; } catch { __i18nCache = {}; } }
   function saveI18nCache() { try { localStorage.setItem(I18N_CACHE_KEY, JSON.stringify(__i18nCache)); } catch {} }
-  function setTranslateStatus(text) {
-    if (!__translationStatusEl) __translationStatusEl = document.getElementById('translateStatus');
-    if (!__translationStatusEl) return;
-    __translationStatusEl.textContent = text || '';
-  }
+  function setTranslateStatus(text) { if (!__translationStatusEl) __translationStatusEl = document.getElementById('translateStatus'); if (!__translationStatusEl) return; __translationStatusEl.textContent = text || ''; }
   async function translateString(text, targetLang) {
     if (!text || !isTranslatable(targetLang)) return text;
     const key = targetLang + ':' + text;
@@ -42,9 +36,7 @@
       if (clean.startsWith('"') && clean.endsWith('"')) clean = clean.slice(1, -1);
       if (clean === chunk) throw new Error('echo');
       __i18nCache[key] = clean; saveI18nCache(); return clean;
-    } catch {
-      __i18nCache[key] = text; saveI18nCache(); return text;
-    }
+    } catch { __i18nCache[key] = text; saveI18nCache(); return text; }
   }
   function enqueueTranslation(el, src, lang, mode) { if (!isTranslatable(lang)) return; __translationQueue.push({ element: el, sourceText: src, targetLang: lang, mode }); processQueue(); }
   async function processQueue() {
@@ -77,10 +69,7 @@
     const isRtl = RTL_LANGS.includes(lang);
     document.documentElement.lang = lang;
     document.documentElement.setAttribute('data-dir', isRtl ? 'rtl' : 'ltr');
-    const setSrc = (el, s) => {
-      if (el.children.length === 0) el.textContent = s;
-      else for (const n of el.childNodes) { if (n.nodeType === 3 && n.textContent.trim()) { n.textContent = s; break; } }
-    };
+    const setSrc = (el, s) => { if (el.children.length === 0) el.textContent = s; else for (const n of el.childNodes) { if (n.nodeType === 3 && n.textContent.trim()) { n.textContent = s; break; } } };
     document.querySelectorAll('[data-i18n]').forEach((el) => {
       if (!el.dataset.i18nEn) {
         let s = '';
@@ -92,29 +81,6 @@
       if (!isTranslatable(lang)) { setSrc(el, src); return; }
       const k = lang + ':' + src;
       if (__i18nCache[k]) setSrc(el, __i18nCache[k]); else enqueueTranslation(el, src, lang, 'text');
-    });
-    document.querySelectorAll('[data-i18n-html]').forEach((el) => {
-      if (!el.dataset.i18nHtmlEn) el.dataset.i18nHtmlEn = el.innerHTML;
-      const srcHtml = el.dataset.i18nHtmlEn; if (!srcHtml) return;
-      const tmp = document.createElement('div'); tmp.innerHTML = srcHtml;
-      const plain = tmp.textContent.trim();
-      if (!isTranslatable(lang)) { el.innerHTML = srcHtml; return; }
-      const k = lang + ':html:' + plain;
-      if (__i18nCache[k]) el.textContent = __i18nCache[k]; else enqueueTranslation(el, plain, lang, 'html');
-    });
-    document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
-      if (!el.dataset.i18nPhEn) el.dataset.i18nPhEn = el.placeholder || '';
-      const src = el.dataset.i18nPhEn; if (!src) return;
-      if (!isTranslatable(lang)) { el.placeholder = src; return; }
-      const k = lang + ':ph:' + src;
-      if (__i18nCache[k]) el.placeholder = __i18nCache[k]; else enqueueTranslation(el, src, lang, 'placeholder');
-    });
-    document.querySelectorAll('[data-i18n-title]').forEach((el) => {
-      if (!el.dataset.i18nTitleEn) el.dataset.i18nTitleEn = el.title || '';
-      const src = el.dataset.i18nTitleEn; if (!src) return;
-      if (!isTranslatable(lang)) { el.title = src; return; }
-      const k = lang + ':title:' + src;
-      if (__i18nCache[k]) el.title = __i18nCache[k]; else enqueueTranslation(el, src, lang, 'title');
     });
   }
 
@@ -138,7 +104,6 @@
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => document.querySelectorAll(s);
   const on = (sel, ev, fn) => { const el = $(sel); if (el) el.addEventListener(ev, fn); };
-
   const IS_PC = (() => {
     const ua = navigator.userAgent || '';
     const mobile = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|Mobile/i.test(ua);
@@ -200,24 +165,14 @@
   function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
   function setToken(tk) { try { tk ? localStorage.setItem(TOKEN_KEY, tk) : localStorage.removeItem(TOKEN_KEY); } catch {} }
   function isApiKey(tk) { return typeof tk === 'string' && /^mxk_live_/.test(tk); }
-
-  function getLocalUser() {
-    const u = safeGet(LOCAL_USER_KEY, null);
-    if (u && u.email && u.name && u.signedIn) return u;
-    return null;
-  }
+  function getLocalUser() { const u = safeGet(LOCAL_USER_KEY, null); if (u && u.email && u.name && u.signedIn) return u; return null; }
   function setLocalUser(u) { u ? safeSet(LOCAL_USER_KEY, u) : safeRemove(LOCAL_USER_KEY); }
-
   function getGuestId() {
     let id = null;
     try { id = localStorage.getItem(GUEST_KEY); } catch {}
-    if (!id || id.length < 8) {
-      id = 'g_' + Math.random().toString(36).slice(2, 14) + Date.now().toString(36).slice(-6);
-      try { localStorage.setItem(GUEST_KEY, id); } catch {}
-    }
+    if (!id || id.length < 8) { id = 'g_' + Math.random().toString(36).slice(2, 14) + Date.now().toString(36).slice(-6); try { localStorage.setItem(GUEST_KEY, id); } catch {} }
     return id;
   }
-
   function authHeaders(extra) {
     const h = { 'Content-Type': 'application/json', ...(extra || {}) };
     const tk = getToken();
@@ -281,24 +236,7 @@
   /* ---------- Mascot ---------- */
   const MOODS = ['idle','happy','thinking','coding','celebrate','error','learning','wink','study','searching','reading'];
   function blobSvg() {
-    return `<svg class="blob-svg" viewBox="0 0 200 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mirox avatar">
-      <g class="blob-float">
-        <rect class="leg leg-1" x="46" y="126" width="14" height="32" rx="7"/>
-        <rect class="leg leg-2" x="76" y="126" width="14" height="32" rx="7"/>
-        <rect class="leg leg-3" x="110" y="126" width="14" height="32" rx="7"/>
-        <rect class="leg leg-4" x="140" y="126" width="14" height="32" rx="7"/>
-        <rect class="blob-body" x="20" y="30" width="160" height="110" rx="26"/>
-        <g class="blob-eyes">
-          <rect class="eye eye-left" x="62" y="64" width="18" height="34" rx="9"/>
-          <rect class="eye eye-right" x="120" y="64" width="18" height="34" rx="9"/>
-        </g>
-        <g class="blob-glasses" fill="none" stroke="var(--blob-eye)" stroke-width="4" stroke-linecap="round">
-          <rect x="50" y="52" width="44" height="46" rx="12"/>
-          <rect x="106" y="52" width="44" height="46" rx="12"/>
-          <path d="M94 72 Q100 68 106 72"/>
-        </g>
-      </g>
-    </svg>`;
+    return `<svg class="blob-svg" viewBox="0 0 200 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mirox avatar"><g class="blob-float"><rect class="leg leg-1" x="46" y="126" width="14" height="32" rx="7"/><rect class="leg leg-2" x="76" y="126" width="14" height="32" rx="7"/><rect class="leg leg-3" x="110" y="126" width="14" height="32" rx="7"/><rect class="leg leg-4" x="140" y="126" width="14" height="32" rx="7"/><rect class="blob-body" x="20" y="30" width="160" height="110" rx="26"/><g class="blob-eyes"><rect class="eye eye-left" x="62" y="64" width="18" height="34" rx="9"/><rect class="eye eye-right" x="120" y="64" width="18" height="34" rx="9"/></g><g class="blob-glasses" fill="none" stroke="var(--blob-eye)" stroke-width="4" stroke-linecap="round"><rect x="50" y="52" width="44" height="46" rx="12"/><rect x="106" y="52" width="44" height="46" rx="12"/><path d="M94 72 Q100 68 106 72"/></g></g></svg>`;
   }
   function upgradeStaticMascots(scope = document) {
     scope.querySelectorAll('.mascot:not([data-blob-ready])').forEach((el) => {
@@ -318,7 +256,6 @@
   upgradeStaticMascots();
   const lb = document.getElementById('loadingBlob');
   if (lb) lb.innerHTML = `<div class="mascot mascot-lg m-idle" data-mood="idle">${blobSvg()}</div>`;
-
   function startIdleMascot() {
     const cuteMoods = ['wink', 'study', 'searching', 'happy', 'thinking', 'learning', 'reading'];
     setInterval(() => {
@@ -327,7 +264,6 @@
       setMascotMood(cuteMoods[Math.floor(Math.random() * cuteMoods.length)], w.parentElement);
     }, 6000);
   }
-
   function pickMoodFor(text) {
     const t2 = String(text || '').toLowerCase();
     if (/\b(search|look up|google|latest|news|find)\b/.test(t2)) return 'searching';
@@ -336,62 +272,252 @@
     if (/\b(read|paper|article|document)\b/.test(t2)) return 'reading';
     return 'thinking';
   }
-  function pickStatusLabel(text) {
-    const t2 = String(text || '').toLowerCase();
-    if (!t2) return 'Thinking';
-    if (/\b(build|create|make|write|code|script)\b/.test(t2)) return 'Building';
-    if (/\b(search|find|look up|google)\b/.test(t2)) return 'Searching';
-    if (/\b(fix|bug|error|debug)\b/.test(t2)) return 'Debugging';
-    return 'Thinking';
-  }
 
-  /* ---------- Think panel ---------- */
-  function createThinkPanel(label, steps, headline) {
+  /* ═══════════ THINK PANEL v2 ═══════════ */
+  function createThinkPanel() {
     const el = document.createElement('div');
-    el.className = 'think-wrap';
+    el.className = 'think-panel';
+    el.dataset.state = 'thinking';
+    el.dataset.collapsed = 'false';
     el.innerHTML = `
-      <div class="think-head">
-        <span class="think-head-icon"><i class="ri-loader-4-line spin"></i></span>
-        <span class="think-head-label"><span class="think-label">${escapeHtml(label || 'Thinking')}</span></span>
-        <span class="think-timer">0.0s</span>
+      <div class="think-header">
+        <div class="think-icon"><i class="ri-loader-4-line"></i></div>
+        <div class="think-title"><span class="think-title-text">Thinking</span></div>
+        <div class="think-timer-pill">0.0s</div>
+        <button class="think-toggle" type="button" title="Minimize" aria-label="Minimize">
+          <i class="ri-arrow-up-s-line"></i>
+        </button>
       </div>
-      ${headline ? `<div class="think-head-sub">${escapeHtml(headline.slice(0, 180))}${headline.length > 180 ? '…' : ''}</div>` : ''}
-      <div class="think-body"></div>`;
+      <div class="think-body-wrap">
+        <div class="think-body" data-think-body></div>
+      </div>`;
+    const titleTextEl = el.querySelector('.think-title-text');
+    const timerPill = el.querySelector('.think-timer-pill');
+    const toggle = el.querySelector('.think-toggle');
+    const bodyWrap = el.querySelector('.think-body-wrap');
     const body = el.querySelector('.think-body');
-    const timerEl = el.querySelector('.think-timer');
-    const labelEl = el.querySelector('.think-label');
-    const headIcon = el.querySelector('.think-head-icon i');
+    const iconEl = el.querySelector('.think-icon i');
+
     const t0 = performance.now();
     let done = false;
-    const timer = setInterval(() => { if (done) { clearInterval(timer); return; } timerEl.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's'; }, 100);
-    function addNarration(text) {
-      if (!text) return;
-      const p = document.createElement('div');
-      p.className = 'think-narration';
-      p.innerHTML = `<span class="think-narration-dot"></span><span>${escapeHtml(text)}</span>`;
-      body.appendChild(p);
+    let currentLineEl = null;
+
+    toggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const collapsed = el.dataset.collapsed === 'true';
+      el.dataset.collapsed = collapsed ? 'false' : 'true';
+      toggle.title = collapsed ? 'Minimize' : 'Expand';
+      toggle.setAttribute('aria-label', toggle.title);
+      const arrowI = toggle.querySelector('i');
+      if (arrowI) arrowI.className = (collapsed ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line');
+    });
+
+    const timer = setInterval(() => {
+      if (done) { clearInterval(timer); return; }
+      timerPill.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
+    }, 100);
+
+    function ensureCursor() {
+      if (!currentLineEl) {
+        currentLineEl = document.createElement('div');
+        currentLineEl.className = 'think-line';
+        currentLineEl.style.animation = 'none';
+        currentLineEl.style.opacity = '1';
+        currentLineEl.style.transform = 'none';
+        currentLineEl.innerHTML = '<span class="think-line-dot"></span><span class="think-line-text"></span>';
+        body.appendChild(currentLineEl);
+      }
+      return currentLineEl;
     }
-    if (Array.isArray(steps)) steps.forEach((s) => addNarration(s));
-    function close(finalLabel, mood) {
+
+    function appendText(chunk) {
+      if (!chunk) return;
+      const line = ensureCursor();
+      const textEl = line.querySelector('.think-line-text');
+      textEl.textContent += chunk;
+    }
+
+    function breakLine() {
+      currentLineEl = null;
+    }
+
+    function replaceText(full) {
+      // Full re-render on demand — splits by sentence for cleaner display
+      body.innerHTML = '';
+      const sentences = String(full || '').split(/(?<=[.!?])\s+/).filter(Boolean);
+      for (const s of sentences) {
+        const line = document.createElement('div');
+        line.className = 'think-line';
+        line.innerHTML = `<span class="think-line-dot"></span><span class="think-line-text">${escapeHtml(s)}</span>`;
+        body.appendChild(line);
+      }
+      currentLineEl = null;
+    }
+
+    function setState(next) {
+      el.dataset.state = next;
+      if (next === 'thinking') {
+        iconEl.className = 'ri-loader-4-line';
+        iconEl.parentElement.classList.add('is-thinking');
+        titleTextEl.textContent = 'Thinking';
+      } else if (next === 'done') {
+        iconEl.className = 'ri-checkbox-circle-fill';
+        titleTextEl.textContent = 'Thought for ' + ((performance.now() - t0) / 1000).toFixed(1) + 's';
+      } else if (next === 'failed') {
+        iconEl.className = 'ri-error-warning-fill';
+        titleTextEl.textContent = 'Stopped thinking';
+      }
+    }
+
+    function finalize() {
       if (done) return;
-      done = true; clearInterval(timer);
-      timerEl.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
-      labelEl.textContent = finalLabel;
-      headIcon.className = 'ri-checkbox-circle-line';
-      el.classList.add('done');
-      setMascotMood(mood, el);
-      setTimeout(() => el.classList.add('collapsed'), 1500);
+      done = true;
+      clearInterval(timer);
+      const secs = ((performance.now() - t0) / 1000).toFixed(1);
+      timerPill.textContent = secs + 's';
+      setState('done');
+      // Auto-collapse after a short delay
+      setTimeout(() => {
+        if (el.isConnected && el.dataset.collapsed === 'false') {
+          el.dataset.collapsed = 'true';
+          const arrowI = toggle.querySelector('i');
+          if (arrowI) arrowI.className = 'ri-arrow-down-s-line';
+        }
+      }, 1200);
     }
+
+    function fail(msg) {
+      if (done) return;
+      done = true;
+      clearInterval(timer);
+      const secs = ((performance.now() - t0) / 1000).toFixed(1);
+      timerPill.textContent = secs + 's';
+      setState('failed');
+      if (msg) appendText(msg);
+    }
+
     return {
-      el, addStep(t) { addNarration(t); }, addNarration,
-      addTool() { return { setStatus() {}, addResult() {}, addCode() {} }; },
-      setMood(mood) { setMascotMood(mood, el); },
-      markWriting() { addNarration('Writing the answer…'); },
-      finish() { addNarration('Thinking complete'); close('Thought for a moment', 'happy'); },
-      fail(msg) { addNarration(msg || 'Stopped with an error.'); headIcon.className = 'ri-error-warning-line'; close('Stopped', 'error'); },
-      destroy() { clearInterval(timer); if (!done) close('Stopped', 'idle'); },
+      el,
+      appendText,
+      breakLine,
+      replaceText,
+      finalize,
+      fail,
+      setState,
+      isDone() { return done; },
+      destroy() { clearInterval(timer); },
     };
   }
+
+  /* ---------- Canvas watermark ---------- */
+  const WM_TEXT = 'Mirox AI';
+  function paintWatermark(canvas, img) {
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    ctx.drawImage(img, 0, 0, W, H);
+
+    const minDim = Math.min(W, H);
+    const pad = Math.max(12, Math.round(minDim * 0.028));
+    const textSize = Math.max(16, Math.round(minDim * 0.038));
+    const blobR = textSize * 0.55;
+    const blobW = blobR * 2;
+    const blobH = blobR * 1.75;
+
+    const bx = pad + blobR;
+    const by = H - pad - blobR;
+
+    // Subtle dark vignette at the bottom to keep the watermark legible
+    const grad = ctx.createLinearGradient(0, H - textSize * 3, 0, H);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.28)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, H - textSize * 3, W, textSize * 3);
+
+    ctx.save();
+    ctx.globalAlpha = 0.92;
+
+    // Blob body
+    ctx.fillStyle = '#d97757';
+    const radius = blobR * 0.55;
+    const bxL = bx - blobR, byT = by - blobR * 0.9;
+    ctx.beginPath();
+    if (typeof ctx.roundRect === 'function') ctx.roundRect(bxL, byT, blobW, blobH, radius);
+    else {
+      // fallback path
+      const r = radius;
+      ctx.moveTo(bxL + r, byT);
+      ctx.lineTo(bxL + blobW - r, byT);
+      ctx.quadraticCurveTo(bxL + blobW, byT, bxL + blobW, byT + r);
+      ctx.lineTo(bxL + blobW, byT + blobH - r);
+      ctx.quadraticCurveTo(bxL + blobW, byT + blobH, bxL + blobW - r, byT + blobH);
+      ctx.lineTo(bxL + r, byT + blobH);
+      ctx.quadraticCurveTo(bxL, byT + blobH, bxL, byT + blobH - r);
+      ctx.lineTo(bxL, byT + r);
+      ctx.quadraticCurveTo(bxL, byT, bxL + r, byT);
+      ctx.closePath();
+    }
+    ctx.fill();
+
+    // Eyes
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    const eyeW = blobR * 0.28, eyeH = blobR * 0.72;
+    ctx.fillRect(bx - blobR * 0.5, by - blobR * 0.35, eyeW, eyeH);
+    ctx.fillRect(bx + blobR * 0.22, by - blobR * 0.35, eyeW, eyeH);
+
+    // Text
+    ctx.font = `700 ${textSize}px Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.shadowColor = 'rgba(0,0,0,0.55)';
+    ctx.shadowBlur = Math.max(4, textSize * 0.22);
+    ctx.shadowOffsetY = 1.2;
+    const tx = bx + blobR + textSize * 0.55;
+    const ty = by + textSize * 0.03;
+    ctx.fillText(WM_TEXT, tx, ty);
+
+    // Tiny tagline below
+    ctx.shadowBlur = Math.max(3, textSize * 0.15);
+    ctx.font = `500 ${Math.round(textSize * 0.62)}px Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    ctx.fillStyle = 'rgba(255,255,255,0.72)';
+    ctx.fillText('miroxai.org', tx, ty + textSize * 0.85);
+
+    ctx.restore();
+  }
+
+  function watermarkedDataUrl(srcDataUrl) {
+    return new Promise((resolve) => {
+      if (!srcDataUrl) return resolve('');
+      if (!/^data:image\//.test(srcDataUrl) && !/^https?:/.test(srcDataUrl) && !/^blob:/.test(srcDataUrl)) return resolve(srcDataUrl);
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        try {
+          const c = document.createElement('canvas');
+          c.width = img.naturalWidth || 1024;
+          c.height = img.naturalHeight || 1024;
+          paintWatermark(c, img);
+          resolve(c.toDataURL('image/png'));
+        } catch { resolve(srcDataUrl); }
+      };
+      img.onerror = () => resolve(srcDataUrl);
+      img.src = srcDataUrl;
+    });
+  }
+
+  function openImageViewer(url) {
+    if (!url) return; __ivDataUrl = url;
+    const iv = $('#imageViewer'); if (!iv) return;
+    iv.classList.add('open');
+    const c = $('#ivCanvas'); if (!c) return;
+    const img = new Image();
+    img.onload = () => {
+      c.width = img.naturalWidth;
+      c.height = img.naturalHeight;
+      paintWatermark(c, img);
+    };
+    img.src = url;
+  }
+  function closeImageViewer() { $('#imageViewer')?.classList.remove('open'); }
 
   /* ---------- Conversations ---------- */
   function currentConvo() { return __conversations.find((c) => c.id === currentConversationId) || null; }
@@ -400,6 +526,7 @@
       ...c,
       messages: (c.messages || []).map((m) => ({
         id: m.id, role: m.role, content: m.content, ts: m.ts,
+        thinking: m.thinking || '',
         imageKey: m.imageKey || null,
         files: (m.files || []).map((f) => ({
           name: f.name, size: f.size, type: f.type, mime: f.mime,
@@ -467,7 +594,6 @@
       if (limit) span.textContent = `${formatK(Math.min(used, limit))} / ${formatK(limit)}`;
       else span.textContent = `${formatK(used)} tokens`;
     }
-    el.classList.remove('has-bonus');
   }
   function atChatBottom(c = $('#chatMessages')) { return !c || c.scrollHeight - c.scrollTop - c.clientHeight < 100; }
   function scrollToBottom(force = false) {
@@ -475,10 +601,7 @@
     if (force || (autoScrollEnabled && userIsAtBottom && __prefs.autoScroll !== false)) c.scrollTop = c.scrollHeight;
     updateScrollButton();
   }
-  function updateScrollButton() {
-    const c = $('#chatMessages'), b = $('#scrollBottomBtn'); if (!c || !b) return;
-    b.classList.toggle('visible', !atChatBottom(c));
-  }
+  function updateScrollButton() { const c = $('#chatMessages'), b = $('#scrollBottomBtn'); if (!c || !b) return; b.classList.toggle('visible', !atChatBottom(c)); }
   function freeLimitReached(convo = currentConvo()) { return __tier === 'free' && conversationTokenUsage(convo) >= BASE_FREE_LIMIT; }
   function fmtSize(n) { if (n == null) return ''; if (n < 1024) return n + ' B'; if (n < 1048576) return (n / 1024).toFixed(1) + ' KB'; return (n / 1048576).toFixed(1) + ' MB'; }
 
@@ -515,13 +638,7 @@
     if (!m) return false;
     return TEXT_EXTS.includes(m[1]);
   }
-  function countLines(text) {
-    if (!text) return 0;
-    const s = String(text);
-    let n = 1;
-    for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) === 10) n++;
-    return n;
-  }
+  function countLines(text) { if (!text) return 0; const s = String(text); let n = 1; for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) === 10) n++; return n; }
 
   /* ---------- Code lang ---------- */
   const LANG_META = {
@@ -634,15 +751,10 @@
     const lines = f.content ? countLines(f.content) : 0;
     const idx = pendingFiles.indexOf(f);
     const previewAttr = forMessage ? '' : ` data-preview-file="${idx}"`;
-    return `<div class="attach-chip attach-chip-file"${previewAttr} title="${escapeHtml(f.name || 'file')}${lines ? ` · ${lines} lines` : ''}">
-      <span class="attach-file-badge"><i class="${meta.icon}"></i> ${escapeHtml(meta.label)}</span>
-      <span class="attach-chip-file-name">${escapeHtml(f.name || 'file')}</span>
-      ${f.size ? `<span class="attach-size">${fmtSize(f.size)}</span>` : ''}
-      ${lines > 1 ? `<span class="attach-lines">${lines} lines</span>` : ''}
-    </div>`;
+    return `<div class="attach-chip attach-chip-file"${previewAttr} title="${escapeHtml(f.name || 'file')}${lines ? ` · ${lines} lines` : ''}"><span class="attach-file-badge"><i class="${meta.icon}"></i> ${escapeHtml(meta.label)}</span><span class="attach-chip-file-name">${escapeHtml(f.name || 'file')}</span>${f.size ? `<span class="attach-size">${fmtSize(f.size)}</span>` : ''}${lines > 1 ? `<span class="attach-lines">${lines} lines</span>` : ''}</div>`;
   }
 
-  function addMessageToDOM(role, content, ts, msgId, files, image) {
+  function addMessageToDOM(role, content, ts, msgId, files, image, thinking) {
     const container = $('#chatMessages'); if (!container) return null;
     container.querySelector('.welcome-screen')?.remove();
     const id = msgId || uid();
@@ -680,6 +792,15 @@
         <div class="message-time">${ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</div>
       </div>`;
     container.appendChild(el);
+    // Re-render thinking panel if saved
+    if (role === 'ai' && thinking) {
+      const panel = createThinkPanel();
+      panel.replaceText(thinking);
+      panel.finalize();
+      const bodyEl = el.querySelector('.message-body');
+      bodyEl.insertBefore(panel.el, bodyEl.firstChild);
+      el.dataset.thinking = thinking;
+    }
     const bt = el.querySelector('.bubble-text');
     if (role === 'user') { bt.textContent = content || ''; if (!content) bt.style.display = 'none'; }
     else if (content) { bt.innerHTML = renderMarkdown(content); wireCopyButtons(bt); }
@@ -736,18 +857,9 @@
     const inp = $('#messageInput'); if (!inp) return;
     const text = inp.value.trim();
     if (!text && !pendingFiles.length) return;
-
-    /* Image gen / edit requires sign-in */
     const hasImageFile = pendingFiles.some((f) => f.type === 'image');
-    if (!__user && looksLikeImageRequest(text)) {
-      requireSignIn('Sign in to generate images with Mirox.');
-      return;
-    }
-    if (!__user && hasImageFile && detectImageEditIntent(text, true)) {
-      requireSignIn('Sign in to edit images with Mirox.');
-      return;
-    }
-
+    if (!__user && looksLikeImageRequest(text)) { requireSignIn('Sign in to generate images with Mirox.'); return; }
+    if (!__user && hasImageFile && detectImageEditIntent(text, true)) { requireSignIn('Sign in to edit images with Mirox.'); return; }
     if (freeLimitReached()) { toast('Max tokens reached.'); return; }
     const files = pendingFiles.slice();
     const searchFlag = forceSearchNext; forceSearchNext = false;
@@ -769,9 +881,7 @@
   function countFences(text) {
     let n = 0;
     const s = String(text || '');
-    for (let i = 0; i < s.length - 2; i++) {
-      if (s.charCodeAt(i) === 96 && s.charCodeAt(i + 1) === 96 && s.charCodeAt(i + 2) === 96) { n++; i += 2; }
-    }
+    for (let i = 0; i < s.length - 2; i++) if (s.charCodeAt(i) === 96 && s.charCodeAt(i + 1) === 96 && s.charCodeAt(i + 2) === 96) { n++; i += 2; }
     return n;
   }
   function shouldShowContinue(full, convo, streamComplete) {
@@ -803,10 +913,7 @@
         [], false,
         { existingMsgEl: msgEl, existingBubble: bubble, messageObj, continuation: true }
       );
-    } finally {
-      continuationBusy = false;
-      if (btn.isConnected) btn.remove();
-    }
+    } finally { continuationBusy = false; if (btn.isConnected) btn.remove(); }
   }
 
   /* ---------- Image edit intent ---------- */
@@ -816,8 +923,8 @@
     if (!t) return null;
     const editVerbs = /\b(edit|modify|change|make|turn|transform|adjust|retouch|enhance|fix|recolor|colour|colorize|swap|replace|add|remove|delete|paint|redraw|restyle|redesign|update|redo)\b/;
     const refersToImage = /\b(image|photo|picture|pic|it|this|that|him|her|them|cat|dog|person|face|hair|background|color|colour|smile|eyes?|nose|mouth|shirt|clothes?)\b/;
-    if (!editVerbs.test(t)) return null;
-    if (!refersToImage.test(t)) return null;
+    if (!editVerbs.test(t)) return false;
+    if (!refersToImage.test(t)) return false;
     return t;
   }
 
@@ -835,6 +942,8 @@
     container?.querySelector('.welcome-screen')?.remove();
     let msgEl, bubble, bubbleText, timeEl, panel, avatarMascot;
     const aiMsgId = isContinuation ? continuation.messageObj.id : uid();
+
+    let thinkPanel = null;
     let full = '';
 
     if (isContinuation) {
@@ -844,19 +953,12 @@
       timeEl = msgEl.querySelector('.message-time');
       avatarMascot = msgEl.querySelector('.message-avatar .mascot');
       bubble.querySelector('[data-continue]')?.remove();
-      panel = {
-        el: document.createElement('span'),
-        addStep() {}, addNarration() {}, addTool() { return { setStatus() {}, addResult() {}, addCode() {} }; },
-        setMood() {}, markWriting() {}, finish() {}, fail() {}, destroy() {},
-      };
       const prev = String(continuation.messageObj.content || '');
       full = prev;
     } else {
       msgEl = document.createElement('div');
       msgEl.className = 'message ai';
       msgEl.dataset.msgId = aiMsgId; msgEl.dataset.role = 'ai';
-      panel = createThinkPanel(pickStatusLabel(text), [], text);
-      panel.setMood(pickMoodFor(text));
       const avatar = document.createElement('div');
       avatar.className = 'message-avatar';
       const initialMood = pickMoodFor(text);
@@ -865,7 +967,8 @@
       msgEl.appendChild(avatar);
       const body = document.createElement('div');
       body.className = 'message-body';
-      body.appendChild(panel.el);
+      thinkPanel = createThinkPanel();
+      body.appendChild(thinkPanel.el);
       timeEl = document.createElement('div'); timeEl.className = 'message-time';
       body.appendChild(timeEl);
       msgEl.appendChild(body);
@@ -878,7 +981,6 @@
     const contentParts = [];
     if (text) contentParts.push({ type: 'text', text });
     for (const f of visionFiles) contentParts.push({ type: 'image_url', image_url: { url: f.pngDataUrl || f.dataUrl, detail: 'auto' } });
-
     const hasAttachedImage = visionFiles.length > 0;
     const editIntent = hasAttachedImage ? detectImageEditIntent(text, true) : null;
     const sourceImage = editIntent ? (visionFiles[0].pngDataUrl || visionFiles[0].dataUrl) : null;
@@ -887,15 +989,20 @@
     let generatedImage = null, gotToken = !!isContinuation, limitHit = false;
     let streamComplete = false;
     let renderTimer = null;
+    let rawAll = '';            // full stream text including <thinking>…
+    let thinkingText = '';
+    let answerText = '';
+    let thinkingClosed = false;
 
     const renderStreamText = () => {
       renderTimer = null;
-      if (!bubbleText) return;
-      const chat = $('#chatMessages');
-      const wasAtBottom = chat && (chat.scrollHeight - chat.scrollTop - chat.clientHeight < 120);
-      bubbleText.innerHTML = renderMarkdown(full);
-      wireCopyButtons(bubbleText);
-      if (wasAtBottom) scrollToBottom();
+      if (bubbleText) {
+        const chat = $('#chatMessages');
+        const wasAtBottom = chat && (chat.scrollHeight - chat.scrollTop - chat.clientHeight < 120);
+        bubbleText.innerHTML = renderMarkdown(answerText);
+        wireCopyButtons(bubbleText);
+        if (wasAtBottom) scrollToBottom();
+      }
     };
     const scheduleRender = () => {
       const now = performance.now();
@@ -952,6 +1059,37 @@
         }
       };
       let signinTriggered = false;
+
+      const updateThinkingDisplay = () => {
+        if (!thinkPanel) return;
+        // Split on <thinking>...</thinking>
+        const s = rawAll;
+        const openIdx = s.indexOf('<thinking>');
+        const closeIdx = s.indexOf('</thinking>');
+        if (openIdx >= 0 && closeIdx > openIdx) {
+          // We have complete thinking
+          const think = s.slice(openIdx + '<thinking>'.length, closeIdx);
+          const rest = s.slice(closeIdx + '</thinking>'.length);
+          thinkingText = think.trim();
+          answerText = rest.replace(/^\s+/, '');
+          thinkingClosed = true;
+          thinkPanel.replaceText(thinkingText);
+        } else if (openIdx >= 0) {
+          // Inside thinking, not closed yet
+          const think = s.slice(openIdx + '<thinking>'.length);
+          thinkingText = think;
+          answerText = '';
+          thinkPanel.replaceText(think);
+          thinkingClosed = false;
+        } else {
+          // No thinking tag at all — everything is answer
+          thinkingText = '';
+          answerText = s;
+          thinkingClosed = true;
+          thinkPanel.replaceText('');
+        }
+      };
+
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
@@ -963,41 +1101,46 @@
           const pl = line.slice(5).trim(); if (!pl) continue;
           if (pl === '[DONE]') { streamComplete = true; continue; }
           let o; try { o = JSON.parse(pl); } catch { continue; }
-          if (o.n) panel.addNarration(o.n);
+
           if (o.signin_required && !signinTriggered) {
             signinTriggered = true;
             requireSignIn(o.message || 'Sign in to continue.');
             try { await reader.cancel(); } catch {}
             break;
           }
+
           if (o.img) {
-            generatedImage = o.img; panel.markWriting();
+            generatedImage = o.img;
             if (avatarMascot) setMascotMood('celebrate', avatarMascot.parentElement.parentElement);
             ensureBubble();
             bubble.innerHTML = `<div class="gen-image"><img src="${o.img}" draggable="false" alt=""></div><div class="bubble-text"></div>`;
             bubbleText = bubble.querySelector('.bubble-text');
             const img = bubble.querySelector('img'); if (img) img.onclick = () => openImageViewer(o.img);
-            scrollToBottom(); continue;
+            if (thinkPanel) { thinkPanel.replaceText('Generating image…'); }
+            scrollToBottom();
+            continue;
           }
+
           if (o.d) {
-            full += o.d;
+            rawAll += o.d;
+            updateThinkingDisplay();
+            // If answer text exists, ensure bubble and schedule render
+            if (answerText.length > 0) {
+              if (!gotToken) {
+                gotToken = true;
+                if (avatarMascot) setMascotMood('coding', avatarMascot.parentElement.parentElement);
+                ensureBubble();
+                bubble.innerHTML = '<div class="bubble-text"></div>';
+                bubbleText = bubble.querySelector('.bubble-text');
+              }
+              scheduleRender();
+            }
             const limit = BASE_FREE_LIMIT;
-            if (__tier === 'free' && convo && conversationTokenUsage(convo) + estimateTokens(full) >= limit) {
-              full = full.slice(0, Math.max(0, (limit - conversationTokenUsage(convo)) * 4));
+            if (__tier === 'free' && convo && conversationTokenUsage(convo) + estimateTokens(rawAll) >= limit) {
               limitHit = true;
-              if (!gotToken) { gotToken = true; ensureBubble(); bubble.innerHTML = '<div class="bubble-text"></div>'; bubbleText = bubble.querySelector('.bubble-text'); }
-              if (bubbleText) bubbleText.innerHTML = renderMarkdown(full);
               try { await reader.cancel(); } catch {}
               break;
             }
-            if (!gotToken) {
-              gotToken = true; panel.markWriting();
-              if (avatarMascot) setMascotMood('coding', avatarMascot.parentElement.parentElement);
-              ensureBubble();
-              bubble.innerHTML = '<div class="bubble-text"></div>';
-              bubbleText = bubble.querySelector('.bubble-text');
-            }
-            scheduleRender();
           }
           if (o.error) throw new Error(o.error.message || 'Stream error');
         }
@@ -1005,22 +1148,53 @@
       }
       clearTimeout(streamTimeout);
       if (signinTriggered) { try { reader.cancel(); } catch {} }
-      panel.finish();
+
+      if (thinkPanel) {
+        // Final: if we never got a closed thinking block, treat all as answer
+        const closeIdx = rawAll.indexOf('</thinking>');
+        if (closeIdx >= 0) {
+          const openIdx = rawAll.indexOf('<thinking>');
+          thinkingText = rawAll.slice(openIdx >= 0 ? openIdx + '<thinking>'.length : 0, closeIdx).trim();
+          answerText = rawAll.slice(closeIdx + '</thinking>'.length).replace(/^\s+/, '');
+          thinkPanel.replaceText(thinkingText);
+        } else {
+          answerText = rawAll;
+          // If model skipped thinking entirely, hide the panel
+          if (!/<thinking>/.test(rawAll)) {
+            thinkPanel.el.style.display = 'none';
+          }
+        }
+        thinkPanel.finalize();
+      }
+      full = answerText;
+
       if (avatarMascot) setMascotMood('happy', avatarMascot.parentElement.parentElement);
       if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
       if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); wireCopyButtons(bubbleText); }
       wireMessageActions(msgEl);
+
+      // Watermark generated image (canvas) and store the watermarked version
       let imageKey = null;
-      if (generatedImage) { imageKey = 'img:' + aiMsgId; await idb.set(imageKey, generatedImage).catch(() => { imageKey = null; }); }
+      if (generatedImage) {
+        const wm = await watermarkedDataUrl(generatedImage);
+        generatedImage = wm;
+        // Replace the displayed image with the watermarked version
+        const imgEl = msgEl.querySelector('.gen-image img');
+        if (imgEl) { imgEl.src = wm; imgEl.onclick = () => openImageViewer(wm); }
+        imageKey = 'img:' + aiMsgId;
+        await idb.set(imageKey, wm).catch(() => { imageKey = null; });
+      }
+
       let savedMsg;
       if (convo) {
         if (isContinuation) {
           savedMsg = convo.messages.find((m) => m.id === aiMsgId) || continuation.messageObj;
           savedMsg.content = full;
+          savedMsg.thinking = thinkingText;
           savedMsg.ts = Date.now();
           if (imageKey) savedMsg.imageKey = imageKey;
         } else {
-          savedMsg = { id: aiMsgId, role: 'assistant', content: full, ts: Date.now(), imageKey };
+          savedMsg = { id: aiMsgId, role: 'assistant', content: full, thinking: thinkingText, ts: Date.now(), imageKey };
           convo.messages.push(savedMsg);
         }
       }
@@ -1031,7 +1205,7 @@
       clearTimeout(streamTimeout);
       const aborted = e.name === 'AbortError';
       const msg = aborted ? 'Stopped.' : (e.message || 'Something went wrong.');
-      panel.fail(msg);
+      if (thinkPanel) thinkPanel.fail(msg);
       if (avatarMascot) setMascotMood('error', avatarMascot.parentElement.parentElement);
       const bodyEl = msgEl.querySelector('.message-body');
       if (!bubble) { bubble = document.createElement('div'); bubble.className = 'bubble'; bodyEl.insertBefore(bubble, timeEl); }
@@ -1048,7 +1222,7 @@
       toast(msg, 5000, 'err'); updateTokenUsage();
     } finally {
       clearTimeout(streamTimeout);
-      panel.destroy();
+      if (thinkPanel) thinkPanel.destroy();
       isReplying = false;
       activeStreamController = null;
       if (stopBtn) stopBtn.style.display = 'none';
@@ -1082,16 +1256,14 @@
     recog.onerror = (e) => {
       __voiceListening = false; btn.classList.remove('listening'); btn.innerHTML = '<i class="ri-mic-line"></i>';
       if (e.error === 'not-allowed') toast('Microphone permission denied.', 3000, 'err');
-      else if (e.error === 'no-speech') { /* silent */ }
-      else toast('Voice error: ' + e.error, 3000, 'err');
+      else if (e.error !== 'no-speech') toast('Voice error: ' + e.error, 3000, 'err');
     };
     recog.onresult = (event) => {
       const inp = document.getElementById('messageInput'); if (!inp) return;
       let interim = '', final = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const r = event.results[i];
-        if (r.isFinal) final += r[0].transcript;
-        else interim += r[0].transcript;
+        if (r.isFinal) final += r[0].transcript; else interim += r[0].transcript;
       }
       const base = inp.dataset.voiceBase || inp.value || '';
       if (final) { inp.value = (inp.dataset.voiceBase || '').trim() ? (inp.dataset.voiceBase + ' ' + final).trim() : final.trim(); inp.dataset.voiceBase = inp.value; }
@@ -1108,7 +1280,7 @@
     });
   }
 
-  /* ---------- Images ---------- */
+  /* ---------- Image/file handlers ---------- */
   function imageToBase64DataURL(file) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -1239,16 +1411,6 @@
   }
   function closeFilePreview() { $('#filePreviewModal')?.classList.remove('open'); __previewFileRef = null; }
 
-  function openImageViewer(url) {
-    if (!url) return; __ivDataUrl = url;
-    const iv = $('#imageViewer'); if (!iv) return;
-    iv.classList.add('open');
-    const img = new Image();
-    img.onload = () => { const c = $('#ivCanvas'); if (!c) return; c.width = img.naturalWidth; c.height = img.naturalHeight; c.getContext('2d').drawImage(img, 0, 0); };
-    img.src = url;
-  }
-  function closeImageViewer() { $('#imageViewer')?.classList.remove('open'); }
-
   /* ---------- Models ---------- */
   function getModelsList() { return __config?.models?.length ? __config.models : FALLBACK_MODELS; }
   function canUseModel(tier) {
@@ -1309,12 +1471,7 @@
       if (sLabel) sLabel.textContent = name;
       if (sSub) sSub.textContent = email || 'Signed in';
       if (avatar) { avatar.innerHTML = `<span>${escapeHtml(initial)}</span>`; avatar.style.fontSize = '15px'; avatar.style.fontWeight = '600'; }
-      if (tierBadge) {
-        const t = (__user.tier || 'free');
-        tierBadge.textContent = tierLabel(t);
-        tierBadge.className = 'user-tier-badge tier-' + t;
-        tierBadge.style.display = '';
-      }
+      if (tierBadge) { const t = (__user.tier || 'free'); tierBadge.textContent = tierLabel(t); tierBadge.className = 'user-tier-badge tier-' + t; tierBadge.style.display = ''; }
       if (chip) chip.classList.add('signed-in');
       if (signInBtn) signInBtn.style.display = 'none';
       if (logoutBtn) logoutBtn.style.display = '';
@@ -1331,7 +1488,7 @@
     }
   }
 
-  /* ---------- Usage / config ---------- */
+  /* ---------- Usage/config ---------- */
   async function refreshUsage() {
     const local = getLocalUser();
     const res = await jsonOr('/api/me', {}, null, 7000);
@@ -1356,9 +1513,7 @@
     const el = $('#loginError');
     if (!el) return;
     if (!msg) { el.style.display = 'none'; el.textContent = ''; el.classList.remove('ok'); return; }
-    el.style.display = 'block';
-    el.textContent = msg;
-    el.classList.toggle('ok', kind === 'ok');
+    el.style.display = 'block'; el.textContent = msg; el.classList.toggle('ok', kind === 'ok');
   }
   async function doLogin(e) {
     if (e) e.preventDefault();
@@ -1373,13 +1528,7 @@
     __user = { name, email, tier: 'free', local: true };
     __tier = 'free';
     updateAccountUI();
-    try {
-      await netFetch('/api/auth/simple-login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email }),
-      }, 10000);
-    } catch {}
+    try { await netFetch('/api/auth/simple-login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, email }) }, 10000); } catch {}
     setLoginError('Signed in!', 'ok');
     if (btn) btn.innerHTML = '<i class="ri-check-line"></i> Welcome';
     setTimeout(async () => {
@@ -1409,12 +1558,7 @@
     grid.innerHTML = res.plans.map((p) => {
       const price = p.id === 'free' ? '<div class="plan-price">Free</div>' : `<div class="plan-price">$${Number(p.price_usd).toFixed(2)}</div>`;
       const t = p.id;
-      return `<div class="plan-card${p.id === __tier ? ' current' : ''}">
-        <span class="plan-card-badge tier-${t}">${tierFullLabel(t)}</span>
-        <div class="plan-name">${escapeHtml(p.label)}</div>
-        ${price}
-        <ul class="plan-perks">${(p.perks || []).map((x) => `<li>✓ ${escapeHtml(x)}</li>`).join('')}</ul>
-      </div>`;
+      return `<div class="plan-card${p.id === __tier ? ' current' : ''}"><span class="plan-card-badge tier-${t}">${tierFullLabel(t)}</span><div class="plan-name">${escapeHtml(p.label)}</div>${price}<ul class="plan-perks">${(p.perks || []).map((x) => `<li>✓ ${escapeHtml(x)}</li>`).join('')}</ul></div>`;
     }).join('');
   }
   async function genImage() {
@@ -1427,30 +1571,26 @@
       const res = await netFetch('/v1/images/generations', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ prompt, guest_id: getGuestId() }) }, 90000);
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok && data.image) {
-        if (result) { result.innerHTML = `<img src="${data.image}" alt="">`; result.querySelector('img').onclick = () => openImageViewer(data.image); }
+        const wm = await watermarkedDataUrl(data.image);
+        if (result) { result.innerHTML = `<img src="${wm}" alt="">`; result.querySelector('img').onclick = () => openImageViewer(wm); }
       } else if (res.status === 401) {
         closeModal('imageModal'); requireSignIn('Sign in to generate images with Mirox.');
-      } else {
-        if (result) result.innerHTML = `<div class="studio-error">Failed</div>`;
-      }
-    } catch (e) { if (result) result.innerHTML = `<div class="studio-error">Error</div>`; }
+      } else { if (result) result.innerHTML = `<div class="studio-error">Failed</div>`; }
+    } catch { if (result) result.innerHTML = `<div class="studio-error">Error</div>`; }
     finally { if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-image-add-line"></i> Generate'; } }
   }
 
-  /* ---------- SUPPORT CHAT ---------- */
+  /* ---------- Support ---------- */
   function supportSetHead() {
-    const el = $('#supportHeadSub');
-    if (!el) return;
+    const el = $('#supportHeadSub'); if (!el) return;
     if (!__user) { el.textContent = 'Sign in to chat with our team'; return; }
     if (!__supportConv) { el.textContent = 'Live chat with our team'; return; }
     if (__supportConv.status === 'closed') { el.textContent = 'Conversation closed'; return; }
     el.textContent = 'Live · usually replies in a few hours';
   }
   function supportUpdateComposeState() {
-    const input = $('#supportInput');
-    const send = $('#supportSendBtn');
-    const catRow = $('#supportCatRow');
-    const resolveBtn = $('#supportResolveBtn');
+    const input = $('#supportInput'); const send = $('#supportSendBtn');
+    const catRow = $('#supportCatRow'); const resolveBtn = $('#supportResolveBtn');
     const hint = $('#supportInputHint');
     const conv = __supportConv;
     const closed = conv && conv.status === 'closed';
@@ -1462,16 +1602,10 @@
     if (hint) hint.textContent = !canChat ? 'Sign in to chat with support' : (closed ? 'Conversation closed. Start a new one any time.' : 'Enter to send · Shift+Enter for a new line');
   }
   function supportRenderMessages() {
-    const box = $('#supportChatMessages');
-    if (!box) return;
+    const box = $('#supportChatMessages'); if (!box) return;
     const conv = __supportConv;
     if (!conv || !conv.messages || !conv.messages.length) {
-      box.innerHTML = `
-        <div class="support-chat-empty">
-          <div class="support-chat-empty-icon"><i class="ri-chat-smile-2-line"></i></div>
-          <div class="support-chat-empty-title">${__user ? 'How can we help?' : 'Sign in to chat'}</div>
-          <div class="support-chat-empty-sub">${__user ? 'Send us a message and a member of our team will reply right here.' : 'Sign in with your name and email so we can help you.'}</div>
-        </div>`;
+      box.innerHTML = `<div class="support-chat-empty"><div class="support-chat-empty-icon"><i class="ri-chat-smile-2-line"></i></div><div class="support-chat-empty-title">${__user ? 'How can we help?' : 'Sign in to chat'}</div><div class="support-chat-empty-sub">${__user ? 'Send us a message and a member of our team will reply right here.' : 'Sign in with your name and email so we can help you.'}</div></div>`;
       return;
     }
     const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 100;
@@ -1479,11 +1613,7 @@
       const role = m.role === 'agent' ? 'agent' : (m.role === 'system' ? 'system' : 'user');
       const author = role === 'agent' ? 'Support' : (role === 'system' ? '' : 'You');
       const time = m.ts ? new Date(m.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-      return `<div class="support-msg ${role}">
-        ${role === 'agent' ? `<div class="support-msg-author">${escapeHtml(author)}</div>` : ''}
-        <div class="support-bubble">${escapeHtml(m.content || '').replace(/\n/g, '<br>')}</div>
-        ${role !== 'system' ? `<div class="support-msg-meta">${time}</div>` : ''}
-      </div>`;
+      return `<div class="support-msg ${role}">${role === 'agent' ? `<div class="support-msg-author">${escapeHtml(author)}</div>` : ''}<div class="support-bubble">${escapeHtml(m.content || '').replace(/\n/g, '<br>')}</div>${role !== 'system' ? `<div class="support-msg-meta">${time}</div>` : ''}</div>`;
     }).join('');
     if (nearBottom) box.scrollTop = box.scrollHeight;
   }
@@ -1491,9 +1621,7 @@
     if (!__user) { __supportConv = null; supportSetHead(); supportUpdateComposeState(); supportRenderMessages(); return; }
     const data = await jsonOr('/api/support/conversation', {}, null, 10000);
     if (data && data.ok) __supportConv = data.conversation;
-    supportSetHead();
-    supportUpdateComposeState();
-    supportRenderMessages();
+    supportSetHead(); supportUpdateComposeState(); supportRenderMessages();
   }
   async function supportSend() {
     if (!__user) { toast('Sign in to chat with support'); return; }
@@ -1503,28 +1631,12 @@
     if (!content) return;
     const category = ($('#supportCategory')?.value || 'other');
     __supportSending = true;
-    const send = $('#supportSendBtn');
-    if (send) send.classList.add('is-disabled');
-    const r = await netFetch('/api/support/message', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content, category }),
-    }, 15000).catch(() => null);
+    const send = $('#supportSendBtn'); if (send) send.classList.add('is-disabled');
+    const r = await netFetch('/api/support/message', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content, category }) }, 15000).catch(() => null);
     __supportSending = false;
-    if (!r || !r.ok) {
-      const d = r ? await r.json().catch(() => ({})) : null;
-      toast((d && d.error) || 'Could not send', 3000, 'err');
-      supportUpdateComposeState();
-      return;
-    }
+    if (!r || !r.ok) { const d = r ? await r.json().catch(() => ({})) : null; toast((d && d.error) || 'Could not send', 3000, 'err'); supportUpdateComposeState(); return; }
     const d = await r.json().catch(() => ({}));
-    if (d && d.ok) {
-      if (input) { input.value = ''; input.style.height = 'auto'; }
-      __supportConv = d.conversation;
-      supportSetHead();
-      supportUpdateComposeState();
-      supportRenderMessages();
-    }
+    if (d && d.ok) { if (input) { input.value = ''; input.style.height = 'auto'; } __supportConv = d.conversation; supportSetHead(); supportUpdateComposeState(); supportRenderMessages(); }
   }
   async function supportResolve() {
     if (!__user) return;
@@ -1532,10 +1644,7 @@
     await jsonOr('/api/support/close', { method: 'POST' }, null, 10000);
     await supportLoad();
   }
-  function supportStartPolling() {
-    if (__supportPollTimer) return;
-    __supportPollTimer = setInterval(() => { if ($('#supportModal')?.classList.contains('open')) supportLoad(); }, 6000);
-  }
+  function supportStartPolling() { if (__supportPollTimer) return; __supportPollTimer = setInterval(() => { if ($('#supportModal')?.classList.contains('open')) supportLoad(); }, 6000); }
   function supportStopPolling() { if (__supportPollTimer) { clearInterval(__supportPollTimer); __supportPollTimer = null; } }
   function openSupportModal() { openModal('supportModal'); supportLoad(); supportStartPolling(); }
   function closeSupportModal() { closeModal('supportModal'); supportStopPolling(); }
@@ -1571,9 +1680,7 @@
       renderBridgeStatus(); $('#bridgeEmpty')?.remove();
       setBwHint(`Connected · Home: ${__bridge.env?.home || '?'}`, 'ok');
       addBridgeSystemMsg(`Connected. Home: ${__bridge.env?.home || '?'}`);
-    } else {
-      __bridge.connected = false; setBwHint(`Could not reach port ${port}.`, 'err'); renderBridgeStatus();
-    }
+    } else { __bridge.connected = false; setBwHint(`Could not reach port ${port}.`, 'err'); renderBridgeStatus(); }
   }
   function stopBridge() { __bridge.connected = false; __bridge.baseUrl = null; __bridge.env = null; __sudoPassword = ''; renderBridgeStatus(); setBwHint(''); }
   async function bridgeCall(endpoint, payload) {
@@ -1609,7 +1716,6 @@
     el.querySelectorAll('[data-copy-folder]').forEach((b) => { b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copyFolder); toast('Copied'); } catch {} }; });
     c.appendChild(el); scrollBridgeBottom();
   }
-  function addBridgeThinkingPanel(label, steps) { const c = $('#bridgeMessages'); if (!c) return null; $('#bridgeEmpty')?.remove(); const panel = createThinkPanel(label || 'Thinking', steps || []); panel.el.classList.add('bridge-think'); c.appendChild(panel.el); scrollBridgeBottom(); return panel; }
   function addBridgeActionBubble(cmd) {
     const c = $('#bridgeMessages'); if (!c) return null;
     const data = getActionData(cmd);
@@ -1714,12 +1820,7 @@
     if (cmd.from) cmd.from = absBridgePath(cmd.from, home);
     if (cmd.to) cmd.to = absBridgePath(cmd.to, home);
     const t2 = cmd.type;
-    if (t2 === 'sudo') {
-      const sudo = await askSudo(cmd.command);
-      if (!sudo || !sudo.password) return { ok: false, cancelled: true };
-      try { return await bridgeCall('/sudo-exec', { command: cmd.command, password: sudo.password, timeout: 120 }); }
-      catch (e) { return { ok: false, error: e.message }; }
-    }
+    if (t2 === 'sudo') { const sudo = await askSudo(cmd.command); if (!sudo || !sudo.password) return { ok: false, cancelled: true }; try { return await bridgeCall('/sudo-exec', { command: cmd.command, password: sudo.password, timeout: 120 }); } catch (e) { return { ok: false, error: e.message }; } }
     if (t2 === 'exec') return bridgeCall('/exec', { command: cmd.command });
     if (t2 === 'write') return bridgeCall('/write', { path: cmd.path, content: cmd.content });
     if (t2 === 'append') return bridgeCall('/append', { path: cmd.path, content: cmd.content });
@@ -1762,7 +1863,7 @@
       case 'move': return `[move] from=${result.from} to=${result.to}`;
       case 'copy': return `[copy] from=${result.from} to=${result.to}`;
       case 'delete': return `[delete] ok path=${result.path}`;
-      case 'sysinfo': return `[sysinfo] platform=${result.platform} release=${result.release} cpu=${result.cpu_count} home=${result.home}`;
+      case 'sysinfo': return `[sysinfo] platform=${result.platform} release=${result.release} cpu=${result.cpu_count}`;
       case 'syscheck': return `[syscheck] healthy=${result.healthy}`;
       case 'processes': return `[processes]\n${trunc(result.raw, 2000)}`;
       case 'email': return `[email] sent to=${result.sent_to} subject=${result.subject}`;
@@ -1798,7 +1899,6 @@
     return data.reply || '';
   }
   function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
-
   async function runBridgeTurn(userText, isResume = false) {
     if (!__bridge.connected || !IS_PC) return;
     if (bridgeRunning) return;
@@ -1821,15 +1921,10 @@
         let reply = '';
         try { reply = await fetchBridgeReply(bridgeConversation); thinking?.finish(); }
         catch (e) { thinking?.fail('AI error: ' + e.message); break; }
-        if (!reply || !reply.trim()) {
-          if (autoContinues < MAX_AUTO_CONTINUES && __bridgeAutoRun) { autoContinues++; await sleep(600); bridgeConversation.push({ role: 'user', content: '[System] Continue.' }); continue; }
-          break;
-        }
+        if (!reply || !reply.trim()) { if (autoContinues < MAX_AUTO_CONTINUES && __bridgeAutoRun) { autoContinues++; await sleep(600); bridgeConversation.push({ role: 'user', content: '[System] Continue.' }); continue; } break; }
         const fp = fingerprintReply(reply);
-        if (fp && fp === bridgeTurn.lastReplyFingerprint) {
-          bridgeTurn.lastReplyCount++;
-          if (bridgeTurn.lastReplyCount >= MAX_DUP_REPLIES) { addBridgeSystemMsg('Stopping — the AI repeated itself.'); bridgeTaskComplete = true; break; }
-        } else { bridgeTurn.lastReplyFingerprint = fp; bridgeTurn.lastReplyCount = 1; }
+        if (fp && fp === bridgeTurn.lastReplyFingerprint) { bridgeTurn.lastReplyCount++; if (bridgeTurn.lastReplyCount >= MAX_DUP_REPLIES) { addBridgeSystemMsg('Stopping — the AI repeated itself.'); bridgeTaskComplete = true; break; } }
+        else { bridgeTurn.lastReplyFingerprint = fp; bridgeTurn.lastReplyCount = 1; }
         const cmdsInReply = extractBridgeCommands(reply);
         const saidDone = /\bDONE\b/i.test(reply);
         const truncatedWrite = hasUnclosedWriteOrAppend(reply);
@@ -1859,10 +1954,7 @@
           if (truncatedWrite && lastPath) bridgeConversation.push({ role: 'user', content: `[System] Continue with <bridge-append path="${lastPath}">.` });
           continue;
         }
-        if (truncatedWrite) {
-          if (__bridgeAutoRun && autoContinues < MAX_AUTO_CONTINUES) { autoContinues++; bridgeConversation.push({ role: 'user', content: `[System] Continue with <bridge-append path="${lastPath}">.` }); continue; }
-          bridgeWaitingForUser = true; break;
-        }
+        if (truncatedWrite) { if (__bridgeAutoRun && autoContinues < MAX_AUTO_CONTINUES) { autoContinues++; bridgeConversation.push({ role: 'user', content: `[System] Continue with <bridge-append path="${lastPath}">.` }); continue; } bridgeWaitingForUser = true; break; }
         const hasPlan = bridgeTurn.plannedFiles.size > 0;
         const allFilesWritten = hasPlan && bridgeTurn.writtenFiles.size >= bridgeTurn.plannedFiles.size;
         if (saidDone && (allFilesWritten || !hasPlan)) {
@@ -1880,14 +1972,12 @@
           } else addBridgeSuccessMsg('Task complete');
           bridgeTaskComplete = true; break;
         }
-        if (!saidDone) {
-          if (__bridgeAutoRun && autoContinues < MAX_AUTO_CONTINUES) { autoContinues++; await sleep(600); bridgeConversation.push({ role: 'user', content: '[System] Continue.' }); continue; }
-          bridgeWaitingForUser = true; break;
-        }
+        if (!saidDone) { if (__bridgeAutoRun && autoContinues < MAX_AUTO_CONTINUES) { autoContinues++; await sleep(600); bridgeConversation.push({ role: 'user', content: '[System] Continue.' }); continue; } bridgeWaitingForUser = true; break; }
       }
     } catch (e) { addBridgeSystemMsg('Bridge error: ' + e.message); }
     finally { bridgeRunning = false; updateBridgeSendBtn(); setProgressText(bridgeTaskComplete ? 'Done' : 'Paused'); }
   }
+  function addBridgeThinkingPanel(label, steps) { const c = $('#bridgeMessages'); if (!c) return null; $('#bridgeEmpty')?.remove(); const panel = createThinkPanel(); panel.el.classList.add('bridge-think'); c.appendChild(panel.el); scrollBridgeBottom(); return panel; }
   function handleBridgeSend() {
     if (!IS_PC) { toast('Bridge is only available on desktop computers.', 2600, 'err'); return; }
     const inp = $('#bridgeInput'); if (!inp) return;
@@ -1907,11 +1997,7 @@
     if (rel.startsWith('/')) return baseDir + rel;
     const parts = (baseDir + '/' + rel).split('/');
     const out = [];
-    for (const p of parts) {
-      if (!p || p === '.') continue;
-      if (p === '..') out.pop();
-      else out.push(p);
-    }
+    for (const p of parts) { if (!p || p === '.') continue; if (p === '..') out.pop(); else out.push(p); }
     return '/' + out.join('/');
   }
   async function inlineLocalAssets(html, htmlPath) {
@@ -1999,13 +2085,7 @@
     on('#modelPickerBtn', 'click', (e) => { e.stopPropagation(); if ($('#modelPickerMenu')?.classList.contains('open')) closeModelPicker(); else openModelPicker(); });
     document.addEventListener('click', (e) => { if (!e.target.closest('#modelPicker')) closeModelPicker(); });
     on('#searchModeBtn', 'click', (e) => { e.preventDefault(); forceSearchNext = !forceSearchNext; $('#searchModeBtn')?.classList.toggle('active', forceSearchNext); });
-
-    /* Lumenal — requires sign-in */
-    on('#imageModeBtn', 'click', () => {
-      if (!__user) { requireSignIn('Sign in to use Lumenal and generate images.'); return; }
-      openModal('imageModal');
-    });
-
+    on('#imageModeBtn', 'click', () => { if (!__user) { requireSignIn('Sign in to use Lumenal and generate images.'); return; } openModal('imageModal'); });
     on('#plansModeBtn', 'click', () => { openModal('plansModal'); loadPlans(); });
     on('#supportModeBtn', 'click', (e) => { e.preventDefault(); openSupportModal(); });
     on('#supportModeBtn2', 'click', () => openSupportModal());
@@ -2015,8 +2095,6 @@
     on('#settingsBtn', 'click', (e) => { e.preventDefault(); openSettingsModal(); });
     on('#logoutBtn', 'click', doLogout);
     on('#signInFromSettingsBtn', 'click', () => { closeModal('settingsModal'); setLoginError(''); openModal('loginModal'); });
-
-    /* Support */
     on('#supportResolveBtn', 'click', supportResolve);
     on('#supportSendBtn', 'click', supportSend);
     const supInput = $('#supportInput');
@@ -2024,7 +2102,6 @@
       supInput.addEventListener('input', () => { supInput.style.height = 'auto'; supInput.style.height = Math.min(supInput.scrollHeight, 140) + 'px'; supportUpdateComposeState(); });
       supInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); supportSend(); } });
     }
-
     $$('.settings-tab').forEach((tab) => {
       tab.onclick = () => {
         const tabKey = tab.dataset.tab;
@@ -2050,7 +2127,6 @@
     });
     on('#clearChatsBtn', 'click', () => { if (!confirm('Clear all chats?')) return; __conversations = []; saveChats(); startNewChat(); toast('Cleared'); });
     on('#clearI18nCacheBtn', 'click', () => { __i18nCache = {}; saveI18nCache(); toast('Cache cleared'); });
-
     on('#bwCloseBtn', 'click', closeBridgeWorkspace);
     on('#bwNewBtn', 'click', clearBridgeChat);
     on('#bwConnectBtn', 'click', startBridge);
@@ -2079,23 +2155,23 @@
 
     document.addEventListener('click', (e) => {
       const cb = e.target.closest('[data-close]');
-      if (cb) {
-        const target = cb.dataset.close;
-        if (target === 'supportModal') { closeSupportModal(); return; }
-        closeModal(target);
-        return;
-      }
-      if (e.target.classList.contains('modal-overlay')) {
-        if (e.target.id === 'supportModal') { closeSupportModal(); return; }
-        e.target.classList.remove('open');
-      }
+      if (cb) { const target = cb.dataset.close; if (target === 'supportModal') { closeSupportModal(); return; } closeModal(target); return; }
+      if (e.target.classList.contains('modal-overlay')) { if (e.target.id === 'supportModal') { closeSupportModal(); return; } e.target.classList.remove('open'); }
       if (e.target.closest('[data-iv-close]')) closeImageViewer();
     });
     on('#userChip', 'click', () => { if (!__user) { setLoginError(''); openModal('loginModal'); } });
     on('#upgradeBtn', 'click', (e) => { e.stopPropagation(); if (!__user) { setLoginError(''); openModal('loginModal'); } else { openModal('plansModal'); loadPlans(); } });
     on('#simpleLoginForm', 'submit', doLogin);
-    on('#ivDownload', 'click', () => { if (!__ivDataUrl) return; const a = document.createElement('a'); a.href = __ivDataUrl; a.download = `mirox-${Date.now()}.png`; document.body.appendChild(a); a.click(); document.body.removeChild(a); });
-
+    on('#ivDownload', 'click', () => {
+      if (!__ivDataUrl) return;
+      // Save the canvas (already painted with watermark) rather than the raw src
+      const c = $('#ivCanvas');
+      const href = (c && c.width > 0) ? c.toDataURL('image/png') : __ivDataUrl;
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = `mirox-${Date.now()}.png`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    });
     on('#filePreviewCopyBtn', 'click', async () => {
       if (!__previewFileRef) return;
       try { await navigator.clipboard.writeText(__previewFileRef.content || ''); toast('Copied file content', 1800, 'ok'); } catch {}
@@ -2107,13 +2183,10 @@
       const inp = $('#messageInput');
       if (inp) {
         inp.value = `Please read the attached file "${f.name}" and explain what it does, then suggest improvements.`;
-        inp.style.height = 'auto';
-        inp.style.height = Math.min(inp.scrollHeight, 180) + 'px';
-        updateSendButtonState();
-        inp.focus();
+        inp.style.height = 'auto'; inp.style.height = Math.min(inp.scrollHeight, 180) + 'px';
+        updateSendButtonState(); inp.focus();
       }
     });
-
     bindSuggestionClicks();
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
@@ -2126,10 +2199,7 @@
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); $('#messageInput')?.focus(); }
     });
     window.addEventListener('resize', () => { if (window.innerWidth > 860) closeSidebar(); });
-
-    if (!IS_PC) {
-      document.querySelectorAll('#bridgeModeBtn, #bridgeOpenBtn, [data-pane="bridge"], .sidebar-tab[data-tab="bridge"]').forEach((el) => { el.style.display = 'none'; });
-    }
+    if (!IS_PC) document.querySelectorAll('#bridgeModeBtn, #bridgeOpenBtn, [data-pane="bridge"], .sidebar-tab[data-tab="bridge"]').forEach((el) => { el.style.display = 'none'; });
   }
 
   function openSettingsModal() { applyPrefs(); updateAccountUI(); openModal('settingsModal'); }
@@ -2143,7 +2213,7 @@
     let lastAiEl = null, lastAiMessage = null;
     for (const m of convo.messages || []) {
       const img = m.imageKey ? await idb.get(m.imageKey).catch(() => null) : null;
-      const rendered = addMessageToDOM(m.role, m.content, m.ts, m.id, m.files || [], img);
+      const rendered = addMessageToDOM(m.role, m.content, m.ts, m.id, m.files || [], img, m.thinking);
       if (m.role === 'assistant') { lastAiEl = rendered; lastAiMessage = m; }
     }
     if (lastAiEl && lastAiMessage) {
@@ -2170,11 +2240,7 @@
 
   async function init() {
     try {
-      try {
-        const t = localStorage.getItem('mirox_token');
-        if (t && !isApiKey(t)) localStorage.removeItem('mirox_token');
-      } catch {}
-
+      try { const t = localStorage.getItem('mirox_token'); if (t && !isApiKey(t)) localStorage.removeItem('mirox_token'); } catch {}
       loadPrefs();
       loadI18nCache();
       applyAppearanceFromPrefs();
