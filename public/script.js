@@ -2,7 +2,7 @@
   'use strict';
 
   /* ============================================================
-     MiroxAI frontend v98 — continuation fix + support chat
+     MiroxAI frontend v100 — share removed, sign-in gating for images
      ============================================================ */
 
   /* ---------- i18n ---------- */
@@ -158,17 +158,12 @@
   const LOCAL_USER_KEY = 'mirox_local_user_v3';
   const GUEST_KEY = 'miroxai_guest_id_v1';
   const APPEARANCE_KEY = 'miroxai_appearance_v50';
-  const SHARE_KEY = 'miroxai_share_v16';
-  const BONUS_KEY = 'miroxai_bonus_v16';
   const PREFS_KEY = 'miroxai_prefs_v11';
   const BRIDGE_OPTS_KEY = 'miroxai_bridge_opts_v1';
   const PASTE_ATTACH_THRESHOLD = 1024;
   const NET_TIMEOUT_MS = 15000;
-  const STREAM_TIMEOUT_MS = 240000;   // ⚡ increased from 120s to 240s
+  const STREAM_TIMEOUT_MS = 240000;
   const BASE_FREE_LIMIT = 10000;
-  const BONUS_TOKENS = 50000;
-  const BONUS_MS = 2 * 24 * 60 * 60 * 1000;
-  const BONUS_VALID_DAYS = 2;
   const MAX_IMAGE_DIM = 1600;
   const MAX_TEXT_FILE_BYTES = 300000;
   const MAX_BRIDGE_ITER = 40;
@@ -183,7 +178,6 @@
   let __conversations = [], pendingFiles = [], activeStreamController = null;
   let forceSearchNext = false, __historyQuery = '';
   let __ivDataUrl = '';
-  let __shareState = { claimed: false, claimedAt: 0, dismissedAt: 0 };
   let __prefs = {};
   let __bridge = { name: 'My Laptop', port: 8765, connected: false, baseUrl: null, env: null };
   let bridgeRunning = false, bridgeAbort = false, bridgeConversation = [], bridgeProgress = 0;
@@ -194,8 +188,6 @@
   let __voiceRecognition = null;
   let __voiceListening = false;
   let __previewFileRef = null;
-
-  // ⚡ Support chat state
   let __supportConv = null;
   let __supportPollTimer = null;
   let __supportSending = false;
@@ -225,16 +217,11 @@
     }
     return id;
   }
-  function bonusProofHeaders() {
-    const b = loadBonusRaw();
-    if (!b || !isBonusValid(b)) return {};
-    return { 'X-Mirox-Guest': getGuestId(), 'X-Mirox-Bonus-Tokens': String(b.tokens), 'X-Mirox-Bonus-Expires': String(b.expiresAt) };
-  }
+
   function authHeaders(extra) {
     const h = { 'Content-Type': 'application/json', ...(extra || {}) };
     const tk = getToken();
     if (isApiKey(tk)) h.Authorization = 'Bearer ' + tk;
-    Object.assign(h, bonusProofHeaders());
     if (__prefs.responseLanguage && __prefs.responseLanguage !== 'auto') h['X-Mirox-Lang'] = __prefs.responseLanguage;
     return h;
   }
@@ -252,40 +239,6 @@
       if (!ct.includes('application/json')) return fallback;
       return await r.json();
     } catch { return fallback; }
-  }
-
-  /* ---------- Bonus ---------- */
-  function loadBonusRaw() { const b = safeGet(BONUS_KEY, null); return (b && typeof b === 'object') ? b : null; }
-  function saveBonusRaw(b) { b ? safeSet(BONUS_KEY, b) : safeRemove(BONUS_KEY); }
-  function isBonusValid(b) {
-    if (!b) return false;
-    const tokens = parseInt(b.tokens, 10) || 0;
-    const expiresAt = parseInt(b.expiresAt, 10) || 0;
-    return tokens > 0 && expiresAt > 0 && Date.now() < expiresAt;
-  }
-  function getActiveBonus() {
-    const b = loadBonusRaw();
-    if (!b) return 0;
-    if (!isBonusValid(b)) { saveBonusRaw(null); if (__shareState.claimed) { __shareState.claimed = false; saveShareState(); } return 0; }
-    return b.tokens;
-  }
-  function getBonusExpiryMs() { const b = loadBonusRaw(); return isBonusValid(b) ? b.expiresAt - Date.now() : 0; }
-  function isBonusActive() { return getActiveBonus() > 0; }
-  function grantLocalBonus(tokens) {
-    const prev = loadBonusRaw(); const now = Date.now();
-    let newTokens, newExpiry;
-    if (isBonusValid(prev)) { newTokens = (prev.tokens || 0) + tokens; newExpiry = Math.max(prev.expiresAt, now + BONUS_MS); }
-    else { newTokens = tokens; newExpiry = now + BONUS_MS; }
-    const bonus = { tokens: newTokens, expiresAt: newExpiry, grantedAt: now, guest: getGuestId() };
-    saveBonusRaw(bonus); return bonus;
-  }
-  function getFreeLimit() { return BASE_FREE_LIMIT + getActiveBonus(); }
-  function formatBonusRemaining() {
-    const ms = getBonusExpiryMs(); if (ms <= 0) return '';
-    const days = Math.floor(ms / 86400000), hours = Math.floor((ms % 86400000) / 3600000);
-    if (days >= 1) return days + 'd';
-    if (hours >= 1) return hours + 'h';
-    return Math.max(1, Math.floor(ms / 60000)) + 'm';
   }
 
   /* ---------- Prefs ---------- */
@@ -464,7 +417,7 @@
     return `<div class="welcome-screen">
       <div class="welcome-mascot"><div class="mascot mascot-lg m-idle" id="welcomeMascot" data-mood="idle">${blobSvg()}</div></div>
       <h1 class="welcome-title">Hi, I'm Mirox</h1>
-      <p class="welcome-sub">Luna and Gen are unlimited and free. Share to unlock <strong>Pro, Ultra &amp; Eclipse</strong> free for 2 days.</p>
+      <p class="welcome-sub">Luna and Gen are unlimited and free. <strong>Sign in</strong> to use Pro, Ultra, Eclipse and image generation.</p>
       <div class="suggestion-grid">
         <button class="suggestion-card" type="button" data-prompt="Show me a simple Lua script that prints numbers 1 to 5"><i class="ri-code-box-line"></i><span>Write a Lua script</span></button>
         <button class="suggestion-card" type="button" data-prompt="Show me an HTML example with a table"><i class="ri-html5-line"></i><span>Show an HTML table</span></button>
@@ -508,22 +461,13 @@
   function updateTokenUsage() {
     const el = $('#tokenUsage'); if (!el) return;
     const used = conversationTokenUsage();
-    const bonus = getActiveBonus();
-    const limit = __tier === 'free' ? (BASE_FREE_LIMIT + bonus) : null;
+    const limit = __tier === 'free' ? BASE_FREE_LIMIT : null;
     const span = el.querySelector('span');
     if (span) {
       if (limit) span.textContent = `${formatK(Math.min(used, limit))} / ${formatK(limit)}`;
       else span.textContent = `${formatK(used)} tokens`;
     }
-    const hasBonus = bonus > 0 && __tier === 'free';
-    el.classList.toggle('has-bonus', hasBonus);
-    el.querySelector('.token-bonus-badge')?.remove();
-    if (hasBonus) {
-      const badge = document.createElement('span');
-      badge.className = 'token-bonus-badge';
-      badge.innerHTML = `<i class="ri-vip-crown-fill"></i>+${formatK(bonus)} · ${formatBonusRemaining()}`;
-      el.appendChild(badge);
-    }
+    el.classList.remove('has-bonus');
   }
   function atChatBottom(c = $('#chatMessages')) { return !c || c.scrollHeight - c.scrollTop - c.clientHeight < 100; }
   function scrollToBottom(force = false) {
@@ -535,7 +479,7 @@
     const c = $('#chatMessages'), b = $('#scrollBottomBtn'); if (!c || !b) return;
     b.classList.toggle('visible', !atChatBottom(c));
   }
-  function freeLimitReached(convo = currentConvo()) { return __tier === 'free' && conversationTokenUsage(convo) >= getFreeLimit(); }
+  function freeLimitReached(convo = currentConvo()) { return __tier === 'free' && conversationTokenUsage(convo) >= BASE_FREE_LIMIT; }
   function fmtSize(n) { if (n == null) return ''; if (n < 1024) return n + ' B'; if (n < 1048576) return (n / 1024).toFixed(1) + ' KB'; return (n / 1048576).toFixed(1) + ' MB'; }
 
   /* ---------- File meta ---------- */
@@ -544,39 +488,23 @@
     if (!m) return { label: 'TXT', icon: 'ri-file-text-line' };
     const ext = m[1].toLowerCase();
     const map = {
-      py:   { label: 'PY',   icon: 'devicon-python-plain colored' },
-      js:   { label: 'JS',   icon: 'devicon-javascript-plain colored' },
-      mjs:  { label: 'JS',   icon: 'devicon-javascript-plain colored' },
-      ts:   { label: 'TS',   icon: 'devicon-typescript-plain colored' },
-      tsx:  { label: 'TSX',  icon: 'devicon-typescript-plain colored' },
-      jsx:  { label: 'JSX',  icon: 'devicon-javascript-plain colored' },
-      html: { label: 'HTML', icon: 'devicon-html5-plain colored' },
-      htm:  { label: 'HTML', icon: 'devicon-html5-plain colored' },
-      css:  { label: 'CSS',  icon: 'devicon-css3-plain colored' },
-      scss: { label: 'SCSS', icon: 'devicon-css3-plain colored' },
-      json: { label: 'JSON', icon: 'devicon-json-plain colored' },
-      md:   { label: 'MD',   icon: 'ri-markdown-line' },
-      txt:  { label: 'TXT',  icon: 'ri-file-text-line' },
-      csv:  { label: 'CSV',  icon: 'ri-file-list-2-line' },
-      log:  { label: 'LOG',  icon: 'ri-file-list-line' },
-      lua:  { label: 'LUA',  icon: 'devicon-lua-plain colored' },
-      sh:   { label: 'SH',   icon: 'devicon-bash-plain colored' },
-      bash: { label: 'SH',   icon: 'devicon-bash-plain colored' },
-      java: { label: 'JAVA', icon: 'devicon-java-plain colored' },
-      cpp:  { label: 'C++',  icon: 'devicon-cplusplus-plain colored' },
-      hpp:  { label: 'C++',  icon: 'devicon-cplusplus-plain colored' },
-      c:    { label: 'C',    icon: 'devicon-c-plain colored' },
-      h:    { label: 'C',    icon: 'devicon-c-plain colored' },
-      go:   { label: 'GO',   icon: 'devicon-go-plain colored' },
-      rs:   { label: 'RS',   icon: 'devicon-rust-plain colored' },
-      rb:   { label: 'RB',   icon: 'devicon-ruby-plain colored' },
-      php:  { label: 'PHP',  icon: 'devicon-php-plain colored' },
-      sql:  { label: 'SQL',  icon: 'ri-database-2-line' },
-      yml:  { label: 'YAML', icon: 'ri-file-list-2-line' },
-      yaml: { label: 'YAML', icon: 'ri-file-list-2-line' },
-      xml:  { label: 'XML',  icon: 'ri-file-code-line' },
-      svg:  { label: 'SVG',  icon: 'devicon-html5-plain colored' },
-      zip:  { label: 'ZIP',  icon: 'ri-file-zip-line' },
+      py:{label:'PY',icon:'devicon-python-plain colored'},js:{label:'JS',icon:'devicon-javascript-plain colored'},
+      mjs:{label:'JS',icon:'devicon-javascript-plain colored'},ts:{label:'TS',icon:'devicon-typescript-plain colored'},
+      tsx:{label:'TSX',icon:'devicon-typescript-plain colored'},jsx:{label:'JSX',icon:'devicon-javascript-plain colored'},
+      html:{label:'HTML',icon:'devicon-html5-plain colored'},htm:{label:'HTML',icon:'devicon-html5-plain colored'},
+      css:{label:'CSS',icon:'devicon-css3-plain colored'},scss:{label:'SCSS',icon:'devicon-css3-plain colored'},
+      json:{label:'JSON',icon:'devicon-json-plain colored'},md:{label:'MD',icon:'ri-markdown-line'},
+      txt:{label:'TXT',icon:'ri-file-text-line'},csv:{label:'CSV',icon:'ri-file-list-2-line'},
+      log:{label:'LOG',icon:'ri-file-list-line'},lua:{label:'LUA',icon:'devicon-lua-plain colored'},
+      sh:{label:'SH',icon:'devicon-bash-plain colored'},bash:{label:'SH',icon:'devicon-bash-plain colored'},
+      java:{label:'JAVA',icon:'devicon-java-plain colored'},cpp:{label:'C++',icon:'devicon-cplusplus-plain colored'},
+      hpp:{label:'C++',icon:'devicon-cplusplus-plain colored'},c:{label:'C',icon:'devicon-c-plain colored'},
+      h:{label:'C',icon:'devicon-c-plain colored'},go:{label:'GO',icon:'devicon-go-plain colored'},
+      rs:{label:'RS',icon:'devicon-rust-plain colored'},rb:{label:'RB',icon:'devicon-ruby-plain colored'},
+      php:{label:'PHP',icon:'devicon-php-plain colored'},sql:{label:'SQL',icon:'ri-database-2-line'},
+      yml:{label:'YAML',icon:'ri-file-list-2-line'},yaml:{label:'YAML',icon:'ri-file-list-2-line'},
+      xml:{label:'XML',icon:'ri-file-code-line'},svg:{label:'SVG',icon:'devicon-html5-plain colored'},
+      zip:{label:'ZIP',icon:'ri-file-zip-line'},
     };
     return map[ext] || { label: ext.toUpperCase().slice(0, 4), icon: 'ri-file-text-line' };
   }
@@ -595,7 +523,7 @@
     return n;
   }
 
-  /* ---------- Code language ---------- */
+  /* ---------- Code lang ---------- */
   const LANG_META = {
     lua:{label:'LUA',icon:'devicon-lua-plain colored',hljs:'lua'},python:{label:'PY',icon:'devicon-python-plain colored',hljs:'python'},
     javascript:{label:'JS',icon:'devicon-javascript-plain colored',hljs:'javascript'},typescript:{label:'TS',icon:'devicon-typescript-plain colored',hljs:'typescript'},
@@ -640,9 +568,7 @@
       const before = rest.slice(0, openM.index);
       if (before) parts.push({ type: 'text', content: before });
       parts.push({ type: 'code', lang: (openM[1] || '').trim(), content: openM[2], closed: false });
-    } else if (rest) {
-      parts.push({ type: 'text', content: rest });
-    }
+    } else if (rest) parts.push({ type: 'text', content: rest });
     return parts.map((p) => p.type === 'code' ? renderCode(p.lang, p.content, p.closed) : renderText(p.content)).join('');
   }
   function renderText(text) {
@@ -792,11 +718,36 @@
     btn.classList.toggle('is-disabled', !enable);
     btn.setAttribute('aria-disabled', String(!enable));
   }
+  function requireSignIn(reason) {
+    setLoginError('');
+    const sub = $('#loginModalSub');
+    if (sub && reason) sub.textContent = reason;
+    openModal('loginModal');
+    toast(reason || 'Please sign in to continue.', 3000, 'err');
+  }
+  function looksLikeImageRequest(text) {
+    const t = String(text || '').trim();
+    if (!t) return false;
+    return /\b(generate|create|make|draw|render|paint|show\s+me|give\s+me)\b[^.!?]{0,60}\b(image|picture|photo|illustration|drawing|painting)\b/i.test(t)
+      || /^(?:an?\s+)?(image|picture|photo|illustration)\s+of\s+/i.test(t);
+  }
   function handleSend() {
     if (isReplying) return;
     const inp = $('#messageInput'); if (!inp) return;
     const text = inp.value.trim();
     if (!text && !pendingFiles.length) return;
+
+    /* Image gen / edit requires sign-in */
+    const hasImageFile = pendingFiles.some((f) => f.type === 'image');
+    if (!__user && looksLikeImageRequest(text)) {
+      requireSignIn('Sign in to generate images with Mirox.');
+      return;
+    }
+    if (!__user && hasImageFile && detectImageEditIntent(text, true)) {
+      requireSignIn('Sign in to edit images with Mirox.');
+      return;
+    }
+
     if (freeLimitReached()) { toast('Max tokens reached.'); return; }
     const files = pendingFiles.slice();
     const searchFlag = forceSearchNext; forceSearchNext = false;
@@ -823,7 +774,6 @@
     }
     return n;
   }
-
   function shouldShowContinue(full, convo, streamComplete) {
     if (!full) return false;
     if (freeLimitReached(convo)) return true;
@@ -849,12 +799,11 @@
     btn.innerHTML = '<i class="ri-loader-4-line spin"></i><span>Continuing…</span>';
     try {
       await sendToAPI(
-        'Continue EXACTLY from where you stopped. Do NOT repeat any prior text. Do NOT add a preamble like "Sure" or "Continuing". Do NOT open a new code fence if the previous message ended inside one — just keep writing the remaining lines. Output only the raw continuation.',
+        'Continue EXACTLY from where you stopped. Do NOT repeat any prior text. Do NOT add a preamble. Do NOT open a new code fence if the previous message ended inside one — just keep writing. Output only the raw continuation.',
         [], false,
         { existingMsgEl: msgEl, existingBubble: bubble, messageObj, continuation: true }
       );
-    }
-    finally {
+    } finally {
       continuationBusy = false;
       if (btn.isConnected) btn.remove();
     }
@@ -872,7 +821,7 @@
     return t;
   }
 
-  /* ---------- Send to API (with fix) ---------- */
+  /* ---------- Send to API ---------- */
   async function sendToAPI(text, files, forceSearch, continuation = null) {
     const isContinuation = !!(continuation && continuation.continuation);
     const convoAtStart = currentConvo();
@@ -886,8 +835,6 @@
     container?.querySelector('.welcome-screen')?.remove();
     let msgEl, bubble, bubbleText, timeEl, panel, avatarMascot;
     const aiMsgId = isContinuation ? continuation.messageObj.id : uid();
-
-    // ⚡ CRITICAL: initialize `full` OUTSIDE the if/else
     let full = '';
 
     if (isContinuation) {
@@ -903,7 +850,6 @@
         setMood() {}, markWriting() {}, finish() {}, fail() {}, destroy() {},
       };
       const prev = String(continuation.messageObj.content || '');
-      // ⚡ NO '\n\n' separator — this was the bug that mangled code blocks
       full = prev;
     } else {
       msgEl = document.createElement('div');
@@ -945,7 +891,6 @@
     const renderStreamText = () => {
       renderTimer = null;
       if (!bubbleText) return;
-      // ⚡ preserve scroll position: only auto-scroll if user was near bottom
       const chat = $('#chatMessages');
       const wasAtBottom = chat && (chat.scrollHeight - chat.scrollTop - chat.clientHeight < 120);
       bubbleText.innerHTML = renderMarkdown(full);
@@ -978,7 +923,6 @@
         })),
         content_parts: contentParts.length ? contentParts : null,
         guest_id: getGuestId(),
-        bonus_active: isBonusActive(),
         language: __prefs.responseLanguage || 'auto',
         edit_image: !!editIntent,
         source_image: sourceImage,
@@ -1007,6 +951,7 @@
           bodyEl.insertBefore(bubble, timeEl);
         }
       };
+      let signinTriggered = false;
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
@@ -1019,6 +964,12 @@
           if (pl === '[DONE]') { streamComplete = true; continue; }
           let o; try { o = JSON.parse(pl); } catch { continue; }
           if (o.n) panel.addNarration(o.n);
+          if (o.signin_required && !signinTriggered) {
+            signinTriggered = true;
+            requireSignIn(o.message || 'Sign in to continue.');
+            try { await reader.cancel(); } catch {}
+            break;
+          }
           if (o.img) {
             generatedImage = o.img; panel.markWriting();
             if (avatarMascot) setMascotMood('celebrate', avatarMascot.parentElement.parentElement);
@@ -1029,8 +980,8 @@
             scrollToBottom(); continue;
           }
           if (o.d) {
-            full += o.d;   // ⚡ simple append, no separator
-            const limit = getFreeLimit();
+            full += o.d;
+            const limit = BASE_FREE_LIMIT;
             if (__tier === 'free' && convo && conversationTokenUsage(convo) + estimateTokens(full) >= limit) {
               full = full.slice(0, Math.max(0, (limit - conversationTokenUsage(convo)) * 4));
               limitHit = true;
@@ -1050,9 +1001,10 @@
           }
           if (o.error) throw new Error(o.error.message || 'Stream error');
         }
-        if (limitHit) break;
+        if (limitHit || signinTriggered) break;
       }
       clearTimeout(streamTimeout);
+      if (signinTriggered) { try { reader.cancel(); } catch {} }
       panel.finish();
       if (avatarMascot) setMascotMood('happy', avatarMascot.parentElement.parentElement);
       if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
@@ -1154,91 +1106,6 @@
       inp.dataset.voiceBase = inp.value || '';
       try { recog.start(); } catch (e) { toast('Could not start voice: ' + e.message, 3000, 'err'); }
     });
-  }
-
-  /* ---------- Share ---------- */
-  function loadShareState() { __shareState = safeGet(SHARE_KEY, { claimed: false, claimedAt: 0, dismissedAt: 0 }); }
-  function saveShareState() { safeSet(SHARE_KEY, __shareState); }
-  function shouldShowShareAd() { if (__tier !== 'free') return false; if (isBonusActive()) return false; if (__shareState.dismissedAt && Date.now() - __shareState.dismissedAt < 6 * 3600 * 1000) return false; return true; }
-  function openShareAd() { if (!shouldShowShareAd()) return; setTimeout(() => $('#shareAdModal')?.classList.add('open'), 1800); }
-  function closeShareAd(dismiss) { const m = $('#shareAdModal'); if (m) m.classList.remove('open'); if (dismiss) { __shareState.dismissedAt = Date.now(); saveShareState(); } }
-  function setShareStatus(text, cls) { const el = $('#shareAdStatus'); if (!el) return; el.textContent = String(text || ''); el.className = 'share-ad-status' + (cls ? ' ' + cls : ''); }
-  function celebrateReward() {
-    launchConfetti();
-    const chip = $('#tokenUsage'); if (chip) { chip.classList.add('pulse'); setTimeout(() => chip.classList.remove('pulse'), 1200); }
-    const wm = document.getElementById('welcomeMascot');
-    if (wm) { setMascotMood('celebrate', wm.parentElement); setTimeout(() => setMascotMood('happy', wm.parentElement), 2000); }
-  }
-  function grantShareRewardLocal() {
-    const bonus = grantLocalBonus(BONUS_TOKENS);
-    __shareState.claimed = true; __shareState.claimedAt = Date.now(); __shareState.dismissedAt = 0;
-    saveShareState(); updateTokenUsage(); renderModelPicker(); celebrateReward();
-    const days = Math.max(1, Math.round((bonus.expiresAt - Date.now()) / 86400000));
-    toast(`🎉 ${BONUS_TOKENS.toLocaleString()} bonus tokens for ${days} day${days === 1 ? '' : 's'}!`, 6500, 'ok');
-  }
-  async function grantShareReward() {
-    grantShareRewardLocal();
-    try { await jsonOr('/api/share/reward', { method: 'POST', body: JSON.stringify({ bonus_tokens: BONUS_TOKENS, valid_days: BONUS_VALID_DAYS, verified: true, guest_id: getGuestId() }) }, null); } catch {}
-    try { if (__user) await refreshUsage(); } catch {}
-  }
-  async function attemptShare() {
-    const btn = $('#shareAdShareBtn');
-    const shareData = { title: 'MiroxAI', text: 'Try MiroxAI — free unlimited AI chat!', url: location.origin + '/?ref=share&g=' + getGuestId() };
-    if (btn) btn.disabled = true;
-    if (navigator.share) {
-      try { setShareStatus('…'); await navigator.share(shareData); setShareStatus('Share confirmed!', 'ok'); await grantShareReward(); setTimeout(() => closeShareAd(false), 2400); return; }
-      catch (e) { if (e && e.name === 'AbortError') { setShareStatus('Cancelled.', 'warn'); if (btn) btn.disabled = false; return; } }
-    }
-    const shareText = encodeURIComponent(shareData.text + ' ' + shareData.url);
-    window.open(`https://twitter.com/intent/tweet?text=${shareText}`, '_blank', 'noopener,width=600,height=500');
-    setShareStatus('…');
-    let resolved = false;
-    const focusHandler = () => { if (resolved) return; resolved = true; window.removeEventListener('focus', focusHandler); setTimeout(async () => { setShareStatus('Share detected!', 'ok'); await grantShareReward(); setTimeout(() => closeShareAd(false), 2400); }, 800); };
-    window.addEventListener('focus', focusHandler);
-    setTimeout(() => { if (!resolved) { resolved = true; window.removeEventListener('focus', focusHandler); setShareStatus('No share detected.', 'warn'); if (btn) btn.disabled = false; } }, 90000);
-  }
-
-  /* ---------- Confetti ---------- */
-  function launchConfetti() {
-    if (__prefs.reduceMotion) return;
-    const canvas = document.createElement('canvas');
-    canvas.className = 'confetti-canvas';
-    document.body.appendChild(canvas);
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const W = window.innerWidth, H = window.innerHeight;
-    canvas.width = W * dpr; canvas.height = H * dpr;
-    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
-    const ctx = canvas.getContext('2d'); ctx.scale(dpr, dpr);
-    const colors = ['#d97757','#e88a68','#4d6bfe','#7c8aff','#16a34a','#f59e0b','#ec4899','#06b6d4','#a855f7'];
-    const particles = [];
-    const origins = [{ x: W*0.15, y: H*0.25 }, { x: W*0.85, y: H*0.25 }, { x: W*0.5, y: H*0.2 }];
-    for (let i = 0; i < 180; i++) {
-      const origin = origins[i % origins.length];
-      const angle = (Math.random() - 0.5) * Math.PI * 1.4 - Math.PI / 2;
-      const speed = 6 + Math.random() * 12;
-      particles.push({ x: origin.x + (Math.random() - 0.5) * 60, y: origin.y + (Math.random() - 0.5) * 40, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 4, gravity: 0.28 + Math.random() * 0.14, drag: 0.988, size: 6 + Math.random() * 8, color: colors[Math.floor(Math.random() * colors.length)], rotation: Math.random() * Math.PI * 2, rotationSpeed: (Math.random() - 0.5) * 0.34, shape: Math.random() < 0.55 ? 'rect' : 'circle' });
-    }
-    const start = performance.now();
-    let stopped = false;
-    function frame(now) {
-      if (stopped) return;
-      const tt = (now - start) / 4200;
-      ctx.clearRect(0, 0, W, H);
-      ctx.globalAlpha = tt > 0.7 ? Math.max(0, 1 - (tt - 0.7) / 0.3) : 1;
-      for (const p of particles) {
-        p.vy += p.gravity; p.vx *= p.drag; p.vy *= p.drag;
-        p.x += p.vx; p.y += p.vy; p.rotation += p.rotationSpeed;
-        if (p.y > H + 40) continue;
-        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rotation); ctx.fillStyle = p.color;
-        if (p.shape === 'circle') { ctx.beginPath(); ctx.arc(0, 0, p.size / 2, 0, Math.PI * 2); ctx.fill(); }
-        else ctx.fillRect(-p.size/2, -p.size/3, p.size, p.size * 0.7);
-        ctx.restore();
-      }
-      if (tt < 1) requestAnimationFrame(frame);
-      else { stopped = true; canvas.remove(); }
-    }
-    requestAnimationFrame(frame);
-    setTimeout(() => { stopped = true; if (canvas.parentNode) canvas.remove(); }, 6000);
   }
 
   /* ---------- Images ---------- */
@@ -1384,35 +1251,38 @@
 
   /* ---------- Models ---------- */
   function getModelsList() { return __config?.models?.length ? __config.models : FALLBACK_MODELS; }
-  function canUseModel(tier) { if (__tier === 'free' && isBonusActive()) return true; if (tier === 'free') return true; if (__tier === 'ultimate') return true; if (__tier === 'pro' && tier === 'pro') return true; return false; }
-  function modelAccessReason(tier) { if (__tier === 'free' && isBonusActive() && tier !== 'free') return 'bonus'; if (tier === 'free') return 'free'; if (__tier === 'ultimate' || (__tier === 'pro' && tier === 'pro')) return 'tier'; return 'locked'; }
+  function canUseModel(tier) {
+    if (tier === 'free') return true;
+    if (__tier === 'ultimate') return true;
+    if (__tier === 'pro' && tier === 'pro') return true;
+    return false;
+  }
   function tierLabel(tier) { if (tier === 'ultimate') return 'ULT'; if (tier === 'pro') return 'PRO'; return 'FREE'; }
   function tierFullLabel(tier) { if (tier === 'ultimate') return 'Ultimate'; if (tier === 'pro') return 'Pro'; return 'Free'; }
   function renderModelPicker() {
     const menu = $('#modelPickerMenu'); if (!menu) return;
     const models = getModelsList(); const cur = __model || models[0].id;
-    const bonusActive = __tier === 'free' && isBonusActive();
     let html = '';
-    if (bonusActive) html += `<div class="model-picker-banner"><i class="ri-vip-crown-fill"></i><div class="model-picker-banner-text"><strong>All models unlocked</strong><span>Bonus active · ${formatBonusRemaining()} left</span></div></div>`;
     html += models.map((m) => {
-      const usable = canUseModel(m.tier); const reason = modelAccessReason(m.tier); const isActive = m.id === cur;
-      const reasonClass = usable ? (reason === 'bonus' ? 'via-bonus' : 'via-tier') : 'locked';
+      const usable = canUseModel(m.tier); const isActive = m.id === cur;
       const lockIcon = usable ? '' : '<i class="ri-lock-2-line model-option-lock"></i>';
-      const bonusCrown = reason === 'bonus' ? '<i class="ri-vip-crown-fill model-option-crown"></i>' : '';
       const icon = m.icon || 'ri-sparkling-2-line';
-      return `<div class="model-option${isActive ? ' active' : ''}${usable ? '' : ' locked'} ${reasonClass}" data-model-id="${m.id}" data-usable="${usable}" data-tier="${m.tier}"><span class="model-option-icon"><i class="${icon}"></i></span><span class="model-option-body"><span class="model-option-top"><span class="model-option-name">${escapeHtml(m.label)}</span><span class="model-tier-badge tier-${m.tier}">${tierLabel(m.tier)}</span>${bonusCrown}${lockIcon}</span><span class="model-option-tagline">${escapeHtml(m.tagline || '')}</span></span></div>`;
+      return `<div class="model-option${isActive ? ' active' : ''}${usable ? '' : ' locked'}" data-model-id="${m.id}" data-usable="${usable}" data-tier="${m.tier}"><span class="model-option-icon"><i class="${icon}"></i></span><span class="model-option-body"><span class="model-option-top"><span class="model-option-name">${escapeHtml(m.label)}</span><span class="model-tier-badge tier-${m.tier}">${tierLabel(m.tier)}</span>${lockIcon}</span><span class="model-option-tagline">${escapeHtml(m.tagline || '')}</span></span></div>`;
     }).join('');
-    if (!bonusActive && __tier === 'free') html += `<div class="model-picker-cta" id="modelPickerShareCta"><i class="ri-gift-2-line"></i><span>Share to unlock <strong>Pro, Ultra &amp; Eclipse</strong> free for 2 days</span></div>`;
     menu.innerHTML = html;
     menu.querySelectorAll('.model-option').forEach((opt) => {
-      opt.onclick = (e) => { e.stopPropagation(); if (opt.dataset.usable === 'false') { toast('Share to unlock this model'); closeModelPicker(); setTimeout(() => openShareAd(), 400); return; } selectModel(opt.dataset.modelId); };
+      opt.onclick = (e) => {
+        e.stopPropagation();
+        if (opt.dataset.usable === 'false') {
+          if (!__user) { closeModelPicker(); requireSignIn('Sign in to unlock this model.'); }
+          else { toast('Upgrade your plan to use this model.'); closeModelPicker(); }
+          return;
+        }
+        selectModel(opt.dataset.modelId);
+      };
     });
-    const cta = menu.querySelector('#modelPickerShareCta');
-    if (cta) cta.onclick = (e) => { e.stopPropagation(); closeModelPicker(); setTimeout(() => openShareAd(), 200); };
     const c = models.find((m) => m.id === cur);
     if (c) { const lbl = $('#currentModelLabel'); if (lbl) lbl.textContent = c.label; }
-    const btn = $('#modelPickerBtn');
-    if (btn) { btn.classList.toggle('has-bonus', bonusActive); btn.querySelector('.model-picker-crown')?.remove(); if (bonusActive) { const cr = document.createElement('i'); cr.className = 'ri-vip-crown-fill model-picker-crown'; btn.appendChild(cr); } }
   }
   function selectModel(id) { const m = getModelsList().find((x) => x.id === id); if (!m || !canUseModel(m.tier)) return; __model = id; const lbl = $('#currentModelLabel'); if (lbl) lbl.textContent = m.label; renderModelPicker(); closeModelPicker(); }
   function openModelPicker() { $('#modelPicker')?.classList.add('open'); $('#modelPickerMenu')?.classList.add('open'); renderModelPicker(); }
@@ -1548,6 +1418,7 @@
     }).join('');
   }
   async function genImage() {
+    if (!__user) { closeModal('imageModal'); requireSignIn('Sign in to generate images with Mirox.'); return; }
     const prompt = $('#imagePrompt')?.value.trim(); if (!prompt) return;
     const btn = $('#generateImageBtn'), result = $('#imageResult');
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line spin"></i> …'; }
@@ -1555,14 +1426,19 @@
     try {
       const res = await netFetch('/v1/images/generations', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ prompt, guest_id: getGuestId() }) }, 90000);
       const data = await res.json().catch(() => ({}));
-      if (res.ok && data.ok && data.image) { if (result) { result.innerHTML = `<img src="${data.image}" alt="">`; result.querySelector('img').onclick = () => openImageViewer(data.image); } }
-      else { if (result) result.innerHTML = `<div class="studio-error">Failed</div>`; }
+      if (res.ok && data.ok && data.image) {
+        if (result) { result.innerHTML = `<img src="${data.image}" alt="">`; result.querySelector('img').onclick = () => openImageViewer(data.image); }
+      } else if (res.status === 401) {
+        closeModal('imageModal'); requireSignIn('Sign in to generate images with Mirox.');
+      } else {
+        if (result) result.innerHTML = `<div class="studio-error">Failed</div>`;
+      }
     } catch (e) { if (result) result.innerHTML = `<div class="studio-error">Error</div>`; }
     finally { if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-image-add-line"></i> Generate'; } }
   }
 
-  /* ---------- SUPPORT CHAT (user side) ---------- */
-  function supportSetHead(status) {
+  /* ---------- SUPPORT CHAT ---------- */
+  function supportSetHead() {
     const el = $('#supportHeadSub');
     if (!el) return;
     if (!__user) { el.textContent = 'Sign in to chat with our team'; return; }
@@ -1579,15 +1455,8 @@
     const conv = __supportConv;
     const closed = conv && conv.status === 'closed';
     const canChat = !!__user;
-    if (input) {
-      input.disabled = !canChat || closed;
-      input.placeholder = !canChat ? 'Sign in to send a message…' : (closed ? 'This conversation is closed.' : 'Type your message…');
-    }
-    if (send) {
-      const enabled = canChat && !closed && (input?.value || '').trim().length > 0;
-      send.classList.toggle('is-disabled', !enabled);
-      send.setAttribute('aria-disabled', String(!enabled));
-    }
+    if (input) { input.disabled = !canChat || closed; input.placeholder = !canChat ? 'Sign in to send a message…' : (closed ? 'This conversation is closed.' : 'Type your message…'); }
+    if (send) { const enabled = canChat && !closed && (input?.value || '').trim().length > 0; send.classList.toggle('is-disabled', !enabled); send.setAttribute('aria-disabled', String(!enabled)); }
     if (catRow) catRow.style.display = (conv ? 'none' : (canChat ? '' : 'none'));
     if (resolveBtn) resolveBtn.style.display = (conv && conv.status === 'open') ? '' : 'none';
     if (hint) hint.textContent = !canChat ? 'Sign in to chat with support' : (closed ? 'Conversation closed. Start a new one any time.' : 'Enter to send · Shift+Enter for a new line');
@@ -1665,24 +1534,13 @@
   }
   function supportStartPolling() {
     if (__supportPollTimer) return;
-    __supportPollTimer = setInterval(() => {
-      if ($('#supportModal')?.classList.contains('open')) supportLoad();
-    }, 6000);
+    __supportPollTimer = setInterval(() => { if ($('#supportModal')?.classList.contains('open')) supportLoad(); }, 6000);
   }
-  function supportStopPolling() {
-    if (__supportPollTimer) { clearInterval(__supportPollTimer); __supportPollTimer = null; }
-  }
-  function openSupportModal() {
-    openModal('supportModal');
-    supportLoad();
-    supportStartPolling();
-  }
-  function closeSupportModal() {
-    closeModal('supportModal');
-    supportStopPolling();
-  }
+  function supportStopPolling() { if (__supportPollTimer) { clearInterval(__supportPollTimer); __supportPollTimer = null; } }
+  function openSupportModal() { openModal('supportModal'); supportLoad(); supportStartPolling(); }
+  function closeSupportModal() { closeModal('supportModal'); supportStopPolling(); }
 
-  /* ---------- BRIDGE ---------- */
+  /* ---------- Bridge ---------- */
   function loadBridgeOpts() { const o = safeGet(BRIDGE_OPTS_KEY, {}); if (typeof o.autoRun === 'boolean') __bridgeAutoRun = o.autoRun; if (typeof o.showCode === 'boolean') __bridgeShowCode = o.showCode; }
   function saveBridgeOpts() { safeSet(BRIDGE_OPTS_KEY, { autoRun: __bridgeAutoRun, showCode: __bridgeShowCode }); }
   function renderBridgeStatus() {
@@ -1904,8 +1762,8 @@
       case 'move': return `[move] from=${result.from} to=${result.to}`;
       case 'copy': return `[copy] from=${result.from} to=${result.to}`;
       case 'delete': return `[delete] ok path=${result.path}`;
-      case 'sysinfo': return `[sysinfo] platform=${result.platform} release=${result.release} cpu=${result.cpu_count} home=${result.home} disk=${JSON.stringify(result.disk || {})} node=${result.node || ''}`;
-      case 'syscheck': return `[syscheck] healthy=${result.healthy}\n${JSON.stringify(result.check, null, 2).slice(0, 2000)}`;
+      case 'sysinfo': return `[sysinfo] platform=${result.platform} release=${result.release} cpu=${result.cpu_count} home=${result.home}`;
+      case 'syscheck': return `[syscheck] healthy=${result.healthy}`;
       case 'processes': return `[processes]\n${trunc(result.raw, 2000)}`;
       case 'email': return `[email] sent to=${result.sent_to} subject=${result.subject}`;
       case 'http': return `[http] status=${result.status}\n${trunc(result.body, 2000)}`;
@@ -2067,10 +1925,7 @@
       const href = hrefMatch[1];
       if (/^([a-z]+:)?\/\//i.test(href) || href.startsWith('data:')) continue;
       const cssPath = resolveRelativePath(htmlPath, href);
-      try {
-        const cr = await bridgeCall('/read', { path: cssPath });
-        if (cr && cr.ok) out = out.replace(tag, `<style>\n${cr.content}\n</style>`);
-      } catch {}
+      try { const cr = await bridgeCall('/read', { path: cssPath }); if (cr && cr.ok) out = out.replace(tag, `<style>\n${cr.content}\n</style>`); } catch {}
     }
     const scriptRe = /<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*><\/script>/gi;
     const scripts = [...out.matchAll(scriptRe)];
@@ -2079,10 +1934,7 @@
       const src = m[1];
       if (/^([a-z]+:)?\/\//i.test(src) || src.startsWith('data:')) continue;
       const jsPath = resolveRelativePath(htmlPath, src);
-      try {
-        const jr = await bridgeCall('/read', { path: jsPath });
-        if (jr && jr.ok) out = out.replace(tag, `<script>\n${jr.content}\n</script>`);
-      } catch {}
+      try { const jr = await bridgeCall('/read', { path: jsPath }); if (jr && jr.ok) out = out.replace(tag, `<script>\n${jr.content}\n</script>`); } catch {}
     }
     return out;
   }
@@ -2098,13 +1950,9 @@
       const r = await bridgeCall('/read', { path: targetPath });
       if (!r || !r.ok) throw new Error(r?.error || 'could not read file');
       let html = r.content || '';
-      if (/\.html?$/i.test(targetPath)) {
-        html = await inlineLocalAssets(html, targetPath);
-      }
+      if (/\.html?$/i.test(targetPath)) html = await inlineLocalAssets(html, targetPath);
       if (frame) frame.srcdoc = html;
-    } catch (e) {
-      if (frame) frame.srcdoc = `<html><body style="font-family:system-ui;padding:40px;color:#b91c1c"><h2>Preview failed</h2><p>${escapeHtml(e.message)}</p></body></html>`;
-    }
+    } catch (e) { if (frame) frame.srcdoc = `<html><body style="font-family:system-ui;padding:40px;color:#b91c1c"><h2>Preview failed</h2><p>${escapeHtml(e.message)}</p></body></html>`; }
   }
   function closePreview() { $('#bwPreviewModal')?.classList.remove('open'); }
 
@@ -2151,7 +1999,13 @@
     on('#modelPickerBtn', 'click', (e) => { e.stopPropagation(); if ($('#modelPickerMenu')?.classList.contains('open')) closeModelPicker(); else openModelPicker(); });
     document.addEventListener('click', (e) => { if (!e.target.closest('#modelPicker')) closeModelPicker(); });
     on('#searchModeBtn', 'click', (e) => { e.preventDefault(); forceSearchNext = !forceSearchNext; $('#searchModeBtn')?.classList.toggle('active', forceSearchNext); });
-    on('#imageModeBtn', 'click', () => openModal('imageModal'));
+
+    /* Lumenal — requires sign-in */
+    on('#imageModeBtn', 'click', () => {
+      if (!__user) { requireSignIn('Sign in to use Lumenal and generate images.'); return; }
+      openModal('imageModal');
+    });
+
     on('#plansModeBtn', 'click', () => { openModal('plansModal'); loadPlans(); });
     on('#supportModeBtn', 'click', (e) => { e.preventDefault(); openSupportModal(); });
     on('#supportModeBtn2', 'click', () => openSupportModal());
@@ -2161,21 +2015,14 @@
     on('#settingsBtn', 'click', (e) => { e.preventDefault(); openSettingsModal(); });
     on('#logoutBtn', 'click', doLogout);
     on('#signInFromSettingsBtn', 'click', () => { closeModal('settingsModal'); setLoginError(''); openModal('loginModal'); });
-    on('#shareFromSettingsBtn', 'click', () => { closeModal('settingsModal'); setTimeout(() => openShareAd(), 100); });
 
-    // Support chat
+    /* Support */
     on('#supportResolveBtn', 'click', supportResolve);
     on('#supportSendBtn', 'click', supportSend);
     const supInput = $('#supportInput');
     if (supInput) {
-      supInput.addEventListener('input', () => {
-        supInput.style.height = 'auto';
-        supInput.style.height = Math.min(supInput.scrollHeight, 140) + 'px';
-        supportUpdateComposeState();
-      });
-      supInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); supportSend(); }
-      });
+      supInput.addEventListener('input', () => { supInput.style.height = 'auto'; supInput.style.height = Math.min(supInput.scrollHeight, 140) + 'px'; supportUpdateComposeState(); });
+      supInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); supportSend(); } });
     }
 
     $$('.settings-tab').forEach((tab) => {
@@ -2248,9 +2095,6 @@
     on('#upgradeBtn', 'click', (e) => { e.stopPropagation(); if (!__user) { setLoginError(''); openModal('loginModal'); } else { openModal('plansModal'); loadPlans(); } });
     on('#simpleLoginForm', 'submit', doLogin);
     on('#ivDownload', 'click', () => { if (!__ivDataUrl) return; const a = document.createElement('a'); a.href = __ivDataUrl; a.download = `mirox-${Date.now()}.png`; document.body.appendChild(a); a.click(); document.body.removeChild(a); });
-    on('#shareAdShareBtn', 'click', attemptShare);
-    on('#shareAdIgnoreBtn', 'click', () => closeShareAd(true));
-    on('#shareAdCloseBtn', 'click', () => closeShareAd(true));
 
     on('#filePreviewCopyBtn', 'click', async () => {
       if (!__previewFileRef) return;
@@ -2275,7 +2119,6 @@
       if (e.key === 'Escape') {
         closeImageViewer(); closeModelPicker();
         if ($('#filePreviewModal')?.classList.contains('open')) { closeFilePreview(); return; }
-        if ($('#shareAdModal')?.classList.contains('open')) { closeShareAd(true); return; }
         if ($('#bridgeWorkspace')?.classList.contains('open')) { closeBridgeWorkspace(); return; }
         if ($('#sudoModal')?.classList.contains('open')) { skipSudo(); return; }
         if ($('#supportModal')?.classList.contains('open')) { closeSupportModal(); return; }
@@ -2336,7 +2179,6 @@
       loadI18nCache();
       applyAppearanceFromPrefs();
       applyPrefs();
-      loadShareState();
       loadChats();
       loadBridgeOpts();
       wireAll();
@@ -2353,7 +2195,7 @@
     } catch (e) { console.error('[Mirox init]', e); }
     finally { killLoader(); }
     loadConfig().catch(() => {});
-    refreshUsage().then(() => openShareAd()).catch(() => {});
+    refreshUsage().catch(() => {});
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
