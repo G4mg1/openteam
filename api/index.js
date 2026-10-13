@@ -1,5 +1,5 @@
 /* ============================================================
-   MiroxAI Backend v101 — real thinking + watermarked images
+   MiroxAI Backend v102 — DeepThink + thinking-first + runner
    ============================================================ */
 import express from 'express';
 import cors from 'cors';
@@ -26,34 +26,29 @@ const OP_KEY = env('OP_KEY');
 const OP_BASE = env('OP_BASE', 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
 const OP_REFERER = env('OP_REFERER', PUBLIC_ORIGIN || 'https://miroxai.org');
 const OP_TITLE = env('OP_TITLE', 'MiroxAI');
-
 const HF_API_KEY = env('HF_API_KEY');
 const PL_KEY = env('PL_KEY');
 const F_API = env('F_API');
 const AIROUTE_KEY = env('AR_KEY') || env('AIROUTE_KEY');
 const AIROUTE_BASE = env('AR_BASE', 'https://route-ai-playground.lovable.app').replace(/\/+$/, '');
-
 const LM_CLIENT_ID = env('LOGINMENT_CLIENT_ID');
 const LM_API_KEY = env('LOGINMENT_API_KEY');
 const LM_DOMAIN = env('LOGINMENT_DOMAIN', 'https://logint.lovable.app').replace(/\/+$/, '');
-
 const KV_URL = env('UPSTASH_REDIS_REST_URL').replace(/\/+$/, '');
 const KV_TOKEN = env('UPSTASH_REDIS_REST_TOKEN');
 const KV_ON = !!(KV_URL && KV_TOKEN);
 const KV_DB_KEY = 'mirox:db:v1';
-
 const SECRET = env('SECRET_KEY') || crypto.randomBytes(32).toString('hex');
-if (!env('SECRET_KEY')) console.warn('[Mirox] SECRET_KEY not set: sessions reset on every cold start.');
-
+if (!env('SECRET_KEY')) console.warn('[Mirox] SECRET_KEY not set.');
 const GENERIC_ERR = 'Mirox AI encountered an error';
 const DAY = 24 * 3600;
 
 const MIROX_MODELS = {
-  'mirox-luna-1.2':    { label: 'Luna',    tier: 'free',     tokens: 1600, basePrompt: 'You are Luna by OpenSurr. Concise, helpful. Fenced code blocks for code.' },
-  'mirox-gen-1':       { label: 'Gen',     tier: 'free',     tokens: 1200, basePrompt: 'You are Gen by OpenSurr. Ultra concise. Fenced code blocks for code.' },
-  'mirox-pro-5':       { label: 'Pro',     tier: 'pro',      tokens: 2400, basePrompt: 'You are Pro by OpenSurr. Balanced depth. Fenced code blocks for code.' },
-  'mirox-ultra-10':    { label: 'Ultra',   tier: 'pro',      tokens: 2800, basePrompt: 'You are Ultra by OpenSurr. Deep reasoning. Fenced code blocks for code.' },
-  'mirox-eclipse-2.0': { label: 'Eclipse', tier: 'ultimate', tokens: 3600, basePrompt: 'You are Eclipse by OpenSurr. Best quality. Fenced code blocks for code.' },
+  'mirox-luna-1.2':    { label: 'Luna',    tier: 'free',     tokens: 4096, basePrompt: 'You are Luna by OpenSurr. Concise, helpful. Fenced code blocks for code.' },
+  'mirox-gen-1':       { label: 'Gen',     tier: 'free',     tokens: 4096, basePrompt: 'You are Gen by OpenSurr. Ultra concise. Fenced code blocks for code.' },
+  'mirox-pro-5':       { label: 'Pro',     tier: 'pro',      tokens: 8192, basePrompt: 'You are Pro by OpenSurr. Balanced depth. Fenced code blocks for code.' },
+  'mirox-ultra-10':    { label: 'Ultra',   tier: 'pro',      tokens: 8192, basePrompt: 'You are Ultra by OpenSurr. Deep reasoning. Fenced code blocks for code.' },
+  'mirox-eclipse-2.0': { label: 'Eclipse', tier: 'ultimate', tokens: 16384, basePrompt: 'You are Eclipse by OpenSurr. Best quality. Fenced code blocks for code.' },
 };
 const PLANS = {
   free:     { label: 'Free',     vision_limit: 10,   image_limit: 10,   eclipse_daily_limit: 5,   price_usd: 0,     api_keys: 2 },
@@ -65,21 +60,9 @@ const API_MODELS = ['mirox-luna-1.2', 'mirox-gen-1'];
 const maxKeys = (tier) => (tier === 'free' ? 2 : 10);
 
 const OP_CHAT_URL = `${OP_BASE}/chat/completions`;
-const OP_CHAT = [
-  'meta-llama/llama-3.3-70b-instruct',
-  'openai/gpt-4o-mini',
-  'anthropic/claude-3.5-haiku',
-  'google/gemini-flash-1.5',
-  'mistralai/mistral-nemo',
-];
-const OP_VISION = [
-  'openai/gpt-4o-mini',
-  'anthropic/claude-3.5-sonnet',
-  'google/gemini-flash-1.5',
-  'meta-llama/llama-3.2-11b-vision-instruct',
-];
+const OP_CHAT = ['meta-llama/llama-3.3-70b-instruct','openai/gpt-4o-mini','anthropic/claude-3.5-haiku','google/gemini-flash-1.5','mistralai/mistral-nemo'];
+const OP_VISION = ['openai/gpt-4o-mini','anthropic/claude-3.5-sonnet','google/gemini-flash-1.5','meta-llama/llama-3.2-11b-vision-instruct'];
 const OP_VISION_SET = new Set(OP_VISION);
-
 const HF_URL = 'https://router.huggingface.co/v1/chat/completions';
 const PL_URL = 'https://gen.pollinations.ai/v1/chat/completions';
 const PL_IMG = 'https://gen.pollinations.ai/image';
@@ -96,24 +79,31 @@ const IDENTITY_GUARD = `Background rules (do not narrate them):
 - If the user asks what model you are, say you are Mirox, made by OpenSurr, once, and move on.
 - Do not introduce yourself unless the user asks who you are.`;
 
-/* ⚡ Real thinking instruction */
-const THINKING_RULE = `BEFORE you answer, write your actual reasoning inside <thinking>...</thinking> tags.
+/* ⚡ Standard thinking rule — always on */
+const THINKING_RULE = `You ALWAYS think before you answer. Before writing the actual reply, write your reasoning inside a single <thinking>...</thinking> block.
 
-Write it in first person, natural internal monologue style, short fragments — like:
+Style: first-person, natural internal monologue, short fragments. Example:
 "User asked what my model is. I shouldn't reveal any specific model. I should just say I'm Mirox by OpenSurr. Keep it short. Ok, do it."
 
 Rules:
-- 1 to 6 short sentences. No lists, no headings, no code inside <thinking>.
+- 1 to 5 short sentences. No lists, no headings, no code inside <thinking>.
 - It must be genuine reasoning: what the user wants, what approach you'll take, any gotchas.
 - Do NOT restate the final answer inside <thinking>.
-- Then close with </thinking> and write the actual answer immediately after.
-- If the user's request is trivial (hi, thanks), you can skip thinking entirely.`;
+- Close the block with </thinking>, then write the actual answer immediately after.
+- If the request is trivial (hi, thanks), you can still write one short line inside <thinking>.`;
+
+/* ⚡ DeepThink rule — appended only when the user enables DeepThink */
+const DEEP_THINK_RULE = `DEEP THINK MODE — reason much more thoroughly than usual.
+- Expand <thinking> to 4-12 short sentences.
+- Explore the request from at least two angles, note assumptions, edge cases, and possible mistakes you want to avoid.
+- Then close </thinking> and write a carefully reasoned, well-structured answer.
+- If the user asks for code, still only include the code in the final answer, not inside <thinking>.`;
 
 const BRIDGE_PROMPT = `BRIDGE MODE — You are Mirox, working on the user's machine.
 
 You receive a [Bridge environment] block at the top of every user message.
 
-RULE 0 — Think out loud briefly inside <thinking>...</thinking> before writing code.
+RULE 0 — Think inside <thinking>...</thinking> before writing code.
 RULE 1 — Never paste code into visible text. Use <bridge-write> or <bridge-append>.
 RULE 2 — Always close tags.
 RULE 3 — Long files: first chunk with <bridge-write>, rest with <bridge-append>.
@@ -128,7 +118,7 @@ DESIGN RULES (projects must LOOK GOOD):
 - Include working JavaScript interactions. Responsive with clamp().
 
 WHEN TO USE NON-FILE TOOLS:
-- <bridge-kde-list/> then <bridge-kde-ring device="ID"/> / <bridge-kde-ping device="ID"/> / <bridge-kde-sms device="ID" number="+1...">…</bridge-kde-sms> / <bridge-kde-lock device="ID"/> / <bridge-kde-notifications device="ID"/>
+- <bridge-kde-list/> / <bridge-kde-ring device="ID"/> / <bridge-kde-ping device="ID"/> / <bridge-kde-sms device="ID" number="+1...">…</bridge-kde-sms> / <bridge-kde-lock device="ID"/> / <bridge-kde-notifications device="ID"/>
 - <bridge-kde-share device="ID" path="…"/> / <bridge-kde-share-text device="ID">…</bridge-kde-share-text>
 - <bridge-email to="x@y.com" subject="Hi">body</bridge-email>
 - <bridge-http url="https://…" method="GET"/>
@@ -164,11 +154,7 @@ TAGS:
   <bridge-kde-sms device="ID" number="+1...">hi</bridge-kde-sms>
   <bridge-kde-lock device="ID"/>  <bridge-kde-notifications device="ID"/>  <bridge-kde-my-id/>`;
 
-const safeStr = (v, max = 100000) => {
-  if (v == null) return '';
-  const s = typeof v === 'string' ? v : JSON.stringify(v);
-  return s.length > max ? s.slice(0, max) : s;
-};
+const safeStr = (v, max = 200000) => { if (v == null) return ''; const s = typeof v === 'string' ? v : JSON.stringify(v); return s.length > max ? s.slice(0, max) : s; };
 const nowS = () => Math.floor(Date.now() / 1000);
 const today = () => new Date().toISOString().slice(0, 10);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -179,10 +165,7 @@ async function fetchT(url, opts = {}, ms = 20000) {
   try { return await fetch(url, { ...opts, signal: ctrl.signal }); }
   finally { clearTimeout(timer); }
 }
-function safeEq(a, b) {
-  const x = Buffer.from(String(a)), y = Buffer.from(String(b));
-  return x.length === y.length && crypto.timingSafeEqual(x, y);
-}
+function safeEq(a, b) { const x = Buffer.from(String(a)), y = Buffer.from(String(b)); return x.length === y.length && crypto.timingSafeEqual(x, y); }
 function extractReplyText(data) {
   if (!data || typeof data !== 'object') return '';
   if (typeof data.reply === 'string') return data.reply;
@@ -193,24 +176,12 @@ function extractReplyText(data) {
   return '';
 }
 
-/* ⚡ Binary marker (still injected server-side, kept for API users) */
+/* ---------- Binary watermark ---------- */
 const WM_MARKER = Buffer.from('\n\x00MIROXAI-WATERMARK-v1-LOGO\x00\n', 'binary');
-const _CRC_TABLE = (() => {
-  const t = new Uint32Array(256);
-  for (let n = 0; n < 256; n++) {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
-    t[n] = c >>> 0;
-  }
-  return t;
-})();
-function crc32(buf) {
-  let crc = 0xffffffff;
-  for (let i = 0; i < buf.length; i++) crc = _CRC_TABLE[(crc ^ buf[i]) & 0xff] ^ (crc >>> 8);
-  return (crc ^ 0xffffffff) >>> 0;
-}
+const _CRC_TABLE = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1); t[n] = c >>> 0; } return t; })();
+function crc32(buf) { let crc = 0xffffffff; for (let i = 0; i < buf.length; i++) crc = _CRC_TABLE[(crc ^ buf[i]) & 0xff] ^ (crc >>> 8); return (crc ^ 0xffffffff) >>> 0; }
 function watermarkPng(buffer) {
-  const SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const SIG = Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]);
   if (buffer.length < 8 || !buffer.slice(0, 8).equals(SIG)) return null;
   const data = Buffer.concat([Buffer.from('MiroxAI', 'latin1'), Buffer.from([0]), Buffer.from('mirox-ai-watermark-v1-logo', 'latin1')]);
   const type = Buffer.from('tEXt', 'latin1');
@@ -227,8 +198,7 @@ function watermarkJpeg(buffer) {
   const payload = Buffer.from('MiroxAI:mirox-ai-watermark-v1-logo', 'latin1');
   const len = payload.length + 2;
   if (len > 0xffff) return null;
-  const head = Buffer.alloc(4);
-  head[0] = 0xff; head[1] = 0xfe; head.writeUInt16BE(len, 2);
+  const head = Buffer.alloc(4); head[0] = 0xff; head[1] = 0xfe; head.writeUInt16BE(len, 2);
   return Buffer.concat([buffer.slice(0, 2), head, payload, buffer.slice(2)]);
 }
 function applyWatermark(buffer, mime) {
@@ -239,12 +209,8 @@ function applyWatermark(buffer, mime) {
 }
 
 /* ---------- DB ---------- */
-let db = null;
-let dbOk = false;
-let dbLoading = null;
-let writeChain = Promise.resolve();
+let db = null, dbOk = false, dbLoading = null, writeChain = Promise.resolve();
 const emptyDb = () => ({ users: {}, keys: {}, chats: [], events: [], tickets: [] });
-
 function normalize(raw) {
   const d = Object.assign(emptyDb(), raw && typeof raw === 'object' ? raw : {});
   delete d.images; delete d.apiKeys; delete d.counters;
@@ -269,20 +235,13 @@ async function kv(cmd) {
   if (d.error) throw new Error('kv: ' + d.error);
   return d.result;
 }
-async function readMain() {
-  if (KV_ON) return await kv(['GET', KV_DB_KEY]);
-  try { return await fs.readFile(DATA_FILE, 'utf8'); }
-  catch (e) { if (e.code === 'ENOENT') return null; throw e; }
-}
+async function readMain() { if (KV_ON) return await kv(['GET', KV_DB_KEY]); try { return await fs.readFile(DATA_FILE, 'utf8'); } catch (e) { if (e.code === 'ENOENT') return null; throw e; } }
 async function loadDb() {
   if (db && dbOk && !KV_ON) return db;
   if (dbLoading) return dbLoading;
   dbLoading = (async () => {
-    try {
-      const raw = await readMain();
-      db = normalize(raw ? JSON.parse(raw) : null);
-      dbOk = true;
-    } catch (e) { console.error('[db] load failed:', e.message); if (!db) db = normalize(null); dbOk = false; }
+    try { const raw = await readMain(); db = normalize(raw ? JSON.parse(raw) : null); dbOk = true; }
+    catch (e) { console.error('[db] load failed:', e.message); if (!db) db = normalize(null); dbOk = false; }
     finally { dbLoading = null; }
     return db;
   })();
@@ -291,10 +250,7 @@ async function loadDb() {
 function persist() {
   if (!db || !dbOk) return Promise.resolve(false);
   const snap = JSON.stringify(db);
-  const job = writeChain.then(async () => {
-    try { if (KV_ON) await kv(['SET', KV_DB_KEY, snap]); else await fs.writeFile(DATA_FILE, snap, 'utf8'); return true; }
-    catch (e) { console.error('[db] write failed:', e.message); return false; }
-  });
+  const job = writeChain.then(async () => { try { if (KV_ON) await kv(['SET', KV_DB_KEY, snap]); else await fs.writeFile(DATA_FILE, snap, 'utf8'); return true; } catch (e) { console.error('[db] write failed:', e.message); return false; } });
   writeChain = job.then(() => undefined);
   return job;
 }
@@ -314,19 +270,9 @@ function logChat(entry) { db.chats.push({ ts: nowS(), ...entry }); if (db.chats.
 
 /* ---------- Blob ---------- */
 const BLOB_ID = /^[a-f0-9]{32}$/;
-async function blobPut(id, value) {
-  if (KV_ON) return kv(['SET', 'mirox:img:' + id, value, 'EX', String(60 * DAY)]);
-  await fs.mkdir(IMG_DIR, { recursive: true });
-  await fs.writeFile(path.join(IMG_DIR, id + '.txt'), value, 'utf8');
-}
-async function blobGet(id) {
-  if (!BLOB_ID.test(id)) return null;
-  try { if (KV_ON) return await kv(['GET', 'mirox:img:' + id]); return await fs.readFile(path.join(IMG_DIR, id + '.txt'), 'utf8'); } catch { return null; }
-}
-async function blobDel(id) {
-  if (!BLOB_ID.test(id)) return;
-  try { if (KV_ON) await kv(['DEL', 'mirox:img:' + id]); else await fs.unlink(path.join(IMG_DIR, id + '.txt')); } catch {}
-}
+async function blobPut(id, value) { if (KV_ON) return kv(['SET', 'mirox:img:' + id, value, 'EX', String(60 * DAY)]); await fs.mkdir(IMG_DIR, { recursive: true }); await fs.writeFile(path.join(IMG_DIR, id + '.txt'), value, 'utf8'); }
+async function blobGet(id) { if (!BLOB_ID.test(id)) return null; try { if (KV_ON) return await kv(['GET', 'mirox:img:' + id]); return await fs.readFile(path.join(IMG_DIR, id + '.txt'), 'utf8'); } catch { return null; } }
+async function blobDel(id) { if (!BLOB_ID.test(id)) return; try { if (KV_ON) await kv(['DEL', 'mirox:img:' + id]); else await fs.unlink(path.join(IMG_DIR, id + '.txt')); } catch {} }
 async function saveImage(u, prompt, dataUrl) {
   const id = crypto.randomBytes(16).toString('hex');
   const isRemote = dataUrl.startsWith('http');
@@ -337,11 +283,7 @@ async function saveImage(u, prompt, dataUrl) {
 }
 
 /* ---------- Sessions ---------- */
-function signSession(data) {
-  const p = Buffer.from(JSON.stringify(data)).toString('base64url');
-  const s = crypto.createHmac('sha256', SECRET).update(p).digest('base64url');
-  return p + '.' + s;
-}
+function signSession(data) { const p = Buffer.from(JSON.stringify(data)).toString('base64url'); const s = crypto.createHmac('sha256', SECRET).update(p).digest('base64url'); return p + '.' + s; }
 function readSession(token) {
   if (typeof token !== 'string') return null;
   const i = token.lastIndexOf('.');
@@ -351,31 +293,12 @@ function readSession(token) {
   if (!safeEq(expect, s)) return null;
   try { const d = JSON.parse(Buffer.from(p, 'base64url').toString()); if (d.exp && d.exp < nowS()) return null; return d; } catch { return null; }
 }
-function getCookie(req, name) {
-  for (const part of String(req.headers.cookie || '').split(';')) {
-    const i = part.indexOf('=');
-    if (i > -1 && part.slice(0, i).trim() === name) { try { return decodeURIComponent(part.slice(i + 1).trim()); } catch { return ''; } }
-  }
-  return '';
-}
-function cookieAttrs(req, maxAge) {
-  const secure = req.secure || PUBLIC_ORIGIN.startsWith('https://');
-  return `Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure ? '; Secure' : ''}`;
-}
-function setSessionCookie(req, res, uid) {
-  const token = signSession({ uid, exp: nowS() + 30 * DAY });
-  res.append('Set-Cookie', `mirox_sess=${token}; ${cookieAttrs(req, 30 * DAY)}`);
-  return token;
-}
+function getCookie(req, name) { for (const part of String(req.headers.cookie || '').split(';')) { const i = part.indexOf('='); if (i > -1 && part.slice(0, i).trim() === name) { try { return decodeURIComponent(part.slice(i + 1).trim()); } catch { return ''; } } } return ''; }
+function cookieAttrs(req, maxAge) { const secure = req.secure || PUBLIC_ORIGIN.startsWith('https://'); return `Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure ? '; Secure' : ''}`; }
+function setSessionCookie(req, res, uid) { const token = signSession({ uid, exp: nowS() + 30 * DAY }); res.append('Set-Cookie', `mirox_sess=${token}; ${cookieAttrs(req, 30 * DAY)}`); return token; }
 function clearSessionCookie(req, res) { res.append('Set-Cookie', `mirox_sess=; ${cookieAttrs(req, 0)}`); }
 async function ensureDb(req) { if (req && req.__dbReady) return; await loadDb(); if (req) req.__dbReady = true; }
-async function currentUser(req) {
-  await ensureDb(req);
-  if (!dbOk) return null;
-  const s = readSession(getCookie(req, 'mirox_sess'));
-  if (!s || !s.uid) return null;
-  return userFor(s.uid);
-}
+async function currentUser(req) { await ensureDb(req); if (!dbOk) return null; const s = readSession(getCookie(req, 'mirox_sess')); if (!s || !s.uid) return null; return userFor(s.uid); }
 async function authFromRequest(req) {
   const h = String(req.headers.authorization || '');
   if (!h) return { user: await currentUser(req), viaKey: false };
@@ -391,7 +314,7 @@ async function authFromRequest(req) {
   return { user: userFor(owner), viaKey: true };
 }
 
-/* ---------- Search ---------- */
+/* ---------- Web search ---------- */
 const SEARCH_TIMEOUT_MS = 14000;
 const stripHtml = (s) => String(s || '').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&#x27;/g, "'").replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
 async function duckSearch(query, max = 5) {
@@ -409,39 +332,15 @@ async function duckSearch(query, max = 5) {
       if (href.startsWith('//')) href = 'https:' + href;
       const title = stripHtml(m[2]);
       if (!title || !href || href.includes('duckduckgo.com/y.js')) continue;
-      let domain = '';
-      try { domain = new URL(href).hostname.replace(/^www\./, ''); } catch {}
+      let domain = ''; try { domain = new URL(href).hostname.replace(/^www\./, ''); } catch {}
       out.push({ title, url: href, snippet: stripHtml(m[3]), domain });
     }
     return out;
   } catch { return []; }
 }
-async function ddgInstantAnswer(query) {
-  try {
-    const r = await fetchT(`https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`, {}, 8000);
-    if (!r.ok) return null;
-    const d = await r.json();
-    if (!(d.Abstract || d.Answer || d.Definition)) return null;
-    return { heading: d.Heading || '', text: d.Abstract || d.Answer || d.Definition || '', source: d.AbstractSource || 'DuckDuckGo', url: d.AbstractURL || '' };
-  } catch { return null; }
-}
-async function wikiSearch(query) {
-  try {
-    const r = await fetchT(`https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(query)}&srlimit=3&origin=*`, {}, 8000);
-    if (!r.ok) return [];
-    const d = await r.json();
-    return (d?.query?.search || []).map((h) => ({ title: h.title, url: `https://en.wikipedia.org/wiki/${encodeURIComponent(h.title.replace(/ /g, '_'))}`, snippet: stripHtml(h.snippet), domain: 'en.wikipedia.org' }));
-  } catch { return []; }
-}
-async function wikiSummary(title) {
-  try {
-    const r = await fetchT(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`, {}, 7000);
-    if (!r.ok) return null;
-    const d = await r.json();
-    if (!d.extract) return null;
-    return { source: 'Wikipedia', heading: d.title || title, text: d.extract, url: d.content_urls?.desktop?.page || '' };
-  } catch { return null; }
-}
+async function ddgInstantAnswer(query) { try { const r = await fetchT(`https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`, {}, 8000); if (!r.ok) return null; const d = await r.json(); if (!(d.Abstract || d.Answer || d.Definition)) return null; return { heading: d.Heading || '', text: d.Abstract || d.Answer || d.Definition || '', source: d.AbstractSource || 'DuckDuckGo', url: d.AbstractURL || '' }; } catch { return null; } }
+async function wikiSearch(query) { try { const r = await fetchT(`https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(query)}&srlimit=3&origin=*`, {}, 8000); if (!r.ok) return []; const d = await r.json(); return (d?.query?.search || []).map((h) => ({ title: h.title, url: `https://en.wikipedia.org/wiki/${encodeURIComponent(h.title.replace(/ /g, '_'))}`, snippet: stripHtml(h.snippet), domain: 'en.wikipedia.org' })); } catch { return []; } }
+async function wikiSummary(title) { try { const r = await fetchT(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`, {}, 7000); if (!r.ok) return null; const d = await r.json(); if (!d.extract) return null; return { source: 'Wikipedia', heading: d.title || title, text: d.extract, url: d.content_urls?.desktop?.page || '' }; } catch { return null; } }
 async function webSearch(query, max = 5) {
   const [organic, instant] = await Promise.all([duckSearch(query, max), ddgInstantAnswer(query)]);
   let results = organic.length ? organic : await wikiSearch(query);
@@ -454,10 +353,7 @@ async function webSearch(query, max = 5) {
 function formatSearchContext(query, data) {
   const parts = [];
   if (data.overview?.text) parts.push(`[OVERVIEW — ${data.overview.source}${data.overview.url ? ' (' + data.overview.url + ')' : ''}]\n${data.overview.text}`);
-  if (data.results.length) {
-    parts.push(`[${data.results.length} ORGANIC RESULTS]`);
-    parts.push(data.results.map((r, i) => `[${i + 1}] ${r.title}\n${r.url}\n${r.snippet || '(no snippet)'}`).join('\n\n'));
-  }
+  if (data.results.length) { parts.push(`[${data.results.length} ORGANIC RESULTS]`); parts.push(data.results.map((r, i) => `[${i + 1}] ${r.title}\n${r.url}\n${r.snippet || '(no snippet)'}`).join('\n\n')); }
   return parts.length ? `Web search results for "${query}":\n\n` + parts.join('\n\n') : `Web search for "${query}" returned no usable results.`;
 }
 function detectSearchIntent(text) {
@@ -481,15 +377,12 @@ function detectImageIntent(text) {
 
 /* ---------- Providers ---------- */
 function stripImages(messages) {
-  return messages.map((m) => ({
-    role: m.role,
-    content: Array.isArray(m.content) ? m.content.filter((p) => p.type === 'text').map((p) => p.text).join('\n') : String(m.content || ''),
-  }));
+  return messages.map((m) => ({ role: m.role, content: Array.isArray(m.content) ? m.content.filter((p) => p.type === 'text').map((p) => p.text).join('\n') : String(m.content || '') }));
 }
 async function callOpenRouter(modelId, messages, maxTokens, stream) {
   if (!OP_KEY) throw new Error('no_op_key');
   const headers = { Authorization: `Bearer ${OP_KEY}`, 'Content-Type': 'application/json', Accept: stream ? 'text/event-stream' : 'application/json', 'HTTP-Referer': OP_REFERER, 'X-Title': OP_TITLE };
-  const res = await fetchT(OP_CHAT_URL, { method: 'POST', headers, body: JSON.stringify({ model: modelId, messages, max_tokens: maxTokens, stream: !!stream, temperature: 0.7 }) }, 45000);
+  const res = await fetchT(OP_CHAT_URL, { method: 'POST', headers, body: JSON.stringify({ model: modelId, messages, max_tokens: maxTokens, stream: !!stream, temperature: 0.7 }) }, 90000);
   if (!res.ok) { const t = await res.text().catch(() => ''); throw new Error(`op_${res.status}:${t.slice(0, 200)}`); }
   return res;
 }
@@ -497,7 +390,7 @@ async function callProvider(kind, modelId, messages, maxTokens, stream) {
   const url = kind === 'hf' ? HF_URL : PL_URL;
   const key = kind === 'hf' ? HF_API_KEY : PL_KEY;
   if (!key) throw new Error('no_key');
-  const res = await fetchT(url, { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Accept: stream ? 'text/event-stream' : 'application/json' }, body: JSON.stringify({ model: modelId, messages, max_tokens: maxTokens, stream: !!stream, temperature: 0.7 }) }, 25000);
+  const res = await fetchT(url, { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Accept: stream ? 'text/event-stream' : 'application/json' }, body: JSON.stringify({ model: modelId, messages, max_tokens: maxTokens, stream: !!stream, temperature: 0.7 }) }, 90000);
   if (!res.ok) throw new Error(`${kind}_${res.status}`);
   return res;
 }
@@ -529,11 +422,12 @@ function textToSSEStream(text) {
     },
   });
 }
-async function miroxChatChain({ messages, cfg, stream, vision }) {
+async function miroxChatChain({ messages, cfg, stream, vision, deepThink }) {
+  const maxTokens = deepThink ? Math.min(cfg.tokens * 2, 32000) : cfg.tokens;
   if (OP_KEY) {
     const models = vision ? OP_VISION : OP_CHAT;
     for (const modelId of models) {
-      try { const msgs = OP_VISION_SET.has(modelId) ? messages : stripImages(messages); const res = await callOpenRouter(modelId, msgs, cfg.tokens, stream); return { res, provider: 'openrouter' }; }
+      try { const msgs = OP_VISION_SET.has(modelId) ? messages : stripImages(messages); const res = await callOpenRouter(modelId, msgs, maxTokens, stream); return { res, provider: 'openrouter' }; }
       catch (e) { console.warn('[openrouter]', modelId, e.message); }
     }
   }
@@ -542,7 +436,7 @@ async function miroxChatChain({ messages, cfg, stream, vision }) {
     if (vision) HF_VISION.forEach((m) => tries.push(['hf', m]));
     HF_CHAT.forEach((m) => tries.push(['hf', m]));
     for (const [kind, modelId] of tries) {
-      try { const msgs = VISION_MODELS.has(modelId) ? messages : stripImages(messages); const res = await callProvider(kind, modelId, msgs, cfg.tokens, stream); return { res, provider: kind }; }
+      try { const msgs = VISION_MODELS.has(modelId) ? messages : stripImages(messages); const res = await callProvider(kind, modelId, msgs, maxTokens, stream); return { res, provider: kind }; }
       catch (e) { console.warn('[provider]', kind, modelId, e.message); }
     }
   }
@@ -551,7 +445,7 @@ async function miroxChatChain({ messages, cfg, stream, vision }) {
     if (vision) PL_VISION.forEach((m) => tries.push(['pl', m]));
     PL_CHAT.forEach((m) => tries.push(['pl', m]));
     for (const [kind, modelId] of tries) {
-      try { const msgs = VISION_MODELS.has(modelId) ? messages : stripImages(messages); const res = await callProvider(kind, modelId, msgs, cfg.tokens, stream); return { res, provider: kind }; }
+      try { const msgs = VISION_MODELS.has(modelId) ? messages : stripImages(messages); const res = await callProvider(kind, modelId, msgs, maxTokens, stream); return { res, provider: kind }; }
       catch (e) { console.warn('[provider]', kind, modelId, e.message); }
     }
   }
@@ -584,10 +478,7 @@ async function pipeProviderStream(body, onDelta, isClosed, onLimit = () => {}) {
           const item = JSON.parse(raw);
           const d = item.choices?.[0]?.delta?.content;
           if (typeof d === 'string' && d) onDelta(d);
-          else if (Array.isArray(d)) {
-            const joined = d.map((p) => (typeof p === 'string' ? p : (p?.text || ''))).join('');
-            if (joined) onDelta(joined);
-          }
+          else if (Array.isArray(d)) { const joined = d.map((p) => (typeof p === 'string' ? p : (p?.text || ''))).join(''); if (joined) onDelta(joined); }
           if (item.choices?.[0]?.finish_reason === 'length') onLimit();
         } catch {}
       }
@@ -665,14 +556,12 @@ function sseInit(res) {
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders?.();
 }
-function sseWrite(res, obj) {
-  if (res.writableEnded || res.destroyed) return;
-  try { res.write('data: ' + JSON.stringify(obj) + '\n\n'); } catch {}
-}
+function sseWrite(res, obj) { if (res.writableEnded || res.destroyed) return; try { res.write('data: ' + JSON.stringify(obj) + '\n\n'); } catch {} }
 function sseDone(res) { if (res.writableEnded || res.destroyed) return; try { res.write('data: [DONE]\n\n'); } catch {} }
 
-function buildSystemPrompt(cfg, bridge, searchUsed, persona) {
+function buildSystemPrompt(cfg, bridge, searchUsed, persona, deepThink) {
   let p = IDENTITY_GUARD + '\n\n' + THINKING_RULE + '\n\n' + cfg.basePrompt;
+  if (deepThink) p += '\n\n' + DEEP_THINK_RULE;
   if (searchUsed) p += '\n\nWEB SEARCH MODE: cite sources as [1], [2] when relevant.';
   if (persona) p += `\n\nUser preference: ${persona}`;
   if (bridge) {
@@ -691,33 +580,26 @@ const app = express();
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json({ limit: '12mb' }));
+app.use(express.json({ limit: '20mb' }));
 app.use(express.static(PUBLIC_DIR, { index: 'index.html' }));
 app.use(async (req, res, next) => { await ensureDb(req).catch(() => {}); next(); });
 
 const publicUser = (u) => {
   const plan = PLANS[u.tier] || PLANS.free;
-  return {
-    id: u.email, email: u.email, name: u.name, tier: u.tier, provider: u.provider || 'email',
+  return { id: u.email, email: u.email, name: u.name, tier: u.tier, provider: u.provider || 'email',
     vision_limit: plan.vision_limit, vision_used: u.vision_used,
     image_limit: plan.image_limit, image_used: u.image_used,
     eclipse_limit: plan.eclipse_daily_limit, eclipse_used: u.eclipse_used,
-    api_keys_used: u.keys.filter((k) => !k.revoked).length,
-    api_keys_limit: maxKeys(u.tier),
-  };
+    api_keys_used: u.keys.filter((k) => !k.revoked).length, api_keys_limit: maxKeys(u.tier) };
 };
 const publicKey = (k) => ({ id: k.id, name: k.name, key: k.key, created: k.created, last_used: k.last_used || 0, revoked: !!k.revoked });
 
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
-  res.json({
-    ok: true, app: 'MiroxAI', version: 'v101',
+  res.json({ ok: true, app: 'MiroxAI', version: 'v102',
     providers: { openrouter: !!OP_KEY, hf: !!HF_API_KEY, pl: !!PL_KEY, airoute: !!AIROUTE_KEY },
     primary_provider: OP_KEY ? 'openrouter' : (HF_API_KEY ? 'huggingface' : (PL_KEY ? 'pollinations' : (AIROUTE_KEY ? 'airoute' : null))),
-    watermark: 'MIROXAI-WATERMARK-v1-LOGO',
-    thinking: true,
-    db: { durable: KV_ON, writable: dbOk },
-    time: nowS(),
-  });
+    watermark: 'MIROXAI-WATERMARK-v1-LOGO', thinking: true, deep_think: true,
+    db: { durable: KV_ON, writable: dbOk }, time: nowS() });
 });
 
 app.get('/api/web/status', async (req, res) => {
@@ -730,26 +612,21 @@ app.get(['/api/config', '/config'], (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tier: m.tier }));
   res.json({
-    app: { name: 'MiroxAI', version: 'v101' },
+    app: { name: 'MiroxAI', version: 'v102' },
     models, default_model: models[0].id, plans: PLANS,
-    tts_available: !!F_API,
-    search_available: true, vision_available: true, image_intent: true, image_edit: true,
-    image_requires_signin: true, watermark: true, thinking: true,
-    loginment_available: !!LM_CLIENT_ID,
-    email_login_available: ALLOW_EMAIL_LOGIN,
-    airoute_available: !!AIROUTE_KEY,
-    openrouter_available: !!OP_KEY,
-    kde_connect_available: true,
-    support_chat_available: true,
-    developers_url: '/developers',
+    tts_available: !!F_API, search_available: true, vision_available: true, image_intent: true, image_edit: true,
+    image_requires_signin: true, watermark: true, thinking: true, deep_think: true, html_runner: true,
+    loginment_available: !!LM_CLIENT_ID, email_login_available: ALLOW_EMAIL_LOGIN,
+    airoute_available: !!AIROUTE_KEY, openrouter_available: !!OP_KEY,
+    kde_connect_available: true, support_chat_available: true, developers_url: '/developers',
   });
 });
 
 app.get(['/api/subscription/plans', '/subscription/plans'], (req, res) => {
   const perks = {
-    free: ['Luna & Gen unlimited', '10 image uploads/day', '10 image gens/day', '5 Eclipse/day', '2 API keys', 'Web search', 'Vision', 'KDE Connect'],
-    pro: ['Pro & Ultra models', '200 image uploads/gens/day', '10 API keys', 'Web search', 'Vision', 'KDE Connect'],
-    ultimate: ['Eclipse — best model', '2000 image uploads/gens/day', '10 API keys', 'Web search', 'Vision', 'KDE Connect'],
+    free: ['Luna & Gen unlimited', '10 image uploads/day', '10 image gens/day', '5 Eclipse/day', '2 API keys', 'Web search', 'Vision', 'DeepThink', 'HTML runner', 'KDE Connect'],
+    pro: ['Pro & Ultra models', '200 image uploads/gens/day', '10 API keys', 'Web search', 'Vision', 'DeepThink', 'HTML runner', 'KDE Connect'],
+    ultimate: ['Eclipse — best model', '2000 image uploads/gens/day', '10 API keys', 'Web search', 'Vision', 'DeepThink', 'HTML runner', 'KDE Connect'],
   };
   const tagline = { free: 'Free forever', pro: 'Most popular', ultimate: 'Power users' };
   res.json({ ok: true, plans: Object.entries(PLANS).map(([id, p]) => ({ id, label: p.label, tagline: tagline[id], vision_limit: p.vision_limit, image_limit: p.image_limit, eclipse_limit: p.eclipse_daily_limit, price_usd: p.price_usd, api_keys_limit: p.api_keys, perks: perks[id] })) });
@@ -772,11 +649,10 @@ app.get('/api/auth/loginment/url', (req, res) => {
 });
 app.get(['/callback', '/api/auth/loginment/callback'], async (req, res) => {
   try {
-    const code = safeStr(req.query.code, 300);
-    const state = safeStr(req.query.state, 100);
+    const code = safeStr(req.query.code, 300), state = safeStr(req.query.state, 100);
     const saved = getCookie(req, 'mirox_lm_state');
     res.append('Set-Cookie', `mirox_lm_state=; ${cookieAttrs(req, 0)}`);
-    if (!code || !state || !saved || !safeEq(state, saved)) return res.status(400).send('Login state invalid. Please try again.');
+    if (!code || !state || !saved || !safeEq(state, saved)) return res.status(400).send('Login state invalid.');
     if (!LM_CLIENT_ID || !LM_API_KEY) return res.status(503).send('Loginment is not configured.');
     const r = await fetchT(`${LM_DOMAIN}/api/public/v1/token`, { method: 'POST', headers: { Authorization: `Bearer ${LM_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) }, 15000);
     const data = await r.json().catch(() => ({}));
@@ -796,44 +672,29 @@ app.get(['/callback', '/api/auth/loginment/callback'], async (req, res) => {
   } catch (e) { console.error('[callback]', e.message); res.status(500).send('Server error'); }
 });
 app.post(['/api/auth/simple-login', '/auth/simple-login'], async (req, res) => {
-  if (!ALLOW_EMAIL_LOGIN) return res.status(403).json({ ok: false, error: 'Email login is disabled. Use Loginment.' });
+  if (!ALLOW_EMAIL_LOGIN) return res.status(403).json({ ok: false, error: 'Email login is disabled.' });
   const name = safeStr(req.body?.name, 60).trim();
   const email = safeStr(req.body?.email, 120).trim().toLowerCase();
   if (!name || !email || !email.includes('@')) return res.status(400).json({ ok: false, error: 'Name and email required' });
   await ensureDb(req);
   if (!dbOk) return res.status(503).json({ ok: false, error: 'Storage is unavailable.' });
   const u = userFor(email);
-  u.name = name;
-  u.last_login = nowS();
+  u.name = name; u.last_login = nowS();
   logEvent({ email, event: 'login' });
   if (!(await persist())) return res.status(503).json({ ok: false, error: 'Could not save your account.' });
   const token = setSessionCookie(req, res, email);
   res.json({ ok: true, token, user: { id: email, email, name, tier: u.tier } });
 });
 app.post(['/api/logout', '/logout'], (req, res) => { clearSessionCookie(req, res); res.json({ ok: true }); });
-app.get(['/api/me', '/me'], async (req, res) => {
-  res.setHeader('Cache-Control', 'no-store');
-  try { const u = await currentUser(req); res.json({ user: u ? publicUser(u) : null }); }
-  catch { res.json({ user: null }); }
-});
+app.get(['/api/me', '/me'], async (req, res) => { res.setHeader('Cache-Control', 'no-store'); try { const u = await currentUser(req); res.json({ user: u ? publicUser(u) : null }); } catch { res.json({ user: null }); } });
 app.get('/api/persona', async (req, res) => { const u = await currentUser(req); res.json({ ok: true, persona: u?.persona || '' }); });
-app.post('/api/persona', async (req, res) => {
-  const u = await currentUser(req);
-  if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
-  u.persona = safeStr(req.body?.persona, 500);
-  await persist();
-  res.json({ ok: true });
-});
+app.post('/api/persona', async (req, res) => { const u = await currentUser(req); if (!u) return res.status(401).json({ ok: false, error: 'Login required' }); u.persona = safeStr(req.body?.persona, 500); await persist(); res.json({ ok: true }); });
 
 /* SUPPORT */
 app.get('/api/support/conversation', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  try {
-    const u = await currentUser(req);
-    if (!u) return res.json({ ok: true, conversation: null, signedIn: false });
-    const conv = (db.tickets || []).find((t) => t.email === u.email && t.status === 'open');
-    res.json({ ok: true, conversation: conv || null, signedIn: true });
-  } catch { res.json({ ok: true, conversation: null, signedIn: false }); }
+  try { const u = await currentUser(req); if (!u) return res.json({ ok: true, conversation: null, signedIn: false }); const conv = (db.tickets || []).find((t) => t.email === u.email && t.status === 'open'); res.json({ ok: true, conversation: conv || null, signedIn: true }); }
+  catch { res.json({ ok: true, conversation: null, signedIn: false }); }
 });
 app.post('/api/support/message', async (req, res) => {
   const u = await currentUser(req);
@@ -966,32 +827,23 @@ app.post('/v1/chat/completions', async (req, res) => {
   const body = req.body || {};
   const wantStream = body.stream === true || String(req.headers.accept || '').includes('text/event-stream');
   const model = safeStr(body.model, 64) || 'mirox-luna-1.2';
-  const text = safeStr(body.message, 100000).trim();
+  const text = safeStr(body.message, 200000).trim();
   const files = Array.isArray(body.files) ? body.files.slice(0, 4) : [];
   const history = Array.isArray(body.history) ? body.history.slice(-14) : [];
   const bridge = body.bridge && body.bridge.connected ? body.bridge : null;
   const forceSearch = body.search === true;
   const editImage = body.edit_image === true;
   const sourceImage = safeStr(body.source_image, 12 * 1024 * 1024);
+  const deepThink = body.deep_think === true;
 
   const fail = (code, message) => res.status(code).json({ error: { message } });
   const signinReply = (message) => {
     if (!wantStream) return res.json({ reply: message, signin_required: true, _ms: Date.now() - t0, provider: 'mirox' });
-    sseInit(res);
-    sseWrite(res, { signin_required: true, message });
-    sseWrite(res, { d: message });
-    sseWrite(res, { done: true });
-    sseDone(res);
-    res.end();
+    sseInit(res); sseWrite(res, { signin_required: true, message }); sseWrite(res, { d: message }); sseWrite(res, { done: true }); sseDone(res); res.end();
   };
   const fixedReply = (message) => {
     if (!wantStream) return res.json({ reply: message, _ms: Date.now() - t0, provider: 'mirox' });
-    sseInit(res);
-    sseWrite(res, { p: 'mirox' });
-    sseWrite(res, { d: message });
-    sseWrite(res, { done: true });
-    sseDone(res);
-    res.end();
+    sseInit(res); sseWrite(res, { p: 'mirox' }); sseWrite(res, { d: message }); sseWrite(res, { done: true }); sseDone(res); res.end();
   };
 
   try {
@@ -1013,7 +865,9 @@ app.post('/v1/chat/completions', async (req, res) => {
     }
     if (!text && !files.length) return fail(400, 'Empty message');
 
+    /* Image edit — blocked when DeepThink is on */
     if (editImage && sourceImage && sourceImage.startsWith('data:image/')) {
+      if (deepThink) return fixedReply('Image editing is not available in DeepThink mode. Turn DeepThink off and try again.');
       if (!u) return signinReply('Sign in to edit images with Mirox.');
       if (u.image_used >= plan.image_limit) return fixedReply(`Daily image limit reached for the ${plan.label} plan.`);
       try {
@@ -1023,15 +877,12 @@ app.post('/v1/chat/completions', async (req, res) => {
         logEvent({ email: u.email, event: 'image_edited_chat', prompt: (text || '').slice(0, 300) });
         await persist();
         if (!wantStream) return res.json({ reply: '', image: dataUrl, watermarked: true, _ms: Date.now() - t0 });
-        sseInit(res);
-        sseWrite(res, { img: dataUrl, watermarked: true });
-        sseWrite(res, { done: true });
-        sseDone(res);
-        return res.end();
+        sseInit(res); sseWrite(res, { img: dataUrl, watermarked: true }); sseWrite(res, { done: true }); sseDone(res); return res.end();
       } catch { return fixedReply('Image edit failed. Please try again in a moment.'); }
     }
 
-    const imagePrompt = files.length ? null : detectImageIntent(text);
+    /* Auto image generation — blocked when DeepThink is on */
+    const imagePrompt = (files.length || deepThink) ? null : detectImageIntent(text);
     if (imagePrompt) {
       if (!u) return signinReply('Sign in to generate images with Mirox.');
       if (u.image_used >= plan.image_limit) return fixedReply(`Daily image limit reached for the ${plan.label} plan.`);
@@ -1042,21 +893,17 @@ app.post('/v1/chat/completions', async (req, res) => {
         logEvent({ email: u.email, event: 'image_generated_chat', prompt: imagePrompt.slice(0, 300) });
         await persist();
         if (!wantStream) return res.json({ reply: '', image: dataUrl, watermarked: true, _ms: Date.now() - t0 });
-        sseInit(res);
-        sseWrite(res, { img: dataUrl, watermarked: true });
-        sseWrite(res, { done: true });
-        sseDone(res);
-        return res.end();
+        sseInit(res); sseWrite(res, { img: dataUrl, watermarked: true }); sseWrite(res, { done: true }); sseDone(res); return res.end();
       } catch { return fixedReply('Image generation failed. Please try again in a moment.'); }
     }
 
     const searchQuery = forceSearch ? text : detectSearchIntent(text);
     if (wantStream) sseInit(res);
 
-    const msgs = [{ role: 'system', content: buildSystemPrompt(cfg, bridge, !!searchQuery, u?.persona || '') }];
+    const msgs = [{ role: 'system', content: buildSystemPrompt(cfg, bridge, !!searchQuery, u?.persona || '', deepThink) }];
     for (const h of history) {
       const role = h && h.role;
-      const content = safeStr(h && h.content, 4000).trim();
+      const content = safeStr(h && h.content, 6000).trim();
       if ((role === 'user' || role === 'assistant') && content) msgs.push({ role, content });
     }
 
@@ -1093,7 +940,7 @@ app.post('/v1/chat/completions', async (req, res) => {
       await persist();
     };
 
-    const result = await miroxChatChain({ messages: msgs, cfg, stream: wantStream, vision: visionUsed });
+    const result = await miroxChatChain({ messages: msgs, cfg, stream: wantStream, vision: visionUsed, deepThink });
 
     if (!wantStream) {
       const data = await result.res.json().catch(() => ({}));
@@ -1102,7 +949,7 @@ app.post('/v1/chat/completions', async (req, res) => {
       return res.json({ reply, _ms: Date.now() - t0, provider: result.provider, search: searchQuery ? { query: searchQuery, results: searchData.results, overview: searchData.overview } : null });
     }
 
-    sseWrite(res, { p: result.provider });
+    sseWrite(res, { p: result.provider, deep_think: deepThink });
     await pipeProviderStream(result.res.body, (d) => sseWrite(res, { d }), isClosed, () => sseWrite(res, { limit: true }));
     if (!closed) sseWrite(res, { done: true });
     sseDone(res);
@@ -1141,9 +988,7 @@ app.get(['/api/admin/stats', '/admin/stats'], requireAdmin, async (req, res) => 
     users: users.length, chats: db.chats.length, events: db.events.length, images: imgEvents.length,
     open_tickets: openTickets, unread_support: unreadSupport,
     users_data: Object.fromEntries(users.map((u) => [u.email, { name: u.name, tier: u.tier, daily_used: u.daily_used, image_used: u.image_used, eclipse_used: u.eclipse_used, last_login: u.last_login }])),
-    chats_data: db.chats.slice(-100).reverse(),
-    events_data: db.events.slice(-100).reverse(),
-    images_data: imgEvents,
+    chats_data: db.chats.slice(-100).reverse(), events_data: db.events.slice(-100).reverse(), images_data: imgEvents,
   });
 });
 app.post(['/api/admin/set-tier', '/admin/set-tier'], requireAdmin, async (req, res) => {
@@ -1159,15 +1004,10 @@ app.post(['/api/admin/set-tier', '/admin/set-tier'], requireAdmin, async (req, r
   if (!(await persist())) return res.status(500).json({ ok: false, error: 'Save failed.' });
   res.json({ ok: true, email, tier });
 });
-app.get(['/api/admin/support/conversations', '/admin/support/conversations'], requireAdmin, async (req, res) => {
-  await ensureDb(req);
-  const list = (db.tickets || []).slice().sort((a, b) => (b.updated || 0) - (a.updated || 0));
-  res.json({ ok: true, conversations: list });
-});
+app.get(['/api/admin/support/conversations', '/admin/support/conversations'], requireAdmin, async (req, res) => { await ensureDb(req); res.json({ ok: true, conversations: (db.tickets || []).slice().sort((a, b) => (b.updated || 0) - (a.updated || 0)) }); });
 app.post(['/api/admin/support/reply', '/admin/support/reply'], requireAdmin, async (req, res) => {
   await ensureDb(req);
-  const id = safeStr(req.body?.id, 60);
-  const content = safeStr(req.body?.content, 4000).trim();
+  const id = safeStr(req.body?.id, 60), content = safeStr(req.body?.content, 4000).trim();
   if (!id || !content) return res.status(400).json({ ok: false, error: 'id and content required' });
   const conv = (db.tickets || []).find((t) => t.id === id);
   if (!conv) return res.status(404).json({ ok: false, error: 'Not found' });
@@ -1233,7 +1073,7 @@ app.use((err, req, res, next) => {
   if (!res.headersSent) res.status(500).json({ ok: false, error: GENERIC_ERR });
 });
 
-console.log('[Mirox] v101 · watermark:', 'MIROXAI-WATERMARK-v1-LOGO', '· thinking: on · durable:', KV_ON, '· providers:', { openrouter: !!OP_KEY, hf: !!HF_API_KEY, pl: !!PL_KEY, airoute: !!AIROUTE_KEY });
+console.log('[Mirox] v102 · watermark:', 'MIROXAI-WATERMARK-v1-LOGO', '· thinking: on · deep-think: on · durable:', KV_ON, '· providers:', { openrouter: !!OP_KEY, hf: !!HF_API_KEY, pl: !!PL_KEY, airoute: !!AIROUTE_KEY });
 
 if (!process.env.VERCEL) {
   app.listen(PORT, () => console.log('[Mirox] Server at http://localhost:' + PORT));
