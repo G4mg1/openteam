@@ -132,6 +132,7 @@
 <!-- ═══════════ CALL OVERLAY ═══════════ -->
 <div id="callOverlay" class="call-overlay">
   <div class="call-glow" aria-hidden="true"></div>
+
   <div class="call-top-bar">
     <div class="call-live-badge" id="callLiveBadge"><i class="ri-flashlight-fill"></i> <span id="callLiveText">Live</span></div>
     <div class="call-lang-wrap">
@@ -166,11 +167,26 @@
       </select>
     </div>
   </div>
+
   <div class="call-center">
-    <div class="call-status" id="callStatus">Starting…</div>
+    <!-- Animated orb that reflects the AI's state -->
+    <div class="call-orb" id="callOrb" data-state="idle">
+      <div class="call-orb-core"></div>
+      <div class="call-orb-ring"></div>
+      <div class="call-orb-wave"></div>
+    </div>
+
+    <div class="call-status" id="callStatus">Listening…</div>
+
+    <!-- Animated thinking dots -->
+    <div class="call-thinking-dots" id="callThinkingDots" aria-hidden="true">
+      <span></span><span></span><span></span>
+    </div>
+
     <div class="call-transcript" id="callTranscript"></div>
     <div class="call-reply" id="callReply"></div>
   </div>
+
   <div class="call-controls">
     <button id="callHoldBtn" class="call-btn-2 hold" type="button">
       <span class="call-btn-icon"><i class="ri-pause-line"></i></span>
