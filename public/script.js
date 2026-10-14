@@ -2,9 +2,11 @@
   'use strict';
 
   /* ============================================================
-     MiroxAI frontend v140
-     · Call: gradient blob wiggle · reliable SSE + JSON fallback
-     · Fixed thinking-tag leak, hold state, TTS hang
+     MiroxAI frontend v141
+     · Call: 5s silence → auto-send or show Send button
+     · Call: continuous recognition (never gets stuck listening)
+     · Message actions: like, dislike, copy, read aloud,
+                        view source, regenerate
      ============================================================ */
 
   /* ---------- i18n ---------- */
@@ -117,7 +119,7 @@
     { id: 'mirox-eclipse-2.0', label: 'Eclipse', tier: 'ultimate', tagline: 'Most powerful', icon: 'ri-sun-fill' },
   ];
   const LS_KEY = 'miroxai_conversations_v50';
-  const LIKES_KEY = 'miroxai_likes_v1';
+  const REACTIONS_KEY = 'miroxai_reactions_v1';
   const TOKEN_KEY = 'mirox_token';
   const LOCAL_USER_KEY = 'mirox_local_user_v3';
   const GUEST_KEY = 'miroxai_guest_id_v1';
@@ -133,6 +135,7 @@
   const MAX_AUTO_CONTINUES = 6;
   const MAX_DUP_COMMANDS = 3;
   const MAX_DUP_REPLIES = 2;
+  const CALL_SILENCE_MS = 5000;
 
   const THINK_INSTRUCTION = `ALWAYS think before answering.
 Write your reasoning inside <thinking>...</thinking> tags, then close the tags, then write your final answer.
@@ -162,7 +165,7 @@ end
   let forceSearchNext = false, __historyQuery = '';
   let __ivDataUrl = '';
   let __prefs = {};
-  let __likes = {};
+  let __reactions = {};   // { msgId: 'like' | 'dislike' }
   let __bridge = { name: 'My Laptop', port: 8765, connected: false, baseUrl: null, env: null };
   let bridgeRunning = false, bridgeAbort = false, bridgeConversation = [], bridgeProgress = 0;
   let bridgeTurn = null, bridgeTaskComplete = true, bridgeWaitingForUser = false;
@@ -177,6 +180,7 @@ end
   let __supportSending = false;
   let __hrCurrentCode = '';
   let __imageHistoryLoading = false;
+  let __currentRawSource = '';
 
   /* Call state */
   let __call = {
@@ -189,6 +193,7 @@ end
     currentAbort: null,
     currentHistory: [],
     busy: false,
+    capturedText: '',
   };
 
   let __currentSpeakMsgId = null;
@@ -278,9 +283,9 @@ end
     if (inp) inp.placeholder = __prefs.deepThink ? 'DeepThink is on — ask anything complex…' : 'How can I help you today?';
   }
 
-  /* ---------- Likes ---------- */
-  function loadLikes() { __likes = safeGet(LIKES_KEY, {}); if (typeof __likes !== 'object' || !__likes) __likes = {}; }
-  function saveLikes() { safeSet(LIKES_KEY, __likes); }
+  /* ---------- Reactions (like / dislike) ---------- */
+  function loadReactions() { __reactions = safeGet(REACTIONS_KEY, {}); if (typeof __reactions !== 'object' || !__reactions) __reactions = {}; }
+  function saveReactions() { safeSet(REACTIONS_KEY, __reactions); }
 
   /* ---------- TTS ---------- */
   const ttsAvailable = typeof window !== 'undefined' && 'speechSynthesis' in window;
@@ -333,10 +338,7 @@ end
   }
 
   function speak(text, lang, msgId) {
-    if (!ttsAvailable) {
-      toast('Your browser does not support text-to-speech.', 3000, 'err');
-      return Promise.resolve();
-    }
+    if (!ttsAvailable) { toast('Your browser does not support text-to-speech.', 3000, 'err'); return Promise.resolve(); }
     return new Promise((resolve) => {
       stopSpeaking();
       const clean = String(text || '').replace(/```[\s\S]*?```/g, ' ').replace(/\s+/g, ' ').trim();
@@ -379,16 +381,14 @@ end
         try { speechSynthesis.speak(u); } catch { next(); }
       };
       next();
-      // Safety net: never let speak() hang forever
-      const guard = Math.max(3000, clean.length * 95);
-      setTimeout(finish, guard);
+      setTimeout(finish, Math.max(3000, clean.length * 95));
     });
   }
 
   /* ---------- Mascot ---------- */
   const MOODS = ['idle','happy','thinking','coding','celebrate','error','learning','wink','study','searching','reading'];
   function blobSvg() {
-    return `<svg class="blob-svg" viewBox="0 0 200 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mirox avatar"><g class="blob-float"><rect class="leg leg-1" x="46" y="126" width="14" height="32" rx="7"/><rect class="leg leg-2" x="76" y="126" width="14" height="32" rx="7"/><rect class="leg leg-3" x="110" y="126" width="14" height="32" rx="7"/><rect class="leg leg-4" x="140" y="126" width="14" height="32" rx="7"/><rect class="blob-body" x="20" y="30" width="160" height="110" rx="26"/><g class="blob-eyes"><rect class="eye eye-left" x="62" y="64" width="18" height="34" rx="9"/><rect class="eye eye-right" x="120" y="64" width="18" height="34" rx="9"/></g><g class="blob-glasses" fill="none" stroke="var(--blob-eye)" stroke-width="4" stroke-linecap="round"><rect x="50" y="52" width="44" height="46" rx="12"/><rect x="106" y="52" width="44" height="46" rx="12"/><path d="M94 72 Q100 68 106 72"/></g></g></svg>`;
+    return `<svg class="blob-svg" viewBox="0 0 200 180" xmlns="http://www.w3.org/2000/svg" role="img"><g class="blob-float"><rect class="leg leg-1" x="46" y="126" width="14" height="32" rx="7"/><rect class="leg leg-2" x="76" y="126" width="14" height="32" rx="7"/><rect class="leg leg-3" x="110" y="126" width="14" height="32" rx="7"/><rect class="leg leg-4" x="140" y="126" width="14" height="32" rx="7"/><rect class="blob-body" x="20" y="30" width="160" height="110" rx="26"/><g class="blob-eyes"><rect class="eye eye-left" x="62" y="64" width="18" height="34" rx="9"/><rect class="eye eye-right" x="120" y="64" width="18" height="34" rx="9"/></g><g class="blob-glasses" fill="none" stroke="var(--blob-eye)" stroke-width="4" stroke-linecap="round"><rect x="50" y="52" width="44" height="46" rx="12"/><rect x="106" y="52" width="44" height="46" rx="12"/><path d="M94 72 Q100 68 106 72"/></g></g></svg>`;
   }
   function upgradeStaticMascots(scope = document) {
     scope.querySelectorAll('.mascot:not([data-blob-ready])').forEach((el) => {
@@ -503,12 +503,10 @@ end
     const bx = pad + blobR, by = H - pad - blobR;
     const gradH = textSize * 1.8;
     const grad = ctx.createLinearGradient(0, H - gradH, 0, H);
-    grad.addColorStop(0, 'rgba(0,0,0,0)');
-    grad.addColorStop(1, 'rgba(0,0,0,0.16)');
+    grad.addColorStop(0, 'rgba(0,0,0,0)'); grad.addColorStop(1, 'rgba(0,0,0,0.16)');
     ctx.fillStyle = grad; ctx.fillRect(0, H - gradH, W, gradH);
     ctx.save();
-    ctx.globalAlpha = 0.72;
-    ctx.fillStyle = '#d97757';
+    ctx.globalAlpha = 0.72; ctx.fillStyle = '#d97757';
     const r = blobR * 0.5;
     const bxL = bx - blobR, byT = by - blobR * 0.85;
     ctx.beginPath();
@@ -545,8 +543,7 @@ end
       img.onload = () => {
         try {
           const c = document.createElement('canvas');
-          c.width = img.naturalWidth || 1024;
-          c.height = img.naturalHeight || 1024;
+          c.width = img.naturalWidth || 1024; c.height = img.naturalHeight || 1024;
           paintWatermark(c, img);
           resolve(c.toDataURL('image/png'));
         } catch { resolve(srcDataUrl); }
@@ -580,20 +577,15 @@ end
       if (!images.length) { grid.innerHTML = '<div class="sidebar-image-empty"><i class="ri-image-line"></i> No images yet.</div>'; return; }
       grid.innerHTML = '';
       images.slice(0, 24).forEach((it) => {
-        const item = document.createElement('div');
-        item.className = 'sidebar-image-item';
-        item.title = it.prompt || '';
+        const item = document.createElement('div'); item.className = 'sidebar-image-item'; item.title = it.prompt || '';
         const img = document.createElement('img');
         img.src = it.image; img.alt = it.prompt || 'generated image'; img.loading = 'lazy';
         img.onerror = () => { item.style.display = 'none'; };
-        item.appendChild(img);
-        item.onclick = () => openImageViewer(it.image);
-        grid.appendChild(item);
+        item.appendChild(img); item.onclick = () => openImageViewer(it.image); grid.appendChild(item);
       });
       if (!grid.children.length) grid.innerHTML = '<div class="sidebar-image-empty">No images yet.</div>';
-    } catch {
-      grid.innerHTML = '<div class="sidebar-image-empty">Could not load images.</div>';
-    } finally { __imageHistoryLoading = false; }
+    } catch { grid.innerHTML = '<div class="sidebar-image-empty">Could not load images.</div>'; }
+    finally { __imageHistoryLoading = false; }
   }
   function refreshImageHistorySoon() { setTimeout(() => { loadImageHistory().catch(() => {}); }, 500); }
 
@@ -604,8 +596,7 @@ end
       ...c,
       messages: (c.messages || []).map((m) => ({
         id: m.id, role: m.role, content: m.content, ts: m.ts,
-        thinking: m.thinking || '',
-        imageKey: m.imageKey || null,
+        thinking: m.thinking || '', imageKey: m.imageKey || null,
         files: (m.files || []).map((f) => ({
           name: f.name, size: f.size, type: f.type, mime: f.mime,
           dataUrl: (f.type === 'image' && f.dataUrl && f.dataUrl.length < 200000) ? f.dataUrl : undefined,
@@ -816,9 +807,7 @@ end
             btn.innerHTML = '<i class="ri-check-line"></i> Copied';
             setTimeout(() => { btn.innerHTML = old; }, 1200);
           } catch {}
-        } else if (btn.hasAttribute('data-run')) {
-          openHtmlRunner(code);
-        }
+        } else if (btn.hasAttribute('data-run')) { openHtmlRunner(code); }
       };
     });
   }
@@ -836,14 +825,34 @@ end
   }
   function closeHtmlRunner() { $('#htmlRunnerModal')?.classList.remove('open'); }
 
-  /* ---------- Message DOM ---------- */
-  function buildAiActions(role, msgId, liked) {
-    if (role === 'user') return `<button class="action-btn" data-action="copy" aria-label="Copy" title="Copy"><i class="ri-file-copy-line"></i></button>`;
+  /* ---------- Raw view modal ---------- */
+  function openRawView(text) {
+    __currentRawSource = text || '';
+    const modal = $('#rawViewModal'); const content = $('#rawViewContent');
+    if (content) content.textContent = __currentRawSource || '(empty)';
+    if (modal) modal.classList.add('open');
+  }
+  function closeRawView() { $('#rawViewModal')?.classList.remove('open'); }
+
+  /* ---------- Message actions (rich) ---------- */
+  function buildActions(role, msgId) {
+    if (role === 'user') {
+      return `<button class="action-btn" data-action="copy" aria-label="Copy" title="Copy"><i class="ri-file-copy-line"></i></button>`;
+    }
+    const react = __reactions[msgId];
+    const liked = react === 'like';
+    const disliked = react === 'dislike';
     return `
-      <button class="action-btn${liked ? ' active-liked' : ''}" data-action="like" aria-label="Like" title="Like"><i class="${liked ? 'ri-thumb-up-fill' : 'ri-thumb-up-line'}"></i><span>${liked ? 'Liked' : 'Like'}</span></button>
-      <button class="action-btn" data-action="copy" aria-label="Copy" title="Copy"><i class="ri-file-copy-line"></i></button>
-      <button class="action-btn" data-action="speak" aria-label="Read aloud" title="Read aloud"><i class="ri-volume-up-line"></i></button>
-      <button class="action-btn" data-action="retry" aria-label="Regenerate" title="Regenerate"><i class="ri-refresh-line"></i></button>
+      <button class="action-btn${liked ? ' active-liked' : ''}" data-action="like" aria-label="Like" title="Good response">
+        <i class="${liked ? 'ri-thumb-up-fill' : 'ri-thumb-up-line'}"></i><span>Like</span>
+      </button>
+      <button class="action-btn${disliked ? ' active-disliked' : ''}" data-action="dislike" aria-label="Dislike" title="Bad response">
+        <i class="${disliked ? 'ri-thumb-down-fill' : 'ri-thumb-down-line'}"></i><span>Dislike</span>
+      </button>
+      <button class="action-btn" data-action="copy" aria-label="Copy" title="Copy response"><i class="ri-file-copy-line"></i><span>Copy</span></button>
+      <button class="action-btn" data-action="speak" aria-label="Read aloud" title="Read aloud"><i class="ri-volume-up-line"></i><span>Read</span></button>
+      <button class="action-btn" data-action="raw" aria-label="View source" title="View raw markdown source"><i class="ri-code-box-line"></i><span>Source</span></button>
+      <button class="action-btn" data-action="retry" aria-label="Regenerate" title="Regenerate"><i class="ri-refresh-line"></i><span>Retry</span></button>
     `;
   }
 
@@ -854,6 +863,7 @@ end
     const el = document.createElement('div');
     el.className = 'message ' + (role === 'user' ? 'user' : 'ai');
     el.dataset.msgId = id; el.dataset.role = role;
+    el.dataset.rawContent = content || '';
     let avatar = '';
     if (role === 'ai') avatar = `<div class="message-avatar" data-mood="idle"><div class="mascot mascot-sm m-idle" data-mood="idle">${blobSvg()}</div></div>`;
     let inner = '';
@@ -862,8 +872,7 @@ end
       for (const f of files) {
         if (f.type === 'image' && f.dataUrl) {
           const dims = f.width && f.height ? `<span class="attach-size">${f.width}×${f.height}</span>` : '';
-          const vision = f.vision ? '<span class="attach-vision"><i class="ri-eye-line"></i> vision</span>' : '';
-          inner += `<div class="attach-chip attach-chip-image"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name || '')}${dims}${vision}</div>`;
+          inner += `<div class="attach-chip attach-chip-image"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name || '')}${dims}</div>`;
         } else {
           const meta = getFileMeta(f.name);
           const lines = f.content ? countLines(f.content) : 0;
@@ -875,8 +884,7 @@ end
     if (role === 'ai' && image) inner += `<div class="gen-image"><img src="${image}" draggable="false" alt=""></div>`;
     inner += '<div class="bubble-text"></div>';
 
-    const liked = !!(__likes[id]);
-    el.innerHTML = `${avatar}<div class="message-body"><div class="bubble">${inner}</div><div class="message-actions">${buildAiActions(role, id, liked)}</div><div class="message-time">${ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</div></div>`;
+    el.innerHTML = `${avatar}<div class="message-body"><div class="bubble">${inner}</div><div class="message-actions">${buildActions(role, id)}</div><div class="message-time">${ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</div></div>`;
     container.appendChild(el);
 
     if (role === 'ai' && thinking && stripThinkingLeak(thinking).trim()) {
@@ -904,11 +912,11 @@ end
         e.stopPropagation();
         const action = btn.dataset.action;
         if (action === 'copy') {
-          const text = el.querySelector('.bubble')?.innerText || '';
+          const raw = el.dataset.rawContent || el.querySelector('.bubble-text')?.innerText || '';
           try {
-            await navigator.clipboard.writeText(text);
+            await navigator.clipboard.writeText(raw);
             const old = btn.innerHTML;
-            btn.innerHTML = '<i class="ri-check-line"></i>';
+            btn.innerHTML = '<i class="ri-check-line"></i>' + (btn.querySelector('span') ? '<span>Copied</span>' : '');
             setTimeout(() => { btn.innerHTML = old; }, 1200);
           } catch {}
         } else if (action === 'speak') {
@@ -917,20 +925,37 @@ end
           const msg = convo?.messages.find((m) => m.id === msgId);
           const lang = (__prefs.responseLanguage && __prefs.responseLanguage !== 'auto') ? __prefs.responseLanguage : (msg && msg.lang) || 'en';
           if (__currentSpeakMsgId === msgId) stopSpeaking(); else speak(text, lang, msgId);
+        } else if (action === 'raw') {
+          const raw = el.dataset.rawContent || '';
+          openRawView(raw);
         } else if (action === 'like') {
-          const likedNow = !__likes[msgId];
-          __likes[msgId] = likedNow;
-          if (!likedNow) delete __likes[msgId];
-          saveLikes();
-          btn.classList.toggle('active-liked', !!likedNow);
-          btn.classList.add('liked-pop');
-          setTimeout(() => btn.classList.remove('liked-pop'), 450);
-          btn.innerHTML = `<i class="${likedNow ? 'ri-thumb-up-fill' : 'ri-thumb-up-line'}"></i><span>${likedNow ? 'Liked' : 'Like'}</span>`;
+          const cur = __reactions[msgId];
+          if (cur === 'like') delete __reactions[msgId];
+          else __reactions[msgId] = 'like';
+          saveReactions();
+          updateActionBar(el);
+        } else if (action === 'dislike') {
+          const cur = __reactions[msgId];
+          if (cur === 'dislike') delete __reactions[msgId];
+          else __reactions[msgId] = 'dislike';
+          saveReactions();
+          updateActionBar(el);
         } else if (action === 'retry') {
           if (!isReplying) handleRetry(el);
         }
       };
     });
+  }
+
+  function updateActionBar(el) {
+    const msgId = el.dataset.msgId;
+    const role = el.dataset.role;
+    const bar = el.querySelector('.message-actions');
+    if (!bar) return;
+    bar.innerHTML = buildActions(role, msgId);
+    // Re-wire the fresh buttons
+    el.querySelectorAll('.action-btn').forEach((b) => { b.__wired = false; });
+    wireMessageActions(el);
   }
 
   async function handleRetry(el) {
@@ -1106,35 +1131,22 @@ end
 
     try {
       const reqBody = {
-        message: text,
-        history,
-        model,
-        stream: true,
-        search: !!forceSearch,
-        deep_think: !!__prefs.deepThink,
-        system_extra: THINK_INSTRUCTION,
+        message: text, history, model, stream: true, search: !!forceSearch,
+        deep_think: !!__prefs.deepThink, system_extra: THINK_INSTRUCTION,
         files: files.map((f) => ({
           name: f.name, size: f.size, type: f.type, mime: f.mime,
-          width: f.width, height: f.height,
-          dataUrl: f.dataUrl,
-          base64: f.base64 || null,
-          svgText: f.svgText || null,
-          vision: !!f.vision,
-          content: f.type === 'text' ? f.content : undefined,
+          width: f.width, height: f.height, dataUrl: f.dataUrl,
+          base64: f.base64 || null, svgText: f.svgText || null,
+          vision: !!f.vision, content: f.type === 'text' ? f.content : undefined,
         })),
         content_parts: contentParts.length ? contentParts : null,
-        guest_id: getGuestId(),
-        language: __prefs.responseLanguage || 'auto',
-        edit_image: !!editIntent,
-        source_image: sourceImage,
+        guest_id: getGuestId(), language: __prefs.responseLanguage || 'auto',
+        edit_image: !!editIntent, source_image: sourceImage,
         continuation: !!isContinuation,
       };
       const res = await fetch('/v1/chat/completions', {
-        method: 'POST',
-        headers: authHeaders(),
-        credentials: 'same-origin',
-        body: JSON.stringify(reqBody),
-        signal: activeStreamController.signal,
+        method: 'POST', headers: authHeaders(), credentials: 'same-origin',
+        body: JSON.stringify(reqBody), signal: activeStreamController.signal,
       });
       if (!res.ok) {
         let detail = `HTTP ${res.status}`;
@@ -1240,12 +1252,8 @@ end
       if (avatarMascot) setMascotMood('happy', avatarMascot.parentElement.parentElement);
       if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
       if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); wireCodeButtons(bubbleText); }
-      wireMessageActions(msgEl);
-
-      const liked = !!__likes[aiMsgId];
-      const actionsBar = msgEl.querySelector('.message-actions');
-      if (actionsBar) actionsBar.innerHTML = buildAiActions('ai', aiMsgId, liked);
-      wireMessageActions(msgEl);
+      msgEl.dataset.rawContent = full;
+      updateActionBar(msgEl);
 
       let imageKey = null;
       if (generatedImage) {
@@ -1288,6 +1296,8 @@ end
       if (full) {
         if (!bubbleText) { bubbleText = document.createElement('div'); bubbleText.className = 'bubble-text'; bubble.prepend(bubbleText); }
         bubbleText.innerHTML = renderMarkdown(full); wireCodeButtons(bubbleText);
+        msgEl.dataset.rawContent = full;
+        updateActionBar(msgEl);
         let savedMsg = convo?.messages.find((m) => m.id === aiMsgId);
         if (isContinuation && continuation.messageObject) savedMsg = continuation.messageObject;
         if (!savedMsg && convo) { savedMsg = { id: aiMsgId, role: 'assistant', content: full, ts: Date.now() }; convo.messages.push(savedMsg); }
@@ -1646,7 +1656,13 @@ end
   }
 
   /* ═══════════════════════════════════════════════════════════
-     CALL MODE
+     CALL MODE  —  FIXED
+     Key changes:
+       · continuous=true recognizer (never stops mid-utterance)
+       · 5-second silence timer auto-sends any captured text
+       · If nothing was captured, we show a Send button so the
+         user can force-send manually.
+       · Send button always visible during listening phase
      ═══════════════════════════════════════════════════════════ */
   function setCallPhase(phase) {
     __call.phase = phase;
@@ -1659,8 +1675,19 @@ end
     if (phase === 'listening') { if (statusEl) { statusEl.textContent = 'Listening…'; statusEl.classList.add('listening'); } }
     else if (phase === 'thinking') { if (statusEl) { statusEl.textContent = 'Thinking…'; statusEl.classList.add('thinking'); } }
     else if (phase === 'speaking') { if (statusEl) { statusEl.textContent = 'Speaking…'; statusEl.classList.add('speaking'); } }
+    else if (phase === 'waiting') { if (statusEl) { statusEl.textContent = 'Tap Send or speak again'; statusEl.classList.add('waiting'); } }
     else if (phase === 'held') { if (statusEl) statusEl.textContent = 'On hold'; }
     else { if (statusEl) { statusEl.textContent = 'Listening…'; statusEl.classList.add('listening'); } }
+    // Show/hide send button
+    updateCallSendVisibility();
+  }
+
+  function updateCallSendVisibility() {
+    const btn = $('#callSendNowBtn');
+    if (!btn) return;
+    // Show Send when listening or waiting and not currently thinking/speaking
+    const show = __call.active && !__call.holding && (__call.phase === 'listening' || __call.phase === 'idle' || __call.phase === 'waiting');
+    btn.style.display = show ? 'flex' : 'none';
   }
 
   function callStopRecog() {
@@ -1675,6 +1702,14 @@ end
     }
   }
 
+  function setCallTranscript(text, interim) {
+    const el = $('#callTranscript');
+    if (!el) return;
+    el.textContent = text || '';
+    el.classList.toggle('interim', !!interim);
+    __call.capturedText = text || '';
+  }
+
   function startCallRecognition() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { toast('Speech recognition is not supported. Try Chrome or Edge.', 5000, 'err'); endCall(); return; }
@@ -1683,16 +1718,41 @@ end
     callStopRecog();
     const recog = new SR();
     recog.lang = __call.lang;
-    recog.continuous = false;
+    recog.continuous = true;        // ← KEY: keep listening continuously
     recog.interimResults = true;
     recog.maxAlternatives = 1;
 
     let finalText = '';
-    let silenceTimer = null;
     let sent = false;
-    const transcriptEl = $('#callTranscript');
+    let silenceTimer = null;
+    let gotAnything = false;
 
-    recog.onstart = () => setCallPhase('listening');
+    const resetSilence = () => {
+      clearTimeout(silenceTimer);
+      silenceTimer = setTimeout(onSilence, CALL_SILENCE_MS);
+    };
+
+    const onSilence = () => {
+      if (sent || !__call.active || __call.holding) return;
+      // If we captured ANY text, send it
+      if (finalText.trim()) {
+        sent = true;
+        callStopRecog();
+        setCallTranscript(finalText, false);
+        callSendToAI(finalText.trim());
+        return;
+      }
+      // Otherwise: no text at all in 5s → stop and show Send button + waiting
+      callStopRecog();
+      __call.shouldListen = false;
+      setCallPhase('waiting');
+      __call.shouldListen = true;  // we still want to be able to tap mic again
+    };
+
+    recog.onstart = () => {
+      setCallPhase('listening');
+      resetSilence();
+    };
 
     recog.onresult = (event) => {
       let interim = '', final = '';
@@ -1701,25 +1761,14 @@ end
         if (r.isFinal) final += r[0].transcript;
         else interim += r[0].transcript;
       }
-      if (interim && transcriptEl) {
-        transcriptEl.textContent = (finalText + ' ' + interim).trim();
-        transcriptEl.classList.add('interim');
-      }
+      gotAnything = true;
       if (final) {
         finalText = (finalText + ' ' + final).trim();
-        if (transcriptEl) {
-          transcriptEl.textContent = finalText;
-          transcriptEl.classList.remove('interim');
-        }
-        clearTimeout(silenceTimer);
-        silenceTimer = setTimeout(() => {
-          if (sent || !finalText.trim() || !__call.active) return;
-          sent = true;
-          __call.shouldListen = false;
-          callStopRecog();
-          callSendToAI(finalText.trim());
-        }, 900);
+        setCallTranscript(finalText, false);
+      } else if (interim) {
+        setCallTranscript((finalText + ' ' + interim).trim(), true);
       }
+      resetSilence();
     };
 
     recog.onerror = (e) => {
@@ -1728,15 +1777,24 @@ end
         endCall();
         return;
       }
+      // no-speech is normal – let onend handle it
     };
 
     recog.onend = () => {
       clearTimeout(silenceTimer);
       __call.recog = null;
-      if (__call.active && __call.shouldListen && !__call.holding && !sent && !__call.busy) {
+      if (sent) return;
+      // If we captured text and the recognizer ended (browser auto-stop), send it
+      if (finalText.trim() && __call.active && !__call.holding) {
+        sent = true;
+        callSendToAI(finalText.trim());
+        return;
+      }
+      // Otherwise, restart listening if we should still listen
+      if (__call.active && __call.shouldListen && !__call.holding && !__call.busy) {
         setTimeout(() => {
           if (__call.active && __call.shouldListen && !__call.holding && !__call.busy) startCallRecognition();
-        }, 350);
+        }, 300);
       }
     };
 
@@ -1744,7 +1802,24 @@ end
     try { recog.start(); } catch (e) { /* ignore */ }
   }
 
-  // Robust: uses the SAME request shape as chat, with both SSE and JSON fallback.
+  // Manually force-send whatever's captured (or restart listening if empty)
+  function callForceSend() {
+    if (!__call.active || __call.holding || __call.busy) return;
+    const text = (__call.capturedText || '').trim();
+    if (!text) {
+      // Nothing captured - just restart listening
+      toast('Say something first, or tap the mic.', 2200);
+      __call.shouldListen = true;
+      callStopRecog();
+      setCallPhase('idle');
+      setTimeout(() => { if (__call.active && __call.shouldListen && !__call.holding) startCallRecognition(); }, 150);
+      return;
+    }
+    callStopRecog();
+    setCallTranscript(text, false);
+    callSendToAI(text);
+  }
+
   async function callSendToAI(userText) {
     if (!__call.active) return;
     __call.busy = true;
@@ -1822,7 +1897,6 @@ end
           }
         }
       } else {
-        // Non-stream fallback
         const data = await res.json();
         fullReply = data.reply || data.content || data.message || (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
         const clean = stripThinkingLeak(fullReply).replace(/```[\s\S]*?```/g, '').trim();
@@ -1836,16 +1910,15 @@ end
 
       __call.busy = false;
       if (!__call.active) return;
-
       if (__call.holding) { setCallPhase('held'); return; }
 
-      // Speak it, then go back to listening
       await speak(finalReply, __call.lang);
 
       if (__call.active && !__call.holding) {
         await new Promise((r) => setTimeout(r, 300));
         if (__call.active && !__call.holding) {
           __call.shouldListen = true;
+          setCallTranscript('', false);   // clear transcript for next turn
           setCallPhase('idle');
           startCallRecognition();
         }
@@ -1883,6 +1956,7 @@ end
     __call.busy = false;
     __call.currentHistory = [];
     __call.currentAbort = null;
+    __call.capturedText = '';
 
     const overlay = $('#callOverlay');
     if (overlay) overlay.classList.add('open');
@@ -1895,8 +1969,7 @@ end
       __call.lang = langSel.value || 'en-US';
     }
 
-    const transcriptEl = $('#callTranscript');
-    if (transcriptEl) { transcriptEl.textContent = ''; transcriptEl.classList.remove('interim'); }
+    setCallTranscript('', false);
     const replyEl = $('#callReply');
     if (replyEl) { replyEl.textContent = ''; replyEl.classList.remove('typing'); }
 
@@ -2012,7 +2085,7 @@ end
   function openSupportModal() { openModal('supportModal'); supportLoad(); supportStartPolling(); }
   function closeSupportModal() { closeModal('supportModal'); supportStopPolling(); }
 
-  /* ---------- Bridge (minimal, unchanged) ---------- */
+  /* ---------- Bridge (unchanged) ---------- */
   function loadBridgeOpts() { const o = safeGet(BRIDGE_OPTS_KEY, {}); if (typeof o.autoRun === 'boolean') __bridgeAutoRun = o.autoRun; if (typeof o.showCode === 'boolean') __bridgeShowCode = o.showCode; }
   function saveBridgeOpts() { safeSet(BRIDGE_OPTS_KEY, { autoRun: __bridgeAutoRun, showCode: __bridgeShowCode }); }
   function renderBridgeStatus() {
@@ -2287,9 +2360,11 @@ end
       openModal('imageModal');
     });
 
+    /* Call wiring */
     on('#callModeBtn', 'click', startCall);
     on('#callEndBtn', 'click', endCall);
     on('#callHoldBtn', 'click', toggleCallHold);
+    on('#callSendNowBtn', 'click', callForceSend);
     on('#callLangSelect', 'change', (e) => {
       __call.lang = e.target.value;
       if (__call.active && !__call.busy) {
@@ -2315,6 +2390,11 @@ end
       supInput.addEventListener('input', () => { supInput.style.height = 'auto'; supInput.style.height = Math.min(supInput.scrollHeight, 140) + 'px'; supportUpdateComposeState(); });
       supInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); supportSend(); } });
     }
+
+    /* Raw view */
+    on('#rawViewCopyBtn', 'click', async () => {
+      try { await navigator.clipboard.writeText(__currentRawSource || ''); toast('Source copied', 1800, 'ok'); } catch {}
+    });
 
     $$('.html-runner-tab').forEach((t) => {
       t.onclick = () => {
@@ -2390,12 +2470,14 @@ end
         const target = cb.dataset.close;
         if (target === 'supportModal') { closeSupportModal(); return; }
         if (target === 'htmlRunnerModal') { closeHtmlRunner(); return; }
+        if (target === 'rawViewModal') { closeRawView(); return; }
         closeModal(target);
         return;
       }
       if (e.target.classList.contains('modal-overlay')) {
         if (e.target.id === 'supportModal') { closeSupportModal(); return; }
         if (e.target.id === 'htmlRunnerModal') { closeHtmlRunner(); return; }
+        if (e.target.id === 'rawViewModal') { closeRawView(); return; }
         e.target.classList.remove('open');
       }
       if (e.target.closest('[data-iv-close]')) closeImageViewer();
@@ -2435,6 +2517,7 @@ end
         closeImageViewer(); closeModelPicker(); stopSpeaking();
         if ($('#filePreviewModal')?.classList.contains('open')) { closeFilePreview(); return; }
         if ($('#htmlRunnerModal')?.classList.contains('open')) { closeHtmlRunner(); return; }
+        if ($('#rawViewModal')?.classList.contains('open')) { closeRawView(); return; }
         if ($('#bridgeWorkspace')?.classList.contains('open')) { closeBridgeWorkspace(); return; }
         if ($('#sudoModal')?.classList.contains('open')) { skipSudo(); return; }
         if ($('#supportModal')?.classList.contains('open')) { closeSupportModal(); return; }
@@ -2486,7 +2569,7 @@ end
       try { const t = localStorage.getItem('mirox_token'); if (t && !isApiKey(t)) localStorage.removeItem('mirox_token'); } catch {}
       loadPrefs();
       loadI18nCache();
-      loadLikes();
+      loadReactions();
       applyAppearanceFromPrefs();
       applyPrefs();
       loadChats();
