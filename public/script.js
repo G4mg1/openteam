@@ -2,10 +2,11 @@
   'use strict';
 
   /* ============================================================
-     MiroxAI frontend v106
-     · REAL thinking panel (separate from answer, no mixing)
-     · Like / Copy / Read-aloud buttons
-     · Call mode (STT → AI → TTS loop, any language)
+     MiroxAI frontend v137
+     · Fixed thinking-tag leak in chat bubbles
+     · Rewritten Call mode — dark UI, Hold/End, always-listening
+     · Stream parser handles <thinking>, reasoning_content, and
+       partial tag fragments during streaming
      ============================================================ */
 
   /* ---------- i18n ---------- */
@@ -183,11 +184,12 @@ end
   let __call = {
     active: false,
     lang: 'en-US',
-    phase: 'idle',     // idle | listening | thinking | speaking
+    phase: 'idle',       // idle | listening | thinking | speaking | held
     recog: null,
     shouldListen: false,
     muted: false,
-    currentUtter: null,
+    holding: false,
+    currentAbort: null,
     currentHistory: [],
   };
 
@@ -282,9 +284,8 @@ end
   /* ---------- Likes ---------- */
   function loadLikes() { __likes = safeGet(LIKES_KEY, {}); if (typeof __likes !== 'object' || !__likes) __likes = {}; }
   function saveLikes() { safeSet(LIKES_KEY, __likes); }
-  function msgLikeKey(msg) { return (msg.ts || 0) + ':' + String(msg.content || '').slice(0, 60); }
 
-  /* ---------- TTS (SpeechSynthesis) ---------- */
+  /* ---------- TTS ---------- */
   const ttsAvailable = typeof window !== 'undefined' && 'speechSynthesis' in window;
   let __voices = [];
 
@@ -317,7 +318,6 @@ end
       if (v) return v;
     }
     const norm = String(lang || '').toLowerCase();
-    // try exact, then primary subtag
     let v = __voices.find((x) => String(x.lang || '').toLowerCase() === norm);
     if (v) return v;
     const primary = norm.split('-')[0];
@@ -344,7 +344,6 @@ end
       stopSpeaking();
       const clean = String(text || '').replace(/```[\s\S]*?```/g, ' [code] ').replace(/\s+/g, ' ').trim();
       if (!clean) return resolve();
-      // Chunk into ~220 char pieces so browsers speak smoothly
       const parts = [];
       let buf = '';
       for (const sentence of clean.split(/(?<=[.!?۔।])\s+/)) {
@@ -415,7 +414,33 @@ end
     }, 6000);
   }
 
-  /* ═══════════ THINK PANEL — clean, no dots, single text ═══════════ */
+  /* ═══════════ THINKING-LEAK HELPERS ═══════════ */
+  // Strip full <thinking>...</thinking> blocks, dangling open tags, and any
+  // partial tag fragment at the end of a streamed chunk (e.g. "<thin").
+  function stripThinkingLeak(s) {
+    let out = String(s == null ? '' : s);
+    // 1. Remove complete blocks
+    out = out.replace(/<thinking>[\s\S]*?<\/thinking>/g, '');
+    // 2. Remove dangling open tags (from last <thinking> to end)
+    const lastOpen = out.lastIndexOf('<thinking>');
+    if (lastOpen >= 0 && out.indexOf('</thinking>', lastOpen) === -1) {
+      out = out.slice(0, lastOpen);
+    }
+    // 3. Remove any residual tag tokens
+    out = out.replace(/<\/?thinking>/g, '');
+    // 4. Strip a trailing partial prefix like "<thin", "</thinkin", "<", "</"
+    const lastLt = out.lastIndexOf('<');
+    if (lastLt >= 0) {
+      const tail = out.slice(lastLt);
+      const candidates = ['<thinking>', '</thinking>'];
+      if (candidates.some((c) => c.toLowerCase().startsWith(tail.toLowerCase()) && tail.length < c.length)) {
+        out = out.slice(0, lastLt);
+      }
+    }
+    return out;
+  }
+
+  /* THINK PANEL */
   function createThinkPanel(deep) {
     const el = document.createElement('div');
     el.className = 'think-panel';
@@ -879,19 +904,6 @@ end
   function closeHtmlRunner() { $('#htmlRunnerModal')?.classList.remove('open'); }
 
   /* ---------- Message DOM ---------- */
-  function renderAttachmentChip(f, forMessage) {
-    if (f.type === 'image' && f.dataUrl) {
-      const dims = f.width && f.height ? `<span class="attach-size">${f.width}×${f.height}</span>` : '';
-      const vision = f.vision ? '<span class="attach-vision"><i class="ri-eye-line"></i> vision</span>' : '';
-      return `<div class="attach-chip attach-chip-image"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name || '')}${dims}${vision}</div>`;
-    }
-    const meta = getFileMeta(f.name);
-    const lines = f.content ? countLines(f.content) : 0;
-    const idx = pendingFiles.indexOf(f);
-    const previewAttr = forMessage ? '' : ` data-preview-file="${idx}"`;
-    return `<div class="attach-chip attach-chip-file"${previewAttr} title="${escapeHtml(f.name || 'file')}${lines ? ` · ${lines} lines` : ''}"><span class="attach-file-badge"><i class="${meta.icon}"></i> ${escapeHtml(meta.label)}</span><span class="attach-chip-file-name">${escapeHtml(f.name || 'file')}</span>${f.size ? `<span class="attach-size">${fmtSize(f.size)}</span>` : ''}${lines > 1 ? `<span class="attach-lines">${lines} lines</span>` : ''}</div>`;
-  }
-
   function buildAiActions(role, msgId, liked) {
     if (role === 'user') {
       return `<button class="action-btn" data-action="copy" aria-label="Copy" title="Copy"><i class="ri-file-copy-line"></i></button>`;
@@ -943,10 +955,10 @@ end
       </div>`;
     container.appendChild(el);
 
-    // Insert thinking panel ABOVE the bubble ONLY if there's actual thinking text
-    if (role === 'ai' && thinking && thinking.trim()) {
+    // Insert saved thinking panel ABOVE bubble (only if it has real content)
+    if (role === 'ai' && thinking && stripThinkingLeak(thinking).trim()) {
       const panel = createThinkPanel(false);
-      panel.replaceText(thinking);
+      panel.replaceText(stripThinkingLeak(thinking));
       panel.finalize();
       const bodyEl = el.querySelector('.message-body');
       bodyEl.insertBefore(panel.el, bodyEl.firstChild);
@@ -954,7 +966,7 @@ end
 
     const bt = el.querySelector('.bubble-text');
     if (role === 'user') { bt.textContent = content || ''; if (!content) bt.style.display = 'none'; }
-    else if (content) { bt.innerHTML = renderMarkdown(content); wireCodeButtons(bt); }
+    else if (content) { bt.innerHTML = renderMarkdown(stripThinkingLeak(content)); wireCodeButtons(bt); }
     if (role === 'ai' && image) { const img = el.querySelector('.gen-image img'); if (img) img.onclick = () => openImageViewer(image); }
     wireMessageActions(el);
     scrollToBottom();
@@ -1116,7 +1128,7 @@ end
     return t;
   }
 
-  /* ---------- Send to API ---------- */
+  /* ---------- Send to API (chat) ---------- */
   async function sendToAPI(text, files, forceSearch, continuation = null) {
     const isContinuation = !!(continuation && continuation.continuation);
     isReplying = true; updateSendButtonState();
@@ -1172,10 +1184,11 @@ end
     let generatedImage = null, gotToken = false;
     let streamComplete = false;
     let renderTimer = null;
-    let rawAll = '';
-    let answerText = '';
-    let thinkingText = '';
-    let thinkingClosed = false;
+    let rawAll = '';         // raw accumulated streamed text
+    let answerText = '';     // visible answer (tags stripped)
+    let thinkingText = '';   // contents of <thinking> block OR reasoning_content
+    let hasReasoning = false;// did backend send reasoning_content?
+    let thinkingTagSeen = false;
 
     const renderStreamText = () => {
       renderTimer = null;
@@ -1195,9 +1208,6 @@ end
     const streamTimeout = setTimeout(() => { try { activeStreamController?.abort(); } catch {} }, STREAM_TIMEOUT_MS);
 
     try {
-      const sysMsgs = [
-        { role: 'system', content: THINK_INSTRUCTION },
-      ];
       const reqBody = {
         message: text,
         history,
@@ -1252,20 +1262,21 @@ end
         const openIdx = s.indexOf('<thinking>');
         const closeIdx = s.indexOf('</thinking>');
         if (openIdx >= 0 && closeIdx > openIdx) {
-          thinkingText = s.slice(openIdx + 10, closeIdx).trim();
+          thinkingTagSeen = true;
+          thinkingText = s.slice(openIdx + 10, closeIdx);
           const before = s.slice(0, openIdx);
           const after = s.slice(closeIdx + 11);
-          answerText = (before + after).replace(/^\s+/, '');
-          thinkingClosed = true;
+          answerText = before + after;
         } else if (openIdx >= 0) {
+          thinkingTagSeen = true;
           thinkingText = s.slice(openIdx + 10);
-          answerText = s.slice(0, openIdx).trim();
-          thinkingClosed = false;
-        } else {
+          answerText = s.slice(0, openIdx);
+        } else if (!hasReasoning) {
           thinkingText = '';
           answerText = s;
-          thinkingClosed = true;
         }
+        // ALWAYS scrub any residual / partial tag fragments from the visible answer
+        answerText = stripThinkingLeak(answerText);
       };
 
       while (true) {
@@ -1299,12 +1310,24 @@ end
             continue;
           }
 
-          if (o.d) {
-            rawAll += o.d;
+          // Explicit reasoning_content field (some backends)
+          if (o.reasoning_content || o.reasoning) {
+            const r = String(o.reasoning_content || o.reasoning || '');
+            if (r) {
+              hasReasoning = true;
+              thinkingText += r;
+              if (thinkPanel && thinkPanel.isConnected()) thinkPanel.replaceText(thinkingText);
+            }
+          }
+
+          // Content delta (support multiple shapes)
+          const delta = o.d || o.content || (o.delta && o.delta.content) || '';
+          if (delta) {
+            rawAll += delta;
             updateSplit();
+            // Panel: keep updating while we don't have a final answer yet
             if (thinkPanel && thinkPanel.isConnected()) {
-              if (!thinkingClosed) thinkPanel.replaceText(thinkingText);
-              else if (/<thinking>/.test(rawAll)) thinkPanel.replaceText(thinkingText);
+              if (thinkingTagSeen || hasReasoning) thinkPanel.replaceText(thinkingText);
             }
             if (answerText.length > 0) {
               if (!gotToken) {
@@ -1326,13 +1349,12 @@ end
 
       updateSplit();
 
-      // Finalize think panel
+      // Finalize panel
       if (thinkPanel && thinkPanel.isConnected()) {
-        if (/<thinking>/.test(rawAll)) {
-          thinkPanel.replaceText(thinkingText);
+        if (thinkingTagSeen || hasReasoning) {
+          thinkPanel.replaceText(stripThinkingLeak(thinkingText));
           thinkPanel.finalize();
         } else {
-          // No <thinking> tag at all — hide the panel so it doesn't mix with the answer
           thinkPanel.hide();
         }
       }
@@ -1343,7 +1365,6 @@ end
       if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); wireCodeButtons(bubbleText); }
       wireMessageActions(msgEl);
 
-      // Update the actions bar to reflect latest state
       const liked = !!__likes[aiMsgId];
       const actionsBar = msgEl.querySelector('.message-actions');
       if (actionsBar) actionsBar.innerHTML = buildAiActions('ai', aiMsgId, liked);
@@ -1380,7 +1401,6 @@ end
         attachContinueButton(msgEl, bubble, savedMsg);
       }
 
-      // Auto-speak if enabled
       if (__prefs.autoSpeak && full && !__call.active) {
         const lang = (__prefs.responseLanguage && __prefs.responseLanguage !== 'auto') ? __prefs.responseLanguage : (savedMsg && savedMsg.lang) || 'en';
         setTimeout(() => { speak(full, lang, aiMsgId); }, 250);
@@ -1544,7 +1564,16 @@ end
     if (!p || !list) return;
     if (!pendingFiles.length) { p.style.display = 'none'; list.innerHTML = ''; return; }
     p.style.display = 'flex';
-    list.innerHTML = pendingFiles.map((f) => renderAttachmentChip(f, false)).join('');
+    list.innerHTML = pendingFiles.map((f) => {
+      if (f.type === 'image' && f.dataUrl) {
+        const dims = f.width && f.height ? `<span class="attach-size">${f.width}×${f.height}</span>` : '';
+        return `<div class="attach-chip attach-chip-image"><img src="${f.dataUrl}" alt="">${escapeHtml(f.name || '')}${dims}</div>`;
+      }
+      const meta = getFileMeta(f.name);
+      const lines = f.content ? countLines(f.content) : 0;
+      const idx = pendingFiles.indexOf(f);
+      return `<div class="attach-chip attach-chip-file" data-preview-file="${idx}" title="${escapeHtml(f.name || 'file')}"><span class="attach-file-badge"><i class="${meta.icon}"></i> ${escapeHtml(meta.label)}</span><span class="attach-chip-file-name">${escapeHtml(f.name || 'file')}</span>${f.size ? `<span class="attach-size">${fmtSize(f.size)}</span>` : ''}${lines > 1 ? `<span class="attach-lines">${lines} lines</span>` : ''}</div>`;
+    }).join('');
     list.querySelectorAll('[data-preview-file]').forEach((chip) => {
       chip.onclick = (e) => {
         e.stopPropagation();
@@ -1748,22 +1777,26 @@ end
     finally { if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-image-add-line"></i> Generate'; } }
   }
 
-  /* ═══════════ CALL MODE ═══════════ */
+  /* ═══════════════════════════════════════════════════════════
+     CALL MODE  —  dark UI, mic auto-listening, Hold + End
+     ═══════════════════════════════════════════════════════════ */
   function setCallPhase(phase) {
     __call.phase = phase;
+    const overlay = $('#callOverlay');
+    if (overlay) overlay.setAttribute('data-phase', phase);
     const statusEl = $('#callStatus');
-    const avatar = $('#callAvatar');
-    if (!statusEl || !avatar) return;
-    avatar.classList.remove('listening','thinking','speaking');
-    if (phase === 'listening') { statusEl.textContent = 'Listening…'; statusEl.className = 'call-status listening'; avatar.classList.add('listening'); setMascotMood('searching', avatar); }
-    else if (phase === 'thinking') { statusEl.textContent = 'Thinking…'; statusEl.className = 'call-status thinking'; avatar.classList.add('thinking'); setMascotMood('thinking', avatar); }
-    else if (phase === 'speaking') { statusEl.textContent = 'Speaking…'; statusEl.className = 'call-status speaking'; avatar.classList.add('speaking'); setMascotMood('happy', avatar); }
-    else { statusEl.textContent = 'Tap the mic to start'; statusEl.className = 'call-status'; setMascotMood('idle', avatar); }
+    if (!statusEl) return;
+    statusEl.className = 'call-status';
+    if (phase === 'listening') { statusEl.textContent = 'Listening…'; statusEl.classList.add('listening'); }
+    else if (phase === 'thinking') { statusEl.textContent = 'Thinking…'; statusEl.classList.add('thinking'); }
+    else if (phase === 'speaking') { statusEl.textContent = 'Speaking…'; statusEl.classList.add('speaking'); }
+    else if (phase === 'held') { statusEl.textContent = 'On hold'; }
+    else { statusEl.textContent = 'Listening…'; statusEl.classList.add('listening'); }
   }
 
   function callStopRecog() {
     if (__call.recog) {
-      try { __call.recog.onend = null; __call.recog.stop(); } catch {}
+      try { __call.recog.onend = null; __call.recog.onresult = null; __call.recog.onerror = null; __call.recog.stop(); } catch {}
       __call.recog = null;
     }
   }
@@ -1771,17 +1804,22 @@ end
   function startCallRecognition() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     const transcriptEl = $('#callTranscript');
-    if (!SR) { toast('Your browser does not support speech recognition.', 4000, 'err'); return; }
-    if (!__call.active || !__call.shouldListen) return;
+    if (!SR) { toast('Speech recognition is not supported in this browser. Try Chrome or Edge.', 5000, 'err'); endCall(); return; }
+    if (!__call.active || !__call.shouldListen || __call.holding) return;
+
     callStopRecog();
     const recog = new SR();
     recog.lang = __call.lang;
     recog.continuous = false;
     recog.interimResults = true;
     recog.maxAlternatives = 1;
-    let lastFinal = '';
+
+    let finalText = '';
     let silenceTimer = null;
-    recog.onstart = () => { setCallPhase('listening'); };
+    let sent = false;
+
+    recog.onstart = () => setCallPhase('listening');
+
     recog.onresult = (event) => {
       let interim = '', final = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -1789,31 +1827,46 @@ end
         if (r.isFinal) final += r[0].transcript;
         else interim += r[0].transcript;
       }
-      if (interim && transcriptEl) { transcriptEl.textContent = interim; transcriptEl.classList.add('interim'); }
+      if (interim && transcriptEl) {
+        transcriptEl.textContent = (finalText + ' ' + interim).trim();
+        transcriptEl.classList.add('interim');
+      }
       if (final) {
-        lastFinal = (lastFinal + ' ' + final).trim();
-        if (transcriptEl) { transcriptEl.textContent = lastFinal; transcriptEl.classList.remove('interim'); }
-        // small delay so user can add more
+        finalText = (finalText + ' ' + final).trim();
+        if (transcriptEl) {
+          transcriptEl.textContent = finalText;
+          transcriptEl.classList.remove('interim');
+        }
         clearTimeout(silenceTimer);
         silenceTimer = setTimeout(() => {
-          if (lastFinal.trim()) {
-            __call.shouldListen = false;
-            callStopRecog();
-            callSendToAI(lastFinal.trim());
-          }
-        }, 700);
+          if (sent) return;
+          if (!finalText.trim() || !__call.active) return;
+          sent = true;
+          __call.shouldListen = false;
+          callStopRecog();
+          callSendToAI(finalText.trim());
+        }, 900);
       }
     };
+
     recog.onerror = (e) => {
-      if (e.error === 'not-allowed') { toast('Microphone permission denied.', 3000, 'err'); endCall(); return; }
-      if (e.error === 'no-speech' || e.error === 'aborted') return;
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        toast('Microphone permission denied.', 3500, 'err');
+        endCall();
+        return;
+      }
+      // no-speech / aborted are normal — the onend handler will restart
     };
+
     recog.onend = () => {
       clearTimeout(silenceTimer);
       __call.recog = null;
-      // If nothing was captured, and we should still listen, restart
-      if (__call.active && __call.shouldListen) setTimeout(startCallRecognition, 350);
+      // If nothing was captured and we're still supposed to listen, restart
+      if (__call.active && __call.shouldListen && !__call.holding && !sent) {
+        setTimeout(() => { if (__call.active && __call.shouldListen && !__call.holding) startCallRecognition(); }, 350);
+      }
     };
+
     __call.recog = recog;
     try { recog.start(); } catch (e) { /* ignore */ }
   }
@@ -1824,22 +1877,22 @@ end
     const replyEl = $('#callReply');
     if (replyEl) replyEl.textContent = '';
 
-    // Build a short history for the call
+    // Trim history: keep last 6 exchanges
     __call.currentHistory.push({ role: 'user', content: userText });
     if (__call.currentHistory.length > 12) __call.currentHistory.splice(0, __call.currentHistory.length - 12);
 
     const langTag = __call.lang.split('-')[0];
-    const callSystem = `You are Mirox, an AI by OpenSurr, on a VOICE CALL. Your reply is spoken aloud — so:
+    const callSystem = `You are Mirox, an AI by OpenSurr, on a LIVE VOICE CALL. Your reply will be spoken aloud by a TTS engine, so:
 - Reply ONLY in the language with code "${langTag}".
-- Keep it SHORT and conversational — usually 1-3 short sentences.
-- No code blocks, no markdown, no emojis, no bullet lists.
-- Do NOT use <thinking> tags in voice mode.
-- Be warm, natural, like a helpful friend on a call.`;
+- Keep it SHORT and conversational — 1 to 3 short sentences.
+- Never use code blocks, markdown, emojis, or bullet lists.
+- NEVER write <thinking>, </thinking>, or any XML-style tags.
+- Be warm, natural, like a helpful friend on a call. No preamble.`;
 
     let fullReply = '';
-    let streamComplete = false;
-    let controller = new AbortController();
-    __call.currentUtter = controller;
+    const controller = new AbortController();
+    __call.currentAbort = controller;
+
     try {
       const res = await fetch('/v1/chat/completions', {
         method: 'POST',
@@ -1852,13 +1905,18 @@ end
           stream: true,
           deep_think: false,
           system_extra: callSystem,
-          call_mode: true,
           guest_id: getGuestId(),
           language: langTag,
         }),
         signal: controller.signal,
       });
-      if (!res.ok || !res.body) throw new Error('call_failed');
+
+      if (!res.ok || !res.body) {
+        let detail = 'HTTP ' + res.status;
+        try { const d = await res.json(); detail = d.error?.message || d.error || d.message || detail; } catch {}
+        throw new Error(detail);
+      }
+
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let buf = '';
@@ -1868,84 +1926,137 @@ end
         buf += dec.decode(value, { stream: true });
         let idx;
         while ((idx = buf.indexOf('\n')) !== -1) {
-          const line = buf.slice(0, idx).trim(); buf = buf.slice(idx + 1);
+          const line = buf.slice(0, idx).trim();
+          buf = buf.slice(idx + 1);
           if (!line.startsWith('data:')) continue;
-          const pl = line.slice(5).trim(); if (!pl || pl === '[DONE]') { if (pl === '[DONE]') streamComplete = true; continue; }
+          const pl = line.slice(5).trim();
+          if (!pl) continue;
+          if (pl === '[DONE]') continue;
           let o; try { o = JSON.parse(pl); } catch { continue; }
-          if (o.d) {
-            fullReply += o.d;
-            // Strip thinking tags if any leaked
-            const clean = fullReply.replace(/<thinking>[\s\S]*?<\/thinking>/g, '').replace(/<\/?thinking>/g, '').trim();
+          if (o.error) throw new Error(o.error.message || 'Stream error');
+          // Ignore reasoning fields in call mode — voice only
+          const delta = o.d || o.content || (o.delta && o.delta.content) || '';
+          if (delta) {
+            fullReply += delta;
+            const clean = stripThinkingLeak(fullReply).replace(/```[\s\S]*?```/g, '').trim();
             if (replyEl) replyEl.textContent = clean;
           }
         }
       }
 
-      const finalReply = fullReply.replace(/<thinking>[\s\S]*?<\/thinking>/g, '').replace(/<\/?thinking>/g, '').replace(/```[\s\S]*?```/g, '').trim() || 'Sorry, I did not catch that.';
+      const finalReply = stripThinkingLeak(fullReply).replace(/```[\s\S]*?```/g, '').replace(/\s+/g, ' ').trim() || 'Sorry, I did not catch that.';
       __call.currentHistory.push({ role: 'assistant', content: finalReply });
       if (replyEl) replyEl.textContent = finalReply;
 
       if (!__call.active) return;
-      if (__call.muted) {
-        // Do not speak, but continue listening
-        __call.shouldListen = true;
-        setCallPhase('idle');
-        startCallRecognition();
+
+      if (__call.muted || __call.holding) {
+        setCallPhase(__call.holding ? 'held' : 'idle');
+        if (!__call.holding) {
+          __call.shouldListen = true;
+          startCallRecognition();
+        }
         return;
       }
+
       setCallPhase('speaking');
       await speak(finalReply, __call.lang);
-      if (__call.active) {
+
+      if (__call.active && !__call.holding) {
         __call.shouldListen = true;
         setCallPhase('idle');
         startCallRecognition();
+      } else if (__call.active) {
+        setCallPhase('held');
       }
     } catch (e) {
       if (e && e.name === 'AbortError') return;
+      console.error('[Mirox Call]', e);
       if (replyEl) replyEl.textContent = 'Connection error.';
       setCallPhase('idle');
-      // retry listening after a moment
-      if (__call.active) setTimeout(() => { __call.shouldListen = true; startCallRecognition(); }, 1200);
+      if (__call.active && !__call.holding) {
+        setTimeout(() => {
+          if (__call.active && !__call.holding) {
+            __call.shouldListen = true;
+            startCallRecognition();
+          }
+        }, 1500);
+      }
+    } finally {
+      __call.currentAbort = null;
     }
   }
 
   function startCall() {
-    if (!('SpeechRecognition' in window) && !('webkitSpeechRecognition' in window)) {
-      toast('Your browser does not support speech recognition. Try Chrome or Edge.', 4500, 'err'); return;
-    }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { toast('Your browser does not support speech recognition. Try Chrome or Edge.', 4500, 'err'); return; }
     if (!ttsAvailable) { toast('Your browser does not support text-to-speech.', 4000, 'err'); return; }
+
     __call.active = true;
     __call.shouldListen = true;
     __call.muted = false;
+    __call.holding = false;
     __call.currentHistory = [];
+    __call.currentAbort = null;
+
     const overlay = $('#callOverlay');
     if (overlay) overlay.classList.add('open');
+
     const langSel = $('#callLangSelect');
     if (langSel) {
-      // default to user's preferred response language if set
       const pref = (__prefs.responseLanguage && __prefs.responseLanguage !== 'auto') ? __prefs.responseLanguage : (navigator.language || 'en-US');
       const match = Array.from(langSel.options).find((o) => o.value.toLowerCase().startsWith(pref.toLowerCase().split('-')[0]));
       if (match) langSel.value = match.value;
       __call.lang = langSel.value || 'en-US';
     }
+
     const transcriptEl = $('#callTranscript');
-    if (transcriptEl) transcriptEl.textContent = '';
+    if (transcriptEl) { transcriptEl.textContent = ''; transcriptEl.classList.remove('interim'); }
     const replyEl = $('#callReply');
     if (replyEl) replyEl.textContent = '';
+
+    const liveText = $('#callLiveText');
+    if (liveText) liveText.textContent = 'Live';
+    const holdBtn = $('#callHoldBtn');
+    if (holdBtn) holdBtn.classList.remove('active');
+
     setCallPhase('idle');
-    const muteBtn = $('#callMuteBtn'); if (muteBtn) { muteBtn.classList.remove('active'); muteBtn.innerHTML = '<i class="ri-volume-up-line"></i>'; }
-    const micBtn = $('#callMicBtn'); if (micBtn) micBtn.classList.remove('active');
-    setTimeout(() => startCallRecognition(), 400);
+    setTimeout(() => {
+      if (__call.active && __call.shouldListen) startCallRecognition();
+    }, 400);
+  }
+
+  function toggleCallHold() {
+    if (!__call.active) return;
+    __call.holding = !__call.holding;
+    const holdBtn = $('#callHoldBtn');
+    const liveText = $('#callLiveText');
+    if (__call.holding) {
+      callStopRecog();
+      stopSpeaking();
+      setCallPhase('held');
+      holdBtn?.classList.add('active');
+      if (liveText) liveText.textContent = 'On hold';
+    } else {
+      holdBtn?.classList.remove('active');
+      if (liveText) liveText.textContent = 'Live';
+      __call.shouldListen = true;
+      setCallPhase('idle');
+      startCallRecognition();
+    }
   }
 
   function endCall() {
     __call.active = false;
     __call.shouldListen = false;
+    __call.holding = false;
     callStopRecog();
-    if (__call.currentUtter) { try { __call.currentUtter.abort(); } catch {} __call.currentUtter = null; }
+    if (__call.currentAbort) { try { __call.currentAbort.abort(); } catch {} __call.currentAbort = null; }
     stopSpeaking();
     const overlay = $('#callOverlay'); if (overlay) overlay.classList.remove('open');
     setCallPhase('idle');
+    const liveText = $('#callLiveText'); if (liveText) liveText.textContent = 'Live';
+    const holdBtn = $('#callHoldBtn'); if (holdBtn) holdBtn.classList.remove('active');
   }
 
   /* ---------- Support ---------- */
@@ -2015,7 +2126,7 @@ end
   function openSupportModal() { openModal('supportModal'); supportLoad(); supportStartPolling(); }
   function closeSupportModal() { closeModal('supportModal'); supportStopPolling(); }
 
-  /* ---------- Bridge (trimmed) ---------- */
+  /* ---------- Bridge ---------- */
   function loadBridgeOpts() { const o = safeGet(BRIDGE_OPTS_KEY, {}); if (typeof o.autoRun === 'boolean') __bridgeAutoRun = o.autoRun; if (typeof o.showCode === 'boolean') __bridgeShowCode = o.showCode; }
   function saveBridgeOpts() { safeSet(BRIDGE_OPTS_KEY, { autoRun: __bridgeAutoRun, showCode: __bridgeShowCode }); }
   function renderBridgeStatus() {
@@ -2294,25 +2405,14 @@ end
     /* Call */
     on('#callModeBtn', 'click', startCall);
     on('#callEndBtn', 'click', endCall);
+    on('#callHoldBtn', 'click', toggleCallHold);
     on('#callLangSelect', 'change', (e) => {
       __call.lang = e.target.value;
-      if (__call.active) { __call.shouldListen = true; callStopRecog(); setTimeout(startCallRecognition, 200); }
-    });
-    on('#callMicBtn', 'click', () => {
-      if (!__call.active) { startCall(); return; }
-      __call.shouldListen = true;
-      stopSpeaking();
-      callStopRecog();
-      setTimeout(startCallRecognition, 200);
-    });
-    on('#callMuteBtn', 'click', () => {
-      __call.muted = !__call.muted;
-      const b = $('#callMuteBtn');
-      if (b) {
-        b.classList.toggle('active', __call.muted);
-        b.innerHTML = __call.muted ? '<i class="ri-volume-mute-line"></i>' : '<i class="ri-volume-up-line"></i>';
+      if (__call.active) {
+        __call.shouldListen = true;
+        callStopRecog();
+        setTimeout(() => { if (__call.active && __call.shouldListen && !__call.holding) startCallRecognition(); }, 220);
       }
-      if (__call.muted) stopSpeaking();
     });
 
     on('#plansModeBtn', 'click', () => { openModal('plansModal'); loadPlans(); });
@@ -2459,7 +2559,6 @@ end
     });
     window.addEventListener('resize', () => { if (window.innerWidth > 860) closeSidebar(); });
     if (!IS_PC) document.querySelectorAll('#bridgeModeBtn, #bridgeOpenBtn, [data-pane="bridge"], .sidebar-tab[data-tab="bridge"]').forEach((el) => { el.style.display = 'none'; });
-    document.addEventListener('visibilitychange', () => { if (document.hidden && __call.active) { /* keep call going */ } });
   }
 
   function openSettingsModal() { applyPrefs(); updateAccountUI(); loadVoices(); openModal('settingsModal'); }
