@@ -49,7 +49,15 @@
     </div>
   </div>
   <div class="sidebar-section" data-pane="images" style="display:none;">
-    <div class="sidebar-images-panel"><div id="sidebarImageHistory" class="sidebar-image-grid"><div class="sidebar-image-empty">No images yet.</div></div></div>
+    <div class="sidebar-images-panel">
+      <div class="sidebar-images-header">
+        <span class="sidebar-images-count" id="sidebarImagesCount">0 images</span>
+        <button id="sidebarImagesDeleteAll" class="sidebar-images-delete-all" type="button" title="Delete all images">
+          <i class="ri-delete-bin-6-line"></i><span>Delete all</span>
+        </button>
+      </div>
+      <div id="sidebarImageHistory" class="sidebar-image-grid"><div class="sidebar-image-empty">No images yet.</div></div>
+    </div>
   </div>
   <div class="sidebar-footer">
     <div id="userChip" class="user-chip">
@@ -389,7 +397,7 @@
       <div class="setting-group">
         <h4>Reasoning</h4>
         <div class="setting-row">
-          <div class="setting-row-info"><span class="setting-row-label">DeepThink</span><span class="setting-row-sub">Model reasons longer before answering. Image generation is disabled while DeepThink is on.</span></div>
+          <div class="setting-row-info"><span class="setting-row-label">DeepThink</span><span class="setting-row-sub">Model reasons longer before answering.</span></div>
           <label class="switch"><input type="checkbox" id="deepThinkToggle"><span class="switch-slider"></span></label>
         </div>
       </div>
@@ -477,6 +485,10 @@
         <h4>Chats</h4>
         <button id="exportChatsBtn" class="modal-btn" type="button"><i class="ri-download-2-line"></i> <span>Export all chats (JSON)</span></button>
         <button id="clearChatsBtn" class="modal-btn danger" type="button"><i class="ri-delete-bin-6-line"></i> <span>Clear all chats</span></button>
+      </div>
+      <div class="setting-group">
+        <h4>Images</h4>
+        <button id="clearImagesBtn" class="modal-btn danger" type="button"><i class="ri-image-2-line"></i> <span>Delete all generated images</span></button>
       </div>
       <div class="setting-group">
         <h4>Translation cache</h4>
