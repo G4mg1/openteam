@@ -2,11 +2,10 @@
   'use strict';
 
   /* ============================================================
-     MiroxAI frontend v138
-     · Call: "Thinking…" indicator with animated dots
-     · Call: typewriter effect + blinking cursor on AI reply
-     · Call: real conversational pacing, more natural AI replies
-     · Chat: thinking-tag leak fixed (no <thinking in bubbles)
+     MiroxAI frontend v139
+     · Call: reliable simplified flow, accent-color UI
+     · Call: "Thinking…" dots, natural back-and-forth pacing
+     · Fixed thinking-tag leak in chat bubbles
      ============================================================ */
 
   /* ---------- i18n ---------- */
@@ -191,9 +190,6 @@ end
     holding: false,
     currentAbort: null,
     currentHistory: [],
-    firstReplyDone: false, // used to nudge the AI to be more conversational
-    typing: false,
-    typingTimer: null,
   };
 
   /* Speak/TTS state */
@@ -363,16 +359,19 @@ end
         const btn = document.querySelector(`.message[data-msg-id="${msgId}"] .action-btn[data-action="speak"]`);
         if (btn) btn.classList.add('speaking');
       }
-      const next = () => {
-        if (i >= parts.length) {
-          if (msgId) {
-            const btn = document.querySelector(`.message[data-msg-id="${msgId}"] .action-btn[data-action="speak"]`);
-            if (btn) btn.classList.remove('speaking');
-          }
-          __currentSpeakMsgId = null;
-          resolve();
-          return;
+      let resolved = false;
+      const finish = () => {
+        if (resolved) return;
+        resolved = true;
+        if (msgId) {
+          const btn = document.querySelector(`.message[data-msg-id="${msgId}"] .action-btn[data-action="speak"]`);
+          if (btn) btn.classList.remove('speaking');
         }
+        __currentSpeakMsgId = null;
+        resolve();
+      };
+      const next = () => {
+        if (i >= parts.length) return finish();
         const u = new SpeechSynthesisUtterance(parts[i++]);
         if (voice) u.voice = voice;
         u.lang = (voice && voice.lang) || lang || 'en-US';
@@ -382,6 +381,8 @@ end
         try { speechSynthesis.speak(u); } catch { next(); }
       };
       next();
+      // Safety: never hang forever
+      setTimeout(finish, Math.max(3000, clean.length * 90));
     });
   }
 
@@ -542,7 +543,7 @@ end
     return { el, replaceText, finalize, fail, hide, isConnected, isDone() { return done; }, destroy() { clearInterval(timer); } };
   }
 
-  /* ---------- Canvas watermark ---------- */
+  /* ---------- Canvas watermark (still painted, no UI label) ---------- */
   const WM_TEXT = 'Mirox AI';
   function paintWatermark(canvas, img) {
     const ctx = canvas.getContext('2d');
@@ -1135,7 +1136,7 @@ end
     const container = $('#chatMessages');
     container?.querySelector('.welcome-screen')?.remove();
     let msgEl, bubble, bubbleText, timeEl, avatarMascot, thinkPanel;
-    const aiMsgId = isContinuation ? continuation.messageObj.id : uid();
+    const aiMsgId = isContinuation ? continuation.messageObject.id : uid();
     let full = '';
 
     if (isContinuation) {
@@ -1145,7 +1146,7 @@ end
       timeEl = msgEl.querySelector('.message-time');
       avatarMascot = msgEl.querySelector('.message-avatar .mascot');
       bubble.querySelector('[data-continue]')?.remove();
-      full = String(continuation.messageObj.content || '');
+      full = String(continuation.messageObject.content || '');
     } else {
       msgEl = document.createElement('div');
       msgEl.className = 'message ai';
@@ -1769,7 +1770,7 @@ end
   }
 
   /* ═══════════════════════════════════════════════════════════
-     CALL MODE
+     CALL MODE — simplified, reliable
      ═══════════════════════════════════════════════════════════ */
   function setCallPhase(phase) {
     __call.phase = phase;
@@ -1798,7 +1799,12 @@ end
 
   function callStopRecog() {
     if (__call.recog) {
-      try { __call.recog.onend = null; __call.recog.onresult = null; __call.recog.onerror = null; __call.recog.stop(); } catch {}
+      try {
+        __call.recog.onend = null;
+        __call.recog.onresult = null;
+        __call.recog.onerror = null;
+        __call.recog.stop();
+      } catch {}
       __call.recog = null;
     }
   }
@@ -1806,7 +1812,7 @@ end
   function startCallRecognition() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     const transcriptEl = $('#callTranscript');
-    if (!SR) { toast('Speech recognition is not supported in this browser. Try Chrome or Edge.', 5000, 'err'); endCall(); return; }
+    if (!SR) { toast('Speech recognition is not supported. Try Chrome or Edge.', 5000, 'err'); endCall(); return; }
     if (!__call.active || !__call.shouldListen || __call.holding) return;
 
     callStopRecog();
@@ -1847,7 +1853,7 @@ end
           __call.shouldListen = false;
           callStopRecog();
           callSendToAI(finalText.trim());
-        }, 1000);
+        }, 900);
       }
     };
 
@@ -1863,38 +1869,14 @@ end
       clearTimeout(silenceTimer);
       __call.recog = null;
       if (__call.active && __call.shouldListen && !__call.holding && !sent) {
-        setTimeout(() => { if (__call.active && __call.shouldListen && !__call.holding) startCallRecognition(); }, 350);
+        setTimeout(() => {
+          if (__call.active && __call.shouldListen && !__call.holding) startCallRecognition();
+        }, 350);
       }
     };
 
     __call.recog = recog;
     try { recog.start(); } catch (e) { /* ignore */ }
-  }
-
-  // Typewriter: reveals `text` into `el` character by character.
-  // Returns a promise that resolves when finished, and exposes a `skip()` on the
-  // returned object so a cancel can jump straight to the end.
-  function typeInto(el, text, msPerChar = 24) {
-    let cancelled = false;
-    let resolveFn = null;
-    const p = new Promise((res) => { resolveFn = res; });
-    (async () => {
-      el.textContent = '';
-      el.classList.add('typing');
-      const chars = Array.from(text);
-      let i = 0;
-      while (i < chars.length) {
-        if (cancelled) break;
-        el.textContent += chars[i++];
-        // Slight variability for a more natural feel
-        const jitter = 0.7 + Math.random() * 0.6;
-        await new Promise((r) => setTimeout(r, msPerChar * jitter));
-      }
-      if (cancelled) el.textContent = text;
-      el.classList.remove('typing');
-      resolveFn();
-    })();
-    return { done: p, skip: () => { cancelled = true; } };
   }
 
   async function callSendToAI(userText) {
@@ -1903,7 +1885,6 @@ end
     const replyEl = $('#callReply');
     if (replyEl) { replyEl.textContent = ''; replyEl.classList.remove('typing'); }
 
-    // Keep last 6 exchanges
     __call.currentHistory.push({ role: 'user', content: userText });
     if (__call.currentHistory.length > 12) __call.currentHistory.splice(0, __call.currentHistory.length - 12);
 
@@ -1911,29 +1892,24 @@ end
     const turnIndex = __call.currentHistory.filter((m) => m.role === 'user').length;
     const isFirstReply = turnIndex <= 1;
 
-    // Conversational system prompt — makes it feel like a real back-and-forth.
-    const callSystem = `You are Mirox, a warm, witty AI companion on a LIVE VOICE CALL. Your reply is spoken aloud by TTS.
+    const callSystem = `You are Mirox on a LIVE VOICE CALL. Your reply will be spoken aloud by TTS.
 
-HARD RULES (always obey):
+HARD RULES:
 - Reply in language code "${langTag}" ONLY.
 - NEVER write <thinking>, </thinking>, or any XML tags.
 - NEVER use markdown, code blocks, bullet lists, emojis, or asterisks.
-- Keep it SHORT: usually 1–2 sentences. Occasionally 3 if truly needed.
+- Keep it SHORT: usually 1–2 sentences.
 
-CONVERSATION STYLE:
+STYLE:
 - Sound like a real friend talking, not an assistant reading a script.
-- Use natural fillers and reactions: "Oh nice!", "Hmm, let me think…", "Yeah, exactly.", "Wait really?"
-- Acknowledge what the user said before answering. React to their tone.
-- ${isFirstReply ? 'This is the opening of the call — greet them warmly and briefly.' : 'Do not re-greet. Continue the conversation naturally.'}
-- About once every few turns, end with a small follow-up question to keep the talk going.
-- Speak with contractions ("I'm", "you're", "that's"). Avoid stiff phrasing.
-- If you don't know something, say so casually — don't lecture.`;
+- Use natural reactions: "Oh nice!", "Hmm, let me think…", "Yeah exactly."
+- ${isFirstReply ? 'This is the opening — greet them warmly and briefly.' : 'Do not re-greet. Continue the conversation naturally.'}
+- Use contractions ("I'm", "you're", "that's").`;
 
     let fullReply = '';
     const controller = new AbortController();
     __call.currentAbort = controller;
     let firstTokenSeen = false;
-    let typingHandle = null;
 
     try {
       const res = await fetch('/v1/chat/completions', {
@@ -1949,7 +1925,6 @@ CONVERSATION STYLE:
           system_extra: callSystem,
           guest_id: getGuestId(),
           language: langTag,
-          call_mode: true,
         }),
         signal: controller.signal,
       });
@@ -1973,30 +1948,19 @@ CONVERSATION STYLE:
           buf = buf.slice(idx + 1);
           if (!line.startsWith('data:')) continue;
           const pl = line.slice(5).trim();
-          if (!pl) continue;
-          if (pl === '[DONE]') continue;
+          if (!pl || pl === '[DONE]') continue;
           let o; try { o = JSON.parse(pl); } catch { continue; }
           if (o.error) throw new Error(o.error.message || 'Stream error');
           const delta = o.d || o.content || (o.delta && o.delta.content) || '';
           if (delta) {
             fullReply += delta;
-            // strip any accidental thinking leak so it never reaches TTS
             const clean = stripThinkingLeak(fullReply).replace(/```[\s\S]*?```/g, '').trim();
-
             if (!firstTokenSeen && clean.length > 0) {
               firstTokenSeen = true;
-              // First token arrived: leave "thinking", start typing the reply
               setCallPhase('speaking');
-              if (replyEl) {
-                typingHandle = typeInto(replyEl, clean, 22);
-              }
-            } else if (replyEl && typingHandle) {
-              // While typewriter runs, keep the target text growing so the
-              // revealed characters stay in sync as more tokens stream in.
-              // Simplest reliable approach: skip animation and jump to full text.
-              typingHandle.skip();
-              replyEl.textContent = clean;
+              if (replyEl) replyEl.classList.add('typing');
             }
+            if (replyEl) replyEl.textContent = clean;
           }
         }
       }
@@ -2004,34 +1968,25 @@ CONVERSATION STYLE:
       const finalReply = stripThinkingLeak(fullReply)
         .replace(/```[\s\S]*?```/g, '')
         .replace(/\s+/g, ' ')
-        .trim() || "Hmm, sorry — I didn't quite catch that. Could you say it again?";
+        .trim() || "Hmm, I didn't quite catch that.";
 
-      // Ensure the reply element is fully populated before speaking
-      if (typingHandle) typingHandle.skip();
-      if (replyEl) {
-        replyEl.textContent = finalReply;
-        replyEl.classList.remove('typing');
-      }
-
+      if (replyEl) { replyEl.textContent = finalReply; replyEl.classList.remove('typing'); }
       __call.currentHistory.push({ role: 'assistant', content: finalReply });
 
       if (!__call.active) return;
 
-      if (__call.muted || __call.holding) {
-        setCallPhase(__call.holding ? 'held' : 'idle');
-        if (!__call.holding) {
-          __call.shouldListen = true;
-          setTimeout(() => { if (__call.active && __call.shouldListen && !__call.holding) startCallRecognition(); }, 250);
-        }
+      if (__call.holding) { setCallPhase('held'); return; }
+      if (__call.muted) {
+        setCallPhase('idle');
+        __call.shouldListen = true;
+        startCallRecognition();
         return;
       }
 
-      // Speak it
       await speak(finalReply, __call.lang);
 
-      // Small pause so it feels natural, then re-open the mic
       if (__call.active && !__call.holding) {
-        await new Promise((r) => setTimeout(r, 350));
+        await new Promise((r) => setTimeout(r, 300));
         if (__call.active && !__call.holding) {
           __call.shouldListen = true;
           setCallPhase('idle');
@@ -2043,15 +1998,15 @@ CONVERSATION STYLE:
     } catch (e) {
       if (e && e.name === 'AbortError') return;
       console.error('[Mirox Call]', e);
-      if (replyEl) replyEl.textContent = 'Connection hiccup — one sec.';
-      setCallPhase('idle');
+      if (replyEl) { replyEl.textContent = 'Connection issue — one sec.'; replyEl.classList.remove('typing'); }
       if (__call.active && !__call.holding) {
         setTimeout(() => {
           if (__call.active && !__call.holding) {
             __call.shouldListen = true;
+            setCallPhase('idle');
             startCallRecognition();
           }
-        }, 1400);
+        }, 1200);
       }
     } finally {
       __call.currentAbort = null;
