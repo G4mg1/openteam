@@ -131,7 +131,11 @@
 
 <!-- ═══════════ CALL OVERLAY ═══════════ -->
 <div id="callOverlay" class="call-overlay">
-  <div class="call-glow" aria-hidden="true"></div>
+  <div class="call-bg-anim" aria-hidden="true">
+    <div class="call-bg-blob b1"></div>
+    <div class="call-bg-blob b2"></div>
+    <div class="call-bg-blob b3"></div>
+  </div>
 
   <div class="call-top-bar">
     <div class="call-live-badge" id="callLiveBadge"><i class="ri-flashlight-fill"></i> <span id="callLiveText">Live</span></div>
@@ -169,17 +173,12 @@
   </div>
 
   <div class="call-center">
-    <div class="call-orb" id="callOrb" data-state="idle">
-      <div class="call-orb-core"></div>
-      <div class="call-orb-ring"></div>
-      <div class="call-orb-wave"></div>
+    <div class="call-blob-wrap" id="callBlobWrap" data-state="idle">
+      <div class="call-blob"></div>
+      <div class="call-blob-shadow"></div>
     </div>
 
     <div class="call-status" id="callStatus">Listening…</div>
-
-    <div class="call-thinking-dots" id="callThinkingDots" aria-hidden="true">
-      <span></span><span></span><span></span>
-    </div>
 
     <div class="call-transcript" id="callTranscript"></div>
     <div class="call-reply" id="callReply"></div>
