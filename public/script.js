@@ -2,11 +2,10 @@
   'use strict';
 
   /* ============================================================
-     MiroxAI frontend v141
-     · Call: 5s silence → auto-send or show Send button
-     · Call: continuous recognition (never gets stuck listening)
-     · Message actions: like, dislike, copy, read aloud,
-                        view source, regenerate
+     MiroxAI frontend v142
+     · AI bubble actions: Like, Dislike, Copy, Read, Source, Retry
+       (always visible, RemixIcons, at the bottom of each bubble)
+     · Image history: per-image delete + Delete all button
      ============================================================ */
 
   /* ---------- i18n ---------- */
@@ -141,15 +140,15 @@
 Write your reasoning inside <thinking>...</thinking> tags, then close the tags, then write your final answer.
 
 Rules:
-1. Inside <thinking> write a short, natural, first-person internal monologue — 1 to 4 short sentences. Like: "User is asking X. I should focus on Y and keep it short. Ok."
+1. Inside <thinking> write a short, natural, first-person internal monologue — 1 to 4 short sentences.
 2. Never write the final answer inside <thinking>.
-3. After </thinking>, immediately write the answer. No "here is my answer" preamble.
+3. After </thinking>, immediately write the answer. No preamble.
 4. If the request is trivial (hi, thanks), keep thinking to a single short line.
 5. Never output the tag names or talk about the tags.
 
 Example:
 <thinking>
-User wants a short Lua loop. I'll write a for loop from 1 to 5 with a clear variable name. Keep it minimal, no extra prose.
+User wants a short Lua loop. I'll write a for loop from 1 to 5. Keep it minimal.
 </thinking>
 \`\`\`lua
 for i = 1, 5 do
@@ -166,6 +165,7 @@ end
   let __ivDataUrl = '';
   let __prefs = {};
   let __reactions = {};   // { msgId: 'like' | 'dislike' }
+  let __imageHistoryItems = []; // cached list of images
   let __bridge = { name: 'My Laptop', port: 8765, connected: false, baseUrl: null, env: null };
   let bridgeRunning = false, bridgeAbort = false, bridgeConversation = [], bridgeProgress = 0;
   let bridgeTurn = null, bridgeTaskComplete = true, bridgeWaitingForUser = false;
@@ -184,16 +184,9 @@ end
 
   /* Call state */
   let __call = {
-    active: false,
-    lang: 'en-US',
-    phase: 'idle',
-    recog: null,
-    shouldListen: false,
-    holding: false,
-    currentAbort: null,
-    currentHistory: [],
-    busy: false,
-    capturedText: '',
+    active: false, lang: 'en-US', phase: 'idle', recog: null,
+    shouldListen: false, holding: false, currentAbort: null,
+    currentHistory: [], busy: false, capturedText: '',
   };
 
   let __currentSpeakMsgId = null;
@@ -283,7 +276,7 @@ end
     if (inp) inp.placeholder = __prefs.deepThink ? 'DeepThink is on — ask anything complex…' : 'How can I help you today?';
   }
 
-  /* ---------- Reactions (like / dislike) ---------- */
+  /* ---------- Reactions ---------- */
   function loadReactions() { __reactions = safeGet(REACTIONS_KEY, {}); if (typeof __reactions !== 'object' || !__reactions) __reactions = {}; }
   function saveReactions() { safeSet(REACTIONS_KEY, __reactions); }
 
@@ -376,8 +369,7 @@ end
         if (voice) u.voice = voice;
         u.lang = (voice && voice.lang) || lang || 'en-US';
         u.rate = 1; u.pitch = 1; u.volume = 1;
-        u.onend = next;
-        u.onerror = next;
+        u.onend = next; u.onerror = next;
         try { speechSynthesis.speak(u); } catch { next(); }
       };
       next();
@@ -388,7 +380,7 @@ end
   /* ---------- Mascot ---------- */
   const MOODS = ['idle','happy','thinking','coding','celebrate','error','learning','wink','study','searching','reading'];
   function blobSvg() {
-    return `<svg class="blob-svg" viewBox="0 0 200 180" xmlns="http://www.w3.org/2000/svg" role="img"><g class="blob-float"><rect class="leg leg-1" x="46" y="126" width="14" height="32" rx="7"/><rect class="leg leg-2" x="76" y="126" width="14" height="32" rx="7"/><rect class="leg leg-3" x="110" y="126" width="14" height="32" rx="7"/><rect class="leg leg-4" x="140" y="126" width="14" height="32" rx="7"/><rect class="blob-body" x="20" y="30" width="160" height="110" rx="26"/><g class="blob-eyes"><rect class="eye eye-left" x="62" y="64" width="18" height="34" rx="9"/><rect class="eye eye-right" x="120" y="64" width="18" height="34" rx="9"/></g><g class="blob-glasses" fill="none" stroke="var(--blob-eye)" stroke-width="4" stroke-linecap="round"><rect x="50" y="52" width="44" height="46" rx="12"/><rect x="106" y="52" width="44" height="46" rx="12"/><path d="M94 72 Q100 68 106 72"/></g></g></svg>`;
+    return `<svg class="blob-svg" viewBox="0 0 200 180" xmlns="http://www.w3.org/2000/svg"><g class="blob-float"><rect class="leg leg-1" x="46" y="126" width="14" height="32" rx="7"/><rect class="leg leg-2" x="76" y="126" width="14" height="32" rx="7"/><rect class="leg leg-3" x="110" y="126" width="14" height="32" rx="7"/><rect class="leg leg-4" x="140" y="126" width="14" height="32" rx="7"/><rect class="blob-body" x="20" y="30" width="160" height="110" rx="26"/><g class="blob-eyes"><rect class="eye eye-left" x="62" y="64" width="18" height="34" rx="9"/><rect class="eye eye-right" x="120" y="64" width="18" height="34" rx="9"/></g><g class="blob-glasses" fill="none" stroke="var(--blob-eye)" stroke-width="4" stroke-linecap="round"><rect x="50" y="52" width="44" height="46" rx="12"/><rect x="106" y="52" width="44" height="46" rx="12"/><path d="M94 72 Q100 68 106 72"/></g></g></svg>`;
   }
   function upgradeStaticMascots(scope = document) {
     scope.querySelectorAll('.mascot:not([data-blob-ready])').forEach((el) => {
@@ -455,11 +447,7 @@ end
     const iconEl = el.querySelector('.think-icon i');
     const t0 = performance.now();
     let done = false, lastText = '';
-    toggle.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const c = el.dataset.collapsed === 'true';
-      el.dataset.collapsed = c ? 'false' : 'true';
-    });
+    toggle.addEventListener('click', (e) => { e.stopPropagation(); const c = el.dataset.collapsed === 'true'; el.dataset.collapsed = c ? 'false' : 'true'; });
     const timer = setInterval(() => { if (done) { clearInterval(timer); return; } timerPill.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's'; }, 100);
     function replaceText(full) {
       const text = String(full || '');
@@ -523,14 +511,14 @@ end
     const eyeW = blobR * 0.24, eyeH = blobR * 0.66;
     ctx.fillRect(bx - blobR * 0.45, by - blobR * 0.30, eyeW, eyeH);
     ctx.fillRect(bx + blobR * 0.20, by - blobR * 0.30, eyeW, eyeH);
-    ctx.font = `700 ${textSize}px Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    ctx.font = `700 ${textSize}px Inter, sans-serif`;
     ctx.textBaseline = 'middle';
     ctx.fillStyle = 'rgba(255,255,255,0.94)';
     ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = Math.max(2, textSize * 0.18); ctx.shadowOffsetY = 0.8;
     const tx = bx + blobR + textSize * 0.5, ty = by + textSize * 0.02;
     ctx.fillText('Mirox AI', tx, ty);
     ctx.shadowBlur = Math.max(2, textSize * 0.12);
-    ctx.font = `500 ${Math.round(textSize * 0.58)}px Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    ctx.font = `500 ${Math.round(textSize * 0.58)}px Inter, sans-serif`;
     ctx.fillStyle = 'rgba(255,255,255,0.62)';
     ctx.fillText('miroxai.org', tx, ty + textSize * 0.78);
     ctx.restore();
@@ -563,7 +551,18 @@ end
   }
   function closeImageViewer() { $('#imageViewer')?.classList.remove('open'); }
 
-  /* ---------- Image history ---------- */
+  /* ═══════════════════════════════════════════════════
+     IMAGE HISTORY (with per-image delete + delete all)
+     ═══════════════════════════════════════════════════ */
+  function updateImageCountLabel() {
+    const el = $('#sidebarImagesCount');
+    if (!el) return;
+    const n = __imageHistoryItems.length;
+    el.textContent = n === 0 ? 'No images' : (n === 1 ? '1 image' : `${n} images`);
+    const delAll = $('#sidebarImagesDeleteAll');
+    if (delAll) delAll.disabled = n === 0;
+  }
+
   async function loadImageHistory() {
     const grid = $('#sidebarImageHistory'); if (!grid) return;
     if (__imageHistoryLoading) return;
@@ -571,22 +570,97 @@ end
     grid.innerHTML = '<div class="sidebar-image-empty"><i class="ri-loader-4-line spin"></i> Loading…</div>';
     try {
       const res = await netFetch('/api/images/history', { method: 'GET' }, 12000);
-      if (res.status === 401) { grid.innerHTML = '<div class="sidebar-image-empty">Sign in to see your images.</div>'; return; }
+      if (res.status === 401) {
+        __imageHistoryItems = [];
+        grid.innerHTML = '<div class="sidebar-image-empty">Sign in to see your images.</div>';
+        updateImageCountLabel();
+        return;
+      }
       const data = await res.json().catch(() => null);
       const images = (data && Array.isArray(data.images)) ? data.images : [];
-      if (!images.length) { grid.innerHTML = '<div class="sidebar-image-empty"><i class="ri-image-line"></i> No images yet.</div>'; return; }
-      grid.innerHTML = '';
-      images.slice(0, 24).forEach((it) => {
-        const item = document.createElement('div'); item.className = 'sidebar-image-item'; item.title = it.prompt || '';
-        const img = document.createElement('img');
-        img.src = it.image; img.alt = it.prompt || 'generated image'; img.loading = 'lazy';
-        img.onerror = () => { item.style.display = 'none'; };
-        item.appendChild(img); item.onclick = () => openImageViewer(it.image); grid.appendChild(item);
-      });
-      if (!grid.children.length) grid.innerHTML = '<div class="sidebar-image-empty">No images yet.</div>';
-    } catch { grid.innerHTML = '<div class="sidebar-image-empty">Could not load images.</div>'; }
-    finally { __imageHistoryLoading = false; }
+      __imageHistoryItems = images.map((it, i) => ({ ...it, _id: it.id || it.key || ('img-' + i + '-' + (it.ts || Date.now())) }));
+      if (!images.length) {
+        grid.innerHTML = '<div class="sidebar-image-empty"><i class="ri-image-line"></i> No images yet.</div>';
+        updateImageCountLabel();
+        return;
+      }
+      renderImageGrid();
+      updateImageCountLabel();
+    } catch {
+      grid.innerHTML = '<div class="sidebar-image-empty">Could not load images.</div>';
+      updateImageCountLabel();
+    } finally { __imageHistoryLoading = false; }
   }
+
+  function renderImageGrid() {
+    const grid = $('#sidebarImageHistory'); if (!grid) return;
+    if (!__imageHistoryItems.length) {
+      grid.innerHTML = '<div class="sidebar-image-empty"><i class="ri-image-line"></i> No images yet.</div>';
+      return;
+    }
+    grid.innerHTML = '';
+    __imageHistoryItems.slice(0, 60).forEach((it, idx) => {
+      const item = document.createElement('div');
+      item.className = 'sidebar-image-item';
+      item.title = it.prompt || 'Generated image';
+      item.dataset.idx = String(idx);
+
+      const img = document.createElement('img');
+      img.src = it.image;
+      img.alt = it.prompt || 'generated image';
+      img.loading = 'lazy';
+      img.onerror = () => { item.style.display = 'none'; };
+      item.appendChild(img);
+
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'sidebar-image-delete';
+      del.title = 'Delete image';
+      del.setAttribute('aria-label', 'Delete image');
+      del.innerHTML = '<i class="ri-delete-bin-line"></i>';
+      del.onclick = (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        deleteImageAt(idx);
+      };
+      item.appendChild(del);
+
+      item.onclick = () => openImageViewer(it.image);
+      grid.appendChild(item);
+    });
+  }
+
+  async function deleteImageAt(idx) {
+    const it = __imageHistoryItems[idx];
+    if (!it) return;
+    // Remove locally + redraw
+    __imageHistoryItems.splice(idx, 1);
+    renderImageGrid();
+    updateImageCountLabel();
+    toast('Image deleted', 1600, 'ok');
+    // Best-effort backend delete (fire and forget)
+    try {
+      const id = it._id;
+      await netFetch('/api/images/delete', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ id, prompt: it.prompt || '' }),
+      }, 6000).catch(() => {});
+    } catch {}
+  }
+
+  async function deleteAllImages() {
+    if (!__imageHistoryItems.length) { toast('No images to delete', 1800); return; }
+    if (!confirm('Delete all generated images? This cannot be undone.')) return;
+    __imageHistoryItems = [];
+    renderImageGrid();
+    updateImageCountLabel();
+    toast('All images deleted', 1800, 'ok');
+    try {
+      await netFetch('/api/images/clear', { method: 'POST', headers: authHeaders(), body: '{}' }, 8000).catch(() => {});
+    } catch {}
+  }
+
   function refreshImageHistorySoon() { setTimeout(() => { loadImageHistory().catch(() => {}); }, 500); }
 
   /* ---------- Conversations ---------- */
@@ -834,7 +908,10 @@ end
   }
   function closeRawView() { $('#rawViewModal')?.classList.remove('open'); }
 
-  /* ---------- Message actions (rich) ---------- */
+  /* ═══════════════════════════════════════════════════
+     MESSAGE ACTIONS
+     like · dislike · copy · read · source · retry
+     ═══════════════════════════════════════════════════ */
   function buildActions(role, msgId) {
     if (role === 'user') {
       return `<button class="action-btn" data-action="copy" aria-label="Copy" title="Copy"><i class="ri-file-copy-line"></i></button>`;
@@ -849,10 +926,18 @@ end
       <button class="action-btn${disliked ? ' active-disliked' : ''}" data-action="dislike" aria-label="Dislike" title="Bad response">
         <i class="${disliked ? 'ri-thumb-down-fill' : 'ri-thumb-down-line'}"></i><span>Dislike</span>
       </button>
-      <button class="action-btn" data-action="copy" aria-label="Copy" title="Copy response"><i class="ri-file-copy-line"></i><span>Copy</span></button>
-      <button class="action-btn" data-action="speak" aria-label="Read aloud" title="Read aloud"><i class="ri-volume-up-line"></i><span>Read</span></button>
-      <button class="action-btn" data-action="raw" aria-label="View source" title="View raw markdown source"><i class="ri-code-box-line"></i><span>Source</span></button>
-      <button class="action-btn" data-action="retry" aria-label="Regenerate" title="Regenerate"><i class="ri-refresh-line"></i><span>Retry</span></button>
+      <button class="action-btn" data-action="copy" aria-label="Copy" title="Copy response">
+        <i class="ri-file-copy-line"></i><span>Copy</span>
+      </button>
+      <button class="action-btn" data-action="speak" aria-label="Read aloud" title="Read aloud">
+        <i class="ri-volume-up-line"></i><span>Read</span>
+      </button>
+      <button class="action-btn" data-action="raw" aria-label="View source" title="View raw markdown source">
+        <i class="ri-code-box-line"></i><span>Source</span>
+      </button>
+      <button class="action-btn" data-action="retry" aria-label="Regenerate" title="Regenerate">
+        <i class="ri-refresh-line"></i><span>Retry</span>
+      </button>
     `;
   }
 
@@ -916,18 +1001,18 @@ end
           try {
             await navigator.clipboard.writeText(raw);
             const old = btn.innerHTML;
-            btn.innerHTML = '<i class="ri-check-line"></i>' + (btn.querySelector('span') ? '<span>Copied</span>' : '');
+            btn.innerHTML = '<i class="ri-check-line"></i><span>Copied</span>';
             setTimeout(() => { btn.innerHTML = old; }, 1200);
-          } catch {}
+          } catch { toast('Copy failed', 1800, 'err'); }
         } else if (action === 'speak') {
           const text = el.querySelector('.bubble-text')?.innerText || '';
           const convo = currentConvo();
           const msg = convo?.messages.find((m) => m.id === msgId);
           const lang = (__prefs.responseLanguage && __prefs.responseLanguage !== 'auto') ? __prefs.responseLanguage : (msg && msg.lang) || 'en';
-          if (__currentSpeakMsgId === msgId) stopSpeaking(); else speak(text, lang, msgId);
+          if (__currentSpeakMsgId === msgId) stopSpeaking();
+          else speak(text, lang, msgId);
         } else if (action === 'raw') {
-          const raw = el.dataset.rawContent || '';
-          openRawView(raw);
+          openRawView(el.dataset.rawContent || '');
         } else if (action === 'like') {
           const cur = __reactions[msgId];
           if (cur === 'like') delete __reactions[msgId];
@@ -953,7 +1038,6 @@ end
     const bar = el.querySelector('.message-actions');
     if (!bar) return;
     bar.innerHTML = buildActions(role, msgId);
-    // Re-wire the fresh buttons
     el.querySelectorAll('.action-btn').forEach((b) => { b.__wired = false; });
     wireMessageActions(el);
   }
@@ -1252,6 +1336,15 @@ end
       if (avatarMascot) setMascotMood('happy', avatarMascot.parentElement.parentElement);
       if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
       if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); wireCodeButtons(bubbleText); }
+
+      // Insert the action bar BELOW the bubble
+      if (!msgEl.querySelector('.message-actions')) {
+        const bodyEl2 = msgEl.querySelector('.message-body');
+        const actions = document.createElement('div');
+        actions.className = 'message-actions';
+        actions.innerHTML = buildActions('ai', aiMsgId);
+        bodyEl2.insertBefore(actions, timeEl);
+      }
       msgEl.dataset.rawContent = full;
       updateActionBar(msgEl);
 
@@ -1297,6 +1390,13 @@ end
         if (!bubbleText) { bubbleText = document.createElement('div'); bubbleText.className = 'bubble-text'; bubble.prepend(bubbleText); }
         bubbleText.innerHTML = renderMarkdown(full); wireCodeButtons(bubbleText);
         msgEl.dataset.rawContent = full;
+        if (!msgEl.querySelector('.message-actions')) {
+          const bodyEl2 = msgEl.querySelector('.message-body');
+          const actions = document.createElement('div');
+          actions.className = 'message-actions';
+          actions.innerHTML = buildActions('ai', aiMsgId);
+          bodyEl2.insertBefore(actions, timeEl);
+        }
         updateActionBar(msgEl);
         let savedMsg = convo?.messages.find((m) => m.id === aiMsgId);
         if (isContinuation && continuation.messageObject) savedMsg = continuation.messageObject;
@@ -1335,14 +1435,14 @@ end
   function setupVoice() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     const btn = document.getElementById('voiceBtn');
-    if (!SR || !btn) { if (btn) { btn.disabled = true; btn.title = 'Voice input is not supported'; btn.style.opacity = '0.4'; } return; }
+    if (!SR || !btn) { if (btn) { btn.disabled = true; btn.style.opacity = '0.4'; } return; }
     const recog = new SR();
     recog.continuous = false; recog.interimResults = true;
     const lang = () => (__prefs.responseLanguage && __prefs.responseLanguage !== 'auto') ? __prefs.responseLanguage : (navigator.language || 'en-US');
     recog.lang = lang();
     recog.onstart = () => { __voiceListening = true; btn.classList.add('listening'); btn.innerHTML = '<i class="ri-mic-fill"></i>'; };
     recog.onend = () => { __voiceListening = false; btn.classList.remove('listening'); btn.innerHTML = '<i class="ri-mic-line"></i>'; };
-    recog.onerror = (e) => { __voiceListening = false; btn.classList.remove('listening'); btn.innerHTML = '<i class="ri-mic-line"></i>'; if (e.error === 'not-allowed') toast('Microphone permission denied.', 3000, 'err'); else if (e.error !== 'no-speech') toast('Voice error: ' + e.error, 3000, 'err'); };
+    recog.onerror = (e) => { __voiceListening = false; btn.classList.remove('listening'); btn.innerHTML = '<i class="ri-mic-line"></i>'; if (e.error === 'not-allowed') toast('Microphone permission denied.', 3000, 'err'); };
     recog.onresult = (event) => {
       const inp = document.getElementById('messageInput'); if (!inp) return;
       let interim = '', final = '';
@@ -1388,31 +1488,6 @@ end
       reader.readAsDataURL(file);
     });
   }
-  function svgToVisionData(file) {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const svgText = String(reader.result);
-        let base64 = ''; try { base64 = btoa(unescape(encodeURIComponent(svgText))); } catch {}
-        const dataUrl = 'data:image/svg+xml;base64,' + base64;
-        const blob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
-        const objUrl = URL.createObjectURL(blob);
-        const img = new Image();
-        img.onload = () => {
-          let w = img.naturalWidth || 512, h = img.naturalHeight || 512;
-          if (w > MAX_IMAGE_DIM || h > MAX_IMAGE_DIM) { const r = Math.min(MAX_IMAGE_DIM / w, MAX_IMAGE_DIM / h); w = Math.round(w * r); h = Math.round(h * r); }
-          let png = null;
-          try { const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(img, 0, 0, w, h); png = c.toDataURL('image/png'); } catch {}
-          URL.revokeObjectURL(objUrl);
-          resolve({ type: 'image', name: file.name, size: file.size, mime: 'image/svg+xml', dataUrl, base64, svgText, pngDataUrl: png, pngBase64: png ? png.split(',')[1] : '', width: w, height: h, vision: true, isSvg: true });
-        };
-        img.onerror = () => { URL.revokeObjectURL(objUrl); resolve({ type: 'image', name: file.name, size: file.size, mime: 'image/svg+xml', dataUrl, base64, svgText, vision: true, isSvg: true }); };
-        img.src = objUrl;
-      };
-      reader.onerror = () => resolve(null);
-      reader.readAsText(file);
-    });
-  }
   function readTextFile(file) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -1429,12 +1504,10 @@ end
     let done = 0; const newFiles = [];
     const finish = () => { newFiles.sort((a, b) => (a.order || 0) - (b.order || 0)); for (const nf of newFiles) if (!hasAttachment(nf.name, nf.size)) pendingFiles.push(nf); updatePreview(); updateSendButtonState(); };
     arr.forEach((f, idx) => {
-      const isSvg = f.type === 'image/svg+xml' || /\.svg$/i.test(f.name);
-      const isImg = !isSvg && ((f.type || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(f.name));
-      const isTxt = !isSvg && !isImg && (isTextFile(f) || (f.type || '').startsWith('text/') || !f.type);
+      const isImg = (f.type || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(f.name);
+      const isTxt = !isImg && (isTextFile(f) || (f.type || '').startsWith('text/') || !f.type);
       const one = () => { done++; if (done === arr.length) finish(); };
-      if (isSvg) svgToVisionData(f).then((d) => { if (d) newFiles.push({ ...d, order: idx }); one(); }).catch(one);
-      else if (isImg) imageToBase64DataURL(f).then((d) => { if (d) newFiles.push({ ...d, order: idx }); one(); }).catch(one);
+      if (isImg) imageToBase64DataURL(f).then((d) => { if (d) newFiles.push({ ...d, order: idx }); one(); }).catch(one);
       else if (isTxt) readTextFile(f).then((d) => { if (d) newFiles.push({ ...d, order: idx }); one(); }).catch(one);
       else one();
     });
@@ -1621,7 +1694,7 @@ end
     closeModal('settingsModal');
     toast('Signed out', 1800, 'ok');
     refreshUsage().catch(() => {});
-    loadImageHistory().catch(() => {});
+    __imageHistoryItems = []; renderImageGrid(); updateImageCountLabel();
   }
   async function loadPlans() {
     const grid = $('#plansGrid'); if (!grid) return;
@@ -1655,159 +1728,85 @@ end
     finally { if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-image-add-line"></i> Generate'; } }
   }
 
-  /* ═══════════════════════════════════════════════════════════
-     CALL MODE  —  FIXED
-     Key changes:
-       · continuous=true recognizer (never stops mid-utterance)
-       · 5-second silence timer auto-sends any captured text
-       · If nothing was captured, we show a Send button so the
-         user can force-send manually.
-       · Send button always visible during listening phase
-     ═══════════════════════════════════════════════════════════ */
+  /* ═══════════════════════════════════════════════════
+     CALL MODE (5s silence → auto-send; Send button fallback)
+     ═══════════════════════════════════════════════════ */
   function setCallPhase(phase) {
     __call.phase = phase;
-    const overlay = $('#callOverlay');
-    if (overlay) overlay.setAttribute('data-phase', phase);
-    const blobWrap = $('#callBlobWrap');
-    if (blobWrap) blobWrap.setAttribute('data-state', phase === 'idle' ? 'listening' : phase);
-    const statusEl = $('#callStatus');
-    if (statusEl) statusEl.className = 'call-status';
+    const overlay = $('#callOverlay'); if (overlay) overlay.setAttribute('data-phase', phase);
+    const blobWrap = $('#callBlobWrap'); if (blobWrap) blobWrap.setAttribute('data-state', phase === 'idle' ? 'listening' : phase);
+    const statusEl = $('#callStatus'); if (statusEl) statusEl.className = 'call-status';
     if (phase === 'listening') { if (statusEl) { statusEl.textContent = 'Listening…'; statusEl.classList.add('listening'); } }
     else if (phase === 'thinking') { if (statusEl) { statusEl.textContent = 'Thinking…'; statusEl.classList.add('thinking'); } }
     else if (phase === 'speaking') { if (statusEl) { statusEl.textContent = 'Speaking…'; statusEl.classList.add('speaking'); } }
     else if (phase === 'waiting') { if (statusEl) { statusEl.textContent = 'Tap Send or speak again'; statusEl.classList.add('waiting'); } }
     else if (phase === 'held') { if (statusEl) statusEl.textContent = 'On hold'; }
     else { if (statusEl) { statusEl.textContent = 'Listening…'; statusEl.classList.add('listening'); } }
-    // Show/hide send button
     updateCallSendVisibility();
   }
-
   function updateCallSendVisibility() {
-    const btn = $('#callSendNowBtn');
-    if (!btn) return;
-    // Show Send when listening or waiting and not currently thinking/speaking
+    const btn = $('#callSendNowBtn'); if (!btn) return;
     const show = __call.active && !__call.holding && (__call.phase === 'listening' || __call.phase === 'idle' || __call.phase === 'waiting');
     btn.style.display = show ? 'flex' : 'none';
   }
-
   function callStopRecog() {
     if (__call.recog) {
-      try {
-        __call.recog.onend = null;
-        __call.recog.onresult = null;
-        __call.recog.onerror = null;
-        __call.recog.stop();
-      } catch {}
+      try { __call.recog.onend = null; __call.recog.onresult = null; __call.recog.onerror = null; __call.recog.stop(); } catch {}
       __call.recog = null;
     }
   }
-
   function setCallTranscript(text, interim) {
-    const el = $('#callTranscript');
-    if (!el) return;
-    el.textContent = text || '';
-    el.classList.toggle('interim', !!interim);
+    const el = $('#callTranscript'); if (!el) return;
+    el.textContent = text || ''; el.classList.toggle('interim', !!interim);
     __call.capturedText = text || '';
   }
-
   function startCallRecognition() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { toast('Speech recognition is not supported. Try Chrome or Edge.', 5000, 'err'); endCall(); return; }
     if (!__call.active || !__call.shouldListen || __call.holding || __call.busy) return;
-
     callStopRecog();
     const recog = new SR();
     recog.lang = __call.lang;
-    recog.continuous = true;        // ← KEY: keep listening continuously
+    recog.continuous = true;
     recog.interimResults = true;
     recog.maxAlternatives = 1;
-
-    let finalText = '';
-    let sent = false;
-    let silenceTimer = null;
-    let gotAnything = false;
-
-    const resetSilence = () => {
-      clearTimeout(silenceTimer);
-      silenceTimer = setTimeout(onSilence, CALL_SILENCE_MS);
-    };
-
+    let finalText = ''; let sent = false; let silenceTimer = null;
+    const resetSilence = () => { clearTimeout(silenceTimer); silenceTimer = setTimeout(onSilence, CALL_SILENCE_MS); };
     const onSilence = () => {
       if (sent || !__call.active || __call.holding) return;
-      // If we captured ANY text, send it
-      if (finalText.trim()) {
-        sent = true;
-        callStopRecog();
-        setCallTranscript(finalText, false);
-        callSendToAI(finalText.trim());
-        return;
-      }
-      // Otherwise: no text at all in 5s → stop and show Send button + waiting
-      callStopRecog();
-      __call.shouldListen = false;
-      setCallPhase('waiting');
-      __call.shouldListen = true;  // we still want to be able to tap mic again
+      if (finalText.trim()) { sent = true; callStopRecog(); setCallTranscript(finalText, false); callSendToAI(finalText.trim()); return; }
+      callStopRecog(); __call.shouldListen = false; setCallPhase('waiting'); __call.shouldListen = true;
     };
-
-    recog.onstart = () => {
-      setCallPhase('listening');
-      resetSilence();
-    };
-
+    recog.onstart = () => { setCallPhase('listening'); resetSilence(); };
     recog.onresult = (event) => {
       let interim = '', final = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const r = event.results[i];
-        if (r.isFinal) final += r[0].transcript;
-        else interim += r[0].transcript;
+        if (r.isFinal) final += r[0].transcript; else interim += r[0].transcript;
       }
-      gotAnything = true;
-      if (final) {
-        finalText = (finalText + ' ' + final).trim();
-        setCallTranscript(finalText, false);
-      } else if (interim) {
-        setCallTranscript((finalText + ' ' + interim).trim(), true);
-      }
+      if (final) { finalText = (finalText + ' ' + final).trim(); setCallTranscript(finalText, false); }
+      else if (interim) setCallTranscript((finalText + ' ' + interim).trim(), true);
       resetSilence();
     };
-
     recog.onerror = (e) => {
-      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-        toast('Microphone permission denied.', 3500, 'err');
-        endCall();
-        return;
-      }
-      // no-speech is normal – let onend handle it
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { toast('Microphone permission denied.', 3500, 'err'); endCall(); }
     };
-
     recog.onend = () => {
       clearTimeout(silenceTimer);
       __call.recog = null;
       if (sent) return;
-      // If we captured text and the recognizer ended (browser auto-stop), send it
-      if (finalText.trim() && __call.active && !__call.holding) {
-        sent = true;
-        callSendToAI(finalText.trim());
-        return;
-      }
-      // Otherwise, restart listening if we should still listen
+      if (finalText.trim() && __call.active && !__call.holding) { sent = true; callSendToAI(finalText.trim()); return; }
       if (__call.active && __call.shouldListen && !__call.holding && !__call.busy) {
-        setTimeout(() => {
-          if (__call.active && __call.shouldListen && !__call.holding && !__call.busy) startCallRecognition();
-        }, 300);
+        setTimeout(() => { if (__call.active && __call.shouldListen && !__call.holding && !__call.busy) startCallRecognition(); }, 300);
       }
     };
-
     __call.recog = recog;
-    try { recog.start(); } catch (e) { /* ignore */ }
+    try { recog.start(); } catch (e) {}
   }
-
-  // Manually force-send whatever's captured (or restart listening if empty)
   function callForceSend() {
     if (!__call.active || __call.holding || __call.busy) return;
     const text = (__call.capturedText || '').trim();
     if (!text) {
-      // Nothing captured - just restart listening
       toast('Say something first, or tap the mic.', 2200);
       __call.shouldListen = true;
       callStopRecog();
@@ -1819,54 +1818,40 @@ end
     setCallTranscript(text, false);
     callSendToAI(text);
   }
-
   async function callSendToAI(userText) {
     if (!__call.active) return;
     __call.busy = true;
     setCallPhase('thinking');
     const replyEl = $('#callReply');
     if (replyEl) { replyEl.textContent = ''; replyEl.classList.remove('typing'); }
-
     __call.currentHistory.push({ role: 'user', content: userText });
     if (__call.currentHistory.length > 12) __call.currentHistory.splice(0, __call.currentHistory.length - 12);
-
     const langTag = __call.lang.split('-')[0];
     const turnIndex = __call.currentHistory.filter((m) => m.role === 'user').length;
     const isFirstReply = turnIndex <= 1;
-
     const callSystem = `You are Mirox on a live voice call. Reply ONLY in language code "${langTag}". Keep replies short — 1 to 2 sentences. No markdown, no <thinking>, no code blocks, no emojis. Be warm and conversational, like a friend. ${isFirstReply ? 'Greet them briefly.' : 'Do not re-greet — continue naturally.'}`;
-
     let fullReply = '';
     const controller = new AbortController();
     __call.currentAbort = controller;
-
     try {
       const res = await fetch('/v1/chat/completions', {
-        method: 'POST',
-        headers: authHeaders(),
-        credentials: 'same-origin',
+        method: 'POST', headers: authHeaders(), credentials: 'same-origin',
         body: JSON.stringify({
           message: userText,
           history: __call.currentHistory.slice(0, -1).map((m) => ({ role: m.role, content: m.content })),
           model: __model || 'mirox-luna-1.2',
-          stream: true,
-          deep_think: false,
-          system_extra: callSystem,
-          guest_id: getGuestId(),
-          language: langTag,
+          stream: true, deep_think: false, system_extra: callSystem,
+          guest_id: getGuestId(), language: langTag,
         }),
         signal: controller.signal,
       });
-
       if (!res.ok) {
         let detail = 'HTTP ' + res.status;
         try { const d = await res.json(); detail = d.error?.message || d.error || d.message || detail; } catch {}
         throw new Error(detail);
       }
-
       const ct = (res.headers.get('content-type') || '').toLowerCase();
       let firstTokenSeen = false;
-
       if (ct.includes('text/event-stream') || ct.includes('text/plain')) {
         const reader = res.body.getReader();
         const dec = new TextDecoder();
@@ -1887,11 +1872,7 @@ end
             if (delta) {
               fullReply += delta;
               const clean = stripThinkingLeak(fullReply).replace(/```[\s\S]*?```/g, '').trim();
-              if (!firstTokenSeen && clean.length > 0) {
-                firstTokenSeen = true;
-                setCallPhase('speaking');
-                if (replyEl) replyEl.classList.add('typing');
-              }
+              if (!firstTokenSeen && clean.length > 0) { firstTokenSeen = true; setCallPhase('speaking'); if (replyEl) replyEl.classList.add('typing'); }
               if (replyEl) replyEl.textContent = clean;
             }
           }
@@ -1903,64 +1884,40 @@ end
         if (replyEl) replyEl.textContent = clean;
         setCallPhase('speaking');
       }
-
       const finalReply = stripThinkingLeak(fullReply).replace(/```[\s\S]*?```/g, '').replace(/\s+/g, ' ').trim() || "Hmm, I didn't catch that. Say again?";
       if (replyEl) { replyEl.textContent = finalReply; replyEl.classList.remove('typing'); }
       __call.currentHistory.push({ role: 'assistant', content: finalReply });
-
       __call.busy = false;
       if (!__call.active) return;
       if (__call.holding) { setCallPhase('held'); return; }
-
       await speak(finalReply, __call.lang);
-
       if (__call.active && !__call.holding) {
         await new Promise((r) => setTimeout(r, 300));
         if (__call.active && !__call.holding) {
           __call.shouldListen = true;
-          setCallTranscript('', false);   // clear transcript for next turn
+          setCallTranscript('', false);
           setCallPhase('idle');
           startCallRecognition();
         }
-      } else if (__call.active) {
-        setCallPhase('held');
-      }
+      } else if (__call.active) setCallPhase('held');
     } catch (e) {
       if (e && e.name === 'AbortError') { __call.busy = false; return; }
-      console.error('[Mirox Call]', e);
       if (replyEl) { replyEl.textContent = 'Connection issue — try again.'; replyEl.classList.remove('typing'); }
       __call.busy = false;
       if (__call.active && !__call.holding) {
         setTimeout(() => {
-          if (__call.active && !__call.holding) {
-            __call.shouldListen = true;
-            setCallPhase('idle');
-            startCallRecognition();
-          }
+          if (__call.active && !__call.holding) { __call.shouldListen = true; setCallPhase('idle'); startCallRecognition(); }
         }, 1200);
       }
-    } finally {
-      __call.currentAbort = null;
-      __call.busy = false;
-    }
+    } finally { __call.currentAbort = null; __call.busy = false; }
   }
-
   function startCall() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { toast('Your browser does not support speech recognition. Try Chrome or Edge.', 4500, 'err'); return; }
     if (!ttsAvailable) { toast('Your browser does not support text-to-speech.', 4000, 'err'); return; }
-
-    __call.active = true;
-    __call.shouldListen = true;
-    __call.holding = false;
-    __call.busy = false;
-    __call.currentHistory = [];
-    __call.currentAbort = null;
-    __call.capturedText = '';
-
-    const overlay = $('#callOverlay');
-    if (overlay) overlay.classList.add('open');
-
+    __call.active = true; __call.shouldListen = true; __call.holding = false; __call.busy = false;
+    __call.currentHistory = []; __call.currentAbort = null; __call.capturedText = '';
+    const overlay = $('#callOverlay'); if (overlay) overlay.classList.add('open');
     const langSel = $('#callLangSelect');
     if (langSel) {
       const pref = (__prefs.responseLanguage && __prefs.responseLanguage !== 'auto') ? __prefs.responseLanguage : (navigator.language || 'en-US');
@@ -1968,47 +1925,22 @@ end
       if (match) langSel.value = match.value;
       __call.lang = langSel.value || 'en-US';
     }
-
     setCallTranscript('', false);
-    const replyEl = $('#callReply');
-    if (replyEl) { replyEl.textContent = ''; replyEl.classList.remove('typing'); }
-
-    const liveText = $('#callLiveText');
-    if (liveText) liveText.textContent = 'Live';
-    const holdBtn = $('#callHoldBtn');
-    if (holdBtn) holdBtn.classList.remove('active');
-
+    const replyEl = $('#callReply'); if (replyEl) { replyEl.textContent = ''; replyEl.classList.remove('typing'); }
+    const liveText = $('#callLiveText'); if (liveText) liveText.textContent = 'Live';
+    const holdBtn = $('#callHoldBtn'); if (holdBtn) holdBtn.classList.remove('active');
     setCallPhase('idle');
-    setTimeout(() => {
-      if (__call.active && __call.shouldListen && !__call.holding) startCallRecognition();
-    }, 400);
+    setTimeout(() => { if (__call.active && __call.shouldListen && !__call.holding) startCallRecognition(); }, 400);
   }
-
   function toggleCallHold() {
     if (!__call.active) return;
     __call.holding = !__call.holding;
-    const holdBtn = $('#callHoldBtn');
-    const liveText = $('#callLiveText');
-    if (__call.holding) {
-      callStopRecog();
-      stopSpeaking();
-      setCallPhase('held');
-      holdBtn?.classList.add('active');
-      if (liveText) liveText.textContent = 'On hold';
-    } else {
-      holdBtn?.classList.remove('active');
-      if (liveText) liveText.textContent = 'Live';
-      __call.shouldListen = true;
-      setCallPhase('idle');
-      if (!__call.busy) startCallRecognition();
-    }
+    const holdBtn = $('#callHoldBtn'); const liveText = $('#callLiveText');
+    if (__call.holding) { callStopRecog(); stopSpeaking(); setCallPhase('held'); holdBtn?.classList.add('active'); if (liveText) liveText.textContent = 'On hold'; }
+    else { holdBtn?.classList.remove('active'); if (liveText) liveText.textContent = 'Live'; __call.shouldListen = true; setCallPhase('idle'); if (!__call.busy) startCallRecognition(); }
   }
-
   function endCall() {
-    __call.active = false;
-    __call.shouldListen = false;
-    __call.holding = false;
-    __call.busy = false;
+    __call.active = false; __call.shouldListen = false; __call.holding = false; __call.busy = false;
     callStopRecog();
     if (__call.currentAbort) { try { __call.currentAbort.abort(); } catch {} __call.currentAbort = null; }
     stopSpeaking();
@@ -2070,7 +2002,7 @@ end
     const send = $('#supportSendBtn'); if (send) send.classList.add('is-disabled');
     const r = await netFetch('/api/support/message', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content, category }) }, 15000).catch(() => null);
     __supportSending = false;
-    if (!r || !r.ok) { const d = r ? await r.json().catch(() => ({})) : null; toast((d && d.error) || 'Could not send', 3000, 'err'); supportUpdateComposeState(); return; }
+    if (!r || !r.ok) { toast('Could not send', 3000, 'err'); supportUpdateComposeState(); return; }
     const d = await r.json().catch(() => ({}));
     if (d && d.ok) { if (input) { input.value = ''; input.style.height = 'auto'; } __supportConv = d.conversation; supportSetHead(); supportUpdateComposeState(); supportRenderMessages(); }
   }
@@ -2085,7 +2017,7 @@ end
   function openSupportModal() { openModal('supportModal'); supportLoad(); supportStartPolling(); }
   function closeSupportModal() { closeModal('supportModal'); supportStopPolling(); }
 
-  /* ---------- Bridge (unchanged) ---------- */
+  /* ---------- Bridge (minimal) ---------- */
   function loadBridgeOpts() { const o = safeGet(BRIDGE_OPTS_KEY, {}); if (typeof o.autoRun === 'boolean') __bridgeAutoRun = o.autoRun; if (typeof o.showCode === 'boolean') __bridgeShowCode = o.showCode; }
   function saveBridgeOpts() { safeSet(BRIDGE_OPTS_KEY, { autoRun: __bridgeAutoRun, showCode: __bridgeShowCode }); }
   function renderBridgeStatus() {
@@ -2157,8 +2089,7 @@ end
   function setProgressText(text) { const el = $('#bwProgressText'); if (el && text) el.textContent = text; }
   function updateBridgeProgress(pct, text) { const np = Math.max(0, Math.min(100, Math.round(pct))); if (np > bridgeProgress) bridgeProgress = np; const bar = $('#bwProgress'), fill = $('#bwProgressFill'), pctEl = $('#bwProgressPct'); if (bar) bar.style.display = 'block'; if (fill) { fill.style.width = bridgeProgress + '%'; fill.classList.toggle('done', bridgeProgress >= 100); } if (pctEl) pctEl.textContent = bridgeProgress + '%'; if (text) setProgressText(text); }
   function extractBridgeCommands(text) {
-    const cmds = [];
-    const add = (type, mm, extra) => cmds.push(Object.assign({ type, index: mm.index }, extra));
+    const cmds = []; const add = (type, mm, extra) => cmds.push(Object.assign({ type, index: mm.index }, extra));
     const rules = [
       [/<bridge-sudo>([\s\S]*?)<\/bridge-sudo>/g, 'sudo', (m) => ({ command: m[1].trim() })],
       [/<bridge-exec>([\s\S]*?)<\/bridge-exec>/g, 'exec', (m) => ({ command: m[1].trim() })],
@@ -2169,8 +2100,7 @@ end
       [/<bridge-list\s+path="([^"]+)"\s*\/>/g, 'list', (m) => ({ path: m[1] })],
     ];
     for (const [re, type, fn] of rules) { re.lastIndex = 0; let m; while ((m = re.exec(text)) !== null) add(type, m, fn(m)); }
-    cmds.sort((a, b) => a.index - b.index);
-    return cmds;
+    cmds.sort((a, b) => a.index - b.index); return cmds;
   }
   function hasUnclosedWriteOrAppend(text) { const t2 = String(text || ''); return (t2.match(/<bridge-write\b/g) || []).length > (t2.match(/<\/bridge-write>/g) || []).length || (t2.match(/<bridge-append\b/g) || []).length > (t2.match(/<\/bridge-append>/g) || []).length; }
   function lastWriteOrAppendPath(text) { const matches = [...String(text || '').matchAll(/<bridge-(?:write|append)\s+path="([^"]+)"/g)]; return matches.length ? matches[matches.length - 1][1] : null; }
@@ -2282,9 +2212,7 @@ end
     if (!text || bridgeRunning || !__bridge.connected) return;
     if (bridgeWaitingForUser) { bridgeWaitingForUser = false; if (!bridgeTurn) bridgeTurn = newTurnState(); }
     else { bridgeConversation = []; bridgeTaskComplete = true; bridgeTurn = null; }
-    inp.value = ''; inp.style.height = 'auto';
-    updateBridgeSendBtn();
-    runBridgeTurn(text, false);
+    inp.value = ''; inp.style.height = 'auto'; updateBridgeSendBtn(); runBridgeTurn(text, false);
   }
   async function openPreview(pathOrEmpty) {
     const modal = $('#bwPreviewModal'); if (!modal) return;
@@ -2360,6 +2288,9 @@ end
       openModal('imageModal');
     });
 
+    /* Image history delete wiring */
+    on('#sidebarImagesDeleteAll', 'click', deleteAllImages);
+
     /* Call wiring */
     on('#callModeBtn', 'click', startCall);
     on('#callEndBtn', 'click', endCall);
@@ -2385,13 +2316,13 @@ end
     on('#signInFromSettingsBtn', 'click', () => { closeModal('settingsModal'); setLoginError(''); openModal('loginModal'); });
     on('#supportResolveBtn', 'click', supportResolve);
     on('#supportSendBtn', 'click', supportSend);
+    on('#clearImagesBtn', 'click', () => { closeModal('settingsModal'); deleteAllImages(); });
     const supInput = $('#supportInput');
     if (supInput) {
       supInput.addEventListener('input', () => { supInput.style.height = 'auto'; supInput.style.height = Math.min(supInput.scrollHeight, 140) + 'px'; supportUpdateComposeState(); });
       supInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); supportSend(); } });
     }
 
-    /* Raw view */
     on('#rawViewCopyBtn', 'click', async () => {
       try { await navigator.clipboard.writeText(__currentRawSource || ''); toast('Source copied', 1800, 'ok'); } catch {}
     });
@@ -2404,10 +2335,7 @@ end
     });
     on('#hrReloadBtn', 'click', () => { const f = $('#hrIframe'); if (f) f.srcdoc = __hrCurrentCode; });
     on('#hrCopyBtn', 'click', async () => { try { await navigator.clipboard.writeText(__hrCurrentCode); toast('Source copied', 1800, 'ok'); } catch {} });
-    on('#hrOpenBtn', 'click', () => {
-      const w = window.open('', '_blank');
-      if (w) { w.document.open(); w.document.write(__hrCurrentCode); w.document.close(); }
-    });
+    on('#hrOpenBtn', 'click', () => { const w = window.open('', '_blank'); if (w) { w.document.open(); w.document.write(__hrCurrentCode); w.document.close(); } });
 
     $$('.settings-tab').forEach((tab) => {
       tab.onclick = () => {
