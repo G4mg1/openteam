@@ -189,6 +189,10 @@
       <span class="call-btn-icon"><i class="ri-pause-line"></i></span>
       <span class="call-btn-label">Hold</span>
     </button>
+    <button id="callSendNowBtn" class="call-btn-2 sendnow" type="button" style="display:none;">
+      <span class="call-btn-icon"><i class="ri-send-plane-fill"></i></span>
+      <span class="call-btn-label">Send</span>
+    </button>
     <button id="callEndBtn" class="call-btn-2 end" type="button">
       <span class="call-btn-icon"><i class="ri-close-line"></i></span>
       <span class="call-btn-label">End</span>
@@ -215,6 +219,24 @@
     <div class="html-runner-body">
       <div class="html-runner-pane" data-hr-pane="preview"><iframe id="hrIframe" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"></iframe></div>
       <div class="html-runner-pane" data-hr-pane="source" style="display:none;"><pre class="html-runner-source" id="hrSource"></pre></div>
+    </div>
+  </div>
+</div>
+
+<!-- RAW VIEW (message source) -->
+<div id="rawViewModal" class="modal-overlay">
+  <div class="modal modal-raw-view">
+    <button class="icon-btn modal-close" type="button" data-close="rawViewModal"><i class="ri-close-line"></i></button>
+    <div class="raw-view-head">
+      <i class="ri-code-box-line"></i>
+      <div>
+        <div class="raw-view-title">Raw response source</div>
+        <div class="raw-view-sub">Markdown as the model sent it</div>
+      </div>
+    </div>
+    <pre class="raw-view-content" id="rawViewContent"></pre>
+    <div class="raw-view-actions">
+      <button class="modal-btn" type="button" id="rawViewCopyBtn"><i class="ri-file-copy-line"></i> Copy source</button>
     </div>
   </div>
 </div>
