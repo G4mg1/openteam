@@ -2,10 +2,9 @@
   'use strict';
 
   /* ============================================================
-     MiroxAI frontend v139
-     · Call: reliable simplified flow, accent-color UI
-     · Call: "Thinking…" dots, natural back-and-forth pacing
-     · Fixed thinking-tag leak in chat bubbles
+     MiroxAI frontend v140
+     · Call: gradient blob wiggle · reliable SSE + JSON fallback
+     · Fixed thinking-tag leak, hold state, TTS hang
      ============================================================ */
 
   /* ---------- i18n ---------- */
@@ -183,16 +182,15 @@ end
   let __call = {
     active: false,
     lang: 'en-US',
-    phase: 'idle',       // idle | listening | thinking | speaking | held
+    phase: 'idle',
     recog: null,
     shouldListen: false,
-    muted: false,
     holding: false,
     currentAbort: null,
     currentHistory: [],
+    busy: false,
   };
 
-  /* Speak/TTS state */
   let __currentSpeakMsgId = null;
 
   const uid = () => 'c_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
@@ -341,11 +339,11 @@ end
     }
     return new Promise((resolve) => {
       stopSpeaking();
-      const clean = String(text || '').replace(/```[\s\S]*?```/g, ' [code] ').replace(/\s+/g, ' ').trim();
+      const clean = String(text || '').replace(/```[\s\S]*?```/g, ' ').replace(/\s+/g, ' ').trim();
       if (!clean) return resolve();
       const parts = [];
       let buf = '';
-      for (const sentence of clean.split(/(?<=[.!?۔।])\s+/)) {
+      for (const sentence of clean.split(/(?<=[.!?。！？])\s+/)) {
         if ((buf + ' ' + sentence).length > 220) { if (buf) parts.push(buf); buf = sentence; }
         else buf = buf ? buf + ' ' + sentence : sentence;
       }
@@ -359,10 +357,10 @@ end
         const btn = document.querySelector(`.message[data-msg-id="${msgId}"] .action-btn[data-action="speak"]`);
         if (btn) btn.classList.add('speaking');
       }
-      let resolved = false;
+      let done = false;
       const finish = () => {
-        if (resolved) return;
-        resolved = true;
+        if (done) return;
+        done = true;
         if (msgId) {
           const btn = document.querySelector(`.message[data-msg-id="${msgId}"] .action-btn[data-action="speak"]`);
           if (btn) btn.classList.remove('speaking');
@@ -381,8 +379,9 @@ end
         try { speechSynthesis.speak(u); } catch { next(); }
       };
       next();
-      // Safety: never hang forever
-      setTimeout(finish, Math.max(3000, clean.length * 90));
+      // Safety net: never let speak() hang forever
+      const guard = Math.max(3000, clean.length * 95);
+      setTimeout(finish, guard);
     });
   }
 
@@ -418,133 +417,80 @@ end
     }, 6000);
   }
 
-  /* ═══════════ THINKING-LEAK HELPERS ═══════════ */
+  /* ---------- Thinking-leak scrubber ---------- */
   function stripThinkingLeak(s) {
     let out = String(s == null ? '' : s);
     out = out.replace(/<thinking>[\s\S]*?<\/thinking>/g, '');
     const lastOpen = out.lastIndexOf('<thinking>');
-    if (lastOpen >= 0 && out.indexOf('</thinking>', lastOpen) === -1) {
-      out = out.slice(0, lastOpen);
-    }
+    if (lastOpen >= 0 && out.indexOf('</thinking>', lastOpen) === -1) out = out.slice(0, lastOpen);
     out = out.replace(/<\/?thinking>/g, '');
     const lastLt = out.lastIndexOf('<');
     if (lastLt >= 0) {
       const tail = out.slice(lastLt);
       const candidates = ['<thinking>', '</thinking>'];
-      if (candidates.some((c) => c.toLowerCase().startsWith(tail.toLowerCase()) && tail.length < c.length)) {
-        out = out.slice(0, lastLt);
-      }
+      if (candidates.some((c) => c.toLowerCase().startsWith(tail.toLowerCase()) && tail.length < c.length)) out = out.slice(0, lastLt);
     }
     return out;
   }
 
-  /* THINK PANEL */
+  /* ---------- Think panel ---------- */
   function createThinkPanel(deep) {
     const el = document.createElement('div');
     el.className = 'think-panel';
     el.dataset.state = 'thinking';
     el.dataset.collapsed = 'false';
-    el.dataset.mode = deep ? 'deep' : 'normal';
     el.innerHTML = `
       <div class="think-header">
         <div class="think-icon"><i class="ri-loader-4-line"></i></div>
         <div class="think-title"><span class="think-title-text">${deep ? 'DeepThink' : 'Thinking'}</span></div>
         <div class="think-timer-pill">0.0s</div>
-        <button class="think-toggle" type="button" title="Minimize" aria-label="Minimize">
-          <i class="ri-arrow-up-s-line"></i>
-        </button>
+        <button class="think-toggle" type="button" title="Minimize"><i class="ri-arrow-up-s-line"></i></button>
       </div>
-      <div class="think-body-wrap">
-        <div class="think-body">
-          <div class="think-text" data-think-text></div>
-        </div>
-      </div>`;
-
+      <div class="think-body-wrap"><div class="think-body"><div class="think-text" data-think-text></div></div></div>`;
     const titleTextEl = el.querySelector('.think-title-text');
     const timerPill = el.querySelector('.think-timer-pill');
     const toggle = el.querySelector('.think-toggle');
     const bodyEl = el.querySelector('.think-body');
     const textEl = el.querySelector('[data-think-text]');
     const iconEl = el.querySelector('.think-icon i');
-
     const t0 = performance.now();
-    let done = false;
-    let lastText = '';
-
+    let done = false, lastText = '';
     toggle.addEventListener('click', (e) => {
       e.stopPropagation();
-      const collapsed = el.dataset.collapsed === 'true';
-      el.dataset.collapsed = collapsed ? 'false' : 'true';
-      toggle.title = collapsed ? 'Minimize' : 'Expand';
-      toggle.setAttribute('aria-label', toggle.title);
+      const c = el.dataset.collapsed === 'true';
+      el.dataset.collapsed = c ? 'false' : 'true';
     });
-
-    const timer = setInterval(() => {
-      if (done) { clearInterval(timer); return; }
-      timerPill.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
-    }, 100);
-
+    const timer = setInterval(() => { if (done) { clearInterval(timer); return; } timerPill.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's'; }, 100);
     function replaceText(full) {
       const text = String(full || '');
       if (text === lastText) return;
-      lastText = text;
-      textEl.textContent = text;
+      lastText = text; textEl.textContent = text;
       if (bodyEl.scrollHeight > bodyEl.clientHeight + 4) bodyEl.scrollTop = bodyEl.scrollHeight;
     }
-
     function setState(next) {
       el.dataset.state = next;
-      if (next === 'thinking') {
-        iconEl.className = 'ri-loader-4-line';
-        titleTextEl.textContent = deep ? 'DeepThink' : 'Thinking';
-      } else if (next === 'done') {
-        iconEl.className = 'ri-checkbox-circle-fill';
-        const secs = ((performance.now() - t0) / 1000).toFixed(1);
-        titleTextEl.textContent = (deep ? 'DeepThink · ' : 'Thought for ') + secs + 's';
-      } else if (next === 'failed') {
-        iconEl.className = 'ri-error-warning-fill';
-        titleTextEl.textContent = 'Stopped thinking';
-      }
+      if (next === 'thinking') { iconEl.className = 'ri-loader-4-line'; titleTextEl.textContent = deep ? 'DeepThink' : 'Thinking'; }
+      else if (next === 'done') { iconEl.className = 'ri-checkbox-circle-fill'; const s = ((performance.now() - t0) / 1000).toFixed(1); titleTextEl.textContent = (deep ? 'DeepThink · ' : 'Thought for ') + s + 's'; }
+      else if (next === 'failed') { iconEl.className = 'ri-error-warning-fill'; titleTextEl.textContent = 'Stopped thinking'; }
     }
-
     function finalize() {
       if (done) return;
-      done = true;
-      clearInterval(timer);
-      const secs = ((performance.now() - t0) / 1000).toFixed(1);
-      timerPill.textContent = secs + 's';
+      done = true; clearInterval(timer);
+      timerPill.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
       setState('done');
-      const collapseDelay = deep ? 2200 : 900;
-      setTimeout(() => {
-        if (el.isConnected && el.dataset.collapsed === 'false') el.dataset.collapsed = 'true';
-      }, collapseDelay);
+      setTimeout(() => { if (el.isConnected && el.dataset.collapsed === 'false') el.dataset.collapsed = 'true'; }, 900);
     }
-
     function fail(msg) {
       if (done) return;
-      done = true;
-      clearInterval(timer);
-      const secs = ((performance.now() - t0) / 1000).toFixed(1);
-      timerPill.textContent = secs + 's';
-      if (msg) {
-        const sep = lastText ? '\n\n' : '';
-        textEl.textContent = lastText + sep + msg;
-      }
+      done = true; clearInterval(timer);
+      if (msg) { const sep = lastText ? '\n\n' : ''; textEl.textContent = lastText + sep + msg; }
       setState('failed');
     }
-
-    function hide() {
-      el.style.display = 'none';
-      done = true;
-      clearInterval(timer);
-    }
-
-    function isConnected() { return el.isConnected; }
-    return { el, replaceText, finalize, fail, hide, isConnected, isDone() { return done; }, destroy() { clearInterval(timer); } };
+    function hide() { el.style.display = 'none'; done = true; clearInterval(timer); }
+    return { el, replaceText, finalize, fail, hide, isConnected: () => el.isConnected, destroy: () => clearInterval(timer) };
   }
 
-  /* ---------- Canvas watermark (still painted, no UI label) ---------- */
-  const WM_TEXT = 'Mirox AI';
+  /* ---------- Watermark ---------- */
   function paintWatermark(canvas, img) {
     const ctx = canvas.getContext('2d');
     const W = canvas.width, H = canvas.height;
@@ -559,27 +505,20 @@ end
     const grad = ctx.createLinearGradient(0, H - gradH, 0, H);
     grad.addColorStop(0, 'rgba(0,0,0,0)');
     grad.addColorStop(1, 'rgba(0,0,0,0.16)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, H - gradH, W, gradH);
+    ctx.fillStyle = grad; ctx.fillRect(0, H - gradH, W, gradH);
     ctx.save();
     ctx.globalAlpha = 0.72;
     ctx.fillStyle = '#d97757';
-    const radius = blobR * 0.5;
+    const r = blobR * 0.5;
     const bxL = bx - blobR, byT = by - blobR * 0.85;
     ctx.beginPath();
-    if (typeof ctx.roundRect === 'function') ctx.roundRect(bxL, byT, blobW, blobH, radius);
+    if (typeof ctx.roundRect === 'function') ctx.roundRect(bxL, byT, blobW, blobH, r);
     else {
-      const r = radius;
       ctx.moveTo(bxL + r, byT);
-      ctx.lineTo(bxL + blobW - r, byT);
-      ctx.quadraticCurveTo(bxL + blobW, byT, bxL + blobW, byT + r);
-      ctx.lineTo(bxL + blobW, byT + blobH - r);
-      ctx.quadraticCurveTo(bxL + blobW, byT + blobH, bxL + blobW - r, byT + blobH);
-      ctx.lineTo(bxL + r, byT + blobH);
-      ctx.quadraticCurveTo(bxL, byT + blobH, bxL, byT + blobH - r);
-      ctx.lineTo(bxL, byT + r);
-      ctx.quadraticCurveTo(bxL, byT, bxL + r, byT);
-      ctx.closePath();
+      ctx.lineTo(bxL + blobW - r, byT); ctx.quadraticCurveTo(bxL + blobW, byT, bxL + blobW, byT + r);
+      ctx.lineTo(bxL + blobW, byT + blobH - r); ctx.quadraticCurveTo(bxL + blobW, byT + blobH, bxL + blobW - r, byT + blobH);
+      ctx.lineTo(bxL + r, byT + blobH); ctx.quadraticCurveTo(bxL, byT + blobH, bxL, byT + blobH - r);
+      ctx.lineTo(bxL, byT + r); ctx.quadraticCurveTo(bxL, byT, bxL + r, byT); ctx.closePath();
     }
     ctx.fill();
     ctx.fillStyle = 'rgba(255,255,255,0.95)';
@@ -589,12 +528,9 @@ end
     ctx.font = `700 ${textSize}px Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
     ctx.textBaseline = 'middle';
     ctx.fillStyle = 'rgba(255,255,255,0.94)';
-    ctx.shadowColor = 'rgba(0,0,0,0.45)';
-    ctx.shadowBlur = Math.max(2, textSize * 0.18);
-    ctx.shadowOffsetY = 0.8;
-    const tx = bx + blobR + textSize * 0.5;
-    const ty = by + textSize * 0.02;
-    ctx.fillText(WM_TEXT, tx, ty);
+    ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = Math.max(2, textSize * 0.18); ctx.shadowOffsetY = 0.8;
+    const tx = bx + blobR + textSize * 0.5, ty = by + textSize * 0.02;
+    ctx.fillText('Mirox AI', tx, ty);
     ctx.shadowBlur = Math.max(2, textSize * 0.12);
     ctx.font = `500 ${Math.round(textSize * 0.58)}px Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
     ctx.fillStyle = 'rgba(255,255,255,0.62)';
@@ -729,9 +665,8 @@ end
   function formatK(n) { return n >= 1000 ? (n / 1000).toFixed(n % 1000 === 0 ? 0 : 1) + 'k' : String(n); }
   function updateTokenUsage() {
     const el = $('#tokenUsage'); if (!el) return;
-    const used = conversationTokenUsage();
     const span = el.querySelector('span');
-    if (span) span.textContent = formatK(used) + ' tokens';
+    if (span) span.textContent = formatK(conversationTokenUsage()) + ' tokens';
   }
   function atChatBottom(c = $('#chatMessages')) { return !c || c.scrollHeight - c.scrollTop - c.clientHeight < 100; }
   function scrollToBottom(force = false) {
@@ -903,9 +838,7 @@ end
 
   /* ---------- Message DOM ---------- */
   function buildAiActions(role, msgId, liked) {
-    if (role === 'user') {
-      return `<button class="action-btn" data-action="copy" aria-label="Copy" title="Copy"><i class="ri-file-copy-line"></i></button>`;
-    }
+    if (role === 'user') return `<button class="action-btn" data-action="copy" aria-label="Copy" title="Copy"><i class="ri-file-copy-line"></i></button>`;
     return `
       <button class="action-btn${liked ? ' active-liked' : ''}" data-action="like" aria-label="Like" title="Like"><i class="${liked ? 'ri-thumb-up-fill' : 'ri-thumb-up-line'}"></i><span>${liked ? 'Liked' : 'Like'}</span></button>
       <button class="action-btn" data-action="copy" aria-label="Copy" title="Copy"><i class="ri-file-copy-line"></i></button>
@@ -943,14 +876,7 @@ end
     inner += '<div class="bubble-text"></div>';
 
     const liked = !!(__likes[id]);
-
-    el.innerHTML = `
-      ${avatar}
-      <div class="message-body">
-        <div class="bubble">${inner}</div>
-        <div class="message-actions">${buildAiActions(role, id, liked)}</div>
-        <div class="message-time">${ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</div>
-      </div>`;
+    el.innerHTML = `${avatar}<div class="message-body"><div class="bubble">${inner}</div><div class="message-actions">${buildAiActions(role, id, liked)}</div><div class="message-time">${ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</div></div>`;
     container.appendChild(el);
 
     if (role === 'ai' && thinking && stripThinkingLeak(thinking).trim()) {
@@ -972,7 +898,6 @@ end
 
   function wireMessageActions(el) {
     const msgId = el.dataset.msgId;
-    const role = el.dataset.role;
     el.querySelectorAll('.action-btn').forEach((btn) => {
       if (btn.__wired) return; btn.__wired = true;
       btn.onclick = async (e) => {
@@ -990,14 +915,8 @@ end
           const text = el.querySelector('.bubble-text')?.innerText || '';
           const convo = currentConvo();
           const msg = convo?.messages.find((m) => m.id === msgId);
-          const lang = __prefs.responseLanguage && __prefs.responseLanguage !== 'auto'
-            ? __prefs.responseLanguage
-            : (msg && msg.lang) || 'en';
-          if (__currentSpeakMsgId === msgId) {
-            stopSpeaking();
-          } else {
-            speak(text, lang, msgId);
-          }
+          const lang = (__prefs.responseLanguage && __prefs.responseLanguage !== 'auto') ? __prefs.responseLanguage : (msg && msg.lang) || 'en';
+          if (__currentSpeakMsgId === msgId) stopSpeaking(); else speak(text, lang, msgId);
         } else if (action === 'like') {
           const likedNow = !__likes[msgId];
           __likes[msgId] = likedNow;
@@ -1054,10 +973,7 @@ end
     const text = inp.value.trim();
     if (!text && !pendingFiles.length) return;
     const hasImageFile = pendingFiles.some((f) => f.type === 'image');
-    if (__prefs.deepThink && !hasImageFile && looksLikeImageRequest(text)) {
-      toast('Image generation is disabled while DeepThink is on.', 4500, 'err');
-      return;
-    }
+    if (__prefs.deepThink && !hasImageFile && looksLikeImageRequest(text)) { toast('Image generation is disabled while DeepThink is on.', 4500, 'err'); return; }
     if (!__user && looksLikeImageRequest(text)) { requireSignIn('Sign in to generate images with Mirox.'); return; }
     if (!__user && hasImageFile && detectImageEditIntent(text, true)) { requireSignIn('Sign in to edit images with Mirox.'); return; }
 
@@ -1078,20 +994,12 @@ end
     $('#searchModeBtn')?.classList.remove('active');
   }
 
-  function countFences(text) {
-    let n = 0;
-    const s = String(text || '');
-    for (let i = 0; i < s.length - 2; i++) if (s.charCodeAt(i) === 96 && s.charCodeAt(i + 1) === 96 && s.charCodeAt(i + 2) === 96) { n++; i += 2; }
-    return n;
-  }
+  function countFences(text) { let n = 0; const s = String(text || ''); for (let i = 0; i < s.length - 2; i++) if (s.charCodeAt(i) === 96 && s.charCodeAt(i + 1) === 96 && s.charCodeAt(i + 2) === 96) { n++; i += 2; } return n; }
   function shouldShowContinue(full, streamComplete) {
     if (!full) return false;
     if (!streamComplete) return true;
-    const fences = countFences(full);
-    if (fences % 2 === 1) return true;
-    const trimmed = full.trim();
-    if (/(\.\.\.|…|,|\bto be continued\b|\bcontinue\b|\bnext part\b)$/i.test(trimmed)) return true;
-    return false;
+    if (countFences(full) % 2 === 1) return true;
+    return /(\.\.\.|…|,|\bto be continued\b|\bcontinue\b|\bnext part\b)$/i.test(String(full).trim());
   }
   function attachContinueButton(msgEl, bubble, messageObj) {
     if (!msgEl || !bubble || !messageObj || bubble.querySelector('[data-continue]')) return;
@@ -1107,11 +1015,7 @@ end
     btn.disabled = true;
     btn.innerHTML = '<i class="ri-loader-4-line spin"></i><span>Continuing…</span>';
     try {
-      await sendToAPI(
-        'Continue EXACTLY from where you stopped. Do NOT repeat any prior text. Do NOT add a preamble. Do NOT open a new code fence if the previous message ended inside one — just keep writing.',
-        [], false,
-        { existingMsgEl: msgEl, existingBubble: bubble, messageObject: messageObj, continuation: true }
-      );
+      await sendToAPI('Continue EXACTLY from where you stopped. Do NOT repeat any prior text. Do NOT add a preamble. Do NOT open a new code fence if the previous message ended inside one — just keep writing.', [], false, { existingMsgEl: msgEl, existingBubble: bubble, messageObject: messageObj, continuation: true });
     } finally { continuationBusy = false; if (btn.isConnected) btn.remove(); }
   }
 
@@ -1125,7 +1029,7 @@ end
     return t;
   }
 
-  /* ---------- Send to API (chat) ---------- */
+  /* ---------- Chat send ---------- */
   async function sendToAPI(text, files, forceSearch, continuation = null) {
     const isContinuation = !!(continuation && continuation.continuation);
     isReplying = true; updateSendButtonState();
@@ -1153,8 +1057,7 @@ end
       msgEl.dataset.msgId = aiMsgId; msgEl.dataset.role = 'ai';
       const avatar = document.createElement('div');
       avatar.className = 'message-avatar';
-      const initialMood = 'thinking';
-      avatar.innerHTML = `<div class="mascot mascot-sm m-${initialMood}" data-mood="${initialMood}">${blobSvg()}</div>`;
+      avatar.innerHTML = `<div class="mascot mascot-sm m-thinking" data-mood="thinking">${blobSvg()}</div>`;
       avatarMascot = avatar.querySelector('.mascot');
       msgEl.appendChild(avatar);
       const body = document.createElement('div');
@@ -1181,11 +1084,8 @@ end
     let generatedImage = null, gotToken = false;
     let streamComplete = false;
     let renderTimer = null;
-    let rawAll = '';
-    let answerText = '';
-    let thinkingText = '';
-    let hasReasoning = false;
-    let thinkingTagSeen = false;
+    let rawAll = '', answerText = '', thinkingText = '';
+    let hasReasoning = false, thinkingTagSeen = false;
 
     const renderStreamText = () => {
       renderTimer = null;
@@ -1246,11 +1146,7 @@ end
       let buf = '';
       const bodyEl = msgEl.querySelector('.message-body');
       const ensureBubble = () => {
-        if (!bubble) {
-          bubble = document.createElement('div');
-          bubble.className = 'bubble';
-          bodyEl.insertBefore(bubble, timeEl);
-        }
+        if (!bubble) { bubble = document.createElement('div'); bubble.className = 'bubble'; bodyEl.insertBefore(bubble, timeEl); }
       };
       let signinTriggered = false;
 
@@ -1261,16 +1157,13 @@ end
         if (openIdx >= 0 && closeIdx > openIdx) {
           thinkingTagSeen = true;
           thinkingText = s.slice(openIdx + 10, closeIdx);
-          const before = s.slice(0, openIdx);
-          const after = s.slice(closeIdx + 11);
-          answerText = before + after;
+          answerText = s.slice(0, openIdx) + s.slice(closeIdx + 11);
         } else if (openIdx >= 0) {
           thinkingTagSeen = true;
           thinkingText = s.slice(openIdx + 10);
           answerText = s.slice(0, openIdx);
         } else if (!hasReasoning) {
-          thinkingText = '';
-          answerText = s;
+          thinkingText = ''; answerText = s;
         }
         answerText = stripThinkingLeak(answerText);
       };
@@ -1308,11 +1201,7 @@ end
 
           if (o.reasoning_content || o.reasoning) {
             const r = String(o.reasoning_content || o.reasoning || '');
-            if (r) {
-              hasReasoning = true;
-              thinkingText += r;
-              if (thinkPanel && thinkPanel.isConnected()) thinkPanel.replaceText(thinkingText);
-            }
+            if (r) { hasReasoning = true; thinkingText += r; if (thinkPanel && thinkPanel.isConnected()) thinkPanel.replaceText(thinkingText); }
           }
 
           const delta = o.d || o.content || (o.delta && o.delta.content) || '';
@@ -1343,12 +1232,8 @@ end
       updateSplit();
 
       if (thinkPanel && thinkPanel.isConnected()) {
-        if (thinkingTagSeen || hasReasoning) {
-          thinkPanel.replaceText(stripThinkingLeak(thinkingText));
-          thinkPanel.finalize();
-        } else {
-          thinkPanel.hide();
-        }
+        if (thinkingTagSeen || hasReasoning) { thinkPanel.replaceText(stripThinkingLeak(thinkingText)); thinkPanel.finalize(); }
+        else thinkPanel.hide();
       }
       full = answerText;
 
@@ -1377,9 +1262,7 @@ end
       if (convo) {
         if (isContinuation) {
           savedMsg = convo.messages.find((m) => m.id === aiMsgId) || continuation.messageObject;
-          savedMsg.content = full;
-          savedMsg.thinking = thinkingText;
-          savedMsg.ts = Date.now();
+          savedMsg.content = full; savedMsg.thinking = thinkingText; savedMsg.ts = Date.now();
           if (imageKey) savedMsg.imageKey = imageKey;
         } else {
           savedMsg = { id: aiMsgId, role: 'assistant', content: full, thinking: thinkingText, ts: Date.now(), imageKey, lang: __prefs.responseLanguage || 'auto' };
@@ -1388,10 +1271,7 @@ end
       }
       saveChats(); updateTokenUsage();
       timeEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      if (savedMsg && shouldShowContinue(full, streamComplete)) {
-        ensureBubble();
-        attachContinueButton(msgEl, bubble, savedMsg);
-      }
+      if (savedMsg && shouldShowContinue(full, streamComplete)) { ensureBubble(); attachContinueButton(msgEl, bubble, savedMsg); }
 
       if (__prefs.autoSpeak && full && !__call.active) {
         const lang = (__prefs.responseLanguage && __prefs.responseLanguage !== 'auto') ? __prefs.responseLanguage : (savedMsg && savedMsg.lang) || 'en';
@@ -1441,16 +1321,14 @@ end
     setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 350); }, ms || 2200);
   }
 
-  /* ---------- Voice typing (input mic) ---------- */
+  /* ---------- Voice typing (input) ---------- */
   function setupVoice() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     const btn = document.getElementById('voiceBtn');
     if (!SR || !btn) { if (btn) { btn.disabled = true; btn.title = 'Voice input is not supported'; btn.style.opacity = '0.4'; } return; }
     const recog = new SR();
     recog.continuous = false; recog.interimResults = true;
-    const lang = () => (__prefs.responseLanguage && __prefs.responseLanguage !== 'auto')
-      ? __prefs.responseLanguage
-      : (navigator.language || 'en-US');
+    const lang = () => (__prefs.responseLanguage && __prefs.responseLanguage !== 'auto') ? __prefs.responseLanguage : (navigator.language || 'en-US');
     recog.lang = lang();
     recog.onstart = () => { __voiceListening = true; btn.classList.add('listening'); btn.innerHTML = '<i class="ri-mic-fill"></i>'; };
     recog.onend = () => { __voiceListening = false; btn.classList.remove('listening'); btn.innerHTML = '<i class="ri-mic-line"></i>'; };
@@ -1611,14 +1489,12 @@ end
   function renderModelPicker() {
     const menu = $('#modelPickerMenu'); if (!menu) return;
     const models = getModelsList(); const cur = __model || models[0].id;
-    let html = '';
-    html += models.map((m) => {
+    menu.innerHTML = models.map((m) => {
       const usable = canUseModel(m.tier); const isActive = m.id === cur;
       const lockIcon = usable ? '' : '<i class="ri-lock-2-line model-option-lock"></i>';
       const icon = m.icon || 'ri-sparkling-2-line';
-      return `<div class="model-option${isActive ? ' active' : ''}${usable ? '' : ' locked'}" data-model-id="${m.id}" data-usable="${usable}" data-tier="${m.tier}"><span class="model-option-icon"><i class="${icon}"></i></span><span class="model-option-body"><span class="model-option-top"><span class="model-option-name">${escapeHtml(m.label)}</span><span class="model-tier-badge tier-${m.tier}">${tierLabel(m.tier)}</span>${lockIcon}</span><span class="model-option-tagline">${escapeHtml(m.tagline || '')}</span></span></div>`;
+      return `<div class="model-option${isActive ? ' active' : ''}${usable ? '' : ' locked'}" data-model-id="${m.id}" data-usable="${usable}"><span class="model-option-icon"><i class="${icon}"></i></span><span class="model-option-body"><span class="model-option-top"><span class="model-option-name">${escapeHtml(m.label)}</span><span class="model-tier-badge tier-${m.tier}">${tierLabel(m.tier)}</span>${lockIcon}</span><span class="model-option-tagline">${escapeHtml(m.tagline || '')}</span></span></div>`;
     }).join('');
-    menu.innerHTML = html;
     menu.querySelectorAll('.model-option').forEach((opt) => {
       opt.onclick = (e) => {
         e.stopPropagation();
@@ -1770,31 +1646,21 @@ end
   }
 
   /* ═══════════════════════════════════════════════════════════
-     CALL MODE — simplified, reliable
+     CALL MODE
      ═══════════════════════════════════════════════════════════ */
   function setCallPhase(phase) {
     __call.phase = phase;
     const overlay = $('#callOverlay');
     if (overlay) overlay.setAttribute('data-phase', phase);
-    const orb = $('#callOrb');
-    if (orb) orb.setAttribute('data-state', phase === 'idle' ? 'listening' : phase);
+    const blobWrap = $('#callBlobWrap');
+    if (blobWrap) blobWrap.setAttribute('data-state', phase === 'idle' ? 'listening' : phase);
     const statusEl = $('#callStatus');
-    const dotsEl = $('#callThinkingDots');
     if (statusEl) statusEl.className = 'call-status';
-    if (dotsEl) dotsEl.classList.remove('visible');
-
-    if (phase === 'listening') {
-      if (statusEl) { statusEl.textContent = 'Listening…'; statusEl.classList.add('listening'); }
-    } else if (phase === 'thinking') {
-      if (statusEl) { statusEl.textContent = 'Thinking…'; statusEl.classList.add('thinking'); }
-      if (dotsEl) dotsEl.classList.add('visible');
-    } else if (phase === 'speaking') {
-      if (statusEl) { statusEl.textContent = 'Speaking…'; statusEl.classList.add('speaking'); }
-    } else if (phase === 'held') {
-      if (statusEl) statusEl.textContent = 'On hold';
-    } else {
-      if (statusEl) { statusEl.textContent = 'Listening…'; statusEl.classList.add('listening'); }
-    }
+    if (phase === 'listening') { if (statusEl) { statusEl.textContent = 'Listening…'; statusEl.classList.add('listening'); } }
+    else if (phase === 'thinking') { if (statusEl) { statusEl.textContent = 'Thinking…'; statusEl.classList.add('thinking'); } }
+    else if (phase === 'speaking') { if (statusEl) { statusEl.textContent = 'Speaking…'; statusEl.classList.add('speaking'); } }
+    else if (phase === 'held') { if (statusEl) statusEl.textContent = 'On hold'; }
+    else { if (statusEl) { statusEl.textContent = 'Listening…'; statusEl.classList.add('listening'); } }
   }
 
   function callStopRecog() {
@@ -1811,9 +1677,8 @@ end
 
   function startCallRecognition() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const transcriptEl = $('#callTranscript');
     if (!SR) { toast('Speech recognition is not supported. Try Chrome or Edge.', 5000, 'err'); endCall(); return; }
-    if (!__call.active || !__call.shouldListen || __call.holding) return;
+    if (!__call.active || !__call.shouldListen || __call.holding || __call.busy) return;
 
     callStopRecog();
     const recog = new SR();
@@ -1825,6 +1690,7 @@ end
     let finalText = '';
     let silenceTimer = null;
     let sent = false;
+    const transcriptEl = $('#callTranscript');
 
     recog.onstart = () => setCallPhase('listening');
 
@@ -1847,8 +1713,7 @@ end
         }
         clearTimeout(silenceTimer);
         silenceTimer = setTimeout(() => {
-          if (sent) return;
-          if (!finalText.trim() || !__call.active) return;
+          if (sent || !finalText.trim() || !__call.active) return;
           sent = true;
           __call.shouldListen = false;
           callStopRecog();
@@ -1868,9 +1733,9 @@ end
     recog.onend = () => {
       clearTimeout(silenceTimer);
       __call.recog = null;
-      if (__call.active && __call.shouldListen && !__call.holding && !sent) {
+      if (__call.active && __call.shouldListen && !__call.holding && !sent && !__call.busy) {
         setTimeout(() => {
-          if (__call.active && __call.shouldListen && !__call.holding) startCallRecognition();
+          if (__call.active && __call.shouldListen && !__call.holding && !__call.busy) startCallRecognition();
         }, 350);
       }
     };
@@ -1879,8 +1744,10 @@ end
     try { recog.start(); } catch (e) { /* ignore */ }
   }
 
+  // Robust: uses the SAME request shape as chat, with both SSE and JSON fallback.
   async function callSendToAI(userText) {
     if (!__call.active) return;
+    __call.busy = true;
     setCallPhase('thinking');
     const replyEl = $('#callReply');
     if (replyEl) { replyEl.textContent = ''; replyEl.classList.remove('typing'); }
@@ -1892,24 +1759,11 @@ end
     const turnIndex = __call.currentHistory.filter((m) => m.role === 'user').length;
     const isFirstReply = turnIndex <= 1;
 
-    const callSystem = `You are Mirox on a LIVE VOICE CALL. Your reply will be spoken aloud by TTS.
-
-HARD RULES:
-- Reply in language code "${langTag}" ONLY.
-- NEVER write <thinking>, </thinking>, or any XML tags.
-- NEVER use markdown, code blocks, bullet lists, emojis, or asterisks.
-- Keep it SHORT: usually 1–2 sentences.
-
-STYLE:
-- Sound like a real friend talking, not an assistant reading a script.
-- Use natural reactions: "Oh nice!", "Hmm, let me think…", "Yeah exactly."
-- ${isFirstReply ? 'This is the opening — greet them warmly and briefly.' : 'Do not re-greet. Continue the conversation naturally.'}
-- Use contractions ("I'm", "you're", "that's").`;
+    const callSystem = `You are Mirox on a live voice call. Reply ONLY in language code "${langTag}". Keep replies short — 1 to 2 sentences. No markdown, no <thinking>, no code blocks, no emojis. Be warm and conversational, like a friend. ${isFirstReply ? 'Greet them briefly.' : 'Do not re-greet — continue naturally.'}`;
 
     let fullReply = '';
     const controller = new AbortController();
     __call.currentAbort = controller;
-    let firstTokenSeen = false;
 
     try {
       const res = await fetch('/v1/chat/completions', {
@@ -1929,60 +1783,63 @@ STYLE:
         signal: controller.signal,
       });
 
-      if (!res.ok || !res.body) {
+      if (!res.ok) {
         let detail = 'HTTP ' + res.status;
         try { const d = await res.json(); detail = d.error?.message || d.error || d.message || detail; } catch {}
         throw new Error(detail);
       }
 
-      const reader = res.body.getReader();
-      const dec = new TextDecoder();
-      let buf = '';
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        let idx;
-        while ((idx = buf.indexOf('\n')) !== -1) {
-          const line = buf.slice(0, idx).trim();
-          buf = buf.slice(idx + 1);
-          if (!line.startsWith('data:')) continue;
-          const pl = line.slice(5).trim();
-          if (!pl || pl === '[DONE]') continue;
-          let o; try { o = JSON.parse(pl); } catch { continue; }
-          if (o.error) throw new Error(o.error.message || 'Stream error');
-          const delta = o.d || o.content || (o.delta && o.delta.content) || '';
-          if (delta) {
-            fullReply += delta;
-            const clean = stripThinkingLeak(fullReply).replace(/```[\s\S]*?```/g, '').trim();
-            if (!firstTokenSeen && clean.length > 0) {
-              firstTokenSeen = true;
-              setCallPhase('speaking');
-              if (replyEl) replyEl.classList.add('typing');
+      const ct = (res.headers.get('content-type') || '').toLowerCase();
+      let firstTokenSeen = false;
+
+      if (ct.includes('text/event-stream') || ct.includes('text/plain')) {
+        const reader = res.body.getReader();
+        const dec = new TextDecoder();
+        let buf = '';
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let idx;
+          while ((idx = buf.indexOf('\n')) !== -1) {
+            const line = buf.slice(0, idx).trim(); buf = buf.slice(idx + 1);
+            if (!line.startsWith('data:')) continue;
+            const pl = line.slice(5).trim();
+            if (!pl || pl === '[DONE]') continue;
+            let o; try { o = JSON.parse(pl); } catch { continue; }
+            if (o.error) throw new Error(typeof o.error === 'string' ? o.error : (o.error.message || 'error'));
+            const delta = o.d || o.content || (o.delta && o.delta.content) || '';
+            if (delta) {
+              fullReply += delta;
+              const clean = stripThinkingLeak(fullReply).replace(/```[\s\S]*?```/g, '').trim();
+              if (!firstTokenSeen && clean.length > 0) {
+                firstTokenSeen = true;
+                setCallPhase('speaking');
+                if (replyEl) replyEl.classList.add('typing');
+              }
+              if (replyEl) replyEl.textContent = clean;
             }
-            if (replyEl) replyEl.textContent = clean;
           }
         }
+      } else {
+        // Non-stream fallback
+        const data = await res.json();
+        fullReply = data.reply || data.content || data.message || (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
+        const clean = stripThinkingLeak(fullReply).replace(/```[\s\S]*?```/g, '').trim();
+        if (replyEl) replyEl.textContent = clean;
+        setCallPhase('speaking');
       }
 
-      const finalReply = stripThinkingLeak(fullReply)
-        .replace(/```[\s\S]*?```/g, '')
-        .replace(/\s+/g, ' ')
-        .trim() || "Hmm, I didn't quite catch that.";
-
+      const finalReply = stripThinkingLeak(fullReply).replace(/```[\s\S]*?```/g, '').replace(/\s+/g, ' ').trim() || "Hmm, I didn't catch that. Say again?";
       if (replyEl) { replyEl.textContent = finalReply; replyEl.classList.remove('typing'); }
       __call.currentHistory.push({ role: 'assistant', content: finalReply });
 
+      __call.busy = false;
       if (!__call.active) return;
 
       if (__call.holding) { setCallPhase('held'); return; }
-      if (__call.muted) {
-        setCallPhase('idle');
-        __call.shouldListen = true;
-        startCallRecognition();
-        return;
-      }
 
+      // Speak it, then go back to listening
       await speak(finalReply, __call.lang);
 
       if (__call.active && !__call.holding) {
@@ -1996,9 +1853,10 @@ STYLE:
         setCallPhase('held');
       }
     } catch (e) {
-      if (e && e.name === 'AbortError') return;
+      if (e && e.name === 'AbortError') { __call.busy = false; return; }
       console.error('[Mirox Call]', e);
-      if (replyEl) { replyEl.textContent = 'Connection issue — one sec.'; replyEl.classList.remove('typing'); }
+      if (replyEl) { replyEl.textContent = 'Connection issue — try again.'; replyEl.classList.remove('typing'); }
+      __call.busy = false;
       if (__call.active && !__call.holding) {
         setTimeout(() => {
           if (__call.active && !__call.holding) {
@@ -2010,6 +1868,7 @@ STYLE:
       }
     } finally {
       __call.currentAbort = null;
+      __call.busy = false;
     }
   }
 
@@ -2020,8 +1879,8 @@ STYLE:
 
     __call.active = true;
     __call.shouldListen = true;
-    __call.muted = false;
     __call.holding = false;
+    __call.busy = false;
     __call.currentHistory = [];
     __call.currentAbort = null;
 
@@ -2048,7 +1907,7 @@ STYLE:
 
     setCallPhase('idle');
     setTimeout(() => {
-      if (__call.active && __call.shouldListen) startCallRecognition();
+      if (__call.active && __call.shouldListen && !__call.holding) startCallRecognition();
     }, 400);
   }
 
@@ -2068,7 +1927,7 @@ STYLE:
       if (liveText) liveText.textContent = 'Live';
       __call.shouldListen = true;
       setCallPhase('idle');
-      startCallRecognition();
+      if (!__call.busy) startCallRecognition();
     }
   }
 
@@ -2076,6 +1935,7 @@ STYLE:
     __call.active = false;
     __call.shouldListen = false;
     __call.holding = false;
+    __call.busy = false;
     callStopRecog();
     if (__call.currentAbort) { try { __call.currentAbort.abort(); } catch {} __call.currentAbort = null; }
     stopSpeaking();
@@ -2152,7 +2012,7 @@ STYLE:
   function openSupportModal() { openModal('supportModal'); supportLoad(); supportStartPolling(); }
   function closeSupportModal() { closeModal('supportModal'); supportStopPolling(); }
 
-  /* ---------- Bridge ---------- */
+  /* ---------- Bridge (minimal, unchanged) ---------- */
   function loadBridgeOpts() { const o = safeGet(BRIDGE_OPTS_KEY, {}); if (typeof o.autoRun === 'boolean') __bridgeAutoRun = o.autoRun; if (typeof o.showCode === 'boolean') __bridgeShowCode = o.showCode; }
   function saveBridgeOpts() { safeSet(BRIDGE_OPTS_KEY, { autoRun: __bridgeAutoRun, showCode: __bridgeShowCode }); }
   function renderBridgeStatus() {
@@ -2415,8 +2275,7 @@ STYLE:
 
     on('#deepThinkBtn', 'click', () => {
       __prefs.deepThink = !__prefs.deepThink;
-      savePrefs();
-      applyDeepThinkUI();
+      savePrefs(); applyDeepThinkUI();
       if (__prefs.deepThink) toast('DeepThink is on — model reasons longer. Image generation disabled.', 3500, 'ok');
       else toast('DeepThink off.', 1800);
     });
@@ -2428,13 +2287,12 @@ STYLE:
       openModal('imageModal');
     });
 
-    /* Call */
     on('#callModeBtn', 'click', startCall);
     on('#callEndBtn', 'click', endCall);
     on('#callHoldBtn', 'click', toggleCallHold);
     on('#callLangSelect', 'change', (e) => {
       __call.lang = e.target.value;
-      if (__call.active) {
+      if (__call.active && !__call.busy) {
         __call.shouldListen = true;
         callStopRecog();
         setTimeout(() => { if (__call.active && __call.shouldListen && !__call.holding) startCallRecognition(); }, 220);
