@@ -129,11 +129,11 @@
   </div>
 </main>
 
-<!-- CALL OVERLAY -->
+<!-- ═══════════ CALL OVERLAY ═══════════ -->
 <div id="callOverlay" class="call-overlay">
-  <div class="call-bg"></div>
-  <div class="call-top">
-    <div class="call-title"><i class="ri-phone-line"></i> <span>Voice Call</span></div>
+  <div class="call-glow" aria-hidden="true"></div>
+  <div class="call-top-bar">
+    <div class="call-live-badge" id="callLiveBadge"><i class="ri-flashlight-fill"></i> <span id="callLiveText">Live</span></div>
     <div class="call-lang-wrap">
       <i class="ri-translate-2"></i>
       <select id="callLangSelect" class="call-lang-select">
@@ -167,21 +167,20 @@
     </div>
   </div>
   <div class="call-center">
-    <div class="call-avatar" id="callAvatar">
-      <div class="mascot mascot-xl m-idle" data-mood="idle"></div>
-      <div class="call-ripple"></div>
-      <div class="call-ripple delay"></div>
-    </div>
-    <div class="call-status" id="callStatus">Tap the mic to start</div>
+    <div class="call-status" id="callStatus">Starting…</div>
     <div class="call-transcript" id="callTranscript"></div>
     <div class="call-reply" id="callReply"></div>
   </div>
   <div class="call-controls">
-    <button id="callMicBtn" class="call-btn mic" type="button" title="Speak"><i class="ri-mic-line"></i></button>
-    <button id="callMuteBtn" class="call-btn ghost" type="button" title="Mute AI"><i class="ri-volume-up-line"></i></button>
-    <button id="callEndBtn" class="call-btn end" type="button" title="End call"><i class="ri-phone-fill"></i></button>
+    <button id="callHoldBtn" class="call-btn-2 hold" type="button">
+      <span class="call-btn-icon"><i class="ri-pause-line"></i></span>
+      <span class="call-btn-label">Hold</span>
+    </button>
+    <button id="callEndBtn" class="call-btn-2 end" type="button">
+      <span class="call-btn-icon"><i class="ri-close-line"></i></span>
+      <span class="call-btn-label">End</span>
+    </button>
   </div>
-  <div class="call-hint">Speak in any language. Mirox will reply in the same language.</div>
 </div>
 
 <!-- HTML RUNNER -->
