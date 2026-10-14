@@ -2,11 +2,11 @@
   'use strict';
 
   /* ============================================================
-     MiroxAI frontend v137
-     · Fixed thinking-tag leak in chat bubbles
-     · Rewritten Call mode — dark UI, Hold/End, always-listening
-     · Stream parser handles <thinking>, reasoning_content, and
-       partial tag fragments during streaming
+     MiroxAI frontend v138
+     · Call: "Thinking…" indicator with animated dots
+     · Call: typewriter effect + blinking cursor on AI reply
+     · Call: real conversational pacing, more natural AI replies
+     · Chat: thinking-tag leak fixed (no <thinking in bubbles)
      ============================================================ */
 
   /* ---------- i18n ---------- */
@@ -191,6 +191,9 @@ end
     holding: false,
     currentAbort: null,
     currentHistory: [],
+    firstReplyDone: false, // used to nudge the AI to be more conversational
+    typing: false,
+    typingTimer: null,
   };
 
   /* Speak/TTS state */
@@ -415,20 +418,14 @@ end
   }
 
   /* ═══════════ THINKING-LEAK HELPERS ═══════════ */
-  // Strip full <thinking>...</thinking> blocks, dangling open tags, and any
-  // partial tag fragment at the end of a streamed chunk (e.g. "<thin").
   function stripThinkingLeak(s) {
     let out = String(s == null ? '' : s);
-    // 1. Remove complete blocks
     out = out.replace(/<thinking>[\s\S]*?<\/thinking>/g, '');
-    // 2. Remove dangling open tags (from last <thinking> to end)
     const lastOpen = out.lastIndexOf('<thinking>');
     if (lastOpen >= 0 && out.indexOf('</thinking>', lastOpen) === -1) {
       out = out.slice(0, lastOpen);
     }
-    // 3. Remove any residual tag tokens
     out = out.replace(/<\/?thinking>/g, '');
-    // 4. Strip a trailing partial prefix like "<thin", "</thinkin", "<", "</"
     const lastLt = out.lastIndexOf('<');
     if (lastLt >= 0) {
       const tail = out.slice(lastLt);
@@ -955,7 +952,6 @@ end
       </div>`;
     container.appendChild(el);
 
-    // Insert saved thinking panel ABOVE bubble (only if it has real content)
     if (role === 'ai' && thinking && stripThinkingLeak(thinking).trim()) {
       const panel = createThinkPanel(false);
       panel.replaceText(stripThinkingLeak(thinking));
@@ -1113,7 +1109,7 @@ end
       await sendToAPI(
         'Continue EXACTLY from where you stopped. Do NOT repeat any prior text. Do NOT add a preamble. Do NOT open a new code fence if the previous message ended inside one — just keep writing.',
         [], false,
-        { existingMsgEl: msgEl, existingBubble: bubble, messageObj, continuation: true }
+        { existingMsgEl: msgEl, existingBubble: bubble, messageObject: messageObj, continuation: true }
       );
     } finally { continuationBusy = false; if (btn.isConnected) btn.remove(); }
   }
@@ -1184,10 +1180,10 @@ end
     let generatedImage = null, gotToken = false;
     let streamComplete = false;
     let renderTimer = null;
-    let rawAll = '';         // raw accumulated streamed text
-    let answerText = '';     // visible answer (tags stripped)
-    let thinkingText = '';   // contents of <thinking> block OR reasoning_content
-    let hasReasoning = false;// did backend send reasoning_content?
+    let rawAll = '';
+    let answerText = '';
+    let thinkingText = '';
+    let hasReasoning = false;
     let thinkingTagSeen = false;
 
     const renderStreamText = () => {
@@ -1275,7 +1271,6 @@ end
           thinkingText = '';
           answerText = s;
         }
-        // ALWAYS scrub any residual / partial tag fragments from the visible answer
         answerText = stripThinkingLeak(answerText);
       };
 
@@ -1310,7 +1305,6 @@ end
             continue;
           }
 
-          // Explicit reasoning_content field (some backends)
           if (o.reasoning_content || o.reasoning) {
             const r = String(o.reasoning_content || o.reasoning || '');
             if (r) {
@@ -1320,12 +1314,10 @@ end
             }
           }
 
-          // Content delta (support multiple shapes)
           const delta = o.d || o.content || (o.delta && o.delta.content) || '';
           if (delta) {
             rawAll += delta;
             updateSplit();
-            // Panel: keep updating while we don't have a final answer yet
             if (thinkPanel && thinkPanel.isConnected()) {
               if (thinkingTagSeen || hasReasoning) thinkPanel.replaceText(thinkingText);
             }
@@ -1349,7 +1341,6 @@ end
 
       updateSplit();
 
-      // Finalize panel
       if (thinkPanel && thinkPanel.isConnected()) {
         if (thinkingTagSeen || hasReasoning) {
           thinkPanel.replaceText(stripThinkingLeak(thinkingText));
@@ -1384,7 +1375,7 @@ end
       let savedMsg;
       if (convo) {
         if (isContinuation) {
-          savedMsg = convo.messages.find((m) => m.id === aiMsgId) || continuation.messageObj;
+          savedMsg = convo.messages.find((m) => m.id === aiMsgId) || continuation.messageObject;
           savedMsg.content = full;
           savedMsg.thinking = thinkingText;
           savedMsg.ts = Date.now();
@@ -1417,7 +1408,7 @@ end
         if (!bubbleText) { bubbleText = document.createElement('div'); bubbleText.className = 'bubble-text'; bubble.prepend(bubbleText); }
         bubbleText.innerHTML = renderMarkdown(full); wireCodeButtons(bubbleText);
         let savedMsg = convo?.messages.find((m) => m.id === aiMsgId);
-        if (isContinuation && continuation.messageObj) savedMsg = continuation.messageObj;
+        if (isContinuation && continuation.messageObject) savedMsg = continuation.messageObject;
         if (!savedMsg && convo) { savedMsg = { id: aiMsgId, role: 'assistant', content: full, ts: Date.now() }; convo.messages.push(savedMsg); }
         if (savedMsg) { savedMsg.content = full; saveChats(); attachContinueButton(msgEl, bubble, savedMsg); }
       } else {
@@ -1778,20 +1769,31 @@ end
   }
 
   /* ═══════════════════════════════════════════════════════════
-     CALL MODE  —  dark UI, mic auto-listening, Hold + End
+     CALL MODE
      ═══════════════════════════════════════════════════════════ */
   function setCallPhase(phase) {
     __call.phase = phase;
     const overlay = $('#callOverlay');
     if (overlay) overlay.setAttribute('data-phase', phase);
+    const orb = $('#callOrb');
+    if (orb) orb.setAttribute('data-state', phase === 'idle' ? 'listening' : phase);
     const statusEl = $('#callStatus');
-    if (!statusEl) return;
-    statusEl.className = 'call-status';
-    if (phase === 'listening') { statusEl.textContent = 'Listening…'; statusEl.classList.add('listening'); }
-    else if (phase === 'thinking') { statusEl.textContent = 'Thinking…'; statusEl.classList.add('thinking'); }
-    else if (phase === 'speaking') { statusEl.textContent = 'Speaking…'; statusEl.classList.add('speaking'); }
-    else if (phase === 'held') { statusEl.textContent = 'On hold'; }
-    else { statusEl.textContent = 'Listening…'; statusEl.classList.add('listening'); }
+    const dotsEl = $('#callThinkingDots');
+    if (statusEl) statusEl.className = 'call-status';
+    if (dotsEl) dotsEl.classList.remove('visible');
+
+    if (phase === 'listening') {
+      if (statusEl) { statusEl.textContent = 'Listening…'; statusEl.classList.add('listening'); }
+    } else if (phase === 'thinking') {
+      if (statusEl) { statusEl.textContent = 'Thinking…'; statusEl.classList.add('thinking'); }
+      if (dotsEl) dotsEl.classList.add('visible');
+    } else if (phase === 'speaking') {
+      if (statusEl) { statusEl.textContent = 'Speaking…'; statusEl.classList.add('speaking'); }
+    } else if (phase === 'held') {
+      if (statusEl) statusEl.textContent = 'On hold';
+    } else {
+      if (statusEl) { statusEl.textContent = 'Listening…'; statusEl.classList.add('listening'); }
+    }
   }
 
   function callStopRecog() {
@@ -1845,7 +1847,7 @@ end
           __call.shouldListen = false;
           callStopRecog();
           callSendToAI(finalText.trim());
-        }, 900);
+        }, 1000);
       }
     };
 
@@ -1855,13 +1857,11 @@ end
         endCall();
         return;
       }
-      // no-speech / aborted are normal — the onend handler will restart
     };
 
     recog.onend = () => {
       clearTimeout(silenceTimer);
       __call.recog = null;
-      // If nothing was captured and we're still supposed to listen, restart
       if (__call.active && __call.shouldListen && !__call.holding && !sent) {
         setTimeout(() => { if (__call.active && __call.shouldListen && !__call.holding) startCallRecognition(); }, 350);
       }
@@ -1871,27 +1871,69 @@ end
     try { recog.start(); } catch (e) { /* ignore */ }
   }
 
+  // Typewriter: reveals `text` into `el` character by character.
+  // Returns a promise that resolves when finished, and exposes a `skip()` on the
+  // returned object so a cancel can jump straight to the end.
+  function typeInto(el, text, msPerChar = 24) {
+    let cancelled = false;
+    let resolveFn = null;
+    const p = new Promise((res) => { resolveFn = res; });
+    (async () => {
+      el.textContent = '';
+      el.classList.add('typing');
+      const chars = Array.from(text);
+      let i = 0;
+      while (i < chars.length) {
+        if (cancelled) break;
+        el.textContent += chars[i++];
+        // Slight variability for a more natural feel
+        const jitter = 0.7 + Math.random() * 0.6;
+        await new Promise((r) => setTimeout(r, msPerChar * jitter));
+      }
+      if (cancelled) el.textContent = text;
+      el.classList.remove('typing');
+      resolveFn();
+    })();
+    return { done: p, skip: () => { cancelled = true; } };
+  }
+
   async function callSendToAI(userText) {
     if (!__call.active) return;
     setCallPhase('thinking');
     const replyEl = $('#callReply');
-    if (replyEl) replyEl.textContent = '';
+    if (replyEl) { replyEl.textContent = ''; replyEl.classList.remove('typing'); }
 
-    // Trim history: keep last 6 exchanges
+    // Keep last 6 exchanges
     __call.currentHistory.push({ role: 'user', content: userText });
     if (__call.currentHistory.length > 12) __call.currentHistory.splice(0, __call.currentHistory.length - 12);
 
     const langTag = __call.lang.split('-')[0];
-    const callSystem = `You are Mirox, an AI by OpenSurr, on a LIVE VOICE CALL. Your reply will be spoken aloud by a TTS engine, so:
-- Reply ONLY in the language with code "${langTag}".
-- Keep it SHORT and conversational — 1 to 3 short sentences.
-- Never use code blocks, markdown, emojis, or bullet lists.
-- NEVER write <thinking>, </thinking>, or any XML-style tags.
-- Be warm, natural, like a helpful friend on a call. No preamble.`;
+    const turnIndex = __call.currentHistory.filter((m) => m.role === 'user').length;
+    const isFirstReply = turnIndex <= 1;
+
+    // Conversational system prompt — makes it feel like a real back-and-forth.
+    const callSystem = `You are Mirox, a warm, witty AI companion on a LIVE VOICE CALL. Your reply is spoken aloud by TTS.
+
+HARD RULES (always obey):
+- Reply in language code "${langTag}" ONLY.
+- NEVER write <thinking>, </thinking>, or any XML tags.
+- NEVER use markdown, code blocks, bullet lists, emojis, or asterisks.
+- Keep it SHORT: usually 1–2 sentences. Occasionally 3 if truly needed.
+
+CONVERSATION STYLE:
+- Sound like a real friend talking, not an assistant reading a script.
+- Use natural fillers and reactions: "Oh nice!", "Hmm, let me think…", "Yeah, exactly.", "Wait really?"
+- Acknowledge what the user said before answering. React to their tone.
+- ${isFirstReply ? 'This is the opening of the call — greet them warmly and briefly.' : 'Do not re-greet. Continue the conversation naturally.'}
+- About once every few turns, end with a small follow-up question to keep the talk going.
+- Speak with contractions ("I'm", "you're", "that's"). Avoid stiff phrasing.
+- If you don't know something, say so casually — don't lecture.`;
 
     let fullReply = '';
     const controller = new AbortController();
     __call.currentAbort = controller;
+    let firstTokenSeen = false;
+    let typingHandle = null;
 
     try {
       const res = await fetch('/v1/chat/completions', {
@@ -1907,6 +1949,7 @@ end
           system_extra: callSystem,
           guest_id: getGuestId(),
           language: langTag,
+          call_mode: true,
         }),
         signal: controller.signal,
       });
@@ -1934,19 +1977,43 @@ end
           if (pl === '[DONE]') continue;
           let o; try { o = JSON.parse(pl); } catch { continue; }
           if (o.error) throw new Error(o.error.message || 'Stream error');
-          // Ignore reasoning fields in call mode — voice only
           const delta = o.d || o.content || (o.delta && o.delta.content) || '';
           if (delta) {
             fullReply += delta;
+            // strip any accidental thinking leak so it never reaches TTS
             const clean = stripThinkingLeak(fullReply).replace(/```[\s\S]*?```/g, '').trim();
-            if (replyEl) replyEl.textContent = clean;
+
+            if (!firstTokenSeen && clean.length > 0) {
+              firstTokenSeen = true;
+              // First token arrived: leave "thinking", start typing the reply
+              setCallPhase('speaking');
+              if (replyEl) {
+                typingHandle = typeInto(replyEl, clean, 22);
+              }
+            } else if (replyEl && typingHandle) {
+              // While typewriter runs, keep the target text growing so the
+              // revealed characters stay in sync as more tokens stream in.
+              // Simplest reliable approach: skip animation and jump to full text.
+              typingHandle.skip();
+              replyEl.textContent = clean;
+            }
           }
         }
       }
 
-      const finalReply = stripThinkingLeak(fullReply).replace(/```[\s\S]*?```/g, '').replace(/\s+/g, ' ').trim() || 'Sorry, I did not catch that.';
+      const finalReply = stripThinkingLeak(fullReply)
+        .replace(/```[\s\S]*?```/g, '')
+        .replace(/\s+/g, ' ')
+        .trim() || "Hmm, sorry — I didn't quite catch that. Could you say it again?";
+
+      // Ensure the reply element is fully populated before speaking
+      if (typingHandle) typingHandle.skip();
+      if (replyEl) {
+        replyEl.textContent = finalReply;
+        replyEl.classList.remove('typing');
+      }
+
       __call.currentHistory.push({ role: 'assistant', content: finalReply });
-      if (replyEl) replyEl.textContent = finalReply;
 
       if (!__call.active) return;
 
@@ -1954,25 +2021,29 @@ end
         setCallPhase(__call.holding ? 'held' : 'idle');
         if (!__call.holding) {
           __call.shouldListen = true;
-          startCallRecognition();
+          setTimeout(() => { if (__call.active && __call.shouldListen && !__call.holding) startCallRecognition(); }, 250);
         }
         return;
       }
 
-      setCallPhase('speaking');
+      // Speak it
       await speak(finalReply, __call.lang);
 
+      // Small pause so it feels natural, then re-open the mic
       if (__call.active && !__call.holding) {
-        __call.shouldListen = true;
-        setCallPhase('idle');
-        startCallRecognition();
+        await new Promise((r) => setTimeout(r, 350));
+        if (__call.active && !__call.holding) {
+          __call.shouldListen = true;
+          setCallPhase('idle');
+          startCallRecognition();
+        }
       } else if (__call.active) {
         setCallPhase('held');
       }
     } catch (e) {
       if (e && e.name === 'AbortError') return;
       console.error('[Mirox Call]', e);
-      if (replyEl) replyEl.textContent = 'Connection error.';
+      if (replyEl) replyEl.textContent = 'Connection hiccup — one sec.';
       setCallPhase('idle');
       if (__call.active && !__call.holding) {
         setTimeout(() => {
@@ -1980,7 +2051,7 @@ end
             __call.shouldListen = true;
             startCallRecognition();
           }
-        }, 1500);
+        }, 1400);
       }
     } finally {
       __call.currentAbort = null;
@@ -2013,7 +2084,7 @@ end
     const transcriptEl = $('#callTranscript');
     if (transcriptEl) { transcriptEl.textContent = ''; transcriptEl.classList.remove('interim'); }
     const replyEl = $('#callReply');
-    if (replyEl) replyEl.textContent = '';
+    if (replyEl) { replyEl.textContent = ''; replyEl.classList.remove('typing'); }
 
     const liveText = $('#callLiveText');
     if (liveText) liveText.textContent = 'Live';
