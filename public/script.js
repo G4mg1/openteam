@@ -407,54 +407,83 @@
     return out;
   }
 
-  /* ---------- Think panel ---------- */
+  /* ---------- Compact thinking status (never display private reasoning text) ---------- */
   function createThinkPanel(deep) {
     const el = document.createElement('div');
-    el.className = 'think-panel';
+    el.className = 'think-panel think-panel-clean';
     el.dataset.state = 'thinking';
-    el.dataset.collapsed = 'false';
+    el.dataset.collapsed = 'true';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
     el.innerHTML = `
       <div class="think-header">
-        <div class="think-icon"><i class="ri-loader-4-line"></i></div>
-        <div class="think-title"><span class="think-title-text">${deep ? 'DeepThink' : 'Thinking'}</span></div>
+        <div class="think-icon"><i class="ri-sparkling-2-line"></i></div>
+        <div class="think-title"><span class="think-title-text">${deep ? 'DeepThink is working' : 'Thinking'}</span><span class="think-subtitle">Building a helpful answer</span></div>
         <div class="think-timer-pill">0.0s</div>
-        <button class="think-toggle" type="button" title="Minimize"><i class="ri-arrow-up-s-line"></i></button>
+        <button class="think-toggle" type="button" title="Show status" aria-label="Show thinking status" aria-expanded="false"><i class="ri-add-line"></i></button>
       </div>
-      <div class="think-body-wrap"><div class="think-body"><div class="think-text" data-think-text></div></div></div>`;
+      <div class="think-body-wrap"><div class="think-body"><div class="think-text" data-think-text>Reviewing your request and preparing a response…</div></div></div>`;
     const titleTextEl = el.querySelector('.think-title-text');
+    const subtitleEl = el.querySelector('.think-subtitle');
     const timerPill = el.querySelector('.think-timer-pill');
     const toggle = el.querySelector('.think-toggle');
-    const bodyEl = el.querySelector('.think-body');
     const textEl = el.querySelector('[data-think-text]');
     const iconEl = el.querySelector('.think-icon i');
     const t0 = performance.now();
-    let done = false, lastText = '';
-    toggle.addEventListener('click', (e) => { e.stopPropagation(); const c = el.dataset.collapsed === 'true'; el.dataset.collapsed = c ? 'false' : 'true'; });
-    const timer = setInterval(() => { if (done) { clearInterval(timer); return; } timerPill.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's'; }, 100);
-    function replaceText(full) {
-      const text = String(full || '');
-      if (text === lastText) return;
-      lastText = text; textEl.textContent = text;
-      if (bodyEl.scrollHeight > bodyEl.clientHeight + 4) bodyEl.scrollTop = bodyEl.scrollHeight;
+    let done = false;
+    toggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const collapsed = el.dataset.collapsed !== 'true';
+      el.dataset.collapsed = collapsed ? 'true' : 'false';
+      toggle.setAttribute('aria-expanded', String(!collapsed));
+      toggle.title = collapsed ? 'Show status' : 'Hide status';
+      toggle.innerHTML = `<i class="${collapsed ? 'ri-add-line' : 'ri-subtract-line'}"></i>`;
+    });
+    const timer = setInterval(() => {
+      if (done) { clearInterval(timer); return; }
+      timerPill.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
+    }, 150);
+    // Deliberately do not render model reasoning_content or <thinking> text in the UI.
+    function replaceText(_full) {
+      if (!done && textEl) textEl.textContent = 'Working through the request and organizing the answer…';
     }
     function setState(next) {
       el.dataset.state = next;
-      if (next === 'thinking') { iconEl.className = 'ri-loader-4-line'; titleTextEl.textContent = deep ? 'DeepThink' : 'Thinking'; }
-      else if (next === 'done') { iconEl.className = 'ri-checkbox-circle-fill'; const s = ((performance.now() - t0) / 1000).toFixed(1); titleTextEl.textContent = (deep ? 'DeepThink · ' : 'Thought for ') + s + 's'; }
-      else if (next === 'failed') { iconEl.className = 'ri-error-warning-fill'; titleTextEl.textContent = 'Stopped thinking'; }
+      if (next === 'thinking') {
+        iconEl.className = 'ri-loader-4-line';
+        titleTextEl.textContent = deep ? 'DeepThink is working' : 'Thinking';
+        subtitleEl.textContent = 'Building a helpful answer';
+      } else if (next === 'done') {
+        iconEl.className = 'ri-check-line';
+        titleTextEl.textContent = deep ? 'DeepThink complete' : 'Ready';
+        subtitleEl.textContent = 'Answer prepared';
+      } else if (next === 'failed') {
+        iconEl.className = 'ri-error-warning-line';
+        titleTextEl.textContent = 'Could not finish';
+        subtitleEl.textContent = 'The request stopped';
+      }
     }
     function finalize() {
       if (done) return;
       done = true; clearInterval(timer);
       timerPill.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
       setState('done');
-      setTimeout(() => { if (el.isConnected && el.dataset.collapsed === 'false') el.dataset.collapsed = 'true'; }, 900);
+      if (textEl) textEl.textContent = 'Finished organizing the response.';
+      setTimeout(() => {
+        if (el.isConnected) {
+          el.dataset.collapsed = 'true';
+          toggle.setAttribute('aria-expanded', 'false');
+          toggle.innerHTML = '<i class="ri-add-line"></i>';
+        }
+      }, 1200);
     }
     function fail(msg) {
       if (done) return;
-      done = true; clearInterval(timer);
-      if (msg) { const sep = lastText ? '\n\n' : ''; textEl.textContent = lastText + sep + msg; }
-      setState('failed');
+      done = true; clearInterval(timer); setState('failed');
+      if (textEl) textEl.textContent = String(msg || 'Please try again.').slice(0, 180);
+      el.dataset.collapsed = 'false';
+      toggle.setAttribute('aria-expanded', 'true');
+      toggle.innerHTML = '<i class="ri-subtract-line"></i>';
     }
     function hide() { el.style.display = 'none'; done = true; clearInterval(timer); }
     return { el, replaceText, finalize, fail, hide, isConnected: () => el.isConnected, destroy: () => clearInterval(timer) };
@@ -1208,7 +1237,7 @@
     try {
       const reqBody = {
         message: text, history, model, stream: true, search: !!forceSearch,
-        deep_think: !!__prefs.deepThink, system_extra: THINK_INSTRUCTION + (looksLikeIdeasRequest(text) ? '\n\nIDEA-ANSWER FORMAT (for idea, recommendation, project, topic, planning, and “best” requests): Use a clean editorial answer layout, NOT a chatty wall of text. Start with a short useful introduction and a heading such as ‘Ideas to consider’. Usually give 5–8 relevant options unless the user requests another number. For each option, show a numbered, specific main title on its own line, then one short fit badge using bold text when appropriate (for example **Beginner-friendly**, **Best overall**, **Low-cost**, **Most creative**, **Best for a science fair**, **No special equipment**, or **Advanced**). Follow with a substantial but readable summary (about 3–6 sentences): explain the core idea, how it works, what the user would actually do, why it is useful or interesting, and one practical first step. Add concise labeled lines where relevant: **Materials**, **How to demonstrate it**, **Estimated cost**, **Difficulty**, **What to measure**, and **Safety**. Never invent precise prices or facts; mark estimates as approximate. Separate options with whitespace or a horizontal divider so the list is easy to scan. Finish with a short ‘Which should you choose?’ recommendation comparing beginner, budget, and ambitious options, and clearly name the best match when justified. Adapt every answer to the actual subject and user’s level; do not force science or robotics into unrelated questions. Use useful detail rather than filler, avoid repetitive phrasing, and do not fetch or attach images unless explicitly requested. If web-search sources are available, cite them for factual claims; otherwise be clear about uncertainty. Never reveal hidden chain-of-thought; provide a concise, user-facing explanation of the approach instead.' : ''),
+        deep_think: !!__prefs.deepThink, system_extra: THINK_INSTRUCTION + '\n\nRESPONSE QUALITY: Give a genuinely useful, complete answer rather than an overly short reply. For explanations and open-ended questions, normally write several well-developed paragraphs with context, clear reasoning summaries, examples, and practical details when useful. Answer the exact question first, then expand enough that the user can understand the topic without needing to ask for basic missing details. Do not pad with repetition; use headings and bullets only when they improve readability. Match the requested length: if the user asks for detail, provide a long, thorough answer; if they ask for a simple answer, stay concise. For recommendations, explain why the options fit and end with a clear best choice when the evidence supports one. Never expose hidden chain-of-thought or private internal reasoning; provide only the conclusion and a brief user-facing explanation.\n\n' + (looksLikeIdeasRequest(text) ? 'IDEA-ANSWER FORMAT (for idea, recommendation, project, topic, planning, and “best” requests): Use a clean editorial answer layout, NOT a chatty wall of text. Start with a short useful introduction and a heading such as ‘Ideas to consider’. Usually give 5–8 relevant options unless the user requests another number. For each option, show a numbered, specific main title on its own line, then one short fit badge using bold text when appropriate (for example **Beginner-friendly**, **Best overall**, **Low-cost**, **Most creative**, **Best for a science fair**, **No special equipment**, or **Advanced**). Follow with a substantial but readable summary (about 3–6 sentences): explain the core idea, how it works, what the user would actually do, why it is useful or interesting, and one practical first step. Add concise labeled lines where relevant: **Materials**, **How to demonstrate it**, **Estimated cost**, **Difficulty**, **What to measure**, and **Safety**. Never invent precise prices or facts; mark estimates as approximate. Separate options with whitespace or a horizontal divider so the list is easy to scan. Finish with a short ‘Which should you choose?’ recommendation comparing beginner, budget, and ambitious options, and clearly name the best match when justified. Adapt every answer to the actual subject and user’s level; do not force science or robotics into unrelated questions. Use useful detail rather than filler, avoid repetitive phrasing, and do not fetch or attach images unless explicitly requested. If web-search sources are available, cite them for factual claims; otherwise be clear about uncertainty. Never reveal hidden chain-of-thought; provide a concise, user-facing explanation of the approach instead.' : ''),
         files: files.map((f) => ({
           name: f.name, size: f.size, type: f.type, mime: f.mime,
           width: f.width, height: f.height, dataUrl: f.dataUrl,
