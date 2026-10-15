@@ -1,10 +1,8 @@
 /* ============================================================
-   MiroxAI Backend v110 — durable API keys
-   v110: · /api/keys/restore (client-backed key recovery)
-         · multi-path DB fallback (survives /tmp wipes)
-         · auto-recovery of keys from event log
-         · loud warning when storage is ephemeral
-         · regex-based model resolver (from v109)
+   MiroxAI Backend v111 — OpenAI-compatible input handling
+   v111: · accepts `messages[]`, `message`, `prompt`, `input`, `content`
+         · accepts chat-completions from any external client
+         · keeps durable keys + regex resolver from v110
    ============================================================ */
 import express from 'express';
 import cors from 'cors';
@@ -25,14 +23,6 @@ const PUBLIC_ORIGIN = env('PUBLIC_ORIGIN', 'https://miroxai.org').replace(/\/+$/
 const ADMIN_PASS = env('ADMIN_PASSWORD');
 const ALLOW_EMAIL_LOGIN = env('ALLOW_EMAIL_LOGIN') === '1';
 
-/* ---------- Durable DB path resolution ----------
-   We prefer (in order):
-     1. DB_FILE env (if set)
-     2. /var/data/mirox-db.json    (Render, Railway, Fly persistent disk)
-     3. /data/mirox-db.json        (generic persistent volume)
-     4. process.cwd()/mirox-db.json (working dir)
-     5. /tmp/mirox-db.json          (ephemeral fallback — last resort)
------------------------------------------------- */
 function resolveDataFile() {
   const candidates = [];
   const explicit = env('DB_FILE');
@@ -129,7 +119,7 @@ Plans: Free ($0), Pro ($6.99), Ultimate ($20.99). Tail r1 is free.
 
 Features: web search, vision, image generation (Lumenal), DeepThink, Call mode, Bridge, HTML runner, API keys.
 
-API: OpenAI-compatible. POST https://miroxai.org/v1/chat/completions with header "Authorization: Bearer mxk_live_...". Only Luna, Gen, and Tail r1 available through the API. Model list: GET https://miroxai.org/v1/models. Images: POST https://miroxai.org/v1/images/generations.
+API: OpenAI-compatible. POST https://miroxai.org/v1/chat/completions with header "Authorization: Bearer mxk_live_...". Accepts either {"message": "..."} or OpenAI's {"messages": [{"role":"user","content":"..."}]}. Model list: GET https://miroxai.org/v1/models. Images: POST https://miroxai.org/v1/images/generations.
 
 Developer docs: https://miroxai.org/developers
 Support: support@miroxai.org
@@ -186,14 +176,32 @@ async function fetchT(url, opts = {}, ms = 20000) {
   finally { clearTimeout(timer); }
 }
 function safeEq(a, b) { const x = Buffer.from(String(a)), y = Buffer.from(String(b)); return x.length === y.length && crypto.timingSafeEqual(x, y); }
+
+/* Extract plain text from an OpenAI-style content field, which may be
+   either a string, an array of parts, or null. */
+function contentToText(c) {
+  if (c == null) return '';
+  if (typeof c === 'string') return c;
+  if (Array.isArray(c)) {
+    return c.map((p) => {
+      if (typeof p === 'string') return p;
+      if (p && typeof p === 'object') {
+        if (typeof p.text === 'string') return p.text;
+        if (p.type === 'text' && typeof p.content === 'string') return p.content;
+      }
+      return '';
+    }).join('');
+  }
+  if (typeof c === 'object' && typeof c.text === 'string') return c.text;
+  return '';
+}
+
 function extractReplyText(data) {
   if (!data || typeof data !== 'object') return '';
   if (typeof data.reply === 'string') return data.reply;
   if (typeof data.text === 'string') return data.text;
   const c = data.choices?.[0]?.message?.content;
-  if (typeof c === 'string') return c;
-  if (Array.isArray(c)) return c.map((p) => (typeof p === 'string' ? p : (p?.text || ''))).join('');
-  return '';
+  return contentToText(c);
 }
 function stripThinking(text) {
   if (typeof text !== 'string') return text;
@@ -324,7 +332,7 @@ function persist() {
         await fs.mkdir(path.dirname(f), { recursive: true });
         await fs.writeFile(f, snap, 'utf8');
         ok = true;
-      } catch (e) { /* silent — not every path is writable */ }
+      } catch (e) { /* silent */ }
     }
     return ok;
   });
@@ -600,9 +608,8 @@ async function pipeProviderStream(body, onDelta, isClosed, onLimit = () => {}) {
         if (!raw || raw === '[DONE]') continue;
         try {
           const item = JSON.parse(raw);
-          const d = item.choices?.[0]?.delta?.content;
-          if (typeof d === 'string' && d) onDelta(d);
-          else if (Array.isArray(d)) { const joined = d.map((p) => (typeof p === 'string' ? p : (p?.text || ''))).join(''); if (joined) onDelta(joined); }
+          const d = contentToText(item.choices?.[0]?.delta?.content);
+          if (d) onDelta(d);
           if (item.choices?.[0]?.finish_reason === 'length') onLimit();
         } catch {}
       }
@@ -698,18 +705,127 @@ function buildEnvBlock(env) {
   return ['[Bridge environment]', `user=${env.user || '?'}`, 'home=~', 'cwd=.', `platform=${env.platform || '?'}`, 'allowed_dirs=home and explicitly configured project folders', `kdeConnect=${env.kde_connect_available ? 'true' : 'false'}`].join('\n');
 }
 
+/* ============================================================
+   INPUT EXTRACTION — accepts every common client shape
+   ============================================================
+   Supported request shapes (all at once):
+
+   1. Mirox native:
+      { "message": "hi", "history": [...] }
+
+   2. OpenAI chat completions:
+      { "messages": [{"role":"user","content":"hi"}, ...] }
+
+   3. OpenAI completions / legacy:
+      { "prompt": "hi" }
+
+   4. Some agents (Anthropic, Cohere, Replicate):
+      { "input": "hi" }  or  { "inputs": "hi" }
+
+   5. Raw text:
+      { "content": "hi" }  or  { "text": "hi" }
+
+   If `messages` is present, its system/user/assistant roles are honored
+   and its messages become the conversation history. The last `user`
+   message becomes the current turn.
+============================================================ */
+function extractInput(body) {
+  const out = {
+    text: '',
+    history: [],
+    systemMessages: [],
+    usedShape: '',
+  };
+
+  // ---- OpenAI-style `messages` array ----
+  if (Array.isArray(body?.messages) && body.messages.length) {
+    out.usedShape = 'messages[]';
+    for (const m of body.messages) {
+      const role = String(m?.role || 'user').toLowerCase();
+      const content = contentToText(m?.content);
+      if (!content) continue;
+      if (role === 'system' || role === 'developer') out.systemMessages.push(content);
+      else if (role === 'assistant') out.history.push({ role: 'assistant', content });
+      else out.history.push({ role: 'user', content });
+    }
+    // Current turn = last user message
+    for (let i = out.history.length - 1; i >= 0; i--) {
+      if (out.history[i].role === 'user') { out.text = out.history[i].content; out.history.splice(i, 1); break; }
+    }
+    // If there was no user message, but there were assistant turns, treat the last content as text
+    if (!out.text) {
+      for (let i = out.history.length - 1; i >= 0; i--) {
+        out.text = out.history[i].content; out.history.splice(i, 1); break;
+      }
+    }
+    return out;
+  }
+
+  // ---- Mirox native `message` ----
+  if (typeof body?.message === 'string' && body.message.trim()) {
+    out.usedShape = 'message';
+    out.text = body.message.trim();
+    if (Array.isArray(body.history)) {
+      for (const h of body.history.slice(-14)) {
+        const role = h?.role === 'assistant' ? 'assistant' : 'user';
+        const content = contentToText(h?.content ?? h?.content?.text ?? h?.content);
+        if (content) out.history.push({ role, content });
+      }
+    }
+    return out;
+  }
+
+  // ---- `prompt` (string, or array of strings, or {messages:[…]}) ----
+  const prompt = body?.prompt ?? body?.inputs ?? body?.input;
+  if (typeof prompt === 'string' && prompt.trim()) {
+    out.usedShape = body?.prompt ? 'prompt' : (body?.inputs ? 'inputs' : 'input');
+    out.text = prompt.trim();
+    return out;
+  }
+  if (Array.isArray(prompt) && prompt.length) {
+    out.usedShape = 'prompt[]';
+    const joined = prompt.map((x) => (typeof x === 'string' ? x : contentToText(x?.content ?? x))).filter(Boolean).join('\n');
+    out.text = joined.trim();
+    return out;
+  }
+  if (prompt && typeof prompt === 'object' && Array.isArray(prompt.messages)) {
+    return extractInput({ messages: prompt.messages, model: body?.model });
+  }
+
+  // ---- `content` / `text` ----
+  if (typeof body?.content === 'string' && body.content.trim()) {
+    out.usedShape = 'content';
+    out.text = body.content.trim();
+    return out;
+  }
+  if (typeof body?.text === 'string' && body.text.trim()) {
+    out.usedShape = 'text';
+    out.text = body.text.trim();
+    return out;
+  }
+
+  return out;
+}
+
 /* ---------- App ---------- */
 const app = express();
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '20mb' }));
+app.use(express.text({ type: ['text/*', 'application/x-www-form-urlencoded'], limit: '1mb' }));
 
 app.use((req, res, next) => {
   if (req.path.startsWith('/v1') || req.path.startsWith('/openai') || /chat\/completions/.test(req.path)) {
     const hasKey = !!req.headers.authorization;
-    const m = req.body?.model ? String(req.body.model).slice(0, 80) : '';
-    console.log(`[api] ${req.method} ${req.path} key=${hasKey ? 'yes' : 'no'}${m ? ' model="' + m + '"' : ''}`);
+    let m = '';
+    if (typeof req.body?.model === 'string') m = String(req.body.model).slice(0, 80);
+    let shape = 'none';
+    if (Array.isArray(req.body?.messages)) shape = `messages[${req.body.messages.length}]`;
+    else if (typeof req.body?.message === 'string') shape = 'message';
+    else if (typeof req.body?.prompt === 'string') shape = 'prompt';
+    else if (typeof req.body?.input === 'string') shape = 'input';
+    console.log(`[api] ${req.method} ${req.path} key=${hasKey ? 'yes' : 'no'}${m ? ' model="' + m + '"' : ''} body=${shape}`);
   }
   next();
 });
@@ -728,11 +844,12 @@ const publicUser = (u) => {
 const publicKey = (k) => ({ id: k.id, name: k.name, key: k.key, created: k.created, last_used: k.last_used || 0, revoked: !!k.revoked });
 
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
-  res.json({ ok: true, app: 'MiroxAI', version: 'v110',
+  res.json({ ok: true, app: 'MiroxAI', version: 'v111',
     providers: { openrouter: !!OP_KEY, hf: !!HF_API_KEY, airoute: !!AIROUTE_KEY },
     primary_provider: 'MiroxAI (SurrRoute)',
     watermark: 'MIROXAI-WATERMARK-v1-LOGO', thinking: true, deep_think: true, api_thinking: false,
     flagship: 'mirox-tail-r1', flagship_free: true,
+    input_formats: ['message', 'messages[]', 'prompt', 'input', 'inputs', 'content', 'text'],
     image_provider: HF_API_KEY ? 'huggingface' : (AIROUTE_KEY ? 'airoute' : null),
     models_endpoint: '/v1/models',
     storage: { durable: KV_ON, primary_path: DATA_FILE, fallback_paths: DATA_FILES.slice(1), writable: dbOk },
@@ -809,7 +926,21 @@ app.get('/api/debug/resolve', (req, res) => {
     fallback: fallbackModelId(m),
     known_models: Object.keys(MIROX_MODELS),
     api_models: API_MODELS,
-    version: 'v110',
+    version: 'v111',
+  });
+});
+
+/* Debug: see exactly how a request body would be parsed */
+app.post('/api/debug/parse', (req, res) => {
+  const parsed = extractInput(req.body || {});
+  res.json({
+    ok: true,
+    received_shape: parsed.usedShape,
+    text: parsed.text.slice(0, 400),
+    text_length: parsed.text.length,
+    history_count: parsed.history.length,
+    system_count: parsed.systemMessages.length,
+    keys_in_body: Object.keys(req.body || {}),
   });
 });
 
@@ -822,11 +953,12 @@ app.get(['/api/config', '/config'], (req, res) => {
     icon: m.flagship ? 'ri-star-smile-line' : undefined,
   }));
   res.json({
-    app: { name: 'MiroxAI', version: 'v110' },
+    app: { name: 'MiroxAI', version: 'v111' },
     models, default_model: 'mirox-tail-r1', plans: PLANS,
     tts_available: !!F_API, search_available: true, vision_available: true, image_intent: true, image_edit: false,
     image_requires_signin: false, watermark: true, thinking: true, deep_think: true, html_runner: true,
     api_thinking: false,
+    input_formats: ['message', 'messages[]', 'prompt', 'input', 'inputs', 'content', 'text'],
     loginment_available: !!LM_CLIENT_ID, email_login_available: ALLOW_EMAIL_LOGIN,
     airoute_available: !!AIROUTE_KEY, openrouter_available: !!OP_KEY, hf_available: !!HF_API_KEY,
     image_provider: HF_API_KEY ? 'huggingface' : (AIROUTE_KEY ? 'airoute' : null),
@@ -1103,7 +1235,8 @@ app.get(['/api/search', '/search'], async (req, res) => {
 /* IMAGE GEN API */
 app.post(['/v1/images/generations', '/openai/v1/images/generations', '/api/v1/images/generations'], async (req, res) => {
   try {
-    const prompt = safeStr(req.body?.prompt, 2000).trim();
+    const body = req.body || {};
+    const prompt = (typeof body.prompt === 'string' ? body.prompt : (typeof body.message === 'string' ? body.message : contentToText(body.input))).trim();
     if (!prompt) return res.status(400).json({ error: { message: 'Prompt required' } });
     const auth = await authFromRequest(req);
     if (auth.error) return res.status(401).json({ error: { message: 'Invalid API key' } });
@@ -1120,7 +1253,9 @@ app.post(['/v1/images/generations', '/openai/v1/images/generations', '/api/v1/im
   } catch { res.status(502).json({ error: { message: GENERIC_ERR } }); }
 });
 
-/* CHAT COMPLETIONS */
+/* ============================================================
+   CHAT COMPLETIONS — every URL clients try
+   ============================================================ */
 const CHAT_PATHS = [
   '/v1/chat/completions',
   '/chat/completions',
@@ -1145,16 +1280,19 @@ app.post(CHAT_PATHS, async (req, res) => {
     if (model) console.log(`[chat] fallback: raw="${rawModel}" → "${model}"`);
   }
 
-  const text = safeStr(body.message, 200000).trim();
+  /* ⬇️ Accept every common input shape (this is the main v111 fix) */
+  const input = extractInput(body);
+  const text = input.text;
+  const incomingHistory = input.history.slice(-14);
+
   const files = Array.isArray(body.files) ? body.files.slice(0, 4) : [];
-  const history = Array.isArray(body.history) ? body.history.slice(-14) : [];
   const bridge = body.bridge && body.bridge.connected ? body.bridge : null;
   const forceSearch = body.search === true;
   const sourceImage = safeStr(body.source_image, 12 * 1024 * 1024);
   const deepThink = body.deep_think === true;
   const systemExtra = safeStr(body.system_extra, 8000);
 
-  const fail = (code, message) => res.status(code).json({ error: { message, type: 'invalid_request_error', code } });
+  const fail = (code, message, type = 'invalid_request_error') => res.status(code).json({ error: { message, type } });
   const signinReply = (message) => {
     if (!wantStream) return res.json({ reply: message, signin_required: true, _ms: Date.now() - t0, provider: 'MiroxAI (SurrRoute)' });
     sseInit(res); sseWrite(res, { signin_required: true, message }); sseWrite(res, { d: message }); sseWrite(res, { done: true }); sseDone(res); res.end();
@@ -1166,29 +1304,33 @@ app.post(CHAT_PATHS, async (req, res) => {
 
   try {
     const auth = await authFromRequest(req);
-    if (auth.error) return fail(401, 'Invalid API key');
+    if (auth.error) return fail(401, 'Invalid API key', 'authentication_error');
     const u = auth.user || null;
     const viaKey = !!auth.viaKey;
 
     if (!model) {
       const list = API_MODELS.map((m) => `"${m}"`).join(', ');
-      return res.status(404).json({ error: { message: `Model "${rawModel}" not found. Available: ${list}. See GET /v1/models.`, type: 'invalid_request_error', code: 'model_not_found' } });
+      return fail(404, `Model "${rawModel}" not found. Available: ${list}. See GET /v1/models.`, 'model_not_found');
     }
     const effectiveModel = model;
 
     if (viaKey && !API_MODELS.includes(effectiveModel)) {
       const list = API_MODELS.map((m) => `"${m}"`).join(', ');
-      return res.status(403).json({ error: { message: `Model "${effectiveModel}" is not available through the API. Available: ${list}.`, type: 'invalid_request_error', code: 'model_not_available' } });
+      return fail(403, `Model "${effectiveModel}" is not available through the API. Available: ${list}.`);
     }
 
     const cfg = MIROX_MODELS[effectiveModel];
-    if (!cfg) return res.status(404).json({ error: { message: `Model "${rawModel}" not found. See GET /v1/models.`, type: 'invalid_request_error', code: 'model_not_found' } });
+    if (!cfg) return fail(404, `Model "${rawModel}" not found. See GET /v1/models.`, 'model_not_found');
 
     const tier = u ? u.tier : 'free';
     const plan = PLANS[tier] || PLANS.free;
     if (cfg.tier === 'pro' && TIER_RANK[tier] < 1) return fail(403, 'Pro plan required');
     if (cfg.tier === 'ultimate' && tier !== 'ultimate') return fail(403, 'Ultimate plan required');
-    if (!text && !files.length) return fail(400, 'Empty message');
+
+    /* ⬇️ Only complain about empty message if we truly got nothing at all */
+    if (!text && !files.length) {
+      return fail(400, `No user message found. Send either {"message": "..."} or OpenAI-style {"messages":[{"role":"user","content":"..."}]}. See /developers.`);
+    }
 
     const imagePrompt = (files.length || deepThink) ? null : detectImageIntent(text);
     if (imagePrompt) {
@@ -1210,10 +1352,17 @@ app.post(CHAT_PATHS, async (req, res) => {
 
     const apiMode = viaKey;
     const msgs = [{ role: 'system', content: buildSystemPrompt(cfg, bridge, !!searchQuery, u?.persona || '', deepThink, effectiveModel, systemExtra, apiMode) }];
-    for (const h of history) {
-      const role = h && h.role;
-      const content = safeStr(h && h.content, 6000).trim();
-      if ((role === 'user' || role === 'assistant') && content) msgs.push({ role, content });
+
+    /* Append client-supplied system messages (from messages[] array) */
+    if (input.systemMessages.length) {
+      msgs.push({ role: 'system', content: input.systemMessages.join('\n\n').slice(0, 8000) });
+    }
+
+    /* Append the conversation history from the request */
+    for (const h of incomingHistory) {
+      const role = h.role === 'assistant' ? 'assistant' : 'user';
+      const content = safeStr(h.content, 6000).trim();
+      if (content) msgs.push({ role, content });
     }
 
     let userText = text || '(no text)';
@@ -1256,11 +1405,22 @@ app.post(CHAT_PATHS, async (req, res) => {
       let reply = extractReplyText(data) || '(empty)';
       if (apiMode) reply = stripThinking(reply);
       await finishUsage();
+
+      /* Return BOTH styles — native Mirox + OpenAI compatible — so every client is happy */
       return res.json({
-        reply, _ms: Date.now() - t0,
+        reply,
+        _ms: Date.now() - t0,
         provider: 'MiroxAI (SurrRoute)',
         model: effectiveModel,
         search: searchQuery ? { query: searchQuery, results: searchData.results, overview: searchData.overview } : null,
+        // OpenAI-compatible fields:
+        object: 'chat.completion',
+        choices: [{
+          index: 0,
+          message: { role: 'assistant', content: reply },
+          finish_reason: 'stop',
+        }],
+        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
       });
     }
 
@@ -1409,6 +1569,24 @@ function logResolverSelfTest() {
   console.log('[Mirox] resolver self-test:');
   for (const t of tests) console.log(`   "${t}" → ${resolveModelId(t)}`);
 }
+function logInputSelfTest() {
+  console.log('[Mirox] input self-test:');
+  const cases = [
+    { label: 'native message', body: { message: 'hi' } },
+    { label: 'OpenAI messages', body: { messages: [{ role: 'user', content: 'hi' }] } },
+    { label: 'OpenAI multi-turn', body: { messages: [{ role: 'system', content: 'sys' }, { role: 'user', content: 'a' }, { role: 'assistant', content: 'b' }, { role: 'user', content: 'c' }] } },
+    { label: 'prompt', body: { prompt: 'hi' } },
+    { label: 'input', body: { input: 'hi' } },
+    { label: 'inputs[]', body: { inputs: ['a', 'b'] } },
+    { label: 'content', body: { content: 'hi' } },
+    { label: 'text', body: { text: 'hi' } },
+    { label: 'anthropic-ish', body: { messages: [{ role: 'user', content: [{ type: 'text', text: 'hello parts' }] }] } },
+  ];
+  for (const c of cases) {
+    const p = extractInput(c.body);
+    console.log(`   [${c.label}] → shape=${p.usedShape || 'none'} text="${(p.text || '').slice(0, 40)}" history=${p.history.length} sys=${p.systemMessages.length}`);
+  }
+}
 async function logStorageDiagnostics() {
   console.log('[Mirox] storage:');
   console.log(`   KV (Upstash Redis): ${KV_ON ? 'YES — durable ✓' : 'NO'}`);
@@ -1431,11 +1609,13 @@ async function logStorageDiagnostics() {
   }
 }
 
-console.log('[Mirox] v110 · flagship: Tail r1 (FREE) · api_thinking: OFF');
+console.log('[Mirox] v111 · flagship: Tail r1 (FREE) · api_thinking: OFF');
+console.log('[Mirox] accepts:', ['message', 'messages[]', 'prompt', 'input', 'inputs', 'content', 'text'].join(', '));
 console.log('[Mirox] model endpoints:', MODEL_LIST_PATHS.join('  '));
 console.log('[Mirox] chat endpoints:', CHAT_PATHS.join('  '));
 console.log('[Mirox] image provider:', HF_API_KEY ? 'huggingface' : (AIROUTE_KEY ? 'airoute' : 'none'));
 logResolverSelfTest();
+logInputSelfTest();
 logStorageDiagnostics();
 
 if (!process.env.VERCEL) {
