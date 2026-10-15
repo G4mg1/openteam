@@ -251,8 +251,7 @@
         <pre><code class="language-json">{
   "reply": "Hello! I can answer questions, write and explain code, and search the web.",
   "_ms": 812,
-  "provider": "openrouter",
-  "model": "anthropic/claude-3.5-sonnet",
+  "provider": "MiroxAI (SurrRoute)",
   "search": null
 }</code><button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></pre>
         <p>When a search ran, <code>search</code> contains <code>query</code>, <code>results</code> (title, url, snippet) and <code>overview</code>.</p>
@@ -265,14 +264,14 @@
             <tr><td><code>{"search": {"query": "…"}}</code></td><td>A web search started.</td></tr>
             <tr><td><code>{"source": {"title": "…", "url": "…"}}</code></td><td>One search source found.</td></tr>
             <tr><td><code>{"search_done": true, "count": 5}</code></td><td>Search finished.</td></tr>
-            <tr><td><code>{"p": "openrouter", "model": "…"}</code></td><td>The provider answering.</td></tr>
+            <tr><td><code>{"p": "MiroxAI (SurrRoute)"}</code></td><td>The inference engine answering.</td></tr>
             <tr><td><code>{"d": "Hel"}</code></td><td>A piece of the reply. Append these in order.</td></tr>
             <tr><td><code>{"img": "data:image/…"}</code></td><td>A generated image, when the message asked for one.</td></tr>
             <tr><td><code>{"done": true}</code></td><td>The reply is complete.</td></tr>
             <tr><td><code>{"error": {"message": "…"}}</code></td><td>The request failed. Stop reading.</td></tr>
           </tbody>
         </table>
-        <pre><code class="language-plaintext">data: {"p":"openrouter"}
+        <pre><code class="language-plaintext">data: {"p":"MiroxAI (SurrRoute)"}
 data: {"d":"Hello"}
 data: {"d":" there"}
 data: {"d":"!"}
@@ -325,7 +324,7 @@ data: {"done":true}</code><button class="code-copy-btn" data-copy><i class="ri-f
             <tr><td><code>403</code></td><td>Model not available through the API.</td></tr>
             <tr><td><code>404</code></td><td>Unknown model ID.</td></tr>
             <tr><td><code>429</code></td><td>Daily limit reached for your plan.</td></tr>
-            <tr><td><code>502</code></td><td>The upstream model failed. Retry in a moment.</td></tr>
+            <tr><td><code>502</code></td><td>The inference engine failed. Retry in a moment.</td></tr>
           </tbody>
         </table>
         <p>Error bodies look like <code>{"error": {"message": "…"}}</code>.</p>
@@ -637,7 +636,8 @@ data: {"done":true}</code><button class="code-copy-btn" data-copy><i class="ri-f
             const data = await res.json().catch(() => ({}));
             const ms = Math.round(performance.now() - t0);
             if (res.ok && data.reply !== undefined) {
-              pgOutput.textContent = data.reply + '\n\n— ' + ms + ' ms · ' + (data.provider || 'provider') + (data.model ? ' (' + data.model + ')' : '') + ' —';
+              /* ⬇️ We deliberately do NOT show the underlying provider/model. */
+              pgOutput.textContent = data.reply + '\n\n— ' + ms + ' ms · MiroxAI (SurrRoute) —';
               setStatus('ok', 'OK');
             } else {
               pgOutput.textContent = JSON.stringify(data, null, 2);
@@ -672,7 +672,8 @@ data: {"done":true}</code><button class="code-copy-btn" data-copy><i class="ri-f
               if (o.d) { full += o.d; pgOutput.textContent = full; pgOutput.scrollTop = pgOutput.scrollHeight; }
               if (o.error) { failed = true; pgOutput.textContent = full + '\n\nError: ' + (o.error.message || 'failed'); }
               if (o.done && !failed) {
-                pgOutput.textContent = full + '\n\n— ' + Math.round(performance.now() - t0) + ' ms —';
+                /* ⬇️ Also scrubbed for streaming. */
+                pgOutput.textContent = full + '\n\n— ' + Math.round(performance.now() - t0) + ' ms · MiroxAI (SurrRoute) —';
               }
             }
           }
