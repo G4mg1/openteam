@@ -1,5 +1,6 @@
 /* ============================================================
-   MiroxAI Backend v102 — DeepThink + thinking-first + runner
+   MiroxAI Backend v104 — DeepThink + Tail r1 (free flagship)
+   v104: fixed image gen URL · Tail r1 free · image delete/clear
    ============================================================ */
 import express from 'express';
 import cors from 'cors';
@@ -44,19 +45,20 @@ const GENERIC_ERR = 'Mirox AI encountered an error';
 const DAY = 24 * 3600;
 
 const MIROX_MODELS = {
-  'mirox-luna-1.2':    { label: 'Luna',    tier: 'free',     tokens: 4096, basePrompt: 'You are Luna by OpenSurr. Concise, helpful. Fenced code blocks for code.' },
-  'mirox-gen-1':       { label: 'Gen',     tier: 'free',     tokens: 4096, basePrompt: 'You are Gen by OpenSurr. Ultra concise. Fenced code blocks for code.' },
-  'mirox-pro-5':       { label: 'Pro',     tier: 'pro',      tokens: 8192, basePrompt: 'You are Pro by OpenSurr. Balanced depth. Fenced code blocks for code.' },
-  'mirox-ultra-10':    { label: 'Ultra',   tier: 'pro',      tokens: 8192, basePrompt: 'You are Ultra by OpenSurr. Deep reasoning. Fenced code blocks for code.' },
+  'mirox-luna-1.2':    { label: 'Luna',    tier: 'free', tokens: 4096,  basePrompt: 'You are Luna by OpenSurr. Concise, helpful. Fenced code blocks for code.' },
+  'mirox-gen-1':       { label: 'Gen',     tier: 'free', tokens: 4096,  basePrompt: 'You are Gen by OpenSurr. Ultra concise. Fenced code blocks for code.' },
+  'mirox-tail-r1':     { label: 'Tail r1', tier: 'free', tokens: 32768, basePrompt: 'You are Tail r1 by OpenSurr — the flagship model with a 350,000+ token context window and state-of-the-art reasoning benchmark performance. Approach every task with maximum rigor: reason step by step, verify your logic, consider edge cases and counterexamples, then deliver the clearest, most complete, most accurate answer possible. Outperform on complex reasoning, long-context synthesis, math, code, and multi-step planning. Fenced code blocks for code.' },
+  'mirox-pro-5':       { label: 'Pro',     tier: 'pro',  tokens: 8192,  basePrompt: 'You are Pro by OpenSurr. Balanced depth. Fenced code blocks for code.' },
+  'mirox-ultra-10':    { label: 'Ultra',   tier: 'pro',  tokens: 8192,  basePrompt: 'You are Ultra by OpenSurr. Deep reasoning. Fenced code blocks for code.' },
   'mirox-eclipse-2.0': { label: 'Eclipse', tier: 'ultimate', tokens: 16384, basePrompt: 'You are Eclipse by OpenSurr. Best quality. Fenced code blocks for code.' },
 };
 const PLANS = {
-  free:     { label: 'Free',     vision_limit: 10,   image_limit: 10,   eclipse_daily_limit: 5,   price_usd: 0,     api_keys: 2 },
+  free:     { label: 'Free',     vision_limit: 10,   image_limit: 30,   eclipse_daily_limit: 5,   price_usd: 0,     api_keys: 2 },
   pro:      { label: 'Pro',      vision_limit: 200,  image_limit: 200,  eclipse_daily_limit: 0,   price_usd: 6.99,  api_keys: 10 },
   ultimate: { label: 'Ultimate', vision_limit: 2000, image_limit: 2000, eclipse_daily_limit: 999, price_usd: 20.99, api_keys: 10 },
 };
 const TIER_RANK = { free: 0, pro: 1, ultimate: 2 };
-const API_MODELS = ['mirox-luna-1.2', 'mirox-gen-1'];
+const API_MODELS = ['mirox-luna-1.2', 'mirox-gen-1', 'mirox-tail-r1'];
 const maxKeys = (tier) => (tier === 'free' ? 2 : 10);
 
 const OP_CHAT_URL = `${OP_BASE}/chat/completions`;
@@ -65,7 +67,9 @@ const OP_VISION = ['openai/gpt-4o-mini','anthropic/claude-3.5-sonnet','google/ge
 const OP_VISION_SET = new Set(OP_VISION);
 const HF_URL = 'https://router.huggingface.co/v1/chat/completions';
 const PL_URL = 'https://gen.pollinations.ai/v1/chat/completions';
-const PL_IMG = 'https://gen.pollinations.ai/image';
+/* ✅ FIXED: correct pollinations image endpoint */
+const PL_IMG = 'https://image.pollinations.ai/prompt';
+const PL_IMG_ALT = 'https://gen.pollinations.ai/image'; // legacy fallback
 const HF_CHAT = ['meta-llama/Llama-3.3-70B-Instruct:together', 'Qwen/Qwen2.5-72B-Instruct:together'];
 const HF_VISION = ['meta-llama/Llama-3.2-11B-Vision-Instruct:together', 'Qwen/Qwen2-VL-7B-Instruct:hyperbolic'];
 const PL_CHAT = ['openai', 'openai-fast', 'mistral'];
@@ -79,7 +83,6 @@ const IDENTITY_GUARD = `Background rules (do not narrate them):
 - If the user asks what model you are, say you are Mirox, made by OpenSurr, once, and move on.
 - Do not introduce yourself unless the user asks who you are.`;
 
-/* ⚡ Standard thinking rule — always on */
 const THINKING_RULE = `You ALWAYS think before you answer. Before writing the actual reply, write your reasoning inside a single <thinking>...</thinking> block.
 
 Style: first-person, natural internal monologue, short fragments. Example:
@@ -92,7 +95,6 @@ Rules:
 - Close the block with </thinking>, then write the actual answer immediately after.
 - If the request is trivial (hi, thanks), you can still write one short line inside <thinking>.`;
 
-/* ⚡ DeepThink rule — appended only when the user enables DeepThink */
 const DEEP_THINK_RULE = `DEEP THINK MODE — reason much more thoroughly than usual.
 - Expand <thinking> to 4-12 short sentences.
 - Explore the request from at least two angles, note assumptions, edge cases, and possible mistakes you want to avoid.
@@ -117,42 +119,16 @@ DESIGN RULES (projects must LOOK GOOD):
 - Use system fonts, CSS variables, flexbox/grid, rounded corners, shadows, hover states.
 - Include working JavaScript interactions. Responsive with clamp().
 
-WHEN TO USE NON-FILE TOOLS:
-- <bridge-kde-list/> / <bridge-kde-ring device="ID"/> / <bridge-kde-ping device="ID"/> / <bridge-kde-sms device="ID" number="+1...">…</bridge-kde-sms> / <bridge-kde-lock device="ID"/> / <bridge-kde-notifications device="ID"/>
-- <bridge-kde-share device="ID" path="…"/> / <bridge-kde-share-text device="ID">…</bridge-kde-share-text>
-- <bridge-email to="x@y.com" subject="Hi">body</bridge-email>
-- <bridge-http url="https://…" method="GET"/>
-- <bridge-clipboard action="get"/> / <bridge-clipboard action="set">text</bridge-clipboard>
-- <bridge-screenshot path="/abs/shot.png"/>
-- <bridge-git action="status" cwd="/abs/dir"/> / "log" / "add-all" / commit message="…" / "pull" / "push"
-- <bridge-pkgs type="pip"/> or type="npm"
-- <bridge-sysinfo/> <bridge-syscheck/> <bridge-processes/>
-- <bridge-move from="…" to="…"/> <bridge-copy from="…" to="…"/>
-
-When finished, reply DONE on its own line plus a one-line summary.
-
 TAGS:
   <bridge-write path="/abs/path">...</bridge-write>
   <bridge-append path="/abs/path">...</bridge-append>
   <bridge-read path="/abs/path"/>
   <bridge-list path="/abs/path"/>
   <bridge-delete path="/abs/path"/>
-  <bridge-move from="/abs/a" to="/abs/b"/>
-  <bridge-copy from="/abs/a" to="/abs/b"/>
   <bridge-exec>cd /abs/dir && ls -la</bridge-exec>
   <bridge-sudo>apt install foo</bridge-sudo>
-  <bridge-sysinfo/>  <bridge-syscheck/>  <bridge-processes/>
-  <bridge-email to="x@y.com" subject="Hi">body</bridge-email>
-  <bridge-http url="https://..." method="GET"/>
-  <bridge-clipboard action="get"/>  <bridge-clipboard action="set">text</bridge-clipboard>
-  <bridge-screenshot path="/abs/shot.png"/>
-  <bridge-git action="status" cwd="/abs/dir"/>
-  <bridge-pkgs type="pip"/>
-  <bridge-kde-refresh/>  <bridge-kde-list/>  <bridge-kde-ping device="ID"/>  <bridge-kde-ring device="ID"/>
-  <bridge-kde-share device="ID" path="/abs/path"/>
-  <bridge-kde-share-text device="ID">text</bridge-kde-share-text>
-  <bridge-kde-sms device="ID" number="+1...">hi</bridge-kde-sms>
-  <bridge-kde-lock device="ID"/>  <bridge-kde-notifications device="ID"/>  <bridge-kde-my-id/>`;
+
+When finished, reply DONE on its own line plus a one-line summary.`;
 
 const safeStr = (v, max = 200000) => { if (v == null) return ''; const s = typeof v === 'string' ? v : JSON.stringify(v); return s.length > max ? s.slice(0, max) : s; };
 const nowS = () => Math.floor(Date.now() / 1000);
@@ -423,7 +399,7 @@ function textToSSEStream(text) {
   });
 }
 async function miroxChatChain({ messages, cfg, stream, vision, deepThink }) {
-  const maxTokens = deepThink ? Math.min(cfg.tokens * 2, 32000) : cfg.tokens;
+  const maxTokens = deepThink ? Math.min(cfg.tokens * 2, 32000) : Math.min(cfg.tokens, 32000);
   if (OP_KEY) {
     const models = vision ? OP_VISION : OP_CHAT;
     for (const modelId of models) {
@@ -487,25 +463,37 @@ async function pipeProviderStream(body, onDelta, isClosed, onLimit = () => {}) {
 }
 
 /* ---------- Images ---------- */
-async function generateImage(prompt) {
-  const deadline = Date.now() + 55000;
-  for (const mid of PL_IMG_MODELS) {
-    if (Date.now() > deadline - 5000) break;
-    try {
-      const params = new URLSearchParams({ model: mid, width: '1024', height: '1024', nologo: 'true', seed: String(Math.floor(Math.random() * 99999)) });
-      const headers = { Accept: 'image/png' };
-      if (PL_KEY) headers.Authorization = `Bearer ${PL_KEY}`;
-      const res = await fetchT(`${PL_IMG}/${encodeURIComponent(prompt.slice(0, 1000))}?${params}`, { headers }, 40000);
-      if (!res.ok) continue;
-      const ct = res.headers.get('content-type') || '';
-      if (!ct.startsWith('image/')) continue;
-      const buf = Buffer.from(await res.arrayBuffer());
-      if (buf.length < 1000) continue;
-      const mime = ct.split(';')[0];
-      const wm = applyWatermark(buf, mime);
-      return `data:${mime};base64,${wm.toString('base64')}`;
-    } catch {}
+/* ✅ FIXED — uses correct pollinations endpoint + host fallbacks */
+async function fetchImageBuffer(prompt, model, extraParams = {}) {
+  const hosts = [PL_IMG, PL_IMG_ALT];
+  for (const host of hosts) {
+    for (const m of (Array.isArray(model) ? model : [model])) {
+      try {
+        const params = new URLSearchParams({
+          model: m, width: '1024', height: '1024',
+          nologo: 'true', seed: String(Math.floor(Math.random() * 999999)),
+          ...extraParams,
+        });
+        const headers = { Accept: 'image/*', 'User-Agent': 'MiroxAI/1.0' };
+        if (PL_KEY) headers.Authorization = `Bearer ${PL_KEY}`;
+        const url = `${host}/${encodeURIComponent(prompt.slice(0, 1000))}?${params}`;
+        const res = await fetchT(url, { headers, redirect: 'follow' }, 45000);
+        if (!res.ok) continue;
+        const ct = (res.headers.get('content-type') || '').toLowerCase();
+        if (!ct.startsWith('image/')) continue;
+        const buf = Buffer.from(await res.arrayBuffer());
+        if (buf.length < 800) continue;
+        const mime = ct.split(';')[0] || 'image/png';
+        const wm = applyWatermark(buf, mime);
+        return `data:${mime};base64,${wm.toString('base64')}`;
+      } catch (e) { console.warn('[img]', host, m, e.message); }
+    }
   }
+  return null;
+}
+async function generateImage(prompt) {
+  const dataUrl = await fetchImageBuffer(prompt, PL_IMG_MODELS);
+  if (dataUrl) return dataUrl;
   if (AIROUTE_KEY) {
     try {
       const r = await fetchT(`${AIROUTE_BASE}/api/public/v1/images`, { method: 'POST', headers: { Authorization: `Bearer ${AIROUTE_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'black-forest-labs/FLUX.1-schnell', prompt: prompt.slice(0, 2000) }) }, 50000);
@@ -520,31 +508,14 @@ async function generateImage(prompt) {
           return `data:${mime};base64,${wm.toString('base64')}`;
         }
       }
-    } catch {}
+    } catch (e) { console.warn('[airoute-img]', e.message); }
   }
   throw new Error(GENERIC_ERR);
 }
 async function editImageWithSource(sourceDataUrl, editPrompt) {
-  const deadline = Date.now() + 55000;
-  for (const mid of PL_EDIT_MODELS) {
-    if (Date.now() > deadline - 5000) break;
-    try {
-      const params = new URLSearchParams({ model: mid, width: '1024', height: '1024', nologo: 'true', seed: String(Math.floor(Math.random() * 99999)) });
-      if (mid === 'kontext' && sourceDataUrl) params.set('image', sourceDataUrl);
-      const headers = { Accept: 'image/png' };
-      if (PL_KEY) headers.Authorization = `Bearer ${PL_KEY}`;
-      const url = `${PL_IMG}/${encodeURIComponent(editPrompt.slice(0, 1000))}?${params}`;
-      const res = await fetchT(url, { headers }, 45000);
-      if (!res.ok) continue;
-      const ct = res.headers.get('content-type') || '';
-      if (!ct.startsWith('image/')) continue;
-      const buf = Buffer.from(await res.arrayBuffer());
-      if (buf.length < 1000) continue;
-      const mime = ct.split(';')[0];
-      const wm = applyWatermark(buf, mime);
-      return `data:${mime};base64,${wm.toString('base64')}`;
-    } catch (e) { console.warn('[edit-image]', mid, e.message); }
-  }
+  // Try kontext (image-aware) first, then a text-only fallback
+  const dataUrl = await fetchImageBuffer(editPrompt, PL_EDIT_MODELS, sourceDataUrl ? { image: sourceDataUrl } : {});
+  if (dataUrl) return dataUrl;
   return generateImage(editPrompt);
 }
 
@@ -595,10 +566,11 @@ const publicUser = (u) => {
 const publicKey = (k) => ({ id: k.id, name: k.name, key: k.key, created: k.created, last_used: k.last_used || 0, revoked: !!k.revoked });
 
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
-  res.json({ ok: true, app: 'MiroxAI', version: 'v102',
+  res.json({ ok: true, app: 'MiroxAI', version: 'v104',
     providers: { openrouter: !!OP_KEY, hf: !!HF_API_KEY, pl: !!PL_KEY, airoute: !!AIROUTE_KEY },
     primary_provider: OP_KEY ? 'openrouter' : (HF_API_KEY ? 'huggingface' : (PL_KEY ? 'pollinations' : (AIROUTE_KEY ? 'airoute' : null))),
     watermark: 'MIROXAI-WATERMARK-v1-LOGO', thinking: true, deep_think: true,
+    flagship: 'mirox-tail-r1', flagship_free: true,
     db: { durable: KV_ON, writable: dbOk }, time: nowS() });
 });
 
@@ -612,23 +584,24 @@ app.get(['/api/config', '/config'], (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tier: m.tier }));
   res.json({
-    app: { name: 'MiroxAI', version: 'v102' },
+    app: { name: 'MiroxAI', version: 'v104' },
     models, default_model: models[0].id, plans: PLANS,
     tts_available: !!F_API, search_available: true, vision_available: true, image_intent: true, image_edit: true,
-    image_requires_signin: true, watermark: true, thinking: true, deep_think: true, html_runner: true,
+    image_requires_signin: false, watermark: true, thinking: true, deep_think: true, html_runner: true,
     loginment_available: !!LM_CLIENT_ID, email_login_available: ALLOW_EMAIL_LOGIN,
     airoute_available: !!AIROUTE_KEY, openrouter_available: !!OP_KEY,
     kde_connect_available: true, support_chat_available: true, developers_url: '/developers',
+    flagship: 'mirox-tail-r1',
   });
 });
 
 app.get(['/api/subscription/plans', '/subscription/plans'], (req, res) => {
   const perks = {
-    free: ['Luna & Gen unlimited', '10 image uploads/day', '10 image gens/day', '5 Eclipse/day', '2 API keys', 'Web search', 'Vision', 'DeepThink', 'HTML runner', 'KDE Connect'],
-    pro: ['Pro & Ultra models', '200 image uploads/gens/day', '10 API keys', 'Web search', 'Vision', 'DeepThink', 'HTML runner', 'KDE Connect'],
-    ultimate: ['Eclipse — best model', '2000 image uploads/gens/day', '10 API keys', 'Web search', 'Vision', 'DeepThink', 'HTML runner', 'KDE Connect'],
+    free: ['Luna, Gen & Tail r1 (flagship!)', '350k+ context window', '30 image gens/day', '5 Eclipse/day', '2 API keys', 'Web search', 'Vision', 'DeepThink', 'HTML runner', 'KDE Connect'],
+    pro: ['Everything in Free', 'Pro & Ultra models', '200 image gens/day', '10 API keys'],
+    ultimate: ['Everything in Pro', 'Eclipse — best model', '2000 image gens/day', 'Priority everything'],
   };
-  const tagline = { free: 'Free forever', pro: 'Most popular', ultimate: 'Power users' };
+  const tagline = { free: 'Flagship for everyone', pro: 'Most popular', ultimate: 'Power users' };
   res.json({ ok: true, plans: Object.entries(PLANS).map(([id, p]) => ({ id, label: p.label, tagline: tagline[id], vision_limit: p.vision_limit, image_limit: p.image_limit, eclipse_limit: p.eclipse_daily_limit, price_usd: p.price_usd, api_keys_limit: p.api_keys, perks: perks[id] })) });
 });
 
@@ -783,8 +756,43 @@ app.get(['/api/images/history', '/images/history'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const u = await currentUser(req);
   if (!u) return res.json({ ok: true, images: [] });
-  const items = await Promise.all(u.images.slice(0, 30).map(async (it) => ({ ts: it.ts, prompt: it.prompt, image: it.remote || (await blobGet(it.id)), watermarked: it.watermarked === true })));
+  const items = await Promise.all(u.images.slice(0, 30).map(async (it, i) => ({
+    id: it.id || ('img-' + String(it.ts || 'x') + '-' + i),
+    ts: it.ts,
+    prompt: it.prompt,
+    image: it.remote || (await blobGet(it.id)),
+    watermarked: it.watermarked === true,
+  })));
   res.json({ ok: true, images: items.filter((x) => x.image) });
+});
+
+/* IMAGE DELETE / CLEAR */
+app.post(['/api/images/delete', '/images/delete'], async (req, res) => {
+  const u = await currentUser(req);
+  if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
+  const id = safeStr(req.body?.id, 60);
+  const prompt = safeStr(req.body?.prompt, 400);
+  const ts = Number(req.body?.ts) || 0;
+  const removed = [];
+  u.images = u.images.filter((it) => {
+    let match = false;
+    if (id && it.id && it.id === id) match = true;
+    else if (!id && prompt && it.prompt === prompt && (!ts || it.ts === ts)) match = true;
+    if (match) { removed.push(it); return false; }
+    return true;
+  });
+  for (const it of removed) if (it.id) blobDel(it.id).catch(() => {});
+  if (removed.length) await persist();
+  res.json({ ok: true, removed: removed.length });
+});
+app.post(['/api/images/clear', '/images/clear'], async (req, res) => {
+  const u = await currentUser(req);
+  if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
+  const ids = u.images.map((it) => it.id).filter(Boolean);
+  u.images = [];
+  for (const id of ids) blobDel(id).catch(() => {});
+  await persist();
+  res.json({ ok: true });
 });
 
 /* SEARCH */
@@ -858,11 +866,7 @@ app.post('/v1/chat/completions', async (req, res) => {
     const tier = u ? u.tier : 'free';
     const plan = PLANS[tier] || PLANS.free;
     if (cfg.tier === 'pro' && TIER_RANK[tier] < 1) return fail(403, 'Pro plan required');
-    if (cfg.tier === 'ultimate' && tier !== 'ultimate') {
-      if (tier !== 'free') return fail(403, 'Ultimate plan required');
-      if (!u) return fail(401, 'Sign in to use Eclipse');
-      if (u.eclipse_used >= plan.eclipse_daily_limit) return fail(429, 'Eclipse daily limit reached');
-    }
+    if (cfg.tier === 'ultimate' && tier !== 'ultimate') return fail(403, 'Ultimate plan required');
     if (!text && !files.length) return fail(400, 'Empty message');
 
     /* Image edit — blocked when DeepThink is on */
@@ -1073,7 +1077,7 @@ app.use((err, req, res, next) => {
   if (!res.headersSent) res.status(500).json({ ok: false, error: GENERIC_ERR });
 });
 
-console.log('[Mirox] v102 · watermark:', 'MIROXAI-WATERMARK-v1-LOGO', '· thinking: on · deep-think: on · durable:', KV_ON, '· providers:', { openrouter: !!OP_KEY, hf: !!HF_API_KEY, pl: !!PL_KEY, airoute: !!AIROUTE_KEY });
+console.log('[Mirox] v104 · flagship: Tail r1 (FREE) · thinking: on · deep-think: on · durable:', KV_ON, '· providers:', { openrouter: !!OP_KEY, hf: !!HF_API_KEY, pl: !!PL_KEY, airoute: !!AIROUTE_KEY });
 
 if (!process.env.VERCEL) {
   app.listen(PORT, () => console.log('[Mirox] Server at http://localhost:' + PORT));
