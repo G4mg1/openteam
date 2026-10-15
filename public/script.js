@@ -2,10 +2,9 @@
   'use strict';
 
   /* ============================================================
-     MiroxAI frontend v144
-     · Tail r1 (free flagship) with promo popup + confetti
-     · Sharper thinking panel
-     · Fixed image history delete
+     MiroxAI frontend v145
+     · Tail r1 flagship (free) · real streamed thinking
+     · Promo popup + confetti · Image history delete
      ============================================================ */
 
   /* ---------- i18n ---------- */
@@ -113,10 +112,10 @@
   const FALLBACK_MODELS = [
     { id: 'mirox-luna-1.2', label: 'Luna', tier: 'free', tagline: 'Fast, unlimited', icon: 'ri-moon-line' },
     { id: 'mirox-gen-1', label: 'Gen', tier: 'free', tagline: 'Concise, unlimited', icon: 'ri-flashlight-line' },
-    { id: 'mirox-tail-r1', label: 'Tail r1', tier: 'free', tagline: 'Flagship · 350k context · best reasoning', icon: 'ri-star-smile-line' },
+    { id: 'mirox-tail-r1', label: 'Tail r1', tier: 'free', tagline: 'Flagship · 350k context · strongest reasoning', icon: 'ri-star-smile-line' },
     { id: 'mirox-pro-5', label: 'Pro', tier: 'pro', tagline: 'Deeper reasoning', icon: 'ri-vip-diamond-line' },
     { id: 'mirox-ultra-10', label: 'Ultra', tier: 'pro', tagline: 'Long context', icon: 'ri-rocket-2-line' },
-    { id: 'mirox-eclipse-2.0', label: 'Eclipse', tier: 'ultimate', tagline: 'Most powerful', icon: 'ri-sun-fill' },
+    { id: 'mirox-eclipse-2.0', label: 'Eclipse', tier: 'ultimate', tagline: 'High quality', icon: 'ri-sun-fill' },
   ];
   const LS_KEY = 'miroxai_conversations_v50';
   const REACTIONS_KEY = 'miroxai_reactions_v1';
@@ -281,14 +280,7 @@
       const delay = Math.random() * 300;
       const rot = 360 + Math.random() * 1080;
       const shape = Math.random() > 0.55 ? '50%' : '2px';
-      p.style.cssText = `
-        position:absolute;left:${x}%;top:-20px;
-        width:${size}px;height:${size * (0.6 + Math.random() * 0.9)}px;
-        background:${color};border-radius:${shape};
-        opacity:0;will-change:transform,opacity;
-        --drift:${drift}px;--rot:${rot}deg;
-        animation:confettiFall ${dur}ms cubic-bezier(.22,.68,.42,1) ${delay}ms forwards;
-      `;
+      p.style.cssText = `position:absolute;left:${x}%;top:-20px;width:${size}px;height:${size * (0.6 + Math.random() * 0.9)}px;background:${color};border-radius:${shape};opacity:0;will-change:transform,opacity;--drift:${drift}px;--rot:${rot}deg;animation:confettiFall ${dur}ms cubic-bezier(.22,.68,.42,1) ${delay}ms forwards;`;
       host.appendChild(p);
     }
     setTimeout(() => host.remove(), 5200);
@@ -297,7 +289,6 @@
   /* ---------- TTS ---------- */
   const ttsAvailable = typeof window !== 'undefined' && 'speechSynthesis' in window;
   let __voices = [];
-
   function loadVoices() {
     if (!ttsAvailable) return;
     __voices = speechSynthesis.getVoices() || [];
@@ -319,31 +310,22 @@
     setTimeout(loadVoices, 250);
     setTimeout(loadVoices, 900);
   }
-
   function pickVoiceForLang(lang) {
     if (!ttsAvailable) return null;
-    if (__prefs.ttsVoice) {
-      const v = __voices.find((x) => x.name === __prefs.ttsVoice);
-      if (v) return v;
-    }
+    if (__prefs.ttsVoice) { const v = __voices.find((x) => x.name === __prefs.ttsVoice); if (v) return v; }
     const norm = String(lang || '').toLowerCase();
-    let v = __voices.find((x) => String(x.lang || '').toLowerCase() === norm);
-    if (v) return v;
+    let v = __voices.find((x) => String(x.lang || '').toLowerCase() === norm); if (v) return v;
     const primary = norm.split('-')[0];
-    v = __voices.find((x) => String(x.lang || '').toLowerCase().startsWith(primary + '-'));
-    if (v) return v;
-    v = __voices.find((x) => String(x.lang || '').toLowerCase() === primary);
-    if (v) return v;
+    v = __voices.find((x) => String(x.lang || '').toLowerCase().startsWith(primary + '-')); if (v) return v;
+    v = __voices.find((x) => String(x.lang || '').toLowerCase() === primary); if (v) return v;
     return null;
   }
-
   function stopSpeaking() {
     if (!ttsAvailable) return;
     try { speechSynthesis.cancel(); } catch {}
     __currentSpeakMsgId = null;
     $$('.action-btn.speaking').forEach((b) => b.classList.remove('speaking'));
   }
-
   function speak(text, lang, msgId) {
     if (!ttsAvailable) { toast('Your browser does not support text-to-speech.', 3000, 'err'); return Promise.resolve(); }
     return new Promise((resolve) => {
@@ -358,22 +340,15 @@
       }
       if (buf) parts.push(buf);
       if (!parts.length) return resolve();
-
       const voice = pickVoiceForLang(lang || __prefs.responseLanguage || 'en');
       let i = 0;
       __currentSpeakMsgId = msgId || null;
-      if (msgId) {
-        const btn = document.querySelector(`.message[data-msg-id="${msgId}"] .action-btn[data-action="speak"]`);
-        if (btn) btn.classList.add('speaking');
-      }
+      if (msgId) { const btn = document.querySelector(`.message[data-msg-id="${msgId}"] .action-btn[data-action="speak"]`); if (btn) btn.classList.add('speaking'); }
       let done = false;
       const finish = () => {
         if (done) return;
         done = true;
-        if (msgId) {
-          const btn = document.querySelector(`.message[data-msg-id="${msgId}"] .action-btn[data-action="speak"]`);
-          if (btn) btn.classList.remove('speaking');
-        }
+        if (msgId) { const btn = document.querySelector(`.message[data-msg-id="${msgId}"] .action-btn[data-action="speak"]`); if (btn) btn.classList.remove('speaking'); }
         __currentSpeakMsgId = null;
         resolve();
       };
@@ -439,7 +414,7 @@
     return out;
   }
 
-  /* ---------- Thinking panel ---------- */
+  /* ---------- Thinking panel — shows the REAL streamed reasoning ---------- */
   function createThinkPanel(deep) {
     const el = document.createElement('div');
     el.className = 'think-panel';
@@ -452,20 +427,21 @@
         <div class="think-timer-pill">0.0s</div>
         <button class="think-toggle" type="button" title="Minimize" aria-label="Minimize thinking status" aria-expanded="true"><i class="ri-arrow-up-s-line"></i></button>
       </div>
-      <div class="think-body-wrap"><div class="think-body"><div class="think-text" data-think-text>Analyzing your request…</div></div></div>`;
+      <div class="think-body-wrap"><div class="think-body"><div class="think-text" data-think-text>Getting started…</div></div></div>`;
     const titleTextEl = el.querySelector('.think-title-text');
     const timerPill = el.querySelector('.think-timer-pill');
     const toggle = el.querySelector('.think-toggle');
     const textEl = el.querySelector('[data-think-text]');
     const iconEl = el.querySelector('.think-icon i');
+    const bodyEl = el.querySelector('.think-body');
     const t0 = performance.now();
-    let done = false, lastText = 'Analyzing your request…';
+    let done = false, lastText = '';
     toggle.addEventListener('click', (e) => {
       e.stopPropagation();
       const collapsed = el.dataset.collapsed !== 'true';
       el.dataset.collapsed = String(collapsed);
       toggle.setAttribute('aria-expanded', String(!collapsed));
-      toggle.title = collapsed ? 'Expand thinking status' : 'Minimize';
+      toggle.title = collapsed ? 'Expand thinking' : 'Minimize';
       toggle.setAttribute('aria-label', toggle.title);
       toggle.innerHTML = `<i class="${collapsed ? 'ri-arrow-down-s-line' : 'ri-arrow-up-s-line'}"></i>`;
     });
@@ -473,12 +449,17 @@
       if (done) { clearInterval(timer); return; }
       timerPill.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
     }, 100);
-    function replaceText(_full) {
+    // Show the model's real first-person reasoning, streamed live.
+    function replaceText(text) {
       if (done) return;
-      const status = deep
-        ? 'DeepThink is exploring the problem from multiple angles…'
-        : 'Preparing the answer and useful details…';
-      if (status !== lastText) { lastText = status; textEl.textContent = status; }
+      const t = String(text || '').trim();
+      if (!t) return;
+      if (t !== lastText) {
+        lastText = t;
+        textEl.textContent = t;
+        // Auto-scroll to bottom as it streams
+        try { bodyEl.scrollTop = bodyEl.scrollHeight; } catch {}
+      }
     }
     function setState(next) {
       el.dataset.state = next;
@@ -499,20 +480,20 @@
       done = true; clearInterval(timer);
       timerPill.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
       setState('done');
-      textEl.textContent = 'Finished preparing the response.';
+      // Auto-collapse shortly after finishing
       setTimeout(() => {
         if (el.isConnected && el.dataset.collapsed === 'false') {
           el.dataset.collapsed = 'true';
           toggle.setAttribute('aria-expanded', 'false');
-          toggle.title = 'Expand thinking status';
+          toggle.title = 'Expand thinking';
           toggle.innerHTML = '<i class="ri-arrow-down-s-line"></i>';
         }
-      }, 1400);
+      }, 1800);
     }
     function fail(msg) {
       if (done) return;
       done = true; clearInterval(timer);
-      textEl.textContent = msg ? 'Request could not finish: ' + String(msg).slice(0, 180) : 'The request could not finish.';
+      if (!lastText) textEl.textContent = msg ? String(msg).slice(0, 220) : 'The request could not finish.';
       setState('failed');
     }
     function hide() { el.style.display = 'none'; done = true; clearInterval(timer); }
@@ -594,21 +575,14 @@
 
   /* ---------- IMAGE HISTORY ---------- */
   function updateImageCountLabel() {
-    const el = $('#sidebarImagesCount');
-    if (!el) return;
+    const el = $('#sidebarImagesCount'); if (!el) return;
     const n = __imageHistoryItems.length;
     el.textContent = n === 0 ? 'No images' : (n === 1 ? '1 image' : `${n} images`);
     const delAll = $('#sidebarImagesDeleteAll');
     if (delAll) delAll.disabled = n === 0;
   }
-
-  function readDeletedImageIds() {
-    const ids = safeGet(DELETED_IMAGES_KEY, []);
-    return new Set(Array.isArray(ids) ? ids.map(String) : []);
-  }
-  function writeDeletedImageIds(ids) {
-    safeSet(DELETED_IMAGES_KEY, [...new Set(Array.from(ids, String))].slice(-500));
-  }
+  function readDeletedImageIds() { const ids = safeGet(DELETED_IMAGES_KEY, []); return new Set(Array.isArray(ids) ? ids.map(String) : []); }
+  function writeDeletedImageIds(ids) { safeSet(DELETED_IMAGES_KEY, [...new Set(Array.from(ids, String))].slice(-500)); }
   function imageHistoryIds(it, index = 0) {
     const stable = it && (it.id || it.key || it.image_id || it.imageKey);
     const fallback = 'img-' + String(it && (it.ts || it.created_at || it.prompt) || 'unknown') + '-' + index;
@@ -646,71 +620,41 @@
       updateImageCountLabel();
     } finally { __imageHistoryLoading = false; }
   }
-
   function renderImageGrid() {
     const grid = $('#sidebarImageHistory'); if (!grid) return;
-    if (!__imageHistoryItems.length) {
-      grid.innerHTML = '<div class="sidebar-image-empty"><i class="ri-image-line"></i> No images yet.</div>';
-      return;
-    }
+    if (!__imageHistoryItems.length) { grid.innerHTML = '<div class="sidebar-image-empty"><i class="ri-image-line"></i> No images yet.</div>'; return; }
     grid.innerHTML = '';
     __imageHistoryItems.slice(0, 60).forEach((it, idx) => {
       const item = document.createElement('div');
       item.className = 'sidebar-image-item';
       item.title = it.prompt || 'Generated image';
       item.dataset.idx = String(idx);
-
       const img = document.createElement('img');
-      img.src = it.image;
-      img.alt = it.prompt || 'generated image';
-      img.loading = 'lazy';
+      img.src = it.image; img.alt = it.prompt || 'generated image'; img.loading = 'lazy';
       img.onerror = () => { item.style.display = 'none'; };
       item.appendChild(img);
-
       const del = document.createElement('button');
-      del.type = 'button';
-      del.className = 'sidebar-image-delete';
-      del.title = 'Delete image';
-      del.setAttribute('aria-label', 'Delete image');
+      del.type = 'button'; del.className = 'sidebar-image-delete';
+      del.title = 'Delete image'; del.setAttribute('aria-label', 'Delete image');
       del.innerHTML = '<i class="ri-delete-bin-line"></i>';
-      del.onclick = (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        deleteImageAt(idx);
-      };
+      del.onclick = (e) => { e.stopPropagation(); e.preventDefault(); deleteImageAt(idx); };
       item.appendChild(del);
-
       item.onclick = () => openImageViewer(it.image);
       grid.appendChild(item);
     });
   }
-
   async function deleteImageAt(idx) {
-    const it = __imageHistoryItems[idx];
-    if (!it) return;
+    const it = __imageHistoryItems[idx]; if (!it) return;
     const ids = new Set(readDeletedImageIds());
     (it._historyIds || [it._id, it.id, it.key].filter(Boolean)).forEach(id => ids.add(String(id)));
     writeDeletedImageIds([...ids]);
     __imageHistoryItems.splice(idx, 1);
-    renderImageGrid();
-    updateImageCountLabel();
+    renderImageGrid(); updateImageCountLabel();
     toast('Image deleted', 1600, 'ok');
     try {
-      const res = await netFetch('/api/images/delete', {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({
-          id: it.id || it._id,
-          key: it.key || null,
-          image_id: it.image_id || null,
-          prompt: it.prompt || '',
-          ts: it.ts || it.created_at || null
-        }),
-      }, 8000);
+      const res = await netFetch('/api/images/delete', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ id: it.id || it._id, key: it.key || null, image_id: it.image_id || null, prompt: it.prompt || '', ts: it.ts || it.created_at || null }) }, 8000);
       if (res && res.ok) setTimeout(() => { loadImageHistory().catch(() => {}); }, 900);
-    } catch {
-      toast('Image hidden locally; server deletion could not be confirmed.', 2600);
-    }
+    } catch { toast('Image hidden locally; server deletion could not be confirmed.', 2600); }
   }
   async function deleteAllImages() {
     if (!__imageHistoryItems.length) { toast('No images to delete', 1800); return; }
@@ -719,15 +663,13 @@
     __imageHistoryItems.forEach(it => (it._historyIds || [it._id, it.id, it.key].filter(Boolean)).forEach(id => deleted.add(String(id))));
     writeDeletedImageIds([...deleted]);
     __imageHistoryItems = [];
-    renderImageGrid();
-    updateImageCountLabel();
+    renderImageGrid(); updateImageCountLabel();
     toast('All images deleted', 1800, 'ok');
     try {
       const res = await netFetch('/api/images/clear', { method: 'POST', headers: authHeaders(), body: '{}' }, 8000);
       if (!res || !res.ok) toast('Images hidden locally; server clear could not be confirmed.', 2600);
     } catch { toast('Images hidden locally; server clear could not be confirmed.', 2600); }
   }
-
   function refreshImageHistorySoon() { setTimeout(() => { loadImageHistory().catch(() => {}); }, 500); }
 
   /* ---------- Conversations ---------- */
@@ -1004,7 +946,6 @@
       </button>
     `;
   }
-
   function addMessageToDOM(role, content, ts, msgId, files, image, thinking) {
     const container = $('#chatMessages'); if (!container) return null;
     container.querySelector('.welcome-screen')?.remove();
@@ -1032,10 +973,8 @@
     }
     if (role === 'ai' && image) inner += `<div class="gen-image"><img src="${image}" draggable="false" alt=""></div>`;
     inner += '<div class="bubble-text"></div>';
-
     el.innerHTML = `${avatar}<div class="message-body"><div class="bubble">${inner}</div><div class="message-actions">${buildActions(role, id)}</div><div class="message-time">${ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</div></div>`;
     container.appendChild(el);
-
     if (role === 'ai' && thinking && stripThinkingLeak(thinking).trim()) {
       const panel = createThinkPanel(false);
       panel.replaceText(stripThinkingLeak(thinking));
@@ -1043,7 +982,6 @@
       const bodyEl = el.querySelector('.message-body');
       bodyEl.insertBefore(panel.el, bodyEl.firstChild);
     }
-
     const bt = el.querySelector('.bubble-text');
     if (role === 'user') { bt.textContent = content || ''; if (!content) bt.style.display = 'none'; }
     else if (content) { bt.innerHTML = renderMarkdown(stripThinkingLeak(content)); wireCodeButtons(bt); }
@@ -1052,7 +990,6 @@
     scrollToBottom();
     return el;
   }
-
   function wireMessageActions(el) {
     const msgId = el.dataset.msgId;
     el.querySelectorAll('.action-btn').forEach((btn) => {
@@ -1095,7 +1032,6 @@
       };
     });
   }
-
   function updateActionBar(el) {
     const msgId = el.dataset.msgId;
     const role = el.dataset.role;
@@ -1105,7 +1041,6 @@
     el.querySelectorAll('.action-btn').forEach((b) => { b.__wired = false; });
     wireMessageActions(el);
   }
-
   async function handleRetry(el) {
     if (isReplying) return;
     const convo = currentConvo(); if (!convo) return;
@@ -1119,7 +1054,6 @@
     el.remove();
     sendToAPI(userMsg.content, userMsg.files || []);
   }
-
   function updateSendButtonState() {
     const btn = $('#sendBtn'), inp = $('#messageInput');
     if (!btn || !inp) return;
@@ -1140,7 +1074,6 @@
     return /\b(ideas?|inspiration|things to build|project ideas|science fair|recommendations|examples of|concepts for|what can i make|what should i build|suggestions|best (?:way|ways|projects|options|tools|topics)|for beginners|beginner friendly)\b/i.test(t)
       && !looksLikeImageRequest(t);
   }
-
   function looksLikeImageRequest(text) {
     const t = String(text || '').trim();
     if (!t) return false;
@@ -1174,7 +1107,6 @@
     forceSearchNext = false;
     $('#searchModeBtn')?.classList.remove('active');
   }
-
   function countFences(text) { let n = 0; const s = String(text || ''); for (let i = 0; i < s.length - 2; i++) if (s.charCodeAt(i) === 96 && s.charCodeAt(i + 1) === 96 && s.charCodeAt(i + 2) === 96) { n++; i += 2; } return n; }
   function shouldShowContinue(full, streamComplete) {
     if (!full) return false;
@@ -1199,7 +1131,6 @@
       await sendToAPI('Continue EXACTLY from where you stopped. Do NOT repeat any prior text. Do NOT add a preamble. Do NOT open a new code fence if the previous message ended inside one — just keep writing.', [], false, { existingMsgEl: msgEl, existingBubble: bubble, messageObject: messageObj, continuation: true });
     } finally { continuationBusy = false; if (btn.isConnected) btn.remove(); }
   }
-
   function detectImageEditIntent(text, hasImage) {
     if (!hasImage) return null;
     const t = String(text || '').toLowerCase().trim();
@@ -1223,7 +1154,6 @@
     let msgEl, bubble, bubbleText, timeEl, avatarMascot, thinkPanel;
     const aiMsgId = isContinuation ? continuation.messageObject.id : uid();
     let full = '';
-
     if (isContinuation) {
       msgEl = continuation.existingMsgEl;
       bubble = continuation.existingBubble;
@@ -1252,7 +1182,6 @@
       bubble = null; bubbleText = null;
       scrollToBottom(true);
     }
-
     const visionFiles = files.filter((f) => f.type === 'image' && f.dataUrl);
     const contentParts = [];
     if (text) contentParts.push({ type: 'text', text });
@@ -1260,14 +1189,12 @@
     const hasAttachedImage = visionFiles.length > 0;
     const editIntent = hasAttachedImage ? detectImageEditIntent(text, true) : null;
     const sourceImage = editIntent ? (visionFiles[0].pngDataUrl || visionFiles[0].dataUrl) : null;
-
     activeStreamController = new AbortController();
     let generatedImage = null, gotToken = false;
     let streamComplete = false;
     let renderTimer = null;
     let rawAll = '', answerText = '', thinkingText = '';
     let hasReasoning = false, thinkingTagSeen = false;
-
     const renderStreamText = () => {
       renderTimer = null;
       if (!bubbleText) return;
@@ -1284,7 +1211,6 @@
       streamRenderAt = now;
     };
     const streamTimeout = setTimeout(() => { try { activeStreamController?.abort(); } catch {} }, STREAM_TIMEOUT_MS);
-
     try {
       const reqBody = {
         message: text, history, model, stream: true, search: !!forceSearch,
@@ -1317,7 +1243,6 @@
         if (!bubble) { bubble = document.createElement('div'); bubble.className = 'bubble'; bodyEl.insertBefore(bubble, timeEl); }
       };
       let signinTriggered = false;
-
       const updateSplit = () => {
         const s = rawAll;
         const openIdx = s.indexOf('<thinking>');
@@ -1335,7 +1260,6 @@
         }
         answerText = stripThinkingLeak(answerText);
       };
-
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
@@ -1347,14 +1271,12 @@
           const pl = line.slice(5).trim(); if (!pl) continue;
           if (pl === '[DONE]') { streamComplete = true; continue; }
           let o; try { o = JSON.parse(pl); } catch { continue; }
-
           if (o.signin_required && !signinTriggered) {
             signinTriggered = true;
             requireSignIn(o.message || 'Sign in to continue.');
             try { await reader.cancel(); } catch {}
             break;
           }
-
           if (o.img) {
             generatedImage = o.img;
             if (avatarMascot) setMascotMood('celebrate', avatarMascot.parentElement.parentElement);
@@ -1366,12 +1288,10 @@
             scrollToBottom();
             continue;
           }
-
           if (o.reasoning_content || o.reasoning) {
             const r = String(o.reasoning_content || o.reasoning || '');
             if (r) { hasReasoning = true; thinkingText += r; if (thinkPanel && thinkPanel.isConnected()) thinkPanel.replaceText(thinkingText); }
           }
-
           const delta = o.d || o.content || (o.delta && o.delta.content) || '';
           if (delta) {
             rawAll += delta;
@@ -1396,19 +1316,15 @@
       }
       clearTimeout(streamTimeout);
       if (signinTriggered) { try { reader.cancel(); } catch {} }
-
       updateSplit();
-
       if (thinkPanel && thinkPanel.isConnected()) {
         if (thinkingTagSeen || hasReasoning) { thinkPanel.replaceText(stripThinkingLeak(thinkingText)); thinkPanel.finalize(); }
         else thinkPanel.hide();
       }
       full = answerText;
-
       if (avatarMascot) setMascotMood('happy', avatarMascot.parentElement.parentElement);
       if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
       if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); wireCodeButtons(bubbleText); }
-
       if (!msgEl.querySelector('.message-actions')) {
         const bodyEl2 = msgEl.querySelector('.message-body');
         const actions = document.createElement('div');
@@ -1418,7 +1334,6 @@
       }
       msgEl.dataset.rawContent = full;
       updateActionBar(msgEl);
-
       let imageKey = null;
       if (generatedImage) {
         const wm = await watermarkedDataUrl(generatedImage);
@@ -1429,7 +1344,6 @@
         try { await idb.set(imageKey, wm); } catch { imageKey = null; }
         refreshImageHistorySoon();
       }
-
       let savedMsg;
       if (convo) {
         if (isContinuation) {
@@ -1445,7 +1359,6 @@
       saveChats(); updateTokenUsage();
       timeEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       if (savedMsg && shouldShowContinue(full, streamComplete)) { ensureBubble(); attachContinueButton(msgEl, bubble, savedMsg); }
-
       if (__prefs.autoSpeak && full && !__call.active) {
         const lang = (__prefs.responseLanguage && __prefs.responseLanguage !== 'auto') ? __prefs.responseLanguage : (savedMsg && savedMsg.lang) || 'en';
         setTimeout(() => { speak(full, lang, aiMsgId); }, 250);
@@ -1487,14 +1400,12 @@
       updateSendButtonState(); updateTokenUsage();
     }
   }
-
   function stopStreaming() {
     if (activeStreamController) { try { activeStreamController.abort(); } catch {} activeStreamController = null; }
     isReplying = false;
     const s = $('#stopBtn'); if (s) s.style.display = 'none';
     updateSendButtonState();
   }
-
   function toast(msg, ms, kind) {
     const el = document.createElement('div');
     el.className = 'mirox-toast' + (kind ? ' ' + kind : '');
@@ -1600,12 +1511,7 @@
       return `<div class="attach-chip attach-chip-file" data-preview-file="${idx}" title="${escapeHtml(f.name || 'file')}"><span class="attach-file-badge"><i class="${meta.icon}"></i> ${escapeHtml(meta.label)}</span><span class="attach-chip-file-name">${escapeHtml(f.name || 'file')}</span>${f.size ? `<span class="attach-size">${fmtSize(f.size)}</span>` : ''}${lines > 1 ? `<span class="attach-lines">${lines} lines</span>` : ''}</div>`;
     }).join('');
     list.querySelectorAll('[data-preview-file]').forEach((chip) => {
-      chip.onclick = (e) => {
-        e.stopPropagation();
-        const idx = parseInt(chip.dataset.previewFile, 10);
-        const file = pendingFiles[idx];
-        if (file) openFilePreview(file);
-      };
+      chip.onclick = (e) => { e.stopPropagation(); const idx = parseInt(chip.dataset.previewFile, 10); const file = pendingFiles[idx]; if (file) openFilePreview(file); };
     });
   }
   function addTextAttachment(text, name) {
@@ -1641,10 +1547,7 @@
   function canUseModel(tier) { if (tier === 'free') return true; if (__tier === 'ultimate') return true; if (__tier === 'pro' && tier === 'pro') return true; return false; }
   function tierLabel(tier) { if (tier === 'ultimate') return 'ULT'; if (tier === 'pro') return 'PRO'; return 'FREE'; }
   function tierFullLabel(tier) { if (tier === 'ultimate') return 'Ultimate'; if (tier === 'pro') return 'Pro'; return 'Free'; }
-  function modelIconFor(id) {
-    const f = FALLBACK_MODELS.find((m) => m.id === id);
-    return f ? f.icon : 'ri-sparkling-2-line';
-  }
+  function modelIconFor(id) { const f = FALLBACK_MODELS.find((m) => m.id === id); return f ? f.icon : 'ri-sparkling-2-line'; }
   function renderModelPicker() {
     const menu = $('#modelPickerMenu'); if (!menu) return;
     const models = getModelsList(); const cur = __model || models[0].id;
@@ -1812,19 +1715,14 @@
     if (!modal) return;
     setTimeout(() => { modal.classList.add('open'); }, 900);
   }
-  function dismissTailPromo() {
-    safeSet(TAIL_PROMO_SEEN_KEY, true);
-    closeModal('tailPromoModal');
-  }
+  function dismissTailPromo() { safeSet(TAIL_PROMO_SEEN_KEY, true); closeModal('tailPromoModal'); }
   function tryTailPromo() {
     safeSet(TAIL_PROMO_SEEN_KEY, true);
     closeModal('tailPromoModal');
-    // Force switch to Tail r1 regardless of current tier
     __model = 'mirox-tail-r1';
     const lbl = document.getElementById('currentModelLabel');
     if (lbl) lbl.textContent = 'Tail r1';
     renderModelPicker();
-    // Confetti!
     fireConfetti();
     setTimeout(fireConfetti, 350);
     toast('Tail r1 is ready — ask anything!', 2600, 'ok');
@@ -2392,11 +2290,9 @@
 
     on('#sidebarImagesDeleteAll', 'click', deleteAllImages);
 
-    /* Tail r1 promo */
     on('#tailPromoTryBtn', 'click', tryTailPromo);
     on('#tailPromoLaterBtn', 'click', dismissTailPromo);
 
-    /* Call wiring */
     on('#callModeBtn', 'click', startCall);
     on('#callEndBtn', 'click', endCall);
     on('#callHoldBtn', 'click', toggleCallHold);
@@ -2623,7 +2519,6 @@
       applyTranslations();
       applyDeepThinkUI();
       setTimeout(() => loadImageHistory().catch(() => {}), 800);
-      // Show the Tail r1 promo popup once
       showTailPromo();
     } catch (e) { console.error('[Mirox init]', e); }
     finally { killLoader(); }
