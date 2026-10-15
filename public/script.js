@@ -2,10 +2,10 @@
   'use strict';
 
   /* ============================================================
-     MiroxAI frontend v142
-     · AI bubble actions: Like, Dislike, Copy, Read, Source, Retry
-       (always visible, RemixIcons, at the bottom of each bubble)
-     · Image history: per-image delete + Delete all button
+     MiroxAI frontend v144
+     · Tail r1 (free flagship) with promo popup + confetti
+     · Sharper thinking panel
+     · Fixed image history delete
      ============================================================ */
 
   /* ---------- i18n ---------- */
@@ -113,6 +113,7 @@
   const FALLBACK_MODELS = [
     { id: 'mirox-luna-1.2', label: 'Luna', tier: 'free', tagline: 'Fast, unlimited', icon: 'ri-moon-line' },
     { id: 'mirox-gen-1', label: 'Gen', tier: 'free', tagline: 'Concise, unlimited', icon: 'ri-flashlight-line' },
+    { id: 'mirox-tail-r1', label: 'Tail r1', tier: 'free', tagline: 'Flagship · 350k context · best reasoning', icon: 'ri-star-smile-line' },
     { id: 'mirox-pro-5', label: 'Pro', tier: 'pro', tagline: 'Deeper reasoning', icon: 'ri-vip-diamond-line' },
     { id: 'mirox-ultra-10', label: 'Ultra', tier: 'pro', tagline: 'Long context', icon: 'ri-rocket-2-line' },
     { id: 'mirox-eclipse-2.0', label: 'Eclipse', tier: 'ultimate', tagline: 'Most powerful', icon: 'ri-sun-fill' },
@@ -126,6 +127,7 @@
   const APPEARANCE_KEY = 'miroxai_appearance_v50';
   const PREFS_KEY = 'miroxai_prefs_v16';
   const BRIDGE_OPTS_KEY = 'miroxai_bridge_opts_v1';
+  const TAIL_PROMO_SEEN_KEY = 'miroxai_tail_promo_seen_v1';
   const PASTE_ATTACH_THRESHOLD = 1024;
   const NET_TIMEOUT_MS = 15000;
   const STREAM_TIMEOUT_MS = 600000;
@@ -147,8 +149,8 @@
   let forceSearchNext = false, __historyQuery = '';
   let __ivDataUrl = '';
   let __prefs = {};
-  let __reactions = {};   // { msgId: 'like' | 'dislike' }
-  let __imageHistoryItems = []; // cached list of images
+  let __reactions = {};
+  let __imageHistoryItems = [];
   let __bridge = { name: 'My Laptop', port: 8765, connected: false, baseUrl: null, env: null };
   let bridgeRunning = false, bridgeAbort = false, bridgeConversation = [], bridgeProgress = 0;
   let bridgeTurn = null, bridgeTaskComplete = true, bridgeWaitingForUser = false;
@@ -165,7 +167,6 @@
   let __imageHistoryLoading = false;
   let __currentRawSource = '';
 
-  /* Call state */
   let __call = {
     active: false, lang: 'en-US', phase: 'idle', recog: null,
     shouldListen: false, holding: false, currentAbort: null,
@@ -262,6 +263,36 @@
   /* ---------- Reactions ---------- */
   function loadReactions() { __reactions = safeGet(REACTIONS_KEY, {}); if (typeof __reactions !== 'object' || !__reactions) __reactions = {}; }
   function saveReactions() { safeSet(REACTIONS_KEY, __reactions); }
+
+  /* ---------- Confetti ---------- */
+  function fireConfetti() {
+    const colors = ['#d97757', '#f0a184', '#4d6bfe', '#16a34a', '#9333ea', '#e11d48', '#fbbf24', '#0284c7'];
+    const host = document.createElement('div');
+    host.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:99999;overflow:hidden;';
+    document.body.appendChild(host);
+    const N = 140;
+    for (let i = 0; i < N; i++) {
+      const p = document.createElement('div');
+      const size = 6 + Math.random() * 9;
+      const color = colors[(Math.random() * colors.length) | 0];
+      const x = Math.random() * 100;
+      const drift = (Math.random() - 0.5) * 500;
+      const dur = 2200 + Math.random() * 1800;
+      const delay = Math.random() * 300;
+      const rot = 360 + Math.random() * 1080;
+      const shape = Math.random() > 0.55 ? '50%' : '2px';
+      p.style.cssText = `
+        position:absolute;left:${x}%;top:-20px;
+        width:${size}px;height:${size * (0.6 + Math.random() * 0.9)}px;
+        background:${color};border-radius:${shape};
+        opacity:0;will-change:transform,opacity;
+        --drift:${drift}px;--rot:${rot}deg;
+        animation:confettiFall ${dur}ms cubic-bezier(.22,.68,.42,1) ${delay}ms forwards;
+      `;
+      host.appendChild(p);
+    }
+    setTimeout(() => host.remove(), 5200);
+  }
 
   /* ---------- TTS ---------- */
   const ttsAvailable = typeof window !== 'undefined' && 'speechSynthesis' in window;
@@ -408,7 +439,7 @@
     return out;
   }
 
-  /* ---------- Thinking panel: restore the original expandable UI, with safe status text ---------- */
+  /* ---------- Thinking panel ---------- */
   function createThinkPanel(deep) {
     const el = document.createElement('div');
     el.className = 'think-panel';
@@ -421,14 +452,14 @@
         <div class="think-timer-pill">0.0s</div>
         <button class="think-toggle" type="button" title="Minimize" aria-label="Minimize thinking status" aria-expanded="true"><i class="ri-arrow-up-s-line"></i></button>
       </div>
-      <div class="think-body-wrap"><div class="think-body"><div class="think-text" data-think-text>Reviewing your request and preparing a useful answer…</div></div></div>`;
+      <div class="think-body-wrap"><div class="think-body"><div class="think-text" data-think-text>Analyzing your request…</div></div></div>`;
     const titleTextEl = el.querySelector('.think-title-text');
     const timerPill = el.querySelector('.think-timer-pill');
     const toggle = el.querySelector('.think-toggle');
     const textEl = el.querySelector('[data-think-text]');
     const iconEl = el.querySelector('.think-icon i');
     const t0 = performance.now();
-    let done = false, lastText = 'Reviewing your request and preparing a useful answer…';
+    let done = false, lastText = 'Analyzing your request…';
     toggle.addEventListener('click', (e) => {
       e.stopPropagation();
       const collapsed = el.dataset.collapsed !== 'true';
@@ -442,11 +473,10 @@
       if (done) { clearInterval(timer); return; }
       timerPill.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
     }, 100);
-    // The panel intentionally shows progress/status, never private model reasoning.
     function replaceText(_full) {
       if (done) return;
       const status = deep
-        ? 'DeepThink is checking the request and organizing a thorough response…'
+        ? 'DeepThink is exploring the problem from multiple angles…'
         : 'Preparing the answer and useful details…';
       if (status !== lastText) { lastText = status; textEl.textContent = status; }
     }
@@ -482,7 +512,7 @@
     function fail(msg) {
       if (done) return;
       done = true; clearInterval(timer);
-      textEl.textContent = msg ? 'The request could not finish: ' + String(msg).slice(0, 180) : 'The request could not finish.';
+      textEl.textContent = msg ? 'Request could not finish: ' + String(msg).slice(0, 180) : 'The request could not finish.';
       setState('failed');
     }
     function hide() { el.style.display = 'none'; done = true; clearInterval(timer); }
@@ -562,9 +592,7 @@
   }
   function closeImageViewer() { $('#imageViewer')?.classList.remove('open'); }
 
-  /* ═══════════════════════════════════════════════════
-     IMAGE HISTORY (with per-image delete + delete all)
-     ═══════════════════════════════════════════════════ */
+  /* ---------- IMAGE HISTORY ---------- */
   function updateImageCountLabel() {
     const el = $('#sidebarImagesCount');
     if (!el) return;
@@ -579,7 +607,6 @@
     return new Set(Array.isArray(ids) ? ids.map(String) : []);
   }
   function writeDeletedImageIds(ids) {
-    // Keep a bounded tombstone list so a stale server response cannot resurrect deleted images.
     safeSet(DELETED_IMAGES_KEY, [...new Set(Array.from(ids, String))].slice(-500));
   }
   function imageHistoryIds(it, index = 0) {
@@ -609,15 +636,12 @@
         _id: String(it.id || it.key || it.image_id || ('img-' + String(it.ts || it.created_at || it.prompt || 'unknown') + '-' + i)),
         _historyIds: imageHistoryIds(it, i)
       }));
-      // A deleted item stays hidden if the backend temporarily returns stale history.
       __imageHistoryItems = mapped.filter(it => !it._historyIds.some(id => deleted.has(id)));
-      // Once the server no longer returns a deleted ID, forget its tombstone.
       const stillReturned = new Set(mapped.flatMap(it => it._historyIds));
       writeDeletedImageIds([...deleted].filter(id => stillReturned.has(id)));
       renderImageGrid();
       updateImageCountLabel();
     } catch {
-      // Keep the last known list on transient errors rather than clearing it.
       if (!__imageHistoryItems.length) grid.innerHTML = '<div class="sidebar-image-empty">Could not load images. Try again.</div>';
       updateImageCountLabel();
     } finally { __imageHistoryLoading = false; }
@@ -667,7 +691,6 @@
     const ids = new Set(readDeletedImageIds());
     (it._historyIds || [it._id, it.id, it.key].filter(Boolean)).forEach(id => ids.add(String(id)));
     writeDeletedImageIds([...ids]);
-    // Remove locally immediately and persist the deletion marker before contacting the server.
     __imageHistoryItems.splice(idx, 1);
     renderImageGrid();
     updateImageCountLabel();
@@ -684,7 +707,6 @@
           ts: it.ts || it.created_at || null
         }),
       }, 8000);
-      // Do not remove the local tombstone on failure; it prevents stale history from bringing it back.
       if (res && res.ok) setTimeout(() => { loadImageHistory().catch(() => {}); }, 900);
     } catch {
       toast('Image hidden locally; server deletion could not be confirmed.', 2600);
@@ -732,7 +754,7 @@
     return `<div class="welcome-screen">
       <div class="welcome-mascot"><div class="mascot mascot-lg m-idle" id="welcomeMascot" data-mood="idle">${blobSvg()}</div></div>
       <h1 class="welcome-title">Hi, I'm Mirox</h1>
-      <p class="welcome-sub">Luna and Gen are unlimited and free. <strong>Sign in</strong> to use Pro, Ultra, Eclipse and image generation.</p>
+      <p class="welcome-sub">Luna, Gen and <strong>Tail r1</strong> are free. Sign in to save chats and use image generation.</p>
       <div class="suggestion-grid">
         <button class="suggestion-card" type="button" data-prompt="Show me a simple Lua script that prints numbers 1 to 5"><i class="ri-code-box-line"></i><span>Write a Lua script</span></button>
         <button class="suggestion-card" type="button" data-prompt="Show me an HTML example with a table"><i class="ri-html5-line"></i><span>Show an HTML table</span></button>
@@ -953,10 +975,7 @@
   }
   function closeRawView() { $('#rawViewModal')?.classList.remove('open'); }
 
-  /* ═══════════════════════════════════════════════════
-     MESSAGE ACTIONS
-     like · dislike · copy · read · source · retry
-     ═══════════════════════════════════════════════════ */
+  /* ---------- MESSAGE ACTIONS ---------- */
   function buildActions(role, msgId) {
     if (role === 'user') {
       return `<button class="action-btn" data-action="copy" aria-label="Copy" title="Copy"><i class="ri-file-copy-line"></i></button>`;
@@ -1115,8 +1134,6 @@
     openModal('loginModal');
     toast(reason || 'Please sign in to continue.', 3000, 'err');
   }
-  // Detect broad requests for ideas, concepts, projects, recommendations, or inspiration.
-  // Idea requests get richer structure from the model; this feature does not fetch images.
   function looksLikeIdeasRequest(text) {
     const t = String(text || '').trim();
     if (!t) return false;
@@ -1271,7 +1288,7 @@
     try {
       const reqBody = {
         message: text, history, model, stream: true, search: !!forceSearch,
-        deep_think: !!__prefs.deepThink, system_extra: THINK_INSTRUCTION + '\n\nRESPONSE QUALITY: Give a genuinely useful, complete answer rather than an overly short reply. For explanations and open-ended questions, normally write several well-developed paragraphs with context, clear reasoning summaries, examples, and practical details when useful. Answer the exact question first, then expand enough that the user can understand the topic without needing to ask for basic missing details. Do not pad with repetition; use headings and bullets only when they improve readability. Match the requested length: if the user asks for detail, provide a long, thorough answer; if they ask for a simple answer, stay concise. For recommendations, explain why the options fit and end with a clear best choice when the evidence supports one. Never expose hidden chain-of-thought or private internal reasoning; provide only the conclusion and a brief user-facing explanation.\n\n' + (looksLikeIdeasRequest(text) ? 'IDEA-ANSWER FORMAT (for idea, recommendation, project, topic, planning, and “best” requests): Use a clean editorial answer layout, NOT a chatty wall of text. Start with a short useful introduction and a heading such as ‘Ideas to consider’. Usually give 5–8 relevant options unless the user requests another number. For each option, show a numbered, specific main title on its own line, then one short fit badge using bold text when appropriate (for example **Beginner-friendly**, **Best overall**, **Low-cost**, **Most creative**, **Best for a science fair**, **No special equipment**, or **Advanced**). Follow with a substantial but readable summary (about 3–6 sentences): explain the core idea, how it works, what the user would actually do, why it is useful or interesting, and one practical first step. Add concise labeled lines where relevant: **Materials**, **How to demonstrate it**, **Estimated cost**, **Difficulty**, **What to measure**, and **Safety**. Never invent precise prices or facts; mark estimates as approximate. Separate options with whitespace or a horizontal divider so the list is easy to scan. Finish with a short ‘Which should you choose?’ recommendation comparing beginner, budget, and ambitious options, and clearly name the best match when justified. Adapt every answer to the actual subject and user’s level; do not force science or robotics into unrelated questions. Use useful detail rather than filler, avoid repetitive phrasing, and do not fetch or attach images unless explicitly requested. If web-search sources are available, cite them for factual claims; otherwise be clear about uncertainty. Never reveal hidden chain-of-thought; provide a concise, user-facing explanation of the approach instead.' : ''),
+        deep_think: !!__prefs.deepThink, system_extra: THINK_INSTRUCTION + '\n\nRESPONSE QUALITY: Give a genuinely useful, complete answer rather than an overly short reply. For explanations and open-ended questions, normally write several well-developed paragraphs with context, clear reasoning summaries, examples, and practical details when useful. Answer the exact question first, then expand enough that the user can understand the topic without needing to ask for basic missing details. Do not pad with repetition; use headings and bullets only when they improve readability. Match the requested length: if the user asks for detail, provide a long, thorough answer; if they ask for a simple answer, stay concise. Never expose hidden chain-of-thought or private internal reasoning; provide only the conclusion and a brief user-facing explanation.\n\n' + (looksLikeIdeasRequest(text) ? 'IDEA-ANSWER FORMAT: Use a clean editorial layout with numbered options and short fit badges. Do not fetch or attach images unless explicitly requested. Never reveal hidden chain-of-thought.' : ''),
         files: files.map((f) => ({
           name: f.name, size: f.size, type: f.type, mime: f.mime,
           width: f.width, height: f.height, dataUrl: f.dataUrl,
@@ -1392,7 +1409,6 @@
       if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
       if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); wireCodeButtons(bubbleText); }
 
-      // Insert the action bar BELOW the bubble
       if (!msgEl.querySelector('.message-actions')) {
         const bodyEl2 = msgEl.querySelector('.message-body');
         const actions = document.createElement('div');
@@ -1487,7 +1503,7 @@
     setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 350); }, ms || 2200);
   }
 
-  /* ---------- Voice typing (input) ---------- */
+  /* ---------- Voice typing ---------- */
   function setupVoice() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     const btn = document.getElementById('voiceBtn');
@@ -1625,13 +1641,17 @@
   function canUseModel(tier) { if (tier === 'free') return true; if (__tier === 'ultimate') return true; if (__tier === 'pro' && tier === 'pro') return true; return false; }
   function tierLabel(tier) { if (tier === 'ultimate') return 'ULT'; if (tier === 'pro') return 'PRO'; return 'FREE'; }
   function tierFullLabel(tier) { if (tier === 'ultimate') return 'Ultimate'; if (tier === 'pro') return 'Pro'; return 'Free'; }
+  function modelIconFor(id) {
+    const f = FALLBACK_MODELS.find((m) => m.id === id);
+    return f ? f.icon : 'ri-sparkling-2-line';
+  }
   function renderModelPicker() {
     const menu = $('#modelPickerMenu'); if (!menu) return;
     const models = getModelsList(); const cur = __model || models[0].id;
     menu.innerHTML = models.map((m) => {
       const usable = canUseModel(m.tier); const isActive = m.id === cur;
       const lockIcon = usable ? '' : '<i class="ri-lock-2-line model-option-lock"></i>';
-      const icon = m.icon || 'ri-sparkling-2-line';
+      const icon = m.icon || modelIconFor(m.id);
       return `<div class="model-option${isActive ? ' active' : ''}${usable ? '' : ' locked'}" data-model-id="${m.id}" data-usable="${usable}"><span class="model-option-icon"><i class="${icon}"></i></span><span class="model-option-body"><span class="model-option-top"><span class="model-option-name">${escapeHtml(m.label)}</span><span class="model-tier-badge tier-${m.tier}">${tierLabel(m.tier)}</span>${lockIcon}</span><span class="model-option-tagline">${escapeHtml(m.tagline || '')}</span></span></div>`;
     }).join('');
     menu.querySelectorAll('.model-option').forEach((opt) => {
@@ -1784,9 +1804,35 @@
     finally { if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-image-add-line"></i> Generate'; } }
   }
 
-  /* ═══════════════════════════════════════════════════
-     CALL MODE (5s silence → auto-send; Send button fallback)
-     ═══════════════════════════════════════════════════ */
+  /* ---------- Tail r1 promo popup ---------- */
+  function showTailPromo() {
+    const seen = safeGet(TAIL_PROMO_SEEN_KEY, false);
+    if (seen) return;
+    const modal = document.getElementById('tailPromoModal');
+    if (!modal) return;
+    setTimeout(() => { modal.classList.add('open'); }, 900);
+  }
+  function dismissTailPromo() {
+    safeSet(TAIL_PROMO_SEEN_KEY, true);
+    closeModal('tailPromoModal');
+  }
+  function tryTailPromo() {
+    safeSet(TAIL_PROMO_SEEN_KEY, true);
+    closeModal('tailPromoModal');
+    // Force switch to Tail r1 regardless of current tier
+    __model = 'mirox-tail-r1';
+    const lbl = document.getElementById('currentModelLabel');
+    if (lbl) lbl.textContent = 'Tail r1';
+    renderModelPicker();
+    // Confetti!
+    fireConfetti();
+    setTimeout(fireConfetti, 350);
+    toast('Tail r1 is ready — ask anything!', 2600, 'ok');
+    const inp = document.getElementById('messageInput');
+    if (inp) setTimeout(() => inp.focus(), 400);
+  }
+
+  /* ---------- Call Mode ---------- */
   function setCallPhase(phase) {
     __call.phase = phase;
     const overlay = $('#callOverlay'); if (overlay) overlay.setAttribute('data-phase', phase);
@@ -2073,7 +2119,7 @@
   function openSupportModal() { openModal('supportModal'); supportLoad(); supportStartPolling(); }
   function closeSupportModal() { closeModal('supportModal'); supportStopPolling(); }
 
-  /* ---------- Bridge (minimal) ---------- */
+  /* ---------- Bridge ---------- */
   function loadBridgeOpts() { const o = safeGet(BRIDGE_OPTS_KEY, {}); if (typeof o.autoRun === 'boolean') __bridgeAutoRun = o.autoRun; if (typeof o.showCode === 'boolean') __bridgeShowCode = o.showCode; }
   function saveBridgeOpts() { safeSet(BRIDGE_OPTS_KEY, { autoRun: __bridgeAutoRun, showCode: __bridgeShowCode }); }
   function renderBridgeStatus() {
@@ -2200,7 +2246,7 @@
   async function fetchBridgeReply(history) {
     const envBlock = buildEnvBlockString();
     const lastMsg = history[history.length - 1];
-    const r = await netFetch('/v1/chat/completions', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ message: `${envBlock}\n\n${lastMsg.content}`, history: history.slice(0, -1).map((h) => ({ role: h.role, content: h.content })), model: 'mirox-luna-1.2', stream: false, deep_think: !!__prefs.deepThink }) }, 120000);
+    const r = await netFetch('/v1/chat/completions', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ message: `${envBlock}\n\n${lastMsg.content}`, history: history.slice(0, -1).map((h) => ({ role: h.role, content: h.content })), model: 'mirox-tail-r1', stream: false, deep_think: !!__prefs.deepThink }) }, 120000);
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error?.message || `HTTP ${r.status}`);
     return data.reply || '';
@@ -2344,8 +2390,11 @@
       openModal('imageModal');
     });
 
-    /* Image history delete wiring */
     on('#sidebarImagesDeleteAll', 'click', deleteAllImages);
+
+    /* Tail r1 promo */
+    on('#tailPromoTryBtn', 'click', tryTailPromo);
+    on('#tailPromoLaterBtn', 'click', dismissTailPromo);
 
     /* Call wiring */
     on('#callModeBtn', 'click', startCall);
@@ -2455,6 +2504,7 @@
         if (target === 'supportModal') { closeSupportModal(); return; }
         if (target === 'htmlRunnerModal') { closeHtmlRunner(); return; }
         if (target === 'rawViewModal') { closeRawView(); return; }
+        if (target === 'tailPromoModal') { dismissTailPromo(); return; }
         closeModal(target);
         return;
       }
@@ -2462,6 +2512,7 @@
         if (e.target.id === 'supportModal') { closeSupportModal(); return; }
         if (e.target.id === 'htmlRunnerModal') { closeHtmlRunner(); return; }
         if (e.target.id === 'rawViewModal') { closeRawView(); return; }
+        if (e.target.id === 'tailPromoModal') { dismissTailPromo(); return; }
         e.target.classList.remove('open');
       }
       if (e.target.closest('[data-iv-close]')) closeImageViewer();
@@ -2572,6 +2623,8 @@
       applyTranslations();
       applyDeepThinkUI();
       setTimeout(() => loadImageHistory().catch(() => {}), 800);
+      // Show the Tail r1 promo popup once
+      showTailPromo();
     } catch (e) { console.error('[Mirox init]', e); }
     finally { killLoader(); }
     loadConfig().catch(() => {});
