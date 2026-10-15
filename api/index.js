@@ -1,10 +1,9 @@
 /* ============================================================
-   MiroxAI Backend v106 — Tail r1 flagship + image fix + key fix
-   v106: · no Pollinations (HuggingFace + Airoute only)
-         · system_extra respected (fixes Call mode)
-         · /api/models endpoint added
-         · Tail r1 free flagship routing
-         · hardened API-key persistence
+   MiroxAI Backend v107 — API fixes
+   v107: · /v1/models + /v1/chat/completions/models endpoints
+         · strip "custom/" prefix from incoming model ids
+         · API-key requests get NO thinking rules
+         · no Pollinations (HF + Airoute only)
    ============================================================ */
 import express from 'express';
 import cors from 'cors';
@@ -50,10 +49,10 @@ const DAY = 24 * 3600;
 
 /* ---------- Model catalogue ---------- */
 const MIROX_MODELS = {
-  'mirox-tail-r1':     { label: 'Tail r1', tier: 'free',     tokens: 32768, chain: 'flagship', flagship: true,  tagline: 'Flagship · 350k context · best reasoning',
-    basePrompt: 'You are Tail r1 by OpenSurr — the flagship model with a 350,000+ token context window and state-of-the-art reasoning benchmark performance. Approach every task with maximum rigor: reason carefully, verify your logic, consider edge cases and counterexamples, then deliver the clearest, most complete, most accurate answer possible. Outperform on complex reasoning, long-context synthesis, math, code, and multi-step planning. Fenced code blocks for code.' },
-  'mirox-luna-1.2':    { label: 'Luna',    tier: 'free', tokens: 4096,  chain: 'fast',     basePrompt: 'You are Luna by OpenSurr. Fast, friendly, concise. Fenced code blocks for code.' },
-  'mirox-gen-1':       { label: 'Gen',     tier: 'free', tokens: 4096,  chain: 'fast',     basePrompt: 'You are Gen by OpenSurr. Ultra concise. Direct answers. Fenced code blocks for code.' },
+  'mirox-tail-r1':     { label: 'Tail r1', tier: 'free', tokens: 32768, chain: 'flagship', flagship: true, tagline: 'Flagship · 350k context · best reasoning',
+    basePrompt: 'You are Tail r1 by OpenSurr — the flagship model with a 350,000+ token context window and state-of-the-art reasoning benchmark performance. Approach every task with maximum rigor: reason carefully, verify your logic, consider edge cases and counterexamples, then deliver the clearest, most complete, most accurate answer possible. Fenced code blocks for code.' },
+  'mirox-luna-1.2':    { label: 'Luna',    tier: 'free', tokens: 4096,  chain: 'fast', basePrompt: 'You are Luna by OpenSurr. Fast, friendly, concise. Fenced code blocks for code.' },
+  'mirox-gen-1':       { label: 'Gen',     tier: 'free', tokens: 4096,  chain: 'fast', basePrompt: 'You are Gen by OpenSurr. Ultra concise. Direct answers. Fenced code blocks for code.' },
   'mirox-pro-5':       { label: 'Pro',     tier: 'pro',  tokens: 8192,  chain: 'balanced', basePrompt: 'You are Pro by OpenSurr. Balanced depth. Fenced code blocks for code.' },
   'mirox-ultra-10':    { label: 'Ultra',   tier: 'pro',  tokens: 8192,  chain: 'balanced', basePrompt: 'You are Ultra by OpenSurr. Deep reasoning. Fenced code blocks for code.' },
   'mirox-eclipse-2.0': { label: 'Eclipse', tier: 'ultimate', tokens: 16384, chain: 'deep', basePrompt: 'You are Eclipse by OpenSurr. Best quality. Fenced code blocks for code.' },
@@ -67,21 +66,9 @@ const CHAINS = {
     'meta-llama/llama-3.3-70b-instruct',
     'openai/gpt-4o-mini',
   ],
-  deep: [
-    'anthropic/claude-3.5-sonnet',
-    'openai/gpt-4o-mini',
-    'meta-llama/llama-3.3-70b-instruct',
-  ],
-  balanced: [
-    'openai/gpt-4o-mini',
-    'anthropic/claude-3.5-haiku',
-    'meta-llama/llama-3.3-70b-instruct',
-  ],
-  fast: [
-    'meta-llama/llama-3.3-70b-instruct',
-    'openai/gpt-4o-mini',
-    'google/gemini-flash-1.5',
-  ],
+  deep: ['anthropic/claude-3.5-sonnet','openai/gpt-4o-mini','meta-llama/llama-3.3-70b-instruct'],
+  balanced: ['openai/gpt-4o-mini','anthropic/claude-3.5-haiku','meta-llama/llama-3.3-70b-instruct'],
+  fast: ['meta-llama/llama-3.3-70b-instruct','openai/gpt-4o-mini','google/gemini-flash-1.5'],
 };
 
 const PLANS = {
@@ -102,7 +89,7 @@ const HF_TXT2IMG = 'https://api-inference.huggingface.co/models';
 const HF_IMG_MODELS = ['black-forest-labs/FLUX.1-schnell', 'stabilityai/stable-diffusion-xl-base-1.0', 'stabilityai/sdxl-turbo'];
 const HF_CHAT = ['meta-llama/Llama-3.3-70B-Instruct:together', 'Qwen/Qwen2.5-72B-Instruct:together'];
 const HF_VISION = ['meta-llama/Llama-3.2-11B-Vision-Instruct:together', 'Qwen/Qwen2-VL-7B-Instruct:hyperbolic'];
-const PL_URL = 'https://gen.pollinations.ai/v1/chat/completions'; /* chat only, kept for chat fallback */
+const PL_URL = 'https://gen.pollinations.ai/v1/chat/completions';
 const PL_CHAT = ['openai', 'openai-fast', 'mistral'];
 const PL_VISION = ['openai', 'openai-fast'];
 const VISION_MODELS = new Set([...OP_VISION, ...HF_VISION, ...PL_VISION]);
@@ -127,13 +114,14 @@ Plans: Free ($0), Pro ($6.99), Ultimate ($20.99). Tail r1 is free.
 
 Features: web search, vision, image generation (Lumenal), DeepThink, Call mode, Bridge, HTML runner, API keys.
 
-API: OpenAI-compatible. POST https://miroxai.org/v1/chat/completions with header "Authorization: Bearer mxk_live_...". Only Luna, Gen, and Tail r1 are available through the API. Images: POST https://miroxai.org/v1/images/generations.
+API: OpenAI-compatible. POST https://miroxai.org/v1/chat/completions with header "Authorization: Bearer mxk_live_...". Only Luna, Gen, and Tail r1 are available through the API. Model list: GET https://miroxai.org/v1/models. Images: POST https://miroxai.org/v1/images/generations.
 
 Developer docs: https://miroxai.org/developers
 Support: support@miroxai.org
 
 Never invent features or prices not listed here.`;
 
+/* Thinking rule — WEB APP ONLY. Never added for API-key requests. */
 const THINKING_RULE = `You ALWAYS think before answering. Write your reasoning inside ONE <thinking>...</thinking> block, then write the answer right after.
 
 The thinking must read like a REAL person thinking to themselves, first person, casual and honest. NOT dry analysis. Example:
@@ -154,7 +142,7 @@ const DEEP_THINK_RULE = `DEEP THINK MODE — reason much more thoroughly than us
 
 const TAIL_R1_REASONING_RULE = `TAIL R1 FLAGSHIP MODE — you are the strongest model in Mirox. Maximum rigor:
 - Before answering, mentally verify: is my approach actually correct? Any counterexamples or edge cases?
-- For math or code: trace through at least one example end-to-end inside your thinking.
+- For math or code: trace through at least one example end-to-end inside your reasoning.
 - For factual claims: note confidence level. If uncertain, say so in the answer.
 - For "how do I" questions: give the shortest working path first, then optional depth.
 - Never pad. Precision over length. Every sentence must earn its place.`;
@@ -198,6 +186,16 @@ function extractReplyText(data) {
   if (typeof c === 'string') return c;
   if (Array.isArray(c)) return c.map((p) => (typeof p === 'string' ? p : (p?.text || ''))).join('');
   return '';
+}
+
+/* ---------- Strip leaked thinking from API responses ---------- */
+function stripThinking(text) {
+  if (typeof text !== 'string') return text;
+  let out = text.replace(/<thinking>[\s\S]*?<\/thinking>/g, '');
+  const lastOpen = out.lastIndexOf('<thinking>');
+  if (lastOpen >= 0 && out.indexOf('</thinking>', lastOpen) === -1) out = out.slice(0, lastOpen);
+  out = out.replace(/<\/?thinking>/g, '');
+  return out.replace(/^\s+/, '');
 }
 
 /* ---------- Binary watermark ---------- */
@@ -247,7 +245,6 @@ function normalize(raw) {
     if (!Array.isArray(u.keys)) u.keys = Array.isArray(u.api_keys) ? u.api_keys : [];
     delete u.api_keys;
     if (!Array.isArray(u.images)) u.images = [];
-    /* ensure key objects have all fields */
     for (const k of u.keys) {
       if (!k || typeof k !== 'object') continue;
       if (typeof k.revoked !== 'boolean') k.revoked = false;
@@ -337,6 +334,29 @@ function setSessionCookie(req, res, uid) { const token = signSession({ uid, exp:
 function clearSessionCookie(req, res) { res.append('Set-Cookie', `mirox_sess=; ${cookieAttrs(req, 0)}`); }
 async function ensureDb(req) { if (req && req.__dbReady) return; await loadDb(); if (req) req.__dbReady = true; }
 async function currentUser(req) { await ensureDb(req); if (!dbOk) return null; const s = readSession(getCookie(req, 'mirox_sess')); if (!s || !s.uid) return null; return userFor(s.uid); }
+
+/* ---------- Model ID resolver ----------
+   Accepts "mirox-luna-1.2", "custom/mirox-luna-1.2",
+   "openai/mirox-luna-1.2", "anthropic/mirox-tail-r1", etc.
+   Strips any "vendor/" prefix and matches a known Mirox ID.
+------------------------------------------- */
+function resolveModelId(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return null;
+  if (MIROX_MODELS[s]) return s;
+  const slash = s.lastIndexOf('/');
+  if (slash >= 0) {
+    const tail = s.slice(slash + 1).trim();
+    if (MIROX_MODELS[tail]) return tail;
+  }
+  const lower = s.toLowerCase();
+  for (const id of Object.keys(MIROX_MODELS)) {
+    if (id.toLowerCase() === lower) return id;
+    if (id.toLowerCase().endsWith('/' + lower)) return id;
+  }
+  return null;
+}
+
 async function authFromRequest(req) {
   const h = String(req.headers.authorization || '');
   if (!h) return { user: await currentUser(req), viaKey: false };
@@ -469,7 +489,7 @@ async function miroxChatChain({ messages, cfg, stream, vision, deepThink }) {
       try {
         const msgs = OP_VISION_SET.has(modelId) ? messages : stripImages(messages);
         const res = await callOpenRouter(modelId, msgs, maxTokens, stream);
-        return { res, provider: 'openrouter', model: modelId };
+        return { res, provider: 'MiroxAI (SurrRoute)', model: modelId };
       } catch (e) { console.warn('[openrouter]', modelId, e.message); }
     }
   }
@@ -478,7 +498,7 @@ async function miroxChatChain({ messages, cfg, stream, vision, deepThink }) {
     if (vision) HF_VISION.forEach((m) => tries.push(['hf', m]));
     HF_CHAT.forEach((m) => tries.push(['hf', m]));
     for (const [kind, modelId] of tries) {
-      try { const msgs = VISION_MODELS.has(modelId) ? messages : stripImages(messages); const res = await callProvider(kind, modelId, msgs, maxTokens, stream); return { res, provider: kind, model: modelId }; }
+      try { const msgs = VISION_MODELS.has(modelId) ? messages : stripImages(messages); const res = await callProvider(kind, modelId, msgs, maxTokens, stream); return { res, provider: 'MiroxAI (SurrRoute)', model: modelId }; }
       catch (e) { console.warn('[provider]', kind, modelId, e.message); }
     }
   }
@@ -487,13 +507,13 @@ async function miroxChatChain({ messages, cfg, stream, vision, deepThink }) {
     if (vision) PL_VISION.forEach((m) => tries.push(['pl', m]));
     PL_CHAT.forEach((m) => tries.push(['pl', m]));
     for (const [kind, modelId] of tries) {
-      try { const msgs = VISION_MODELS.has(modelId) ? messages : stripImages(messages); const res = await callProvider(kind, modelId, msgs, maxTokens, stream); return { res, provider: kind, model: modelId }; }
+      try { const msgs = VISION_MODELS.has(modelId) ? messages : stripImages(messages); const res = await callProvider(kind, modelId, msgs, maxTokens, stream); return { res, provider: 'MiroxAI (SurrRoute)', model: modelId }; }
       catch (e) { console.warn('[provider]', kind, modelId, e.message); }
     }
   }
   if (AIROUTE_KEY) {
     for (const opts of [{ fast: true }, { fast: false, model: 'meta-llama/Llama-3.3-70B-Instruct' }]) {
-      try { const text = await airouteText(messages, opts); if (!text) throw new Error('empty reply'); return { res: { body: textToSSEStream(text), json: async () => ({ reply: text }) }, provider: 'airoute' }; }
+      try { const text = await airouteText(messages, opts); if (!text) throw new Error('empty reply'); return { res: { body: textToSSEStream(text), json: async () => ({ reply: text }) }, provider: 'MiroxAI (SurrRoute)', model: 'tail-r1' }; }
       catch (e) { console.warn('[airoute]', e.message); }
     }
   }
@@ -528,23 +548,19 @@ async function pipeProviderStream(body, onDelta, isClosed, onLimit = () => {}) {
   } finally { try { reader.releaseLock(); } catch {} }
 }
 
-/* ---------- Images (NO Pollinations) ---------- */
+/* ---------- Images (HF + Airoute, no Pollinations) ---------- */
 async function generateImageHF(prompt) {
   if (!HF_API_KEY) return null;
   for (const model of HF_IMG_MODELS) {
     try {
       const r = await fetchT(`${HF_TXT2IMG}/${model}`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${HF_API_KEY}`,
-          'Content-Type': 'application/json',
-          Accept: 'image/png',
-        },
+        headers: { Authorization: `Bearer ${HF_API_KEY}`, 'Content-Type': 'application/json', Accept: 'image/png' },
         body: JSON.stringify({ inputs: prompt.slice(0, 1000), options: { wait_for_model: true } }),
       }, 60000);
-      if (!r.ok) { console.warn('[hf-img]', model, r.status); continue; }
+      if (!r.ok) continue;
       const ct = (r.headers.get('content-type') || '').toLowerCase();
-      if (!ct.startsWith('image/')) { console.warn('[hf-img]', model, 'not image:', ct); continue; }
+      if (!ct.startsWith('image/')) continue;
       const buf = Buffer.from(await r.arrayBuffer());
       if (buf.length < 800) continue;
       const mime = ct.split(';')[0] || 'image/png';
@@ -583,11 +599,7 @@ async function generateImage(prompt) {
   if (fromAiroute) return fromAiroute;
   throw new Error(GENERIC_ERR);
 }
-async function editImageWithSource(sourceDataUrl, editPrompt) {
-  /* Simple strategy: prepend "Edit this image: " and generate fresh */
-  const combined = `Edit this image: ${editPrompt}`;
-  return generateImage(combined);
-}
+async function editImageWithSource(_sourceDataUrl, editPrompt) { return generateImage(`Edit this image: ${editPrompt}`); }
 
 function sseInit(res) {
   res.status(200);
@@ -600,9 +612,15 @@ function sseInit(res) {
 function sseWrite(res, obj) { if (res.writableEnded || res.destroyed) return; try { res.write('data: ' + JSON.stringify(obj) + '\n\n'); } catch {} }
 function sseDone(res) { if (res.writableEnded || res.destroyed) return; try { res.write('data: [DONE]\n\n'); } catch {} }
 
-function buildSystemPrompt(cfg, bridge, searchUsed, persona, deepThink, modelId, systemExtra) {
-  let p = IDENTITY_GUARD + '\n\n' + THINKING_RULE + '\n\n' + cfg.basePrompt;
-  if (deepThink) p += '\n\n' + DEEP_THINK_RULE;
+/* buildSystemPrompt — `apiMode` disables thinking for developer-facing requests */
+function buildSystemPrompt(cfg, bridge, searchUsed, persona, deepThink, modelId, systemExtra, apiMode) {
+  let p = IDENTITY_GUARD + '\n\n' + cfg.basePrompt;
+  if (!apiMode) {
+    p = IDENTITY_GUARD + '\n\n' + THINKING_RULE + '\n\n' + cfg.basePrompt;
+    if (deepThink) p += '\n\n' + DEEP_THINK_RULE;
+  } else {
+    p += '\n\nNever use <thinking> tags. Never reveal internal reasoning. Give the user the direct final answer only.';
+  }
   if (modelId === 'mirox-tail-r1') p += '\n\n' + TAIL_R1_REASONING_RULE;
   if (searchUsed) p += '\n\nWEB SEARCH MODE: cite sources as [1], [2] when relevant.';
   if (persona) p += `\n\nUser preference: ${persona}`;
@@ -638,11 +656,12 @@ const publicUser = (u) => {
 const publicKey = (k) => ({ id: k.id, name: k.name, key: k.key, created: k.created, last_used: k.last_used || 0, revoked: !!k.revoked });
 
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
-  res.json({ ok: true, app: 'MiroxAI', version: 'v106',
+  res.json({ ok: true, app: 'MiroxAI', version: 'v107',
     providers: { openrouter: !!OP_KEY, hf: !!HF_API_KEY, airoute: !!AIROUTE_KEY },
-    primary_provider: OP_KEY ? 'openrouter' : (HF_API_KEY ? 'huggingface' : (AIROUTE_KEY ? 'airoute' : null)),
-    watermark: 'MIROXAI-WATERMARK-v1-LOGO', thinking: true, deep_think: true,
-    flagship: 'mirox-tail-r1', flagship_free: true, image_provider: HF_API_KEY ? 'huggingface' : (AIROUTE_KEY ? 'airoute' : null),
+    primary_provider: OP_KEY ? 'MiroxAI (SurrRoute)' : (HF_API_KEY ? 'MiroxAI (SurrRoute)' : (AIROUTE_KEY ? 'MiroxAI (SurrRoute)' : null)),
+    watermark: 'MIROXAI-WATERMARK-v1-LOGO', thinking: true, deep_think: true, api_thinking: false,
+    flagship: 'mirox-tail-r1', flagship_free: true,
+    image_provider: HF_API_KEY ? 'huggingface' : (AIROUTE_KEY ? 'airoute' : null),
     db: { durable: KV_ON, writable: dbOk }, time: nowS() });
 });
 
@@ -652,18 +671,29 @@ app.get('/api/web/status', async (req, res) => {
   res.json({ ok: true, duckduckgo: ddg, wikipedia: wiki, ms: Date.now() - t0 });
 });
 
-/* ---------- Models ---------- */
-app.get(['/api/models', '/models'], (req, res) => {
+/* ---------- /v1/models (OpenAI-compatible) ---------- */
+function openaiModelList() {
+  const ids = API_MODELS;
+  const created = Math.floor(Date.now() / 1000);
+  return {
+    object: 'list',
+    data: ids.map((id) => ({
+      id,
+      object: 'model',
+      created,
+      owned_by: 'miroxai',
+      label: MIROX_MODELS[id]?.label || id,
+      tier: MIROX_MODELS[id]?.tier || 'free',
+      flagship: !!MIROX_MODELS[id]?.flagship,
+      free: MIROX_MODELS[id]?.tier === 'free',
+      context_window: MIROX_MODELS[id]?.tokens || 4096,
+      tagline: MIROX_MODELS[id]?.tagline || '',
+    })),
+  };
+}
+app.get(['/v1/models', '/v1/chat/completions/models', '/api/models', '/models'], (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({
-    id, label: m.label, tier: m.tier,
-    tagline: m.tagline || '',
-    flagship: !!m.flagship,
-    free: m.tier === 'free',
-    api_available: API_MODELS.includes(id),
-    tokens: m.tokens,
-  }));
-  res.json({ ok: true, models, flagship: 'mirox-tail-r1', default_model: 'mirox-tail-r1' });
+  res.json(openaiModelList());
 });
 
 app.get(['/api/config', '/config'], (req, res) => {
@@ -675,10 +705,11 @@ app.get(['/api/config', '/config'], (req, res) => {
     icon: m.flagship ? 'ri-star-smile-line' : undefined,
   }));
   res.json({
-    app: { name: 'MiroxAI', version: 'v106' },
+    app: { name: 'MiroxAI', version: 'v107' },
     models, default_model: 'mirox-tail-r1', plans: PLANS,
     tts_available: !!F_API, search_available: true, vision_available: true, image_intent: true, image_edit: false,
     image_requires_signin: false, watermark: true, thinking: true, deep_think: true, html_runner: true,
+    api_thinking: false,
     loginment_available: !!LM_CLIENT_ID, email_login_available: ALLOW_EMAIL_LOGIN,
     airoute_available: !!AIROUTE_KEY, openrouter_available: !!OP_KEY, hf_available: !!HF_API_KEY,
     image_provider: HF_API_KEY ? 'huggingface' : (AIROUTE_KEY ? 'airoute' : null),
@@ -689,7 +720,7 @@ app.get(['/api/config', '/config'], (req, res) => {
 
 app.get(['/api/subscription/plans', '/subscription/plans'], (req, res) => {
   const perks = {
-    free: ['Tail r1 — free flagship', 'Luna & Gen unlimited', '350k+ context · best reasoning', '30 image gens/day', '5 Eclipse/day', '2 API keys', 'Web search', 'Vision', 'DeepThink', 'HTML runner', 'KDE Connect'],
+    free: ['Tail r1 — free flagship', 'Luna & Gen unlimited', '350k+ context · best reasoning', '30 image gens/day', '5 Eclipse/day', '2 API keys', 'Web search', 'Vision', 'DeepThink', 'HTML runner'],
     pro: ['Everything in Free', 'Pro & Ultra models', '200 image gens/day', '10 API keys'],
     ultimate: ['Everything in Pro', 'Eclipse — high quality', '2000 image gens/day', 'Priority everything'],
   };
@@ -858,8 +889,6 @@ app.get(['/api/images/history', '/images/history'], async (req, res) => {
   })));
   res.json({ ok: true, images: items.filter((x) => x.image) });
 });
-
-/* IMAGE DELETE / CLEAR */
 app.post(['/api/images/delete', '/images/delete'], async (req, res) => {
   const u = await currentUser(req);
   if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
@@ -925,7 +954,8 @@ app.post('/v1/chat/completions', async (req, res) => {
 
   const body = req.body || {};
   const wantStream = body.stream === true || String(req.headers.accept || '').includes('text/event-stream');
-  const model = safeStr(body.model, 64) || 'mirox-tail-r1';
+  const rawModel = safeStr(body.model, 128) || 'mirox-tail-r1';
+  const model = resolveModelId(rawModel);
   const text = safeStr(body.message, 200000).trim();
   const files = Array.isArray(body.files) ? body.files.slice(0, 4) : [];
   const history = Array.isArray(body.history) ? body.history.slice(-14) : [];
@@ -937,22 +967,33 @@ app.post('/v1/chat/completions', async (req, res) => {
 
   const fail = (code, message) => res.status(code).json({ error: { message } });
   const signinReply = (message) => {
-    if (!wantStream) return res.json({ reply: message, signin_required: true, _ms: Date.now() - t0, provider: 'mirox' });
+    if (!wantStream) return res.json({ reply: message, signin_required: true, _ms: Date.now() - t0, provider: 'MiroxAI (SurrRoute)' });
     sseInit(res); sseWrite(res, { signin_required: true, message }); sseWrite(res, { d: message }); sseWrite(res, { done: true }); sseDone(res); res.end();
   };
   const fixedReply = (message) => {
-    if (!wantStream) return res.json({ reply: message, _ms: Date.now() - t0, provider: 'mirox' });
-    sseInit(res); sseWrite(res, { p: 'mirox' }); sseWrite(res, { d: message }); sseWrite(res, { done: true }); sseDone(res); res.end();
+    if (!wantStream) return res.json({ reply: message, _ms: Date.now() - t0, provider: 'MiroxAI (SurrRoute)' });
+    sseInit(res); sseWrite(res, { p: 'MiroxAI (SurrRoute)' }); sseWrite(res, { d: message }); sseWrite(res, { done: true }); sseDone(res); res.end();
   };
 
   try {
     const auth = await authFromRequest(req);
     if (auth.error) return fail(401, 'Invalid API key');
     const u = auth.user || null;
-    if (auth.viaKey && !API_MODELS.includes(model)) return fail(403, 'Model not available through the API');
+    const viaKey = !!auth.viaKey;
 
-    const cfg = MIROX_MODELS[model];
-    if (!cfg) return fail(404, 'Model not found.');
+    if (!model) {
+      /* Unknown model but looks like a Mirox ID → fall through to Tail r1 instead of hard-failing */
+      if (/mirox-/i.test(rawModel)) {
+        req.__fallbackModel = 'mirox-tail-r1';
+      } else {
+        return fail(404, `Model "${rawModel}" not found. GET /v1/models for the list.`);
+      }
+    }
+    const effectiveModel = model || 'mirox-tail-r1';
+    if (viaKey && !API_MODELS.includes(effectiveModel)) return fail(403, 'Model not available through the API');
+
+    const cfg = MIROX_MODELS[effectiveModel];
+    if (!cfg) return fail(404, `Model "${rawModel}" not found. GET /v1/models for the list.`);
 
     const tier = u ? u.tier : 'free';
     const plan = PLANS[tier] || PLANS.free;
@@ -978,7 +1019,9 @@ app.post('/v1/chat/completions', async (req, res) => {
     const searchQuery = forceSearch ? text : detectSearchIntent(text);
     if (wantStream) sseInit(res);
 
-    const msgs = [{ role: 'system', content: buildSystemPrompt(cfg, bridge, !!searchQuery, u?.persona || '', deepThink, model, systemExtra) }];
+    const sysExtra = systemExtra;
+    const apiMode = viaKey; /* API-key requests never get thinking rules */
+    const msgs = [{ role: 'system', content: buildSystemPrompt(cfg, bridge, !!searchQuery, u?.persona || '', deepThink, effectiveModel, sysExtra, apiMode) }];
     for (const h of history) {
       const role = h && h.role;
       const content = safeStr(h && h.content, 6000).trim();
@@ -1013,8 +1056,8 @@ app.post('/v1/chat/completions', async (req, res) => {
     }
 
     const finishUsage = async () => {
-      logChat({ email: u ? u.email : 'guest', model, message: (text || '(vision)').slice(0, 200) });
-      if (u) { u.daily_used += 1; if (visionUsed) u.vision_used += 1; if (model === 'mirox-eclipse-2.0') u.eclipse_used += 1; }
+      logChat({ email: u ? u.email : 'guest', model: effectiveModel, message: (text || '(vision)').slice(0, 200) });
+      if (u) { u.daily_used += 1; if (visionUsed) u.vision_used += 1; if (effectiveModel === 'mirox-eclipse-2.0') u.eclipse_used += 1; }
       await persist();
     };
 
@@ -1022,13 +1065,33 @@ app.post('/v1/chat/completions', async (req, res) => {
 
     if (!wantStream) {
       const data = await result.res.json().catch(() => ({}));
-      const reply = extractReplyText(data) || '(empty)';
+      let reply = extractReplyText(data) || '(empty)';
+      if (apiMode) reply = stripThinking(reply);
       await finishUsage();
-      return res.json({ reply, _ms: Date.now() - t0, provider: result.provider, model: result.model, search: searchQuery ? { query: searchQuery, results: searchData.results, overview: searchData.overview } : null });
+      return res.json({
+        reply,
+        _ms: Date.now() - t0,
+        provider: 'MiroxAI (SurrRoute)',
+        model: effectiveModel,
+        search: searchQuery ? { query: searchQuery, results: searchData.results, overview: searchData.overview } : null,
+      });
     }
 
-    sseWrite(res, { p: result.provider, model: result.model, deep_think: deepThink });
-    await pipeProviderStream(result.res.body, (d) => sseWrite(res, { d }), isClosed, () => sseWrite(res, { limit: true }));
+    /* Stream — buffer to strip thinking when apiMode */
+    sseWrite(res, { p: 'MiroxAI (SurrRoute)', model: effectiveModel, deep_think: deepThink });
+    if (apiMode) {
+      let buf = '';
+      await pipeProviderStream(result.res.body, (d) => { buf += d; }, isClosed, () => sseWrite(res, { limit: true }));
+      const clean = stripThinking(buf);
+      /* emit in chunks so the client still sees a stream */
+      const CH = 28;
+      for (let i = 0; i < clean.length; i += CH) {
+        if (closed) break;
+        sseWrite(res, { d: clean.slice(i, i + CH) });
+      }
+    } else {
+      await pipeProviderStream(result.res.body, (d) => sseWrite(res, { d }), isClosed, () => sseWrite(res, { limit: true }));
+    }
     if (!closed) sseWrite(res, { done: true });
     sseDone(res);
     await finishUsage();
@@ -1151,7 +1214,7 @@ app.use((err, req, res, next) => {
   if (!res.headersSent) res.status(500).json({ ok: false, error: GENERIC_ERR });
 });
 
-console.log('[Mirox] v106 · flagship: Tail r1 (FREE) · chains:', Object.keys(CHAINS).join(', '), '· image:', HF_API_KEY ? 'huggingface' : (AIROUTE_KEY ? 'airoute' : 'none'), '· durable:', KV_ON);
+console.log('[Mirox] v107 · flagship: Tail r1 (FREE) · api_thinking: OFF · image:', HF_API_KEY ? 'huggingface' : (AIROUTE_KEY ? 'airoute' : 'none'), '· durable:', KV_ON);
 
 if (!process.env.VERCEL) {
   app.listen(PORT, () => console.log('[Mirox] Server at http://localhost:' + PORT));
