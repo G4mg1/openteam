@@ -119,6 +119,7 @@
   ];
   const LS_KEY = 'miroxai_conversations_v50';
   const REACTIONS_KEY = 'miroxai_reactions_v1';
+  const DELETED_IMAGES_KEY = 'miroxai_deleted_images_v1';
   const TOKEN_KEY = 'mirox_token';
   const LOCAL_USER_KEY = 'mirox_local_user_v3';
   const GUEST_KEY = 'miroxai_guest_id_v1';
@@ -407,60 +408,60 @@
     return out;
   }
 
-  /* ---------- Compact thinking status (never display private reasoning text) ---------- */
+  /* ---------- Thinking panel: restore the original expandable UI, with safe status text ---------- */
   function createThinkPanel(deep) {
     const el = document.createElement('div');
-    el.className = 'think-panel think-panel-clean';
+    el.className = 'think-panel';
     el.dataset.state = 'thinking';
-    el.dataset.collapsed = 'true';
-    el.setAttribute('role', 'status');
-    el.setAttribute('aria-live', 'polite');
+    el.dataset.collapsed = 'false';
     el.innerHTML = `
       <div class="think-header">
-        <div class="think-icon"><i class="ri-sparkling-2-line"></i></div>
-        <div class="think-title"><span class="think-title-text">${deep ? 'DeepThink is working' : 'Thinking'}</span><span class="think-subtitle">Building a helpful answer</span></div>
+        <div class="think-icon"><i class="ri-loader-4-line"></i></div>
+        <div class="think-title"><span class="think-title-text">${deep ? 'DeepThink' : 'Thinking'}</span></div>
         <div class="think-timer-pill">0.0s</div>
-        <button class="think-toggle" type="button" title="Show status" aria-label="Show thinking status" aria-expanded="false"><i class="ri-add-line"></i></button>
+        <button class="think-toggle" type="button" title="Minimize" aria-label="Minimize thinking status" aria-expanded="true"><i class="ri-arrow-up-s-line"></i></button>
       </div>
-      <div class="think-body-wrap"><div class="think-body"><div class="think-text" data-think-text>Reviewing your request and preparing a response…</div></div></div>`;
+      <div class="think-body-wrap"><div class="think-body"><div class="think-text" data-think-text>Reviewing your request and preparing a useful answer…</div></div></div>`;
     const titleTextEl = el.querySelector('.think-title-text');
-    const subtitleEl = el.querySelector('.think-subtitle');
     const timerPill = el.querySelector('.think-timer-pill');
     const toggle = el.querySelector('.think-toggle');
     const textEl = el.querySelector('[data-think-text]');
     const iconEl = el.querySelector('.think-icon i');
     const t0 = performance.now();
-    let done = false;
+    let done = false, lastText = 'Reviewing your request and preparing a useful answer…';
     toggle.addEventListener('click', (e) => {
       e.stopPropagation();
       const collapsed = el.dataset.collapsed !== 'true';
-      el.dataset.collapsed = collapsed ? 'true' : 'false';
+      el.dataset.collapsed = String(collapsed);
       toggle.setAttribute('aria-expanded', String(!collapsed));
-      toggle.title = collapsed ? 'Show status' : 'Hide status';
-      toggle.innerHTML = `<i class="${collapsed ? 'ri-add-line' : 'ri-subtract-line'}"></i>`;
+      toggle.title = collapsed ? 'Expand thinking status' : 'Minimize';
+      toggle.setAttribute('aria-label', toggle.title);
+      toggle.innerHTML = `<i class="${collapsed ? 'ri-arrow-down-s-line' : 'ri-arrow-up-s-line'}"></i>`;
     });
     const timer = setInterval(() => {
       if (done) { clearInterval(timer); return; }
       timerPill.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
-    }, 150);
-    // Deliberately do not render model reasoning_content or <thinking> text in the UI.
+    }, 100);
+    // The panel intentionally shows progress/status, never private model reasoning.
     function replaceText(_full) {
-      if (!done && textEl) textEl.textContent = 'Working through the request and organizing the answer…';
+      if (done) return;
+      const status = deep
+        ? 'DeepThink is checking the request and organizing a thorough response…'
+        : 'Preparing the answer and useful details…';
+      if (status !== lastText) { lastText = status; textEl.textContent = status; }
     }
     function setState(next) {
       el.dataset.state = next;
       if (next === 'thinking') {
         iconEl.className = 'ri-loader-4-line';
-        titleTextEl.textContent = deep ? 'DeepThink is working' : 'Thinking';
-        subtitleEl.textContent = 'Building a helpful answer';
+        titleTextEl.textContent = deep ? 'DeepThink' : 'Thinking';
       } else if (next === 'done') {
-        iconEl.className = 'ri-check-line';
-        titleTextEl.textContent = deep ? 'DeepThink complete' : 'Ready';
-        subtitleEl.textContent = 'Answer prepared';
+        iconEl.className = 'ri-checkbox-circle-fill';
+        const secs = ((performance.now() - t0) / 1000).toFixed(1);
+        titleTextEl.textContent = (deep ? 'DeepThink · ' : 'Thought for ') + secs + 's';
       } else if (next === 'failed') {
-        iconEl.className = 'ri-error-warning-line';
-        titleTextEl.textContent = 'Could not finish';
-        subtitleEl.textContent = 'The request stopped';
+        iconEl.className = 'ri-error-warning-fill';
+        titleTextEl.textContent = 'Thinking stopped';
       }
     }
     function finalize() {
@@ -468,22 +469,21 @@
       done = true; clearInterval(timer);
       timerPill.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
       setState('done');
-      if (textEl) textEl.textContent = 'Finished organizing the response.';
+      textEl.textContent = 'Finished preparing the response.';
       setTimeout(() => {
-        if (el.isConnected) {
+        if (el.isConnected && el.dataset.collapsed === 'false') {
           el.dataset.collapsed = 'true';
           toggle.setAttribute('aria-expanded', 'false');
-          toggle.innerHTML = '<i class="ri-add-line"></i>';
+          toggle.title = 'Expand thinking status';
+          toggle.innerHTML = '<i class="ri-arrow-down-s-line"></i>';
         }
-      }, 1200);
+      }, 1400);
     }
     function fail(msg) {
       if (done) return;
-      done = true; clearInterval(timer); setState('failed');
-      if (textEl) textEl.textContent = String(msg || 'Please try again.').slice(0, 180);
-      el.dataset.collapsed = 'false';
-      toggle.setAttribute('aria-expanded', 'true');
-      toggle.innerHTML = '<i class="ri-subtract-line"></i>';
+      done = true; clearInterval(timer);
+      textEl.textContent = msg ? 'The request could not finish: ' + String(msg).slice(0, 180) : 'The request could not finish.';
+      setState('failed');
     }
     function hide() { el.style.display = 'none'; done = true; clearInterval(timer); }
     return { el, replaceText, finalize, fail, hide, isConnected: () => el.isConnected, destroy: () => clearInterval(timer) };
@@ -574,6 +574,19 @@
     if (delAll) delAll.disabled = n === 0;
   }
 
+  function readDeletedImageIds() {
+    const ids = safeGet(DELETED_IMAGES_KEY, []);
+    return new Set(Array.isArray(ids) ? ids.map(String) : []);
+  }
+  function writeDeletedImageIds(ids) {
+    // Keep a bounded tombstone list so a stale server response cannot resurrect deleted images.
+    safeSet(DELETED_IMAGES_KEY, [...new Set(Array.from(ids, String))].slice(-500));
+  }
+  function imageHistoryIds(it, index = 0) {
+    const stable = it && (it.id || it.key || it.image_id || it.imageKey);
+    const fallback = 'img-' + String(it && (it.ts || it.created_at || it.prompt) || 'unknown') + '-' + index;
+    return [stable, it && it.id, it && it.key, fallback].filter(Boolean).map(String);
+  }
   async function loadImageHistory() {
     const grid = $('#sidebarImageHistory'); if (!grid) return;
     if (__imageHistoryLoading) return;
@@ -587,18 +600,25 @@
         updateImageCountLabel();
         return;
       }
+      if (!res.ok) throw new Error('Image history request failed');
       const data = await res.json().catch(() => null);
       const images = (data && Array.isArray(data.images)) ? data.images : [];
-      __imageHistoryItems = images.map((it, i) => ({ ...it, _id: it.id || it.key || ('img-' + i + '-' + (it.ts || Date.now())) }));
-      if (!images.length) {
-        grid.innerHTML = '<div class="sidebar-image-empty"><i class="ri-image-line"></i> No images yet.</div>';
-        updateImageCountLabel();
-        return;
-      }
+      const deleted = readDeletedImageIds();
+      const mapped = images.map((it, i) => ({
+        ...it,
+        _id: String(it.id || it.key || it.image_id || ('img-' + String(it.ts || it.created_at || it.prompt || 'unknown') + '-' + i)),
+        _historyIds: imageHistoryIds(it, i)
+      }));
+      // A deleted item stays hidden if the backend temporarily returns stale history.
+      __imageHistoryItems = mapped.filter(it => !it._historyIds.some(id => deleted.has(id)));
+      // Once the server no longer returns a deleted ID, forget its tombstone.
+      const stillReturned = new Set(mapped.flatMap(it => it._historyIds));
+      writeDeletedImageIds([...deleted].filter(id => stillReturned.has(id)));
       renderImageGrid();
       updateImageCountLabel();
     } catch {
-      grid.innerHTML = '<div class="sidebar-image-empty">Could not load images.</div>';
+      // Keep the last known list on transient errors rather than clearing it.
+      if (!__imageHistoryItems.length) grid.innerHTML = '<div class="sidebar-image-empty">Could not load images. Try again.</div>';
       updateImageCountLabel();
     } finally { __imageHistoryLoading = false; }
   }
@@ -644,32 +664,46 @@
   async function deleteImageAt(idx) {
     const it = __imageHistoryItems[idx];
     if (!it) return;
-    // Remove locally + redraw
+    const ids = new Set(readDeletedImageIds());
+    (it._historyIds || [it._id, it.id, it.key].filter(Boolean)).forEach(id => ids.add(String(id)));
+    writeDeletedImageIds([...ids]);
+    // Remove locally immediately and persist the deletion marker before contacting the server.
     __imageHistoryItems.splice(idx, 1);
     renderImageGrid();
     updateImageCountLabel();
     toast('Image deleted', 1600, 'ok');
-    // Best-effort backend delete (fire and forget)
     try {
-      const id = it._id;
-      await netFetch('/api/images/delete', {
+      const res = await netFetch('/api/images/delete', {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ id, prompt: it.prompt || '' }),
-      }, 6000).catch(() => {});
-    } catch {}
+        body: JSON.stringify({
+          id: it.id || it._id,
+          key: it.key || null,
+          image_id: it.image_id || null,
+          prompt: it.prompt || '',
+          ts: it.ts || it.created_at || null
+        }),
+      }, 8000);
+      // Do not remove the local tombstone on failure; it prevents stale history from bringing it back.
+      if (res && res.ok) setTimeout(() => { loadImageHistory().catch(() => {}); }, 900);
+    } catch {
+      toast('Image hidden locally; server deletion could not be confirmed.', 2600);
+    }
   }
-
   async function deleteAllImages() {
     if (!__imageHistoryItems.length) { toast('No images to delete', 1800); return; }
     if (!confirm('Delete all generated images? This cannot be undone.')) return;
+    const deleted = readDeletedImageIds();
+    __imageHistoryItems.forEach(it => (it._historyIds || [it._id, it.id, it.key].filter(Boolean)).forEach(id => deleted.add(String(id))));
+    writeDeletedImageIds([...deleted]);
     __imageHistoryItems = [];
     renderImageGrid();
     updateImageCountLabel();
     toast('All images deleted', 1800, 'ok');
     try {
-      await netFetch('/api/images/clear', { method: 'POST', headers: authHeaders(), body: '{}' }, 8000).catch(() => {});
-    } catch {}
+      const res = await netFetch('/api/images/clear', { method: 'POST', headers: authHeaders(), body: '{}' }, 8000);
+      if (!res || !res.ok) toast('Images hidden locally; server clear could not be confirmed.', 2600);
+    } catch { toast('Images hidden locally; server clear could not be confirmed.', 2600); }
   }
 
   function refreshImageHistorySoon() { setTimeout(() => { loadImageHistory().catch(() => {}); }, 500); }
@@ -681,7 +715,7 @@
       ...c,
       messages: (c.messages || []).map((m) => ({
         id: m.id, role: m.role, content: m.content, ts: m.ts,
-        thinking: m.thinking || '', imageKey: m.imageKey || null,
+        thinking: m.thinking || '', imageKey: m.imageKey || null, imageData: (m.imageData && m.imageData.length < 350000) ? m.imageData : undefined,
         files: (m.files || []).map((f) => ({
           name: f.name, size: f.size, type: f.type, mime: f.mime,
           dataUrl: (f.type === 'image' && f.dataUrl && f.dataUrl.length < 200000) ? f.dataUrl : undefined,
@@ -1376,7 +1410,7 @@
         const imgEl = msgEl.querySelector('.gen-image img');
         if (imgEl) { imgEl.src = wm; imgEl.onclick = () => openImageViewer(wm); }
         imageKey = 'img:' + aiMsgId;
-        await idb.set(imageKey, wm).catch(() => { imageKey = null; });
+        try { await idb.set(imageKey, wm); } catch { imageKey = null; }
         refreshImageHistorySoon();
       }
 
@@ -1386,8 +1420,9 @@
           savedMsg = convo.messages.find((m) => m.id === aiMsgId) || continuation.messageObject;
           savedMsg.content = full; savedMsg.thinking = thinkingText; savedMsg.ts = Date.now();
           if (imageKey) savedMsg.imageKey = imageKey;
+          if (generatedImage && generatedImage.length < 350000) savedMsg.imageData = generatedImage;
         } else {
-          savedMsg = { id: aiMsgId, role: 'assistant', content: full, thinking: thinkingText, ts: Date.now(), imageKey, lang: __prefs.responseLanguage || 'auto' };
+          savedMsg = { id: aiMsgId, role: 'assistant', content: full, thinking: thinkingText, ts: Date.now(), imageKey, imageData: (generatedImage && generatedImage.length < 350000) ? generatedImage : undefined, lang: __prefs.responseLanguage || 'auto' };
           convo.messages.push(savedMsg);
         }
       }
@@ -2487,7 +2522,7 @@
     const c = $('#chatMessages'); if (c) c.innerHTML = '';
     let lastAiEl = null, lastAiMessage = null;
     for (const m of convo.messages || []) {
-      const img = m.imageKey ? await idb.get(m.imageKey).catch(() => null) : null;
+      const img = (m.imageKey ? await idb.get(m.imageKey).catch(() => null) : null) || m.imageData || null;
       const rendered = addMessageToDOM(m.role, m.content, m.ts, m.id, m.files || [], img, m.thinking);
       if (m.role === 'assistant') { lastAiEl = rendered; lastAiMessage = m; }
     }
