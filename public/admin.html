@@ -68,8 +68,6 @@
     .gate-btn:hover{background:var(--accent-hover)}
     .gate-btn:disabled{opacity:.5;cursor:not-allowed}
     .gate-err{color:var(--danger);font-size:13px;margin-top:10px;min-height:18px}
-
-    /* Support layout */
     .sup-layout{display:grid;grid-template-columns:320px 1fr;gap:14px;min-height:560px}
     .sup-list{border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--panel);overflow-y:auto;max-height:640px}
     .sup-item{padding:12px 14px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;transition:background .12s}
@@ -105,7 +103,6 @@
     .sup-compose textarea{flex:1;resize:none;min-height:44px;max-height:140px;border:1px solid var(--border);border-radius:12px;padding:10px 12px;font-size:13.5px;font-family:inherit;background:var(--panel-2);color:var(--text);outline:none}
     .sup-compose textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
     .sup-empty{padding:40px;text-align:center;color:var(--text-faint);font-size:13px;flex:1;display:flex;align-items:center;justify-content:center}
-
     @media (max-width:640px){body{padding:14px}.admin-header h1{font-size:17px}.grid{grid-template-columns:1fr 1fr}.stat-card .value{font-size:22px}table.log{font-size:12px}table.log th,table.log td{padding:6px 8px}.sup-layout{grid-template-columns:1fr}.sup-list{max-height:220px}}
   </style>
 </head>
@@ -475,7 +472,6 @@
       }
     }
 
-    /* ---------- Support tab ---------- */
     async function loadSupportConversations() {
       const list = $('#supList');
       if (!list) return;
@@ -485,10 +481,7 @@
         const data = await readJson(res);
         if (!data || !data.ok) { list.innerHTML = '<div class="sup-empty">Failed to load.</div>'; return; }
         supportConvs = data.conversations || [];
-        if (!supportConvs.length) {
-          list.innerHTML = '<div class="sup-empty">No conversations yet.</div>';
-          return;
-        }
+        if (!supportConvs.length) { list.innerHTML = '<div class="sup-empty">No conversations yet.</div>'; return; }
         list.innerHTML = supportConvs.map(c => {
           const unread = (c.unread_for_agent || 0) > 0;
           const last = c.messages && c.messages.length ? c.messages[c.messages.length - 1] : null;
@@ -521,9 +514,7 @@
         if (!data || !data.ok) { view.innerHTML = '<div class="sup-empty">Failed.</div>'; return; }
         const conv = (data.conversations || []).find(c => c.id === id);
         if (!conv) { view.innerHTML = '<div class="sup-empty">Not found.</div>'; return; }
-        // mark read by opening (server clears unread_for_agent on list? we'll do it here by refetch later)
         renderSupportConversation(conv);
-        // highlight list item
         $$('.sup-item').forEach(el => el.classList.toggle('active', el.dataset.id === id));
         if (supportPollTimer) clearInterval(supportPollTimer);
         supportPollTimer = setInterval(() => silentRefreshSupport(), 5000);
@@ -566,10 +557,7 @@
     function renderSupportMessages(messages) {
       const box = $('#supMessages');
       if (!box) return;
-      if (!messages.length) {
-        box.innerHTML = '<div class="sup-empty">No messages yet.</div>';
-        return;
-      }
+      if (!messages.length) { box.innerHTML = '<div class="sup-empty">No messages yet.</div>'; return; }
       box.innerHTML = messages.map(m => {
         const role = m.role || 'user';
         const cls = role === 'agent' ? 'agent' : (role === 'system' ? 'system' : 'user');
@@ -628,7 +616,6 @@
         supportConvs = data.conversations || [];
         const conv = supportConvs.find(c => c.id === currentSupportId);
         if (conv) {
-          // Update just the messages area to avoid wiping typing state
           const box = $('#supMessages');
           if (box) {
             const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
@@ -639,7 +626,6 @@
       } catch {}
     }
 
-    /* ---------- Tier setting ---------- */
     $('#setTierBtn')?.addEventListener('click', async () => {
       const email = $('#newUserEmail').value.trim().toLowerCase();
       const tier = $('#newUserTier').value;
