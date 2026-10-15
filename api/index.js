@@ -1,9 +1,10 @@
 /* ============================================================
-   MiroxAI Backend v108 — model resolver + route hardening
-   v108: · /v1/models on every path clients try
-         · flexible model-ID resolver (custom/, vendor/, case)
-         · mirox-* fallback instead of 404
-         · /v1/* request logging for debugging
+   MiroxAI Backend v109 — final model-resolution hardening
+   v109: · regex-based resolver (accepts ANY string containing mirox-*)
+         · /v1/models/:id wildcard
+         · URL aliases (/chat/completions, /openai/v1/*, /api/v1/*)
+         · debug endpoint /api/debug/resolve
+         · startup resolver self-test prints to console
          · API-key requests never get thinking rules
    ============================================================ */
 import express from 'express';
@@ -328,50 +329,73 @@ async function ensureDb(req) { if (req && req.__dbReady) return; await loadDb();
 async function currentUser(req) { await ensureDb(req); if (!dbOk) return null; const s = readSession(getCookie(req, 'mirox_sess')); if (!s || !s.uid) return null; return userFor(s.uid); }
 
 /* ============================================================
-   MODEL RESOLVER (v108)
-   Handles: "mirox-gen-1", "custom/mirox-gen-1",
-            "openai/mirox-tail-r1", "MiroxAI/mirox-luna-1.2",
-            "Custom (SurrRoute)/mirox-gen-1", uppercase, spaces.
+   MODEL RESOLVER (v109) — REGEX-BASED
+   Finds the first "mirox-…" token anywhere in the incoming
+   model string and matches it against the catalogue.
+
+   Accepts:
+     mirox-gen-1
+     custom/mirox-gen-1
+     openai/custom/mirox-tail-r1
+     MiroxAI/mirox-luna-1.2
+     Custom (SurrRoute)/mirox-tail-r1
+     MIROX-GEN-1
+     mirox_gen_1
    ============================================================ */
-function normalizeModelString(s) {
-  return String(s || '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '')
-    .replace(/_/g, '-');
-}
 function resolveModelId(raw) {
-  const original = String(raw || '').trim();
-  if (!original) return null;
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  if (!s) return null;
 
-  if (MIROX_MODELS[original]) return original;
+  // 1. Direct exact match
+  if (MIROX_MODELS[s]) return s;
 
-  const candidates = [];
-  const lastSlash = original.lastIndexOf('/');
-  if (lastSlash >= 0) candidates.push(original.slice(lastSlash + 1).trim());
-  for (const part of original.split('/')) {
-    const t = part.trim();
-    if (t && t !== original) candidates.push(t);
-  }
-  const lastParen = original.lastIndexOf(')');
-  if (lastParen >= 0 && lastParen < original.length - 1) {
-    candidates.push(original.slice(lastParen + 1).replace(/^[\/\s]+/, '').trim());
-  }
-  candidates.push(original);
-
-  const normTarget = normalizeModelString(original);
-  for (const id of Object.keys(MIROX_MODELS)) {
-    if (normalizeModelString(id) === normTarget) return id;
-  }
-  for (const c of candidates) {
-    if (!c) continue;
-    if (MIROX_MODELS[c]) return c;
-    const n = normalizeModelString(c);
-    for (const id of Object.keys(MIROX_MODELS)) {
-      if (normalizeModelString(id) === n) return id;
+  // 2. Find every "mirox-…" token in the string, pick the first known one
+  const miroxTokens = s.match(/mirox-[a-z0-9][a-z0-9._-]*/gi);
+  if (miroxTokens) {
+    for (const tok of miroxTokens) {
+      const low = tok.toLowerCase();
+      if (MIROX_MODELS[low]) return low;
+      // try normalizing "_" → "-"
+      const norm = low.replace(/_/g, '-');
+      if (MIROX_MODELS[norm]) return norm;
+      // try stripping a trailing dot-number or stray char
+      for (const id of Object.keys(MIROX_MODELS)) {
+        if (id.toLowerCase() === norm) return id;
+        if (id.toLowerCase().startsWith(norm + '.')) return id;
+      }
     }
   }
+
+  // 3. Case-insensitive full-string match
+  const low = s.toLowerCase();
+  for (const id of Object.keys(MIROX_MODELS)) {
+    if (id.toLowerCase() === low) return id;
+  }
+
+  // 4. Fall back to the last slash-segment
+  const lastSlash = s.lastIndexOf('/');
+  if (lastSlash >= 0) {
+    const tail = s.slice(lastSlash + 1).trim().toLowerCase();
+    if (MIROX_MODELS[tail]) return tail;
+    for (const id of Object.keys(MIROX_MODELS)) if (id.toLowerCase() === tail) return id;
+  }
+
   return null;
+}
+
+/* If resolver failed but the string contains "mirox", pick a sensible default */
+function fallbackModelId(raw) {
+  const s = String(raw || '').toLowerCase();
+  if (!/mirox/.test(s)) return null;
+  // Explicit named hits first
+  if (/tail/.test(s)) return 'mirox-tail-r1';
+  if (/luna/.test(s)) return 'mirox-luna-1.2';
+  if (/\bgen\b/.test(s) || /-gen-/.test(s)) return 'mirox-gen-1';
+  if (/pro/.test(s)) return 'mirox-pro-5';
+  if (/ultra/.test(s)) return 'mirox-ultra-10';
+  if (/eclipse/.test(s)) return 'mirox-eclipse-2.0';
+  return 'mirox-tail-r1';
 }
 
 async function authFromRequest(req) {
@@ -660,11 +684,12 @@ app.disable('x-powered-by');
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '20mb' }));
 
-/* Debug logger for /v1/* — helps trace what a client is really requesting */
+/* Debug logger for /v1/* */
 app.use((req, res, next) => {
-  if (req.path.startsWith('/v1')) {
+  if (req.path.startsWith('/v1') || /chat\/completions/.test(req.path)) {
     const hasKey = !!req.headers.authorization;
-    console.log(`[v1] ${req.method} ${req.path} key=${hasKey ? 'yes' : 'no'}${req.body?.model ? ' model=' + req.body.model : ''}`);
+    const m = req.body?.model ? String(req.body.model).slice(0, 80) : '';
+    console.log(`[v1] ${req.method} ${req.path} key=${hasKey ? 'yes' : 'no'}${m ? ' model="' + m + '"' : ''}`);
   }
   next();
 });
@@ -683,7 +708,7 @@ const publicUser = (u) => {
 const publicKey = (k) => ({ id: k.id, name: k.name, key: k.key, created: k.created, last_used: k.last_used || 0, revoked: !!k.revoked });
 
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
-  res.json({ ok: true, app: 'MiroxAI', version: 'v108',
+  res.json({ ok: true, app: 'MiroxAI', version: 'v109',
     providers: { openrouter: !!OP_KEY, hf: !!HF_API_KEY, airoute: !!AIROUTE_KEY },
     primary_provider: 'MiroxAI (SurrRoute)',
     watermark: 'MIROXAI-WATERMARK-v1-LOGO', thinking: true, deep_think: true, api_thinking: false,
@@ -700,7 +725,7 @@ app.get('/api/web/status', async (req, res) => {
 });
 
 /* ============================================================
-   MODEL LIST — registered on every path clients try.
+   MODEL LIST — every path clients try.
    ============================================================ */
 function openaiModelList() {
   const created = Math.floor(Date.now() / 1000);
@@ -724,6 +749,8 @@ const MODEL_LIST_PATHS = [
   '/v1/models', '/v1/models/',
   '/models', '/models/',
   '/api/models', '/api/models/',
+  '/openai/v1/models', '/openai/v1/models/',
+  '/api/v1/models', '/api/v1/models/',
   '/v1/chat/completions/models', '/v1/chat/completions/models/',
 ];
 app.get(MODEL_LIST_PATHS, (req, res) => {
@@ -735,6 +762,42 @@ app.head(MODEL_LIST_PATHS, (req, res) => {
   res.status(200).end();
 });
 
+/* GET /v1/models/<id> — some clients validate a single model */
+app.get(['/v1/models/*', '/openai/v1/models/*', '/api/v1/models/*'], (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const wildcard = req.params[0] || '';
+  const resolved = resolveModelId(wildcard);
+  if (resolved) {
+    const created = Math.floor(Date.now() / 1000);
+    return res.json({
+      id: wildcard || resolved,
+      object: 'model',
+      created,
+      owned_by: 'miroxai',
+      label: MIROX_MODELS[resolved].label,
+      tier: MIROX_MODELS[resolved].tier,
+      flagship: !!MIROX_MODELS[resolved].flagship,
+      free: MIROX_MODELS[resolved].tier === 'free',
+      context_window: MIROX_MODELS[resolved].tokens,
+      tagline: MIROX_MODELS[resolved].tagline || '',
+    });
+  }
+  res.status(404).json({ error: { message: `Model "${wildcard}" not found. GET /v1/models for the list.`, type: 'invalid_request_error', code: 'model_not_found' } });
+});
+
+/* Debug endpoint — verify the resolver works */
+app.get('/api/debug/resolve', (req, res) => {
+  const m = String(req.query.model || '');
+  res.json({
+    input: m,
+    resolved: resolveModelId(m),
+    fallback: fallbackModelId(m),
+    known_models: Object.keys(MIROX_MODELS),
+    api_models: API_MODELS,
+    version: 'v109',
+  });
+});
+
 app.get(['/api/config', '/config'], (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({
@@ -744,7 +807,7 @@ app.get(['/api/config', '/config'], (req, res) => {
     icon: m.flagship ? 'ri-star-smile-line' : undefined,
   }));
   res.json({
-    app: { name: 'MiroxAI', version: 'v108' },
+    app: { name: 'MiroxAI', version: 'v109' },
     models, default_model: 'mirox-tail-r1', plans: PLANS,
     tts_available: !!F_API, search_available: true, vision_available: true, image_intent: true, image_edit: false,
     image_requires_signin: false, watermark: true, thinking: true, deep_think: true, html_runner: true,
@@ -965,7 +1028,7 @@ app.get(['/api/search', '/search'], async (req, res) => {
 });
 
 /* IMAGE GEN API */
-app.post('/v1/images/generations', async (req, res) => {
+app.post(['/v1/images/generations', '/openai/v1/images/generations', '/api/v1/images/generations'], async (req, res) => {
   try {
     const prompt = safeStr(req.body?.prompt, 2000).trim();
     if (!prompt) return res.status(400).json({ error: { message: 'Prompt required' } });
@@ -984,8 +1047,18 @@ app.post('/v1/images/generations', async (req, res) => {
   } catch { res.status(502).json({ error: { message: GENERIC_ERR } }); }
 });
 
-/* CHAT */
-app.post('/v1/chat/completions', async (req, res) => {
+/* ============================================================
+   CHAT COMPLETIONS — registered on every URL clients use.
+   ============================================================ */
+const CHAT_PATHS = [
+  '/v1/chat/completions',
+  '/chat/completions',
+  '/openai/v1/chat/completions',
+  '/api/v1/chat/completions',
+  '/api/chat/completions',
+];
+
+app.post(CHAT_PATHS, async (req, res) => {
   const t0 = Date.now();
   let closed = false;
   req.on('close', () => { closed = true; });
@@ -995,13 +1068,15 @@ app.post('/v1/chat/completions', async (req, res) => {
   const wantStream = body.stream === true || String(req.headers.accept || '').includes('text/event-stream');
   const rawModel = safeStr(body.model, 200) || 'mirox-tail-r1';
 
-  // Resolve the model with our flexible resolver
+  // Resolve the model with our regex resolver
   let model = resolveModelId(rawModel);
 
-  // Graceful fallback: any string containing "mirox-" becomes Tail r1
-  if (!model && /mirox-/i.test(rawModel)) {
-    console.warn(`[chat] unknown mirox-* model "${rawModel}" → falling back to mirox-tail-r1`);
-    model = 'mirox-tail-r1';
+  // Graceful fallback if resolver failed but it looks like a mirox model
+  if (!model) {
+    model = fallbackModelId(rawModel);
+    if (model) {
+      console.log(`[chat] fallback: raw="${rawModel}" → "${model}"`);
+    }
   }
 
   const text = safeStr(body.message, 200000).trim();
@@ -1013,7 +1088,7 @@ app.post('/v1/chat/completions', async (req, res) => {
   const deepThink = body.deep_think === true;
   const systemExtra = safeStr(body.system_extra, 8000);
 
-  const fail = (code, message) => res.status(code).json({ error: { message } });
+  const fail = (code, message) => res.status(code).json({ error: { message, type: 'invalid_request_error', code } });
   const signinReply = (message) => {
     if (!wantStream) return res.json({ reply: message, signin_required: true, _ms: Date.now() - t0, provider: 'MiroxAI (SurrRoute)' });
     sseInit(res); sseWrite(res, { signin_required: true, message }); sseWrite(res, { d: message }); sseWrite(res, { done: true }); sseDone(res); res.end();
@@ -1031,17 +1106,17 @@ app.post('/v1/chat/completions', async (req, res) => {
 
     if (!model) {
       const list = API_MODELS.map((m) => `"${m}"`).join(', ');
-      return fail(404, `Model "${rawModel}" not found. Available: ${list}. See GET /v1/models.`);
+      return res.status(404).json({ error: { message: `Model "${rawModel}" not found. Available: ${list}. See GET /v1/models.`, type: 'invalid_request_error', code: 'model_not_found' } });
     }
     const effectiveModel = model;
 
     if (viaKey && !API_MODELS.includes(effectiveModel)) {
       const list = API_MODELS.map((m) => `"${m}"`).join(', ');
-      return fail(403, `Model "${effectiveModel}" is not available through the API. Available: ${list}.`);
+      return res.status(403).json({ error: { message: `Model "${effectiveModel}" is not available through the API. Available: ${list}.`, type: 'invalid_request_error', code: 'model_not_available' } });
     }
 
     const cfg = MIROX_MODELS[effectiveModel];
-    if (!cfg) return fail(404, `Model "${rawModel}" not found. See GET /v1/models.`);
+    if (!cfg) return res.status(404).json({ error: { message: `Model "${rawModel}" not found. See GET /v1/models.`, type: 'invalid_request_error', code: 'model_not_found' } });
 
     const tier = u ? u.tier : 'free';
     const plan = PLANS[tier] || PLANS.free;
@@ -1249,7 +1324,10 @@ app.get('/api/bridge/download', async (req, res) => {
 
 /* FALLBACKS */
 app.use((req, res) => {
-  if (req.path.startsWith('/api') || req.path.startsWith('/v1')) return res.status(404).json({ ok: false, error: 'Not found' });
+  if (req.path.startsWith('/api') || req.path.startsWith('/v1') || req.path.startsWith('/openai')) {
+    console.warn(`[404] ${req.method} ${req.path}`);
+    return res.status(404).json({ ok: false, error: 'Not found', path: req.path, hint: 'See GET /v1/models' });
+  }
   res.sendFile(path.join(PUBLIC_DIR, 'index.html'), (err) => { if (err) res.status(404).send('Not found'); });
 });
 app.use((err, req, res, next) => {
@@ -1259,9 +1337,18 @@ app.use((err, req, res, next) => {
   if (!res.headersSent) res.status(500).json({ ok: false, error: GENERIC_ERR });
 });
 
-console.log('[Mirox] v108 · flagship: Tail r1 (FREE) · api_thinking: OFF');
+/* ---------- Resolver self-test at startup ---------- */
+function logResolverSelfTest() {
+  const tests = ['mirox-gen-1', 'custom/mirox-gen-1', 'openai/custom/mirox-tail-r1', 'MiroxAI/mirox-luna-1.2', 'MIROX-TAIL-R1', 'custom/mirox-luna-1.2'];
+  console.log('[Mirox] resolver self-test:');
+  for (const t of tests) console.log(`   "${t}" → ${resolveModelId(t)}`);
+}
+
+console.log('[Mirox] v109 · flagship: Tail r1 (FREE) · api_thinking: OFF');
 console.log('[Mirox] model endpoints:', MODEL_LIST_PATHS.join('  '));
+console.log('[Mirox] chat endpoints:', CHAT_PATHS.join('  '));
 console.log('[Mirox] image provider:', HF_API_KEY ? 'huggingface' : (AIROUTE_KEY ? 'airoute' : 'none'), '· durable:', KV_ON);
+logResolverSelfTest();
 
 if (!process.env.VERCEL) {
   app.listen(PORT, () => console.log('[Mirox] Server at http://localhost:' + PORT));
