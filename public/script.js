@@ -1070,6 +1070,85 @@ end
     openModal('loginModal');
     toast(reason || 'Please sign in to continue.', 3000, 'err');
   }
+  // Detect broad requests for ideas, concepts, projects, recommendations, or inspiration.
+  // These use web-backed reference images after the AI response is complete.
+  function looksLikeIdeasRequest(text) {
+    const t = String(text || '').trim();
+    if (!t) return false;
+    return /\b(ideas?|inspiration|things to build|project ideas|science fair|recommendations|examples of|concepts for|what can i make|what should i build|suggestions)\b/i.test(t)
+      && !looksLikeImageRequest(t);
+  }
+
+  function extractIdeaTitles(markdown, fallback) {
+    const lines = String(markdown || '').split(/\r?\n/);
+    const found = [];
+    for (const line of lines) {
+      const clean = line.replace(/^\s{0,3}(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+)/, '').replace(/\*\*/g, '').replace(/`/g, '').trim();
+      if (!clean || clean.length < 5 || clean.length > 110) continue;
+      // Prefer title-like headings/list labels; skip paragraphs and component lists.
+      const titleLike = /^#{1,6}\s+/.test(line) || /^\s*(?:[-*+]\s+|\d+[.)]\s+)/.test(line) || /^\s*\*\*[^*]{5,100}\*\*/.test(line);
+      if (!titleLike || /^(components?|materials?|science concept|why it works|steps?|how to|budget|difficulty|tip|note):/i.test(clean)) continue;
+      const title = clean.replace(/\s+[—–:-]\s+.*$/, '').trim();
+      if (title && !found.some(x => x.toLowerCase() === title.toLowerCase())) found.push(title);
+      if (found.length >= 4) break;
+    }
+    return found.length ? found : [String(fallback || 'project ideas').slice(0, 70)];
+  }
+
+  async function findCommonsImage(query) {
+    const url = new URL('https://commons.wikimedia.org/w/api.php');
+    url.search = new URLSearchParams({
+      action: 'query', format: 'json', origin: '*', generator: 'search',
+      gsrsearch: query + ' filetype:bitmap', gsrnamespace: '6', gsrlimit: '1',
+      prop: 'imageinfo', iiprop: 'url|extmetadata', iiurlwidth: '520'
+    }).toString();
+    const res = await fetch(url.toString(), { method: 'GET', mode: 'cors' });
+    if (!res.ok) throw new Error('Image search failed');
+    const data = await res.json();
+    const page = Object.values(data?.query?.pages || {})[0];
+    const info = page?.imageinfo?.[0];
+    if (!info) return null;
+    const meta = info.extmetadata || {};
+    const plain = (v) => String(v?.value || '').replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&#039;/g, "'").trim();
+    return {
+      title: String(page.title || '').replace(/^File:/, ''),
+      image: info.thumburl || info.url,
+      source: info.descriptionurl || ('https://commons.wikimedia.org/wiki/' + encodeURIComponent(page.title || '')),
+      credit: plain(meta.Artist) || plain(meta.Credit) || 'Wikimedia Commons',
+      license: plain(meta.LicenseShortName) || 'See source license'
+    };
+  }
+
+  async function appendIdeaVisuals(msgEl, markdown, prompt) {
+    if (!msgEl || !looksLikeIdeasRequest(prompt) || msgEl.querySelector('.idea-visuals')) return;
+    const bubble = msgEl.querySelector('.bubble');
+    if (!bubble) return;
+    const titles = extractIdeaTitles(markdown, prompt).slice(0, 4);
+    const section = document.createElement('section');
+    section.className = 'idea-visuals';
+    section.innerHTML = '<div class="idea-visuals-heading"><i class="ri-image-line"></i><span>Reference images from the web</span></div><div class="idea-visuals-grid"><div class="idea-visuals-loading">Finding relevant images…</div></div><p class="idea-visuals-note">Images are illustrative references, not endorsements. Open the source to check its license.</p>';
+    bubble.appendChild(section);
+    const grid = section.querySelector('.idea-visuals-grid');
+    try {
+      const results = await Promise.all(titles.map(async title => {
+        try { return { query: title, result: await findCommonsImage(title) }; } catch { return { query: title, result: null }; }
+      }));
+      grid.replaceChildren();
+      const usable = results.filter(x => x.result && x.result.image);
+      if (!usable.length) { section.remove(); return; }
+      usable.forEach(({query, result}) => {
+        const card = document.createElement('a');
+        card.className = 'idea-visual-card'; card.href = result.source; card.target = '_blank'; card.rel = 'noopener noreferrer';
+        const img = document.createElement('img'); img.loading = 'lazy'; img.src = result.image; img.alt = query; img.referrerPolicy = 'no-referrer';
+        img.onerror = () => card.remove();
+        const title = document.createElement('span'); title.className = 'idea-visual-title'; title.textContent = query;
+        const credit = document.createElement('span'); credit.className = 'idea-visual-credit'; credit.textContent = `${result.credit} · ${result.license}`;
+        card.append(img, title, credit); grid.appendChild(card);
+      });
+      if (!grid.children.length) section.remove();
+    } catch { section.remove(); }
+  }
+
   function looksLikeImageRequest(text) {
     const t = String(text || '').trim();
     if (!t) return false;
@@ -1098,7 +1177,8 @@ end
     const files = pendingFiles.slice();
     pendingFiles = []; updatePreview(); updateSendButtonState();
     saveChats(); renderHistory(); updateTokenUsage();
-    sendToAPI(text, files, forceSearchNext);
+    const ideaSearch = looksLikeIdeasRequest(text);
+    sendToAPI(text, files, forceSearchNext || ideaSearch);
     forceSearchNext = false;
     $('#searchModeBtn')?.classList.remove('active');
   }
@@ -1216,7 +1296,7 @@ end
     try {
       const reqBody = {
         message: text, history, model, stream: true, search: !!forceSearch,
-        deep_think: !!__prefs.deepThink, system_extra: THINK_INSTRUCTION,
+        deep_think: !!__prefs.deepThink, system_extra: THINK_INSTRUCTION + (looksLikeIdeasRequest(text) ? '\nFor idea-generation requests, give a useful, scannable answer: a brief intro, a numbered list of 4–8 distinct ideas, a clear title for each idea, a short explanation, materials/components when relevant, the core concept, difficulty/budget when useful, and safe practical next steps. Match the requested topic; do not force robotics or science-fair framing when the user asks about something else. When web search is enabled, use reliable sources and include links for factual claims. Do not invent citations or claim that images are examples of the exact build unless verified.' : ''),
         files: files.map((f) => ({
           name: f.name, size: f.size, type: f.type, mime: f.mime,
           width: f.width, height: f.height, dataUrl: f.dataUrl,
@@ -1336,6 +1416,7 @@ end
       if (avatarMascot) setMascotMood('happy', avatarMascot.parentElement.parentElement);
       if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
       if (bubbleText) { bubbleText.innerHTML = renderMarkdown(full); wireCodeButtons(bubbleText); }
+      if (!isContinuation && looksLikeIdeasRequest(text)) { appendIdeaVisuals(msgEl, full, text).catch(() => {}); }
 
       // Insert the action bar BELOW the bubble
       if (!msgEl.querySelector('.message-actions')) {
