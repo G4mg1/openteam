@@ -97,7 +97,7 @@
     <div class="welcome-screen">
       <div class="welcome-mascot"><div class="mascot mascot-lg" id="welcomeMascot" data-mood="idle"></div></div>
       <h1 class="welcome-title">Hi, I'm Mirox</h1>
-      <p class="welcome-sub">Luna and Gen are unlimited and free. <strong>Sign in</strong> to use Pro, Ultra, Eclipse, image generation and DeepThink.</p>
+      <p class="welcome-sub">Luna, Gen and <strong>Tail r1</strong> are free. Sign in to save chats and use image generation.</p>
       <div class="suggestion-grid">
         <button class="suggestion-card" type="button" data-prompt="Show me a simple Lua script that prints numbers 1 to 5"><i class="ri-code-box-line"></i><span>Write a Lua script</span></button>
         <button class="suggestion-card" type="button" data-prompt="Show me an HTML example with a table"><i class="ri-html5-line"></i><span>Show an HTML table</span></button>
@@ -507,7 +507,7 @@
   <div class="modal modal-wide">
     <button class="icon-btn modal-close" type="button" data-close="plansModal"><i class="ri-close-line"></i></button>
     <h2 class="modal-title">Plans</h2>
-    <p class="modal-sub">Luna and Gen are free. Pro, Ultra and Eclipse are available on paid plans.</p>
+    <p class="modal-sub">Tail r1 is the flagship model — and it's free. Sign in to save chats and use image generation.</p>
     <div id="plansGrid" class="plans-grid"></div>
   </div>
 </div>
@@ -566,6 +566,29 @@
     <div class="image-viewer-actions">
       <button class="iv-btn" type="button" id="ivDownload"><i class="ri-download-2-line"></i> <span>Download</span></button>
     </div>
+  </div>
+</div>
+
+<!-- ═══════════ TAIL R1 PROMO POPUP ═══════════ -->
+<div id="tailPromoModal" class="modal-overlay tail-promo-overlay">
+  <div class="modal modal-tail-promo">
+    <button class="icon-btn modal-close" type="button" data-close="tailPromoModal"><i class="ri-close-line"></i></button>
+    <div class="tail-promo-glow" aria-hidden="true"></div>
+    <div class="tail-promo-badge"><i class="ri-star-smile-fill"></i> <span>NEW FLAGSHIP · FREE</span></div>
+    <h2 class="tail-promo-title">Meet <em>Tail&nbsp;r1</em></h2>
+    <p class="tail-promo-sub">Our most powerful model yet. Smarter reasoning, longer context, sharper answers — and it's completely free for everyone.</p>
+    <div class="tail-promo-stats">
+      <div class="tail-stat"><div class="tail-stat-num">350K+</div><div class="tail-stat-lbl">token context</div></div>
+      <div class="tail-stat"><div class="tail-stat-num">#1</div><div class="tail-stat-lbl">reasoning benchmark</div></div>
+      <div class="tail-stat"><div class="tail-stat-num">Free</div><div class="tail-stat-lbl">for all users</div></div>
+    </div>
+    <div class="tail-promo-actions">
+      <button type="button" class="tail-promo-try" id="tailPromoTryBtn">
+        <i class="ri-rocket-2-fill"></i> <span>Try Tail r1</span>
+      </button>
+      <button type="button" class="tail-promo-later" id="tailPromoLaterBtn">Maybe later</button>
+    </div>
+    <div class="tail-promo-foot">Tip: click the model picker anytime to switch back.</div>
   </div>
 </div>
 
