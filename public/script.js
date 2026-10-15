@@ -186,7 +186,7 @@ end
   let __call = {
     active: false, lang: 'en-US', phase: 'idle', recog: null,
     shouldListen: false, holding: false, currentAbort: null,
-    currentHistory: [], busy: false, capturedText: '',
+    currentHistory: [], busy: false, capturedText: '', cameraEnabled: false, cameraStream: null, cameraSnapshot: null,
   };
 
   let __currentSpeakMsgId = null;
@@ -1821,6 +1821,7 @@ end
   async function callSendToAI(userText) {
     if (!__call.active) return;
     __call.busy = true;
+    __call.cameraSnapshot = captureCallSnapshot();
     setCallPhase('thinking');
     const replyEl = $('#callReply');
     if (replyEl) { replyEl.textContent = ''; replyEl.classList.remove('typing'); }
@@ -1842,6 +1843,7 @@ end
           model: __model || 'mirox-luna-1.2',
           stream: true, deep_think: false, system_extra: callSystem,
           guest_id: getGuestId(), language: langTag,
+          image: __call.cameraSnapshot || undefined, image_snapshot: __call.cameraSnapshot || undefined,
         }),
         signal: controller.signal,
       });
@@ -1911,6 +1913,41 @@ end
       }
     } finally { __call.currentAbort = null; __call.busy = false; }
   }
+  async function setCallCameraEnabled(enabled) {
+    const video = $('#callCameraPreview');
+    const btn = $('#callCameraToggle');
+    if (!enabled) {
+      if (__call.cameraStream) __call.cameraStream.getTracks().forEach(track => track.stop());
+      __call.cameraStream = null; __call.cameraEnabled = false; __call.cameraSnapshot = null;
+      if (video) { video.srcObject = null; video.style.display = 'none'; }
+      if (btn) { btn.classList.remove('active'); btn.setAttribute('aria-pressed', 'false'); btn.innerHTML = '<i class="ri-video-line"></i><span>Camera off</span>'; }
+      return;
+    }
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) throw new Error('Camera access requires HTTPS or localhost.');
+      __call.cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+      if (video) { video.srcObject = __call.cameraStream; video.style.display = 'block'; await video.play(); }
+      __call.cameraEnabled = true;
+      if (btn) { btn.classList.add('active'); btn.setAttribute('aria-pressed', 'true'); btn.innerHTML = '<i class="ri-video-fill"></i><span>Camera on</span>'; }
+      toast('Camera enabled. A snapshot will be included with each call question.', 3500);
+    } catch (err) {
+      __call.cameraEnabled = false;
+      if (btn) { btn.classList.remove('active'); btn.setAttribute('aria-pressed', 'false'); }
+      toast(err?.message || 'Could not access camera. Check browser permission.', 4000, 'err');
+    }
+  }
+  function captureCallSnapshot() {
+    if (!__call.cameraEnabled || !__call.cameraStream) return null;
+    const video = $('#callCameraPreview');
+    if (!video || video.readyState < 2 || !video.videoWidth) return null;
+    const canvas = document.createElement('canvas');
+    const scale = Math.min(1, 640 / video.videoWidth);
+    canvas.width = Math.round(video.videoWidth * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
+    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.72);
+  }
+
   function startCall() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { toast('Your browser does not support speech recognition. Try Chrome or Edge.', 4500, 'err'); return; }
@@ -1940,6 +1977,7 @@ end
     else { holdBtn?.classList.remove('active'); if (liveText) liveText.textContent = 'Live'; __call.shouldListen = true; setCallPhase('idle'); if (!__call.busy) startCallRecognition(); }
   }
   function endCall() {
+    setCallCameraEnabled(false);
     __call.active = false; __call.shouldListen = false; __call.holding = false; __call.busy = false;
     callStopRecog();
     if (__call.currentAbort) { try { __call.currentAbort.abort(); } catch {} __call.currentAbort = null; }
@@ -2293,6 +2331,7 @@ end
 
     /* Call wiring */
     on('#callModeBtn', 'click', startCall);
+    on('#callCameraToggle', 'click', () => setCallCameraEnabled(!__call.cameraEnabled));
     on('#callEndBtn', 'click', endCall);
     on('#callHoldBtn', 'click', toggleCallHold);
     on('#callSendNowBtn', 'click', callForceSend);
