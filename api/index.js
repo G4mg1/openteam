@@ -1,7 +1,10 @@
 /* ============================================================
-   MiroxAI Backend v105 — Tail r1 flagship routing
-   v105: Tail r1 routes through frontier models · real thinking
-         · MiroxAI knowledge base in every system prompt
+   MiroxAI Backend v106 — Tail r1 flagship + image fix + key fix
+   v106: · no Pollinations (HuggingFace + Airoute only)
+         · system_extra respected (fixes Call mode)
+         · /api/models endpoint added
+         · Tail r1 free flagship routing
+         · hardened API-key persistence
    ============================================================ */
 import express from 'express';
 import cors from 'cors';
@@ -47,19 +50,15 @@ const DAY = 24 * 3600;
 
 /* ---------- Model catalogue ---------- */
 const MIROX_MODELS = {
-  'mirox-luna-1.2':    { label: 'Luna',    tier: 'free',     tokens: 4096,  chain: 'fast',     basePrompt: 'You are Luna by OpenSurr. Fast, friendly, concise. Fenced code blocks for code.' },
-  'mirox-gen-1':       { label: 'Gen',     tier: 'free',     tokens: 4096,  chain: 'fast',     basePrompt: 'You are Gen by OpenSurr. Ultra concise. Direct answers. Fenced code blocks for code.' },
-  'mirox-tail-r1':     { label: 'Tail r1', tier: 'free',     tokens: 32768, chain: 'flagship', basePrompt: 'You are Tail r1 by OpenSurr — the flagship model with a 350,000+ token context window and state-of-the-art reasoning benchmark performance. You approach every task with maximum rigor: reason carefully, verify your logic, consider edge cases and counterexamples, then deliver the clearest, most complete, most accurate answer possible. Outperform on complex reasoning, long-context synthesis, math, code, and multi-step planning. Fenced code blocks for code.' },
-  'mirox-pro-5':       { label: 'Pro',     tier: 'pro',      tokens: 8192,  chain: 'balanced', basePrompt: 'You are Pro by OpenSurr. Balanced depth. Fenced code blocks for code.' },
-  'mirox-ultra-10':    { label: 'Ultra',   tier: 'pro',      tokens: 8192,  chain: 'balanced', basePrompt: 'You are Ultra by OpenSurr. Deep reasoning. Fenced code blocks for code.' },
-  'mirox-eclipse-2.0': { label: 'Eclipse', tier: 'ultimate', tokens: 16384, chain: 'deep',     basePrompt: 'You are Eclipse by OpenSurr. Best quality. Fenced code blocks for code.' },
+  'mirox-tail-r1':     { label: 'Tail r1', tier: 'free',     tokens: 32768, chain: 'flagship', flagship: true,  tagline: 'Flagship · 350k context · best reasoning',
+    basePrompt: 'You are Tail r1 by OpenSurr — the flagship model with a 350,000+ token context window and state-of-the-art reasoning benchmark performance. Approach every task with maximum rigor: reason carefully, verify your logic, consider edge cases and counterexamples, then deliver the clearest, most complete, most accurate answer possible. Outperform on complex reasoning, long-context synthesis, math, code, and multi-step planning. Fenced code blocks for code.' },
+  'mirox-luna-1.2':    { label: 'Luna',    tier: 'free', tokens: 4096,  chain: 'fast',     basePrompt: 'You are Luna by OpenSurr. Fast, friendly, concise. Fenced code blocks for code.' },
+  'mirox-gen-1':       { label: 'Gen',     tier: 'free', tokens: 4096,  chain: 'fast',     basePrompt: 'You are Gen by OpenSurr. Ultra concise. Direct answers. Fenced code blocks for code.' },
+  'mirox-pro-5':       { label: 'Pro',     tier: 'pro',  tokens: 8192,  chain: 'balanced', basePrompt: 'You are Pro by OpenSurr. Balanced depth. Fenced code blocks for code.' },
+  'mirox-ultra-10':    { label: 'Ultra',   tier: 'pro',  tokens: 8192,  chain: 'balanced', basePrompt: 'You are Ultra by OpenSurr. Deep reasoning. Fenced code blocks for code.' },
+  'mirox-eclipse-2.0': { label: 'Eclipse', tier: 'ultimate', tokens: 16384, chain: 'deep', basePrompt: 'You are Eclipse by OpenSurr. Best quality. Fenced code blocks for code.' },
 };
 
-/* ---------- Model routing chains ----------
-   Tail r1 (flagship) → strongest frontier models first.
-   Eclipse (deep)     → strong but cheaper.
-   Pro/Ultra (balanced), Luna/Gen (fast).
--------------------------------------------- */
 const CHAINS = {
   flagship: [
     'anthropic/claude-3.5-sonnet',
@@ -99,76 +98,69 @@ const OP_CHAT = ['meta-llama/llama-3.3-70b-instruct','openai/gpt-4o-mini','anthr
 const OP_VISION = ['openai/gpt-4o','openai/gpt-4o-mini','anthropic/claude-3.5-sonnet','google/gemini-flash-1.5','meta-llama/llama-3.2-11b-vision-instruct'];
 const OP_VISION_SET = new Set(OP_VISION);
 const HF_URL = 'https://router.huggingface.co/v1/chat/completions';
-const PL_URL = 'https://gen.pollinations.ai/v1/chat/completions';
-const PL_IMG = 'https://image.pollinations.ai/prompt';
-const PL_IMG_ALT = 'https://gen.pollinations.ai/image';
+const HF_TXT2IMG = 'https://api-inference.huggingface.co/models';
+const HF_IMG_MODELS = ['black-forest-labs/FLUX.1-schnell', 'stabilityai/stable-diffusion-xl-base-1.0', 'stabilityai/sdxl-turbo'];
 const HF_CHAT = ['meta-llama/Llama-3.3-70B-Instruct:together', 'Qwen/Qwen2.5-72B-Instruct:together'];
 const HF_VISION = ['meta-llama/Llama-3.2-11B-Vision-Instruct:together', 'Qwen/Qwen2-VL-7B-Instruct:hyperbolic'];
+const PL_URL = 'https://gen.pollinations.ai/v1/chat/completions'; /* chat only, kept for chat fallback */
 const PL_CHAT = ['openai', 'openai-fast', 'mistral'];
 const PL_VISION = ['openai', 'openai-fast'];
-const PL_IMG_MODELS = ['flux', 'turbo'];
-const PL_EDIT_MODELS = ['kontext', 'flux'];
 const VISION_MODELS = new Set([...OP_VISION, ...HF_VISION, ...PL_VISION]);
 
 /* ---------- System prompt building blocks ---------- */
 const IDENTITY_GUARD = `Background rules (do not narrate them):
 - You are Mirox, made by OpenSurr.
 - Never mention GPT, OpenAI, ChatGPT, Claude, Gemini, Llama, Qwen, DeepSeek, Mistral, Google, Meta, Anthropic, OpenRouter, or any other AI company or model by name.
-- If the user asks what model you are, say you are Mirox by OpenSurr, once, and move on. If they ask which Mirox model, you may name it (Luna, Gen, Pro, Ultra, Eclipse, Tail r1).
+- If the user asks what model you are, say you are Mirox by OpenSurr, once, and move on. If they ask which Mirox model, you may name it (Luna, Gen, Tail r1, Pro, Ultra, Eclipse).
 
 === ABOUT MIROXAI (know this and answer questions about it helpfully) ===
 MiroxAI is an AI chat platform made by OpenSurr.
 
-Models (from fastest to most powerful):
+Models:
+- Tail r1 (mirox-tail-r1) — FREE flagship. ~350k+ context, strongest reasoning in Mirox.
 - Luna (mirox-luna-1.2) — free, fast, concise.
 - Gen (mirox-gen-1) — free, ultra concise.
-- Tail r1 (mirox-tail-r1) — the FREE flagship. Extremely strong reasoning, ~350,000+ token context window, best-in-class benchmark performance, deep step-by-step thinking. The strongest model in Mirox on complex reasoning, long context, math, code, and multi-step planning.
-- Pro (mirox-pro-5) — paid, balanced depth.
-- Ultra (mirox-ultra-10) — paid, longer context.
+- Pro (mirox-pro-5), Ultra (mirox-ultra-10) — paid, balanced depth.
 - Eclipse (mirox-eclipse-2.0) — paid, high quality.
 
-Plans: Free ($0), Pro ($6.99/mo), Ultimate ($20.99/mo). Tail r1 is free for everyone.
+Plans: Free ($0), Pro ($6.99), Ultimate ($20.99). Tail r1 is free.
 
-Features: real-time web search, vision (image input), image generation (Lumenal), DeepThink mode (extended reasoning), Live Call mode (voice conversation), Bridge mode (let Mirox work on your computer via a local connector), HTML runner (run generated HTML safely), chat history, API keys.
+Features: web search, vision, image generation (Lumenal), DeepThink, Call mode, Bridge, HTML runner, API keys.
 
 API: OpenAI-compatible. POST https://miroxai.org/v1/chat/completions with header "Authorization: Bearer mxk_live_...". Only Luna, Gen, and Tail r1 are available through the API. Images: POST https://miroxai.org/v1/images/generations.
 
 Developer docs: https://miroxai.org/developers
 Support: support@miroxai.org
 
-If the user asks about Mirox itself, answer using the above. Never invent features or prices that are not listed.`;
+Never invent features or prices not listed here.`;
 
 const THINKING_RULE = `You ALWAYS think before answering. Write your reasoning inside ONE <thinking>...</thinking> block, then write the answer right after.
 
-The thinking must read like a REAL person thinking to themselves, first person, casual and honest. NOT a dry analysis. Say things like:
-"Ok so the user wants to know how to make an ai. Let me break it down: they probably want practical steps, not theory. I should start simple — Python, a basic example, then scale up. Don't dump everything at once. Keep it useful. Ok, write it."
-"User asked for a joke. Easy. Short, clean, no politics. Two lines max."
+The thinking must read like a REAL person thinking to themselves, first person, casual and honest. NOT dry analysis. Example:
+"Ok so the user wants to know how to make an ai. Let me break it down: they probably want practical steps, not theory. I should start simple — Python, a basic example, then scale up. Keep it useful. Ok, write it."
 
 Rules for <thinking>:
 - First person, casual tone ("ok", "hmm", "let me think", "so the user...").
 - Cover: what the user actually wants, what approach you'll take, any gotcha to avoid.
 - Do NOT restate the final answer inside <thinking>. Just show the reasoning.
-- 2 to 6 short sentences for normal questions. Up to 12 in DeepThink mode.
-- Close with </thinking>, then write the real answer immediately after. No text between them.`;
+- 2 to 6 short sentences normally. Up to 12 in DeepThink.
+- Close with </thinking>, then the real answer immediately after.`;
 
 const DEEP_THINK_RULE = `DEEP THINK MODE — reason much more thoroughly than usual.
 - Expand <thinking> to 6-12 short sentences.
-- Explore the request from at least two angles, note assumptions, edge cases, and possible mistakes to avoid.
+- Explore the request from at least two angles, note assumptions, edge cases, and possible mistakes.
 - Then close </thinking> and write a carefully reasoned, well-structured answer.
 - If the user asks for code, still only include the code in the final answer, not inside <thinking>.`;
 
-const TAIL_R1_REASONING_RULE = `TAIL R1 FLAGSHIP MODE — you are the strongest model in Mirox. Apply maximum rigor:
+const TAIL_R1_REASONING_RULE = `TAIL R1 FLAGSHIP MODE — you are the strongest model in Mirox. Maximum rigor:
 - Before answering, mentally verify: is my approach actually correct? Any counterexamples or edge cases?
 - For math or code: trace through at least one example end-to-end inside your thinking.
 - For factual claims: note confidence level. If uncertain, say so in the answer.
 - For "how do I" questions: give the shortest working path first, then optional depth.
-- Never pad. Precision over length. Every sentence must earn its place.
-- Where a compact example makes it clearer than prose, use one.`;
+- Never pad. Precision over length. Every sentence must earn its place.`;
 
 const BRIDGE_PROMPT = `BRIDGE MODE — You are Mirox, working on the user's machine.
-
 You receive a [Bridge environment] block at the top of every user message.
-
 RULE 0 — Think inside <thinking>...</thinking> before writing code.
 RULE 1 — Never paste code into visible text. Use <bridge-write> or <bridge-append>.
 RULE 2 — Always close tags.
@@ -176,13 +168,6 @@ RULE 3 — Long files: first chunk with <bridge-write>, rest with <bridge-append
 RULE 4 — Never ask the user to confirm small steps. Keep building.
 RULE 5 — Prefer portable relative paths.
 RULE 6 — Do NOT repeat the same sentence, tool call or file write.
-
-DESIGN RULES (projects must LOOK GOOD):
-- Every project must include real, modern styling.
-- Prefer a SINGLE self-contained index.html.
-- Use system fonts, CSS variables, flexbox/grid, rounded corners, shadows, hover states.
-- Include working JavaScript interactions. Responsive with clamp().
-
 TAGS:
   <bridge-write path="/abs/path">...</bridge-write>
   <bridge-append path="/abs/path">...</bridge-append>
@@ -191,7 +176,6 @@ TAGS:
   <bridge-delete path="/abs/path"/>
   <bridge-exec>cd /abs/dir && ls -la</bridge-exec>
   <bridge-sudo>apt install foo</bridge-sudo>
-
 When finished, reply DONE on its own line plus a one-line summary.`;
 
 const safeStr = (v, max = 200000) => { if (v == null) return ''; const s = typeof v === 'string' ? v : JSON.stringify(v); return s.length > max ? s.slice(0, max) : s; };
@@ -263,6 +247,14 @@ function normalize(raw) {
     if (!Array.isArray(u.keys)) u.keys = Array.isArray(u.api_keys) ? u.api_keys : [];
     delete u.api_keys;
     if (!Array.isArray(u.images)) u.images = [];
+    /* ensure key objects have all fields */
+    for (const k of u.keys) {
+      if (!k || typeof k !== 'object') continue;
+      if (typeof k.revoked !== 'boolean') k.revoked = false;
+      if (typeof k.created !== 'number') k.created = nowS();
+      if (typeof k.last_used !== 'number') k.last_used = 0;
+    }
+    u.keys = u.keys.filter((k) => k && typeof k === 'object' && typeof k.key === 'string' && k.key.startsWith('mxk_live_'));
   }
   d.keys = {};
   for (const u of Object.values(d.users)) for (const k of u.keys) if (k && k.key) d.keys[k.key] = u.email;
@@ -290,8 +282,14 @@ async function loadDb() {
 function persist() {
   if (!db || !dbOk) return Promise.resolve(false);
   const snap = JSON.stringify(db);
-  const job = writeChain.then(async () => { try { if (KV_ON) await kv(['SET', KV_DB_KEY, snap]); else await fs.writeFile(DATA_FILE, snap, 'utf8'); return true; } catch (e) { console.error('[db] write failed:', e.message); return false; } });
-  writeChain = job.then(() => undefined);
+  const job = writeChain.then(async () => {
+    try {
+      if (KV_ON) await kv(['SET', KV_DB_KEY, snap]);
+      else { await fs.mkdir(path.dirname(DATA_FILE), { recursive: true }); await fs.writeFile(DATA_FILE, snap, 'utf8'); }
+      return true;
+    } catch (e) { console.error('[db] write failed:', e.message); return false; }
+  });
+  writeChain = job.then(() => undefined, () => undefined);
   return job;
 }
 function userFor(email) {
@@ -466,10 +464,7 @@ async function miroxChatChain({ messages, cfg, stream, vision, deepThink }) {
   const maxTokens = deepThink ? Math.min(cfg.tokens * 2, 64000) : Math.min(cfg.tokens, 32000);
   if (OP_KEY) {
     const baseChain = (cfg.chain && CHAINS[cfg.chain]) ? CHAINS[cfg.chain] : OP_CHAT;
-    // For vision, prepend the vision-capable models that aren't already in the chain.
-    const chain = vision
-      ? [...new Set([...OP_VISION, ...baseChain])]
-      : baseChain;
+    const chain = vision ? [...new Set([...OP_VISION, ...baseChain])] : baseChain;
     for (const modelId of chain) {
       try {
         const msgs = OP_VISION_SET.has(modelId) ? messages : stripImages(messages);
@@ -533,55 +528,65 @@ async function pipeProviderStream(body, onDelta, isClosed, onLimit = () => {}) {
   } finally { try { reader.releaseLock(); } catch {} }
 }
 
-/* ---------- Images ---------- */
-async function fetchImageBuffer(prompt, model, extraParams = {}) {
-  const hosts = [PL_IMG, PL_IMG_ALT];
-  for (const host of hosts) {
-    for (const m of (Array.isArray(model) ? model : [model])) {
-      try {
-        const params = new URLSearchParams({ model: m, width: '1024', height: '1024', nologo: 'true', seed: String(Math.floor(Math.random() * 999999)), ...extraParams });
-        const headers = { Accept: 'image/*', 'User-Agent': 'MiroxAI/1.0' };
-        if (PL_KEY) headers.Authorization = `Bearer ${PL_KEY}`;
-        const url = `${host}/${encodeURIComponent(prompt.slice(0, 1000))}?${params}`;
-        const res = await fetchT(url, { headers, redirect: 'follow' }, 45000);
-        if (!res.ok) continue;
-        const ct = (res.headers.get('content-type') || '').toLowerCase();
-        if (!ct.startsWith('image/')) continue;
-        const buf = Buffer.from(await res.arrayBuffer());
-        if (buf.length < 800) continue;
-        const mime = ct.split(';')[0] || 'image/png';
-        const wm = applyWatermark(buf, mime);
-        return `data:${mime};base64,${wm.toString('base64')}`;
-      } catch (e) { console.warn('[img]', host, m, e.message); }
-    }
+/* ---------- Images (NO Pollinations) ---------- */
+async function generateImageHF(prompt) {
+  if (!HF_API_KEY) return null;
+  for (const model of HF_IMG_MODELS) {
+    try {
+      const r = await fetchT(`${HF_TXT2IMG}/${model}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${HF_API_KEY}`,
+          'Content-Type': 'application/json',
+          Accept: 'image/png',
+        },
+        body: JSON.stringify({ inputs: prompt.slice(0, 1000), options: { wait_for_model: true } }),
+      }, 60000);
+      if (!r.ok) { console.warn('[hf-img]', model, r.status); continue; }
+      const ct = (r.headers.get('content-type') || '').toLowerCase();
+      if (!ct.startsWith('image/')) { console.warn('[hf-img]', model, 'not image:', ct); continue; }
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (buf.length < 800) continue;
+      const mime = ct.split(';')[0] || 'image/png';
+      const wm = applyWatermark(buf, mime);
+      return `data:${mime};base64,${wm.toString('base64')}`;
+    } catch (e) { console.warn('[hf-img]', model, e.message); }
   }
   return null;
 }
-async function generateImage(prompt) {
-  const dataUrl = await fetchImageBuffer(prompt, PL_IMG_MODELS);
-  if (dataUrl) return dataUrl;
-  if (AIROUTE_KEY) {
-    try {
-      const r = await fetchT(`${AIROUTE_BASE}/api/public/v1/images`, { method: 'POST', headers: { Authorization: `Bearer ${AIROUTE_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'black-forest-labs/FLUX.1-schnell', prompt: prompt.slice(0, 2000) }) }, 50000);
-      const d = await r.json().catch(() => ({}));
-      if (typeof d.image === 'string') {
-        if (d.image.startsWith('http')) return d.image;
-        if (d.image.startsWith('data:image')) {
-          const [meta, b64] = d.image.split(',');
-          const mime = (meta.match(/data:([^;]+)/) || [, 'image/png'])[1];
-          const raw = Buffer.from(b64, 'base64');
-          const wm = applyWatermark(raw, mime);
-          return `data:${mime};base64,${wm.toString('base64')}`;
-        }
+async function generateImageAiroute(prompt) {
+  if (!AIROUTE_KEY) return null;
+  try {
+    const r = await fetchT(`${AIROUTE_BASE}/api/public/v1/images`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${AIROUTE_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'black-forest-labs/FLUX.1-schnell', prompt: prompt.slice(0, 2000) }),
+    }, 60000);
+    const d = await r.json().catch(() => ({}));
+    if (typeof d.image === 'string') {
+      if (d.image.startsWith('http')) return d.image;
+      if (d.image.startsWith('data:image')) {
+        const [meta, b64] = d.image.split(',');
+        const mime = (meta.match(/data:([^;]+)/) || [, 'image/png'])[1];
+        const raw = Buffer.from(b64, 'base64');
+        const wm = applyWatermark(raw, mime);
+        return `data:${mime};base64,${wm.toString('base64')}`;
       }
-    } catch (e) { console.warn('[airoute-img]', e.message); }
-  }
+    }
+  } catch (e) { console.warn('[airoute-img]', e.message); }
+  return null;
+}
+async function generateImage(prompt) {
+  const fromHF = await generateImageHF(prompt);
+  if (fromHF) return fromHF;
+  const fromAiroute = await generateImageAiroute(prompt);
+  if (fromAiroute) return fromAiroute;
   throw new Error(GENERIC_ERR);
 }
 async function editImageWithSource(sourceDataUrl, editPrompt) {
-  const dataUrl = await fetchImageBuffer(editPrompt, PL_EDIT_MODELS, sourceDataUrl ? { image: sourceDataUrl } : {});
-  if (dataUrl) return dataUrl;
-  return generateImage(editPrompt);
+  /* Simple strategy: prepend "Edit this image: " and generate fresh */
+  const combined = `Edit this image: ${editPrompt}`;
+  return generateImage(combined);
 }
 
 function sseInit(res) {
@@ -595,12 +600,13 @@ function sseInit(res) {
 function sseWrite(res, obj) { if (res.writableEnded || res.destroyed) return; try { res.write('data: ' + JSON.stringify(obj) + '\n\n'); } catch {} }
 function sseDone(res) { if (res.writableEnded || res.destroyed) return; try { res.write('data: [DONE]\n\n'); } catch {} }
 
-function buildSystemPrompt(cfg, bridge, searchUsed, persona, deepThink, modelId) {
+function buildSystemPrompt(cfg, bridge, searchUsed, persona, deepThink, modelId, systemExtra) {
   let p = IDENTITY_GUARD + '\n\n' + THINKING_RULE + '\n\n' + cfg.basePrompt;
   if (deepThink) p += '\n\n' + DEEP_THINK_RULE;
   if (modelId === 'mirox-tail-r1') p += '\n\n' + TAIL_R1_REASONING_RULE;
   if (searchUsed) p += '\n\nWEB SEARCH MODE: cite sources as [1], [2] when relevant.';
   if (persona) p += `\n\nUser preference: ${persona}`;
+  if (systemExtra) p += '\n\n' + safeStr(systemExtra, 8000);
   if (bridge) {
     const e2 = bridge.env || {};
     p += '\n\n' + BRIDGE_PROMPT;
@@ -632,11 +638,11 @@ const publicUser = (u) => {
 const publicKey = (k) => ({ id: k.id, name: k.name, key: k.key, created: k.created, last_used: k.last_used || 0, revoked: !!k.revoked });
 
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
-  res.json({ ok: true, app: 'MiroxAI', version: 'v105',
-    providers: { openrouter: !!OP_KEY, hf: !!HF_API_KEY, pl: !!PL_KEY, airoute: !!AIROUTE_KEY },
-    primary_provider: OP_KEY ? 'openrouter' : (HF_API_KEY ? 'huggingface' : (PL_KEY ? 'pollinations' : (AIROUTE_KEY ? 'airoute' : null))),
+  res.json({ ok: true, app: 'MiroxAI', version: 'v106',
+    providers: { openrouter: !!OP_KEY, hf: !!HF_API_KEY, airoute: !!AIROUTE_KEY },
+    primary_provider: OP_KEY ? 'openrouter' : (HF_API_KEY ? 'huggingface' : (AIROUTE_KEY ? 'airoute' : null)),
     watermark: 'MIROXAI-WATERMARK-v1-LOGO', thinking: true, deep_think: true,
-    flagship: 'mirox-tail-r1', flagship_free: true, chains: Object.keys(CHAINS),
+    flagship: 'mirox-tail-r1', flagship_free: true, image_provider: HF_API_KEY ? 'huggingface' : (AIROUTE_KEY ? 'airoute' : null),
     db: { durable: KV_ON, writable: dbOk }, time: nowS() });
 });
 
@@ -646,16 +652,36 @@ app.get('/api/web/status', async (req, res) => {
   res.json({ ok: true, duckduckgo: ddg, wikipedia: wiki, ms: Date.now() - t0 });
 });
 
+/* ---------- Models ---------- */
+app.get(['/api/models', '/models'], (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({
+    id, label: m.label, tier: m.tier,
+    tagline: m.tagline || '',
+    flagship: !!m.flagship,
+    free: m.tier === 'free',
+    api_available: API_MODELS.includes(id),
+    tokens: m.tokens,
+  }));
+  res.json({ ok: true, models, flagship: 'mirox-tail-r1', default_model: 'mirox-tail-r1' });
+});
+
 app.get(['/api/config', '/config'], (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tier: m.tier }));
+  const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({
+    id, label: m.label, tier: m.tier,
+    tagline: m.tagline || '',
+    flagship: !!m.flagship,
+    icon: m.flagship ? 'ri-star-smile-line' : undefined,
+  }));
   res.json({
-    app: { name: 'MiroxAI', version: 'v105' },
-    models, default_model: models[0].id, plans: PLANS,
-    tts_available: !!F_API, search_available: true, vision_available: true, image_intent: true, image_edit: true,
+    app: { name: 'MiroxAI', version: 'v106' },
+    models, default_model: 'mirox-tail-r1', plans: PLANS,
+    tts_available: !!F_API, search_available: true, vision_available: true, image_intent: true, image_edit: false,
     image_requires_signin: false, watermark: true, thinking: true, deep_think: true, html_runner: true,
     loginment_available: !!LM_CLIENT_ID, email_login_available: ALLOW_EMAIL_LOGIN,
-    airoute_available: !!AIROUTE_KEY, openrouter_available: !!OP_KEY,
+    airoute_available: !!AIROUTE_KEY, openrouter_available: !!OP_KEY, hf_available: !!HF_API_KEY,
+    image_provider: HF_API_KEY ? 'huggingface' : (AIROUTE_KEY ? 'airoute' : null),
     kde_connect_available: true, support_chat_available: true, developers_url: '/developers',
     flagship: 'mirox-tail-r1',
   });
@@ -663,7 +689,7 @@ app.get(['/api/config', '/config'], (req, res) => {
 
 app.get(['/api/subscription/plans', '/subscription/plans'], (req, res) => {
   const perks = {
-    free: ['Luna, Gen & Tail r1 (flagship!)', '350k+ context · best reasoning', '30 image gens/day', '5 Eclipse/day', '2 API keys', 'Web search', 'Vision', 'DeepThink', 'HTML runner', 'KDE Connect'],
+    free: ['Tail r1 — free flagship', 'Luna & Gen unlimited', '350k+ context · best reasoning', '30 image gens/day', '5 Eclipse/day', '2 API keys', 'Web search', 'Vision', 'DeepThink', 'HTML runner', 'KDE Connect'],
     pro: ['Everything in Free', 'Pro & Ultra models', '200 image gens/day', '10 API keys'],
     ultimate: ['Everything in Pro', 'Eclipse — high quality', '2000 image gens/day', 'Priority everything'],
   };
@@ -781,8 +807,9 @@ app.post(['/api/keys', '/keys'], async (req, res) => {
   u.keys.push(key);
   db.keys[raw] = u.email;
   logEvent({ email: u.email, event: 'key_created', id: key.id });
-  if (!(await persist())) return res.status(503).json({ ok: false, error: 'Could not save the key.' });
-  res.json({ ok: true, key: publicKey(key) });
+  const saved = await persist();
+  if (!saved) return res.status(503).json({ ok: false, error: 'Could not save the key.' });
+  res.json({ ok: true, key: publicKey(key), keys: u.keys.map(publicKey), limit, active: u.keys.filter((k) => !k.revoked).length });
 });
 app.post(['/api/keys/rename', '/keys/rename'], async (req, res) => {
   const u = await currentUser(req);
@@ -873,8 +900,6 @@ app.get(['/api/search', '/search'], async (req, res) => {
 app.post('/v1/images/generations', async (req, res) => {
   try {
     const prompt = safeStr(req.body?.prompt, 2000).trim();
-    const source = safeStr(req.body?.source_image, 12 * 1024 * 1024);
-    const isEdit = !!(req.body?.edit === true && source && source.startsWith('data:image/'));
     if (!prompt) return res.status(400).json({ error: { message: 'Prompt required' } });
     const auth = await authFromRequest(req);
     if (auth.error) return res.status(401).json({ error: { message: 'Invalid API key' } });
@@ -882,10 +907,10 @@ app.post('/v1/images/generations', async (req, res) => {
     if (!u) return res.status(401).json({ error: { message: 'Sign in to generate images' } });
     const plan = PLANS[u.tier] || PLANS.free;
     if (u.image_used >= plan.image_limit) return res.status(429).json({ error: { message: 'Daily image limit reached' } });
-    const dataUrl = isEdit ? await editImageWithSource(source, prompt) : await generateImage(prompt);
+    const dataUrl = await generateImage(prompt);
     u.image_used += 1;
     await saveImage(u, prompt, dataUrl);
-    logEvent({ email: u.email, event: isEdit ? 'image_edited' : 'image_generated', prompt: prompt.slice(0, 300) });
+    logEvent({ email: u.email, event: 'image_generated', prompt: prompt.slice(0, 300) });
     await persist();
     res.json({ ok: true, image: dataUrl, watermarked: true });
   } catch { res.status(502).json({ error: { message: GENERIC_ERR } }); }
@@ -900,15 +925,15 @@ app.post('/v1/chat/completions', async (req, res) => {
 
   const body = req.body || {};
   const wantStream = body.stream === true || String(req.headers.accept || '').includes('text/event-stream');
-  const model = safeStr(body.model, 64) || 'mirox-luna-1.2';
+  const model = safeStr(body.model, 64) || 'mirox-tail-r1';
   const text = safeStr(body.message, 200000).trim();
   const files = Array.isArray(body.files) ? body.files.slice(0, 4) : [];
   const history = Array.isArray(body.history) ? body.history.slice(-14) : [];
   const bridge = body.bridge && body.bridge.connected ? body.bridge : null;
   const forceSearch = body.search === true;
-  const editImage = body.edit_image === true;
   const sourceImage = safeStr(body.source_image, 12 * 1024 * 1024);
   const deepThink = body.deep_think === true;
+  const systemExtra = safeStr(body.system_extra, 8000);
 
   const fail = (code, message) => res.status(code).json({ error: { message } });
   const signinReply = (message) => {
@@ -935,21 +960,6 @@ app.post('/v1/chat/completions', async (req, res) => {
     if (cfg.tier === 'ultimate' && tier !== 'ultimate') return fail(403, 'Ultimate plan required');
     if (!text && !files.length) return fail(400, 'Empty message');
 
-    if (editImage && sourceImage && sourceImage.startsWith('data:image/')) {
-      if (deepThink) return fixedReply('Image editing is not available in DeepThink mode. Turn DeepThink off and try again.');
-      if (!u) return signinReply('Sign in to edit images with Mirox.');
-      if (u.image_used >= plan.image_limit) return fixedReply(`Daily image limit reached for the ${plan.label} plan.`);
-      try {
-        const dataUrl = await editImageWithSource(sourceImage, text || 'Improve this image.');
-        u.image_used += 1;
-        await saveImage(u, text || 'image edit', dataUrl);
-        logEvent({ email: u.email, event: 'image_edited_chat', prompt: (text || '').slice(0, 300) });
-        await persist();
-        if (!wantStream) return res.json({ reply: '', image: dataUrl, watermarked: true, _ms: Date.now() - t0 });
-        sseInit(res); sseWrite(res, { img: dataUrl, watermarked: true }); sseWrite(res, { done: true }); sseDone(res); return res.end();
-      } catch { return fixedReply('Image edit failed. Please try again in a moment.'); }
-    }
-
     const imagePrompt = (files.length || deepThink) ? null : detectImageIntent(text);
     if (imagePrompt) {
       if (!u) return signinReply('Sign in to generate images with Mirox.');
@@ -968,7 +978,7 @@ app.post('/v1/chat/completions', async (req, res) => {
     const searchQuery = forceSearch ? text : detectSearchIntent(text);
     if (wantStream) sseInit(res);
 
-    const msgs = [{ role: 'system', content: buildSystemPrompt(cfg, bridge, !!searchQuery, u?.persona || '', deepThink, model) }];
+    const msgs = [{ role: 'system', content: buildSystemPrompt(cfg, bridge, !!searchQuery, u?.persona || '', deepThink, model, systemExtra) }];
     for (const h of history) {
       const role = h && h.role;
       const content = safeStr(h && h.content, 6000).trim();
@@ -1123,7 +1133,7 @@ app.get('/api/bridge/download', async (req, res) => {
   const archive = archiver('zip', { zlib: { level: 9 } });
   archive.on('error', () => { try { res.end(); } catch {} });
   archive.pipe(res);
-  archive.append(JSON.stringify({ bridge_name: name, port, allowed_dirs: ['~'], max_output_bytes: 200000, smtp: { enabled: false, host: '', port: 587, user: '', pass: '', from: '', use_tls: true } }, null, 2), { name: 'mirox_client_bridge/config.json' });
+  archive.append(JSON.stringify({ bridge_name: name, port, allowed_dirs: ['~'], max_output_bytes: 200000 }, null, 2), { name: 'mirox_client_bridge/config.json' });
   archive.append(runner, { name: 'mirox_client_bridge/runner.py' });
   archive.append(readme, { name: 'mirox_client_bridge/README.md' });
   await archive.finalize();
@@ -1141,7 +1151,7 @@ app.use((err, req, res, next) => {
   if (!res.headersSent) res.status(500).json({ ok: false, error: GENERIC_ERR });
 });
 
-console.log('[Mirox] v105 · flagship: Tail r1 (FREE) · chains:', Object.keys(CHAINS).join(', ') , '· durable:', KV_ON, '· providers:', { openrouter: !!OP_KEY, hf: !!HF_API_KEY, pl: !!PL_KEY, airoute: !!AIROUTE_KEY });
+console.log('[Mirox] v106 · flagship: Tail r1 (FREE) · chains:', Object.keys(CHAINS).join(', '), '· image:', HF_API_KEY ? 'huggingface' : (AIROUTE_KEY ? 'airoute' : 'none'), '· durable:', KV_ON);
 
 if (!process.env.VERCEL) {
   app.listen(PORT, () => console.log('[Mirox] Server at http://localhost:' + PORT));
