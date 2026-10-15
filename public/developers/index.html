@@ -252,6 +252,7 @@
   "reply": "Hello! I can answer questions, write and explain code, and search the web.",
   "_ms": 812,
   "provider": "MiroxAI (SurrRoute)",
+  "model": "mirox-tail-r1",
   "search": null
 }</code><button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></pre>
         <p>When a search ran, <code>search</code> contains <code>query</code>, <code>results</code> (title, url, snippet) and <code>overview</code>.</p>
@@ -332,7 +333,7 @@ data: {"done":true}</code><button class="code-copy-btn" data-copy><i class="ri-f
 
       <section id="keys">
         <h2>API keys</h2>
-        <p>Create and manage keys here. You need to be signed in to the main app, because keys belong to your account.</p>
+        <p>Create and manage keys here. You need to be signed in to the main app, because keys belong to your account. Your keys are also saved in this browser, so if the server ever loses them, they will be restored automatically next time you visit this page.</p>
         <div class="key-limit-info" id="keyLimitInfo">Loading…</div>
         <div class="key-create">
           <input type="text" id="newKeyName" placeholder="Key name, for example Production" maxlength="60">
@@ -488,12 +489,46 @@ data: {"done":true}</code><button class="code-copy-btn" data-copy><i class="ri-f
         });
       });
 
+      /* ══════════════════════════════════════════════
+         API KEY MANAGER with localStorage backup + restore
+         ══════════════════════════════════════════════ */
       const keyList = $('#keyList');
       const keyMsg = $('#keyMsg');
       const keyLimitInfo = $('#keyLimitInfo');
+      const KEYS_BACKUP_KEY = 'mirox_keys_backup_v1';
 
       function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
       function setKeyMsg(text, cls) { keyMsg.textContent = text || ''; keyMsg.className = 'key-msg' + (cls ? ' ' + cls : ''); }
+
+      function backupKeysToLocalStorage(keys) {
+        try {
+          const safe = (keys || []).map((k) => ({
+            id: k.id, name: k.name, key: k.key,
+            created: k.created, last_used: k.last_used || 0, revoked: !!k.revoked,
+          }));
+          localStorage.setItem(KEYS_BACKUP_KEY, JSON.stringify(safe));
+        } catch {}
+      }
+      function readKeysBackup() {
+        try { return JSON.parse(localStorage.getItem(KEYS_BACKUP_KEY) || '[]'); } catch { return []; }
+      }
+
+      async function restoreKeysIfNeeded(serverKeys) {
+        const backup = readKeysBackup();
+        if (!backup.length) return null;
+        const serverKeyStrings = new Set((serverKeys || []).map((k) => k.key));
+        const missing = backup.filter((k) => k.key && !serverKeyStrings.has(k.key));
+        if (!missing.length) return null;
+        try {
+          const r = await fetch('/api/keys/restore', {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keys: missing }),
+          });
+          const d = await r.json().catch(() => ({}));
+          return d.ok ? d : null;
+        } catch { return null; }
+      }
 
       async function postJson(url, body) {
         const r = await fetch(url, {
@@ -515,8 +550,20 @@ data: {"done":true}</code><button class="code-copy-btn" data-copy><i class="ri-f
             keyList.innerHTML = '<div class="key-empty">Not signed in.</div>';
             return;
           }
-          const d = await r.json();
+          let d = await r.json();
           if (!d.ok) throw new Error(d.error || 'Failed');
+
+          // Try to restore any keys the server lost
+          const restored = await restoreKeysIfNeeded(d.keys);
+          if (restored && restored.restored > 0) {
+            d = restored;
+            setKeyMsg(`Restored ${restored.restored} key${restored.restored > 1 ? 's' : ''} from this browser.`, 'ok');
+            setTimeout(() => setKeyMsg(''), 4000);
+          }
+
+          // Always keep a local backup
+          backupKeysToLocalStorage(d.keys);
+
           keyLimitInfo.innerHTML = `<strong>${d.active}/${d.limit}</strong> active keys · ${escapeHtml(d.tier)} plan`;
           if (!d.keys.length) {
             keyList.innerHTML = '<div class="key-empty">No keys yet. Generate one above.</div>';
@@ -562,7 +609,14 @@ data: {"done":true}</code><button class="code-copy-btn" data-copy><i class="ri-f
                 } else if (act === 'delete') {
                   if (!confirm(`Delete "${key.name}" permanently?`)) return;
                   const res = await postJson('/api/keys/delete', { id });
-                  if (res.ok) { setKeyMsg('Deleted.', 'ok'); loadKeys(); }
+                  if (res.ok) {
+                    // Remove from local backup too
+                    try {
+                      const backup = readKeysBackup().filter((k) => k.id !== id);
+                      localStorage.setItem(KEYS_BACKUP_KEY, JSON.stringify(backup));
+                    } catch {}
+                    setKeyMsg('Deleted.', 'ok'); loadKeys();
+                  }
                   else setKeyMsg(res.data.error || 'Failed', 'err');
                 }
               });
@@ -579,7 +633,13 @@ data: {"done":true}</code><button class="code-copy-btn" data-copy><i class="ri-f
         const res = await postJson('/api/keys', { name });
         if (res.ok) {
           $('#newKeyName').value = '';
-          setKeyMsg('Key created. Copy it now, you can also copy it again from the list.', 'ok');
+          if (res.data.keys) backupKeysToLocalStorage(res.data.keys);
+          else if (res.data.key) {
+            const existing = readKeysBackup();
+            existing.push(res.data.key);
+            backupKeysToLocalStorage(existing);
+          }
+          setKeyMsg('Key created and backed up to this browser. Copy it now if you need it.', 'ok');
           loadKeys();
         } else {
           setKeyMsg(res.data.error || 'Failed to create key', 'err');
@@ -588,6 +648,9 @@ data: {"done":true}</code><button class="code-copy-btn" data-copy><i class="ri-f
       $('#refreshKeysBtn')?.addEventListener('click', loadKeys);
       loadKeys();
 
+      /* ══════════════════════════════════════════════
+         PLAYGROUND
+         ══════════════════════════════════════════════ */
       const pgApiKey = $('#pgApiKey'), pgModel = $('#pgModel'), pgMessage = $('#pgMessage');
       const pgStream = $('#pgStream'), pgSearch = $('#pgSearch');
       const pgSendBtn = $('#pgSendBtn'), pgResult = $('#pgResult');
@@ -636,7 +699,6 @@ data: {"done":true}</code><button class="code-copy-btn" data-copy><i class="ri-f
             const data = await res.json().catch(() => ({}));
             const ms = Math.round(performance.now() - t0);
             if (res.ok && data.reply !== undefined) {
-              /* ⬇️ We deliberately do NOT show the underlying provider/model. */
               pgOutput.textContent = data.reply + '\n\n— ' + ms + ' ms · MiroxAI (SurrRoute) —';
               setStatus('ok', 'OK');
             } else {
@@ -672,7 +734,6 @@ data: {"done":true}</code><button class="code-copy-btn" data-copy><i class="ri-f
               if (o.d) { full += o.d; pgOutput.textContent = full; pgOutput.scrollTop = pgOutput.scrollHeight; }
               if (o.error) { failed = true; pgOutput.textContent = full + '\n\nError: ' + (o.error.message || 'failed'); }
               if (o.done && !failed) {
-                /* ⬇️ Also scrubbed for streaming. */
                 pgOutput.textContent = full + '\n\n— ' + Math.round(performance.now() - t0) + ' ms · MiroxAI (SurrRoute) —';
               }
             }
