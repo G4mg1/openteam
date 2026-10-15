@@ -792,17 +792,3 @@ code { font-family: var(--font-mono); }
 }
 
 
-/* Web-backed idea visuals (Wikimedia Commons, with source/license attribution) */
-.idea-visuals { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); width: 100%; }
-.idea-visuals-heading { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 650; color: var(--text-muted); margin-bottom: 10px; }
-.idea-visuals-heading i { color: var(--accent); font-size: 17px; }
-.idea-visuals-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.idea-visual-card { min-width: 0; display: flex; flex-direction: column; gap: 6px; overflow: hidden; color: var(--text); text-decoration: none !important; border: 1px solid var(--border); border-radius: 12px; background: var(--panel-2); padding: 7px; transition: transform .18s ease, border-color .18s ease; }
-.idea-visual-card:hover { transform: translateY(-2px); border-color: var(--accent); }
-.idea-visual-card img { display: block; width: 100%; height: 150px; object-fit: cover; border-radius: 7px; background: var(--panel); }
-.idea-visual-title { font-size: 13px; line-height: 1.35; font-weight: 600; }
-.idea-visual-credit { font-size: 10px; line-height: 1.4; color: var(--text-faint); overflow-wrap: anywhere; }
-.idea-visual-note, .idea-visuals-note { font-size: 11px; color: var(--text-faint); margin-top: 8px; line-height: 1.45; }
-.idea-visuals-loading { grid-column: 1 / -1; color: var(--text-muted); font-size: 12px; padding: 14px 4px; }
-@media (min-width: 760px) { .idea-visuals-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 420px) { .idea-visuals-grid { grid-template-columns: 1fr; } .idea-visual-card img { height: 180px; } }
