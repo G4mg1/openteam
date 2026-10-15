@@ -18,7 +18,6 @@
     a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
     button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
     input,textarea,select{font:inherit;color:inherit}
-
     .dev-layout{display:flex;min-height:100vh}
     .dev-sidebar{width:var(--sidebar-w);flex-shrink:0;background:var(--panel);border-right:1px solid var(--border);padding:24px 16px;position:sticky;top:0;height:100vh;overflow-y:auto;display:flex;flex-direction:column}
     .dev-logo{display:flex;align-items:center;gap:10px;margin-bottom:6px;padding:0 8px}
@@ -35,7 +34,6 @@
     .dev-sidebar-footer{margin-top:auto;padding-top:20px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px}
     .dev-sidebar-footer a{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:var(--radius);font-size:13px;color:var(--text-muted);text-decoration:none}
     .dev-sidebar-footer a:hover{background:var(--panel-2);color:var(--text)}
-
     .dev-main{flex:1;min-width:0;padding:48px 56px 80px;max-width:1000px}
     .dev-topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:32px;padding-bottom:20px;border-bottom:1px solid var(--border)}
     .dev-topbar-title{font-size:13px;color:var(--text-faint);font-weight:500;display:flex;align-items:center;gap:6px}
@@ -75,7 +73,6 @@
     td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--text-muted);vertical-align:top}
     tr:last-child td{border-bottom:none}
     .note{padding:12px 14px;border-radius:var(--radius);background:var(--accent-soft);border:1px solid var(--border);font-size:13.5px;color:var(--text-muted);margin:12px 0 16px}
-
     .key-msg{font-size:13px;color:var(--text-muted);margin-bottom:10px;min-height:18px}
     .key-msg.err{color:var(--err)}
     .key-msg.ok{color:var(--ok)}
@@ -91,7 +88,6 @@
     .key-create input{flex:1;min-width:180px;padding:10px 12px;border-radius:var(--radius);border:1px solid var(--border);background:var(--panel-2);font-size:14px;outline:none}
     .key-create input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
     .key-limit-info{font-size:12.5px;color:var(--text-muted);margin-bottom:12px;padding:10px 14px;border-radius:var(--radius);background:var(--panel-2);border:1px solid var(--border)}
-
     .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 18px;border-radius:var(--radius);font-size:13.5px;font-weight:500;transition:background .15s,opacity .15s;border:1px solid transparent}
     .btn-primary{background:var(--accent);color:#fff}
     .btn-primary:hover{background:var(--accent-hover)}
@@ -101,7 +97,6 @@
     .btn-danger{background:transparent;color:var(--err);border-color:rgba(220,38,38,.3)}
     .btn-danger:hover{background:rgba(220,38,38,.08)}
     .btn.small{padding:5px 12px;font-size:12.5px}
-
     .playground{border:1px solid var(--border);border-radius:var(--radius-xl);background:var(--panel);overflow:hidden;margin:20px 0}
     .playground-header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);background:var(--panel-2);gap:10px;flex-wrap:wrap}
     .playground-header h3{margin:0;font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
@@ -116,7 +111,6 @@
     .field-hint{font-size:11.5px;color:var(--text-faint);margin-top:4px}
     .check{display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-muted)}
     .check input{width:auto;accent-color:var(--accent)}
-
     .result{margin-top:18px;border-radius:var(--radius-lg);border:1px solid var(--code-border);background:var(--code-bg);overflow:hidden}
     .result-header{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-bottom:1px solid var(--code-border);background:var(--code-header);font-size:11.5px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.02em}
     .status-pill{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600;text-transform:none}
@@ -124,19 +118,17 @@
     .status-pill.err{background:rgba(220,38,38,.12);color:var(--err)}
     .status-pill.pending{background:var(--panel-3);color:var(--text-muted)}
     .result-output{padding:14px 16px;font-family:var(--mono);font-size:12.5px;line-height:1.65;color:var(--code-text);white-space:pre-wrap;word-break:break-word;max-height:380px;overflow-y:auto;margin:0}
-
     .dots{display:inline-flex;gap:3px;align-items:center}
     .dots span{width:5px;height:5px;border-radius:50%;background:currentColor;animation:bounce 1.4s ease-in-out infinite}
     .dots span:nth-child(2){animation-delay:.15s}
     .dots span:nth-child(3){animation-delay:.3s}
     @keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-4px);opacity:1}}
-
     .mobile-nav-toggle{display:none}
     .scrim{display:none;position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.35)}
     .scrim.open{display:block}
     pre code.hljs{display:block;overflow-x:auto;padding:0;background:transparent}
     pre .hljs{background:transparent}
-
+    .flagship-chip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:99px;background:linear-gradient(135deg,#c4694b,#e07b5c);color:#fff;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;margin-left:6px}
     @media (max-width:900px){
       .dev-sidebar{position:fixed;z-index:100;transform:translateX(-100%);transition:transform .25s cubic-bezier(.4,0,.2,1);box-shadow:var(--shadow-sm)}
       .dev-sidebar.open{transform:translateX(0)}
@@ -199,7 +191,7 @@
 
       <section id="intro">
         <h1>MiroxAI API</h1>
-        <p class="lead">Build apps with <strong>Luna</strong> and <strong>Gen</strong>, our fast models, plus image generation. Chat supports streaming and returns one reply per request. Authenticate with an API key from this page.</p>
+        <p class="lead">Build apps with <strong>Tail r1</strong> — our free flagship model — plus <strong>Luna</strong> and <strong>Gen</strong>, and image generation. Chat supports streaming and returns one reply per request. Authenticate with an API key from this page.</p>
         <div class="badge-row">
           <span class="badge"><i class="ri-checkbox-circle-line"></i> v1</span>
           <span class="badge neutral">Bearer keys</span>
@@ -207,9 +199,9 @@
           <span class="badge neutral">by OpenSurr</span>
         </div>
         <div class="card-grid">
+          <div class="card"><div class="card-icon"><i class="ri-star-smile-line"></i></div><h4>Tail r1 flagship</h4><p>Free. 350k+ context. Best reasoning in Mirox.</p></div>
           <div class="card"><div class="card-icon"><i class="ri-chat-3-line"></i></div><h4>Chat</h4><p>Non-streaming replies or streamed tokens over SSE.</p></div>
           <div class="card"><div class="card-icon"><i class="ri-image-line"></i></div><h4>Images</h4><p>Generate images from a text prompt.</p></div>
-          <div class="card"><div class="card-icon"><i class="ri-search-line"></i></div><h4>Web search</h4><p>Ask a question that needs current facts and the reply cites sources.</p></div>
           <div class="card"><div class="card-icon"><i class="ri-shield-check-line"></i></div><h4>Revocable keys</h4><p>Create, rename, revoke or delete keys at any time.</p></div>
         </div>
       </section>
@@ -221,7 +213,7 @@
   -H "Authorization: Bearer mxk_live_YOUR_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "mirox-luna-1.2",
+    "model": "mirox-tail-r1",
     "message": "Hello! What can you do?"
   }'</code><button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></pre>
       </section>
@@ -248,10 +240,10 @@
           <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
           <tbody>
             <tr><td><code>message</code></td><td>string</td><td>The user's message. Required unless you send attachments.</td></tr>
-            <tr><td><code>model</code></td><td>string</td><td><code>mirox-luna-1.2</code> (default) or <code>mirox-gen-1</code>.</td></tr>
+            <tr><td><code>model</code></td><td>string</td><td><code>mirox-tail-r1</code> (default) · <code>mirox-luna-1.2</code> · <code>mirox-gen-1</code>.</td></tr>
             <tr><td><code>history</code></td><td>array</td><td>Optional earlier turns, each <code>{"role": "user" | "assistant", "content": "..."}</code>. Only the last 14 are used.</td></tr>
             <tr><td><code>stream</code></td><td>boolean</td><td>Set <code>true</code> to receive server-sent events. Default <code>false</code>.</td></tr>
-            <tr><td><code>search</code></td><td>boolean</td><td>Force a web search for this message. Searches also run automatically for phrases like "search for …".</td></tr>
+            <tr><td><code>search</code></td><td>boolean</td><td>Force a web search for this message.</td></tr>
           </tbody>
         </table>
 
@@ -259,7 +251,8 @@
         <pre><code class="language-json">{
   "reply": "Hello! I can answer questions, write and explain code, and search the web.",
   "_ms": 812,
-  "provider": "pl",
+  "provider": "openrouter",
+  "model": "anthropic/claude-3.5-sonnet",
   "search": null
 }</code><button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></pre>
         <p>When a search ran, <code>search</code> contains <code>query</code>, <code>results</code> (title, url, snippet) and <code>overview</code>.</p>
@@ -272,14 +265,14 @@
             <tr><td><code>{"search": {"query": "…"}}</code></td><td>A web search started.</td></tr>
             <tr><td><code>{"source": {"title": "…", "url": "…"}}</code></td><td>One search source found.</td></tr>
             <tr><td><code>{"search_done": true, "count": 5}</code></td><td>Search finished.</td></tr>
-            <tr><td><code>{"p": "pl"}</code></td><td>The provider answering.</td></tr>
+            <tr><td><code>{"p": "openrouter", "model": "…"}</code></td><td>The provider answering.</td></tr>
             <tr><td><code>{"d": "Hel"}</code></td><td>A piece of the reply. Append these in order.</td></tr>
             <tr><td><code>{"img": "data:image/…"}</code></td><td>A generated image, when the message asked for one.</td></tr>
             <tr><td><code>{"done": true}</code></td><td>The reply is complete.</td></tr>
             <tr><td><code>{"error": {"message": "…"}}</code></td><td>The request failed. Stop reading.</td></tr>
           </tbody>
         </table>
-        <pre><code class="language-plaintext">data: {"p":"pl"}
+        <pre><code class="language-plaintext">data: {"p":"openrouter"}
 data: {"d":"Hello"}
 data: {"d":" there"}
 data: {"d":"!"}
@@ -289,14 +282,21 @@ data: {"done":true}</code><button class="code-copy-btn" data-copy><i class="ri-f
 
       <section id="models">
         <h2>Models</h2>
-        <p>The API serves two models. Pro, Ultra and Eclipse are only available in the web app.</p>
+        <p>Three models are available through the API. Pro, Ultra and Eclipse are only available in the web app.</p>
         <table>
-          <thead><tr><th>Model ID</th><th>Label</th><th>Best for</th></tr></thead>
+          <thead><tr><th>Model ID</th><th>Label</th><th>Tier</th><th>Best for</th></tr></thead>
           <tbody>
-            <tr><td><code>mirox-luna-1.2</code></td><td>Luna</td><td>General conversation, explanations, everyday tasks.</td></tr>
-            <tr><td><code>mirox-gen-1</code></td><td>Gen</td><td>Short, direct answers and quick code snippets.</td></tr>
+            <tr>
+              <td><code>mirox-tail-r1</code></td>
+              <td><strong>Tail r1</strong> <span class="flagship-chip">Flagship</span></td>
+              <td>Free</td>
+              <td>Hard reasoning, long context (350k+), math, complex code, multi-step planning. The strongest model in Mirox.</td>
+            </tr>
+            <tr><td><code>mirox-luna-1.2</code></td><td>Luna</td><td>Free</td><td>General conversation, explanations, everyday tasks.</td></tr>
+            <tr><td><code>mirox-gen-1</code></td><td>Gen</td><td>Free</td><td>Short, direct answers and quick code snippets.</td></tr>
           </tbody>
         </table>
+        <div class="note"><strong>Tip:</strong> If you want the best possible answer to a hard problem, use <code>mirox-tail-r1</code>. It is free, but slower than Luna and Gen.</div>
         <p>Requesting any other model with an API key returns <code>403</code>.</p>
       </section>
 
@@ -312,7 +312,7 @@ data: {"done":true}</code><button class="code-copy-btn" data-copy><i class="ri-f
   "ok": true,
   "image": "data:image/png;base64,..."
 }</code><button class="code-copy-btn" data-copy><i class="ri-file-copy-line"></i> Copy</button></pre>
-        <p>Free accounts get 10 image generations per day. Paid plans get 200 (Pro) or 2000 (Ultimate). The daily count resets at midnight UTC.</p>
+        <p>Free accounts get 30 image generations per day. Paid plans get 200 (Pro) or 2000 (Ultimate). The daily count resets at midnight UTC.</p>
       </section>
 
       <section id="errors">
@@ -361,6 +361,7 @@ data: {"done":true}</code><button class="code-copy-btn" data-copy><i class="ri-f
               <div class="field">
                 <label for="pgModel">Model</label>
                 <select id="pgModel">
+                  <option value="mirox-tail-r1">Tail r1 (mirox-tail-r1) — flagship</option>
                   <option value="mirox-luna-1.2">Luna (mirox-luna-1.2)</option>
                   <option value="mirox-gen-1">Gen (mirox-gen-1)</option>
                 </select>
@@ -389,13 +390,13 @@ data: {"done":true}</code><button class="code-copy-btn" data-copy><i class="ri-f
 
       <section id="limits">
         <h2>Limits</h2>
-        <p>Limits reset daily at midnight UTC. The API accepts Luna and Gen only, and every chat counts toward your daily usage.</p>
+        <p>Limits reset daily at midnight UTC. The API accepts Tail r1, Luna and Gen. Every chat counts toward your daily usage.</p>
         <table>
           <thead><tr><th>Plan</th><th>Image generations / day</th><th>API keys</th><th>Models via API</th></tr></thead>
           <tbody>
-            <tr><td>Free</td><td>10</td><td>2</td><td>Luna, Gen</td></tr>
-            <tr><td>Pro</td><td>200</td><td>10</td><td>Luna, Gen</td></tr>
-            <tr><td>Ultimate</td><td>2000</td><td>10</td><td>Luna, Gen</td></tr>
+            <tr><td>Free</td><td>30</td><td>2</td><td>Tail r1, Luna, Gen</td></tr>
+            <tr><td>Pro</td><td>200</td><td>10</td><td>Tail r1, Luna, Gen</td></tr>
+            <tr><td>Ultimate</td><td>2000</td><td>10</td><td>Tail r1, Luna, Gen</td></tr>
           </tbody>
         </table>
         <div class="note">Plans are changed by an administrator. If your plan changes, the new limits apply to your existing keys straight away.</div>
@@ -414,34 +415,21 @@ data: {"done":true}</code><button class="code-copy-btn" data-copy><i class="ri-f
       const $ = (s) => document.querySelector(s);
       const $$ = (s) => document.querySelectorAll(s);
 
-      /* ───── Syntax highlight + language labels ───── */
       function highlightAll() {
         if (!window.hljs) return;
         $$('pre code').forEach((code) => {
           if (!code.classList.contains('language-plaintext')) {
             try { window.hljs.highlightElement(code); } catch {}
           }
-          const pre = code.closest('pre');
-          if (pre && !pre.querySelector('.code-language')) {
-            const lang = Array.from(code.classList).find((c) => c.startsWith('language-'));
-            if (lang && lang !== 'language-plaintext') {
-              const label = document.createElement('span');
-              label.className = 'code-language';
-              label.textContent = lang.slice(9);
-              pre.appendChild(label);
-            }
-          }
         });
       }
       window.addEventListener('load', highlightAll);
 
-      /* ───── Section nav ───── */
       const navLinks = $$('.dev-nav a');
       const sections = Array.from(navLinks).map((a) => document.querySelector(a.getAttribute('href'))).filter(Boolean);
       const sidebar = $('#devSidebar');
       const scrim = $('#scrim');
       function closeMobileNav() { sidebar.classList.remove('open'); scrim.classList.remove('open'); }
-
       navLinks.forEach((a) => {
         a.addEventListener('click', (e) => {
           e.preventDefault();
@@ -458,11 +446,9 @@ data: {"done":true}</code><button class="code-copy-btn" data-copy><i class="ri-f
         });
       }, { rootMargin: '-30% 0px -60% 0px' });
       sections.forEach((s) => observer.observe(s));
-
       $('#mobileNavToggle')?.addEventListener('click', () => { sidebar.classList.toggle('open'); scrim.classList.toggle('open'); });
       scrim?.addEventListener('click', closeMobileNav);
 
-      /* ───── Theme ───── */
       const root = document.documentElement;
       function applyTheme(mode) {
         root.setAttribute('data-mode', mode);
@@ -483,7 +469,6 @@ data: {"done":true}</code><button class="code-copy-btn" data-copy><i class="ri-f
         applyTheme(root.getAttribute('data-mode') === 'dark' ? 'light' : 'dark');
       });
 
-      /* ───── Copy buttons ───── */
       document.querySelectorAll('[data-copy]').forEach((btn) => {
         btn.addEventListener('click', async (e) => {
           e.preventDefault(); e.stopPropagation();
@@ -504,7 +489,6 @@ data: {"done":true}</code><button class="code-copy-btn" data-copy><i class="ri-f
         });
       });
 
-      /* ───── API key manager (uses the signed-in session cookie) ───── */
       const keyList = $('#keyList');
       const keyMsg = $('#keyMsg');
       const keyLimitInfo = $('#keyLimitInfo');
@@ -605,7 +589,6 @@ data: {"done":true}</code><button class="code-copy-btn" data-copy><i class="ri-f
       $('#refreshKeysBtn')?.addEventListener('click', loadKeys);
       loadKeys();
 
-      /* ───── Playground ───── */
       const pgApiKey = $('#pgApiKey'), pgModel = $('#pgModel'), pgMessage = $('#pgMessage');
       const pgStream = $('#pgStream'), pgSearch = $('#pgSearch');
       const pgSendBtn = $('#pgSendBtn'), pgResult = $('#pgResult');
@@ -625,7 +608,7 @@ data: {"done":true}</code><button class="code-copy-btn" data-copy><i class="ri-f
       }
 
       $('#pgResetBtn')?.addEventListener('click', () => {
-        pgApiKey.value = ''; pgModel.value = 'mirox-luna-1.2';
+        pgApiKey.value = ''; pgModel.value = 'mirox-tail-r1';
         pgSearch.checked = false; pgStream.checked = false;
         pgMessage.value = 'Hello! What can you do?';
         pgResult.style.display = 'none'; pgOutput.textContent = '';
@@ -654,7 +637,7 @@ data: {"done":true}</code><button class="code-copy-btn" data-copy><i class="ri-f
             const data = await res.json().catch(() => ({}));
             const ms = Math.round(performance.now() - t0);
             if (res.ok && data.reply !== undefined) {
-              pgOutput.textContent = data.reply + '\n\n— ' + ms + ' ms · ' + (data.provider || 'provider') + ' —';
+              pgOutput.textContent = data.reply + '\n\n— ' + ms + ' ms · ' + (data.provider || 'provider') + (data.model ? ' (' + data.model + ')' : '') + ' —';
               setStatus('ok', 'OK');
             } else {
               pgOutput.textContent = JSON.stringify(data, null, 2);
