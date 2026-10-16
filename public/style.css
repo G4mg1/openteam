@@ -1,5 +1,6 @@
 /* ════════════════════════════════════════════════════════════
-   MiroxAI — Styles v155
+   MiroxAI — Styles v156
+   · Kimi-inspired white theme · KenSearch integration
    · Plugins popover · hidden quota until limit · mode pill
    ════════════════════════════════════════════════════════════ */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -185,6 +186,7 @@ code{font-family:var(--font-mono)}
 .compact-mode .chat-messages{padding:20px 16px 10px}
 .welcome-screen{max-width:var(--content-max);margin:0 auto;text-align:center;padding:46px 16px 24px}
 .kimi-wordmark{font-family:var(--font-family);font-weight:900;font-size:76px;letter-spacing:-.05em;line-height:1;color:var(--text);margin-bottom:12px;animation:brandIn .5s var(--ease-out) both}
+:root[data-mode="dark"] .kimi-wordmark{color:var(--text)}
 .kimi-tagline{font-size:14px;color:var(--text-muted);margin-bottom:28px}
 .kimi-chips{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-bottom:24px}
 .kimi-chip{display:inline-flex;align-items:center;gap:7px;padding:8px 15px;border-radius:999px;border:1px solid var(--border);background:var(--panel);font-size:13px;font-weight:500;color:var(--text-muted);transition:background .15s,color .15s,border-color .15s,transform .15s}
@@ -229,9 +231,10 @@ code{font-family:var(--font-mono)}
 .action-btn:hover{background:var(--panel-2);color:var(--text);border-color:var(--border-strong)}
 .action-btn.active-liked{color:var(--success);background:rgba(22,163,74,.10);border-color:rgba(22,163,74,.35)}
 .action-btn.active-disliked{color:var(--danger);background:rgba(220,38,38,.10);border-color:rgba(220,38,38,.35)}
+.action-btn.active-liked i,.action-btn.active-disliked i{animation:reactPop .35s var(--ease-spring)}
+@keyframes reactPop{0%{transform:scale(1)}45%{transform:scale(1.35)}100%{transform:scale(1)}}
 .action-btn.speaking{color:var(--accent);background:var(--accent-soft);border-color:var(--accent);animation:speakPulse 1.4s ease-in-out infinite}
 @keyframes speakPulse{0%,100%{box-shadow:0 0 0 0 var(--accent-glow)}50%{box-shadow:0 0 0 6px transparent}}
-@keyframes reactPop{0%{transform:scale(1)}45%{transform:scale(1.35)}100%{transform:scale(1)}}
 
 /* Raw view */
 .modal-raw-view{max-width:860px;padding:24px;display:flex;flex-direction:column;gap:14px}
