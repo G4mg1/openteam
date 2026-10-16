@@ -11,6 +11,9 @@ import cors from 'cors';
 import crypto from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
+import { createThinkSplitter, reasoningFromDelta, contentFromDelta } from './thinking.js';
+import { getSettings, sanitizeSettings, userContextPrompt } from './settings.js';
+import { runAgent, saveAttachments } from './tools.js';
 import { fileURLToPath } from 'url';
 
 process.on('unhandledRejection', (e) => console.error('[unhandledRejection]', e?.message || e));
@@ -581,9 +584,11 @@ async function miroxChatChain({ messages, cfg, stream, vision, deepThink }) {
   }
   throw new Error(GENERIC_ERR);
 }
-async function pipeProviderStream(body, onDelta, isClosed, onLimit = () => {}) {
+async function pipeProviderStream(body, onEvent, isClosed, onLimit = () => {}) {
   const reader = body.getReader();
   const dec = new TextDecoder();
+  const split = createThinkSplitter();
+  const emitText = (kind, t) => { if (t) onEvent(kind, t); };
   let buf = '';
   try {
     while (true) {
@@ -600,13 +605,17 @@ async function pipeProviderStream(body, onDelta, isClosed, onLimit = () => {}) {
         if (!raw || raw === '[DONE]') continue;
         try {
           const item = JSON.parse(raw);
-          const d = item.choices?.[0]?.delta?.content;
-          if (typeof d === 'string' && d) onDelta(d);
-          else if (Array.isArray(d)) { const joined = d.map((p) => (typeof p === 'string' ? p : (p?.text || ''))).join(''); if (joined) onDelta(joined); }
-          if (item.choices?.[0]?.finish_reason === 'length') onLimit();
+          const choice = item.choices?.[0] || {};
+          const delta = choice.delta || {};
+          const reasoning = reasoningFromDelta(delta);
+          if (reasoning) emitText('thinking', reasoning);
+          const content = contentFromDelta(delta);
+          if (content) split.push(content, emitText);
+          if (choice.finish_reason === 'length') onLimit();
         } catch {}
       }
     }
+    split.flush(emitText);
   } finally { try { reader.releaseLock(); } catch {} }
 }
 
@@ -903,6 +912,19 @@ app.post(['/api/logout', '/logout'], (req, res) => { clearSessionCookie(req, res
 app.get(['/api/me', '/me'], async (req, res) => { res.setHeader('Cache-Control', 'no-store'); try { const u = await currentUser(req); res.json({ user: u ? publicUser(u) : null }); } catch { res.json({ user: null }); } });
 app.get('/api/persona', async (req, res) => { const u = await currentUser(req); res.json({ ok: true, persona: u?.persona || '' }); });
 app.post('/api/persona', async (req, res) => { const u = await currentUser(req); if (!u) return res.status(401).json({ ok: false, error: 'Login required' }); u.persona = safeStr(req.body?.persona, 500); await persist(); res.json({ ok: true }); });
+app.get('/api/settings', async (req, res) => {
+  const u = await currentUser(req);
+  if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
+  res.json({ ok: true, settings: getSettings(u) });
+});
+app.post('/api/settings', async (req, res) => {
+  const u = await currentUser(req);
+  if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
+  u.settings = sanitizeSettings({ ...getSettings(u), ...(req.body || {}) });
+  u.persona = u.settings.persona;
+  await persist();
+  res.json({ ok: true, settings: getSettings(u) });
+});
 
 /* SUPPORT */
 app.get('/api/support/conversation', async (req, res) => {
@@ -1209,7 +1231,7 @@ app.post(CHAT_PATHS, async (req, res) => {
     if (wantStream) sseInit(res);
 
     const apiMode = viaKey;
-    const msgs = [{ role: 'system', content: buildSystemPrompt(cfg, bridge, !!searchQuery, u?.persona || '', deepThink, effectiveModel, systemExtra, apiMode) }];
+    const msgs = [{ role: 'system', content: buildSystemPrompt(cfg, bridge, !!searchQuery, u?.persona || '', deepThink, effectiveModel, apiMode ? systemExtra : [userContextPrompt(u), systemExtra].filter(Boolean).join('\n\n'), apiMode) }];
     for (const h of history) {
       const role = h && h.role;
       const content = safeStr(h && h.content, 6000).trim();
@@ -1249,6 +1271,33 @@ app.post(CHAT_PATHS, async (req, res) => {
       await persist();
     };
 
+    // Attaching a binary file (zip, pdf, ...) always turns tools on for that message, so the file can be opened.
+    const hasBinaryFile = files.some((f) => f && f.type === 'file' && f.base64);
+    const toolsOn = !apiMode && !!u && (hasBinaryFile || (typeof body.tools === 'boolean' ? body.tools : u.settings?.tools === true));
+    if (toolsOn) {
+      const saved = await saveAttachments(files, u);
+      const last = msgs[msgs.length - 1];
+      if (saved.length && last && typeof last.content === 'string') {
+        last.content += `\n\n[Attached files saved to the workspace: ${saved.join(', ')}]`;
+      }
+      const out = await runAgent({
+        messages: msgs,
+        user: u,
+        chain: (m) => miroxChatChain({ messages: m, cfg, stream: false, vision: visionUsed, deepThink }).then((r) => r.res),
+        emit: (o) => { if (wantStream) sseWrite(res, o); },
+        isClosed: () => closed,
+      });
+      await finishUsage();
+      if (!wantStream) {
+        return res.json({ reply: out.text, tools_used: out.toolCalls, provider: 'MiroxAI (SurrRoute)', model: effectiveModel, _ms: Date.now() - t0 });
+      }
+      sseWrite(res, { p: 'MiroxAI (SurrRoute)', model: effectiveModel, deep_think: deepThink });
+      for (let i = 0; i < out.text.length && !closed; i += 28) sseWrite(res, { d: out.text.slice(i, i + 28) });
+      if (!closed) sseWrite(res, { done: true });
+      sseDone(res);
+      return res.end();
+    }
+
     const result = await miroxChatChain({ messages: msgs, cfg, stream: wantStream, vision: visionUsed, deepThink });
 
     if (!wantStream) {
@@ -1267,7 +1316,7 @@ app.post(CHAT_PATHS, async (req, res) => {
     sseWrite(res, { p: 'MiroxAI (SurrRoute)', model: effectiveModel, deep_think: deepThink });
     if (apiMode) {
       let buf = '';
-      await pipeProviderStream(result.res.body, (d) => { buf += d; }, isClosed, () => sseWrite(res, { limit: true }));
+      await pipeProviderStream(result.res.body, (kind, t) => { if (kind === 'answer') buf += t; }, isClosed, () => sseWrite(res, { limit: true }));
       const clean = stripThinking(buf);
       const CH = 28;
       for (let i = 0; i < clean.length; i += CH) {
@@ -1275,7 +1324,7 @@ app.post(CHAT_PATHS, async (req, res) => {
         sseWrite(res, { d: clean.slice(i, i + CH) });
       }
     } else {
-      await pipeProviderStream(result.res.body, (d) => sseWrite(res, { d }), isClosed, () => sseWrite(res, { limit: true }));
+      await pipeProviderStream(result.res.body, (kind, t) => sseWrite(res, kind === 'thinking' ? { t } : { d: t }), isClosed, () => sseWrite(res, { limit: true }));
     }
     if (!closed) sseWrite(res, { done: true });
     sseDone(res);
