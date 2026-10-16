@@ -2,13 +2,11 @@
   'use strict';
 
   /* ============================================================
-     MiroxAI frontend v149
-     · Single endpoint /v1/chat/completions for app + API
-     · Thinking status pill (no transcript)
-     · Free-tier tool limit modal (20 steps / 3 h)
-     · Free-tier image upload cap (10 per message)
-     · My Mirox growth / closeness / calendar heatmap
-     · Tail r1 flagship (free) · promo popup + confetti
+     MiroxAI frontend v150
+     · Aggressive narration scrubber (strips "It seems there was an issue…", "Let me try again…", "I'll extract…", "Thought for X.Xs")
+     · Native tool-status strip (no MiroxExt dependency)
+     · Thinking pill updates its label during tool loops
+     · Free-tier tool limit modal · free image upload cap · My Mirox growth
      ============================================================ */
 
   /* ---------- i18n ---------- */
@@ -144,9 +142,6 @@
   const CALL_SILENCE_MS = 5000;
   const FREE_IMAGE_UPLOAD_CAP = 10;
 
-  /* ============================================================
-     SINGLE ENDPOINT — same for app and API.
-     ============================================================ */
   const APP_CHAT_URL   = '/v1/chat/completions';
   const APP_IMAGES_URL = '/v1/images/generations';
 
@@ -186,7 +181,6 @@
   };
 
   let __currentSpeakMsgId = null;
-
   let __growth = { days: {}, totalMessages: 0, totalChats: 0, createdAt: Date.now() };
 
   const uid = () => 'c_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
@@ -274,7 +268,6 @@
     if (inp) inp.placeholder = __prefs.deepThink ? 'DeepThink is on — ask anything complex…' : 'How can I help you today?';
   }
 
-  /* ---------- Reactions ---------- */
   function loadReactions() { __reactions = safeGet(REACTIONS_KEY, {}); if (typeof __reactions !== 'object' || !__reactions) __reactions = {}; }
   function saveReactions() { safeSet(REACTIONS_KEY, __reactions); }
 
@@ -323,7 +316,6 @@
     const streak = streakCount();
     const active = activeDaysCount();
     const total = __growth.totalMessages;
-
     const days = [];
     const today = new Date(); today.setHours(0, 0, 0, 0);
     for (let i = 34; i >= 0; i--) {
@@ -335,7 +327,6 @@
       const lvl2 = x.count === 0 ? 0 : x.count < 3 ? 1 : x.count < 8 ? 2 : x.count < 20 ? 3 : 4;
       return `<div class="mm-day lvl-${lvl2}" title="${x.key} · ${x.count} messages">${x.day}</div>`;
     }).join('');
-
     root.innerHTML = `
       <div class="mm-hero">
         <div class="mm-hero-avatar"><div class="mascot mascot-md m-happy" data-mood="happy">${blobSvg()}</div></div>
@@ -345,18 +336,15 @@
         </div>
         <div class="mm-hero-badge"><i class="${lvl.icon}"></i> ${escapeHtml(lvl.label)}</div>
       </div>
-
       <div class="mm-stats">
         <div class="mm-stat"><div class="mm-stat-num">${active}</div><div class="mm-stat-lbl">Active days</div></div>
         <div class="mm-stat"><div class="mm-stat-num">${streak}</div><div class="mm-stat-lbl">Day streak</div></div>
         <div class="mm-stat"><div class="mm-stat-num">${total}</div><div class="mm-stat-lbl">Messages</div></div>
         <div class="mm-stat"><div class="mm-stat-num">${__growth.totalChats}</div><div class="mm-stat-lbl">Chats</div></div>
       </div>
-
       <div class="mm-section-title">Closeness</div>
       <div class="mm-bar"><div class="mm-bar-fill" style="width:${lvl.pct}%"></div></div>
       <div class="mm-bar-hint">${escapeHtml(lvl.label)} — keep chatting to grow closer.</div>
-
       <div class="mm-section-title">Last 35 days</div>
       <div class="mm-heat">${heat}</div>
       <div class="mm-heat-legend">
@@ -506,13 +494,17 @@
     }, 6000);
   }
 
-  /* ---------- Thinking-leak scrubber ---------- */
+  /* ---------- Thinking-leak scrubber (AGGRESSIVE) ---------- */
   function stripThinkingLeak(s) {
     let out = String(s == null ? '' : s);
+
+    // 1) Remove complete <thinking> blocks
     out = out.replace(/<thinking>[\s\S]*?<\/thinking>/g, '');
+    // 2) Remove dangling open <thinking>
     const lastOpen = out.lastIndexOf('<thinking>');
     if (lastOpen >= 0 && out.indexOf('</thinking>', lastOpen) === -1) out = out.slice(0, lastOpen);
     out = out.replace(/<\/?thinking>/g, '');
+    // 3) Remove partial tag tails (<thin, </think, etc.)
     const lastLt = out.lastIndexOf('<');
     if (lastLt >= 0) {
       const tail = out.slice(lastLt);
@@ -520,20 +512,70 @@
       if (candidates.some((c) => c.toLowerCase().startsWith(tail.toLowerCase()) && tail.length < c.length))
         out = out.slice(0, lastLt);
     }
+
+    // 4) Strip reasoning-model timing prefixes: "Thought for 14.7s"
+    out = out.replace(/^\s*thought\s+for\s+\d+(?:\.\d+)?\s*s\s*/im, '');
+    // 5) Strip standalone "14.7s" duration lines
+    out = out.replace(/^\s*\d+(?:\.\d+)?s\s*$/gm, '');
+    // 6) Strip "Thought:" / "Reasoning:" lead-ins
+    out = out.replace(/^\s*(?:thought|reasoning|analysis)\s*:\s*/im, '');
+
+    // 7) Strip first-person tool narration that leaks into the answer.
+    //    These are the EXACT patterns from the ZIP-file case.
     const NARRATION = [
-      /^i['’]ll\s+(?:attempt to|try to|now)?\s*(?:extract|inspect|open|read|load|check|look at|look inside|unzip|analyse|analyze|review|fetch|download|search|browse|process|parse|scan|verify|test|write|create|run|execute|use|call)[^\n.!?]*[.!?]?\s*/gim,
-      /^i['’]m\s+going to\s+[^\n.!?]*[.!?]?\s*/gim,
-      /^i\s+will\s+(?:now\s+)?(?:attempt to\s+)?(?:extract|inspect|open|read|load|check|look|unzip|analyse|analyze|review|fetch|download|search|browse|process|parse|scan|verify|test|write|create|run|execute|use|call)[^\n.!?]*[.!?]?\s*/gim,
-      /^let me\s+(?:first\s+)?(?:extract|inspect|open|read|load|check|look at|look inside|unzip|analyse|analyze|review|fetch|download|search|browse|process|parse|scan|verify|test|write|create|run|execute|use|call)[^\n.!?]*[.!?]?\s*/gim,
-      /^i['’]ve\s+(?:extracted|inspected|opened|read|loaded|checked|analy|unzipped|reviewed|fetched|downloaded|searched|browsed|processed|parsed|scanned|verified|tested|written|created|run|executed|used|called)[^\n.!?]*[.!?]?\s*/gim,
-      /^\s*i\s+need to\s+(?:extract|inspect|open|read|load|check|look|unzip|analyse|analyze|review|fetch|download|search|browse|process|parse|scan|verify|test|write|create|run|execute|use|call)[^\n.!?]*[.!?]?\s*/gim,
+      // "It seems there was an issue with..."
+      /^\s*it\s+seems\s+(?:there\s+was\s+)?(?:an?\s+)?(?:issue|problem|error|difficulty)[^\n.!?]*[.!?]?\s*/gim,
+      // "Let me try again to ensure..."
+      /^\s*let\s+me\s+try\s+again[^\n.!?]*[.!?]?\s*/gim,
+      // "I'll attempt/try to extract/inspect/open..."
+      /^\s*i[''']ll\s+(?:attempt\s+to\s+|try\s+to\s+|now\s+)?(?:extract|inspect|open|read|load|check|look\s+at|look\s+inside|unzip|analyse|analyze|review|fetch|download|search|browse|process|parse|scan|verify|test|write|create|run|execute|use|call)[^\n.!?]*[.!?]?\s*/gim,
+      // "I'm going to..."
+      /^\s*i[''']m\s+going\s+to\s+[^\n.!?]*[.!?]?\s*/gim,
+      // "I will now..."
+      /^\s*i\s+will\s+(?:now\s+)?(?:attempt\s+to\s+)?(?:extract|inspect|open|read|load|check|look|unzip|analyse|analyze|review|fetch|download|search|browse|process|parse|scan|verify|test|write|create|run|execute|use|call)[^\n.!?]*[.!?]?\s*/gim,
+      // "Let me first..."
+      /^\s*let\s+me\s+(?:first\s+)?(?:extract|inspect|open|read|load|check|look\s+at|look\s+inside|unzip|analyse|analyze|review|fetch|download|search|browse|process|parse|scan|verify|test|write|create|run|execute|use|call)[^\n.!?]*[.!?]?\s*/gim,
+      // "I've extracted/inspected..."
+      /^\s*i[''']ve\s+(?:extracted|inspected|opened|read|loaded|checked|analy|unzipped|reviewed|fetched|downloaded|searched|browsed|processed|parsed|scanned|verified|tested|written|created|run|executed|used|called)[^\n.!?]*[.!?]?\s*/gim,
+      // "I need to..."
+      /^\s*i\s+need\s+to\s+(?:extract|inspect|open|read|load|check|look|unzip|analyse|analyze|review|fetch|download|search|browse|process|parse|scan|verify|test|write|create|run|execute|use|call)[^\n.!?]*[.!?]?\s*/gim,
+      // "Now that the file..."
+      /^\s*now\s+that\s+the\s+(?:file|zip|archive|content|image|pdf)[^\n.!?]*[.!?]?\s*/gim,
+      // "Here is what I found..." lead-in
+      /^\s*here[''']s\s+what\s+i\s+found[^\n.!?]*[.!?]?\s*/gim,
+      // Generic "OK, I've ..." lead-in
+      /^\s*(?:ok(?:ay)?|alright|sure|got\s+it)[,.]\s+(?:i[''']ve|i[''']ll|let\s+me|i\s+will)[^\n.!?]*[.!?]?\s*/gim,
+      // "Using the X tool..." / "Using the tool..."
+      /^\s*using\s+the\s+[^\n.!?]{1,60}?\s+tool[^\n.!?]*[.!?]?\s*/gim,
+      // "I will use the X tool..."
+      /^\s*i\s+will\s+use\s+the\s+[^\n.!?]{1,60}?\s+tool[^\n.!?]*[.!?]?\s*/gim,
+      // "Let me use ..."
+      /^\s*let\s+me\s+use\s+[^\n.!?]*[.!?]?\s*/gim,
+      // "I'll now use ..."
+      /^\s*i[''']ll\s+now\s+use\s+[^\n.!?]*[.!?]?\s*/gim,
+      // "Proceeding to ..."
+      /^\s*proceeding\s+to\s+[^\n.!?]*[.!?]?\s*/gim,
+      // "Next, I'll ..."
+      /^\s*next[,]?\s+i[''']ll\s+[^\n.!?]*[.!?]?\s*/gim,
+      // "First, I'll ..." / "First, let me ..."
+      /^\s*first[,]?\s+(?:i[''']ll|let\s+me)\s+[^\n.!?]*[.!?]?\s*/gim,
+      // "Based on the results, I ..." is fine; but "Based on the tool result..." is narration
+      /^\s*based\s+on\s+the\s+(?:tool\s+)?(?:result|output)[^\n.!?]*[.!?]?\s*/gim,
+      // "The tool returned..."
+      /^\s*the\s+tool\s+(?:returned|reported|showed|gave)[^\n.!?]*[.!?]?\s*/gim,
+      // "I've successfully ..."
+      /^\s*i[''']ve\s+successfully\s+[^\n.!?]*[.!?]?\s*/gim,
+      // "Successfully extracted/read/..."
+      /^\s*successfully\s+(?:extracted|read|loaded|opened|unzipped|created|written|run|executed)[^\n.!?]*[.!?]?\s*/gim,
     ];
     for (const re of NARRATION) out = out.replace(re, '');
+
+    // 8) Collapse the blank lines left behind
     out = out.replace(/\n{3,}/g, '\n\n').replace(/^\s+/, '');
     return out;
   }
 
-  /* ---------- Thinking panel ---------- */
+  /* ---------- Thinking panel (status pill, no transcript) ---------- */
   function createThinkPanel(_deep) {
     const el = document.createElement('div');
     el.className = 'think-panel';
@@ -560,19 +602,95 @@
       else if (next === 'done') { iconEl.className = 'ri-checkbox-circle-fill'; const secs = ((performance.now() - t0) / 1000).toFixed(1); titleTextEl.textContent = 'Thought for ' + secs + 's'; }
       else if (next === 'failed') { iconEl.className = 'ri-error-warning-fill'; titleTextEl.textContent = 'Thinking stopped'; }
     }
+    function setStatus(text) {
+      if (done) return;
+      if (text) titleTextEl.textContent = text;
+    }
     function finalize() {
       if (done) return;
       done = true; clearInterval(timer);
-      timerPill.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
-      setState('done');
+      const secs = ((performance.now() - t0) / 1000).toFixed(1);
+      timerPill.textContent = secs + 's';
+      timerPill.style.display = 'none';
+      iconEl.className = 'ri-checkbox-circle-fill';
+      el.dataset.state = 'done';
+      titleTextEl.textContent = 'Thought for ' + secs + 's';
     }
     function fail() {
       if (done) return;
       done = true; clearInterval(timer);
-      setState('failed');
+      timerPill.style.display = 'none';
+      iconEl.className = 'ri-error-warning-fill';
+      el.dataset.state = 'failed';
+      titleTextEl.textContent = 'Thinking stopped';
     }
     function hide() { el.style.display = 'none'; done = true; clearInterval(timer); }
-    return { el, replaceText: () => {}, finalize, fail, hide, isConnected: () => el.isConnected, destroy: () => clearInterval(timer) };
+    return { el, replaceText: () => {}, finalize, fail, hide, setStatus, isConnected: () => el.isConnected, destroy: () => clearInterval(timer) };
+  }
+
+  /* ---------- Tool status strip (renders server {tool:…} events) ---------- */
+  function ensureToolStrip(msgEl, thinkPanel) {
+    const bodyEl = msgEl.querySelector('.message-body');
+    if (!bodyEl) return null;
+    let strip = bodyEl.querySelector('.tool-status-strip');
+    if (!strip) {
+      strip = document.createElement('div');
+      strip.className = 'tool-status-strip';
+      // Place right after the thinking panel (or at the top of body)
+      const anchor = thinkPanel?.el?.parentNode === bodyEl ? thinkPanel.el.nextSibling : bodyEl.firstChild;
+      bodyEl.insertBefore(strip, anchor);
+    }
+    return strip;
+  }
+  function renderToolStatus(msgEl, tool, thinkPanel) {
+    const strip = ensureToolStrip(msgEl, thinkPanel);
+    if (!strip) return;
+    const name = String(tool.name || 'tool');
+    const status = String(tool.status || 'running');
+    const summary = tool.summary ? String(tool.summary).slice(0, 120) : '';
+
+    // Each call gets its own chip. Find an existing running chip with the same name.
+    let chip = strip.querySelector(`.tool-status-chip[data-name="${CSS.escape(name)}"][data-status="running"]`);
+    if (!chip) {
+      chip = document.createElement('div');
+      chip.className = 'tool-status-chip';
+      chip.dataset.name = name;
+      strip.appendChild(chip);
+    }
+    chip.dataset.status = status;
+    chip.className = 'tool-status-chip ' + status;
+
+    const icon = status === 'done' ? 'ri-check-line'
+               : status === 'error' ? 'ri-close-line'
+               : 'ri-loader-4-line spin';
+    const label = humanizeToolName(name);
+    chip.innerHTML = `<i class="${icon}"></i><span class="tool-status-name">${escapeHtml(label)}</span>${summary ? `<span class="tool-status-summary">${escapeHtml(summary)}</span>` : ''}`;
+
+    // Also update the thinking pill's label while tools run.
+    if (thinkPanel && thinkPanel.isConnected()) {
+      if (status === 'running') thinkPanel.setStatus('Running ' + label + '…');
+      else if (status === 'done') thinkPanel.setStatus('Reading results…');
+      else thinkPanel.setStatus('Tool failed — retrying…');
+    }
+  }
+  function humanizeToolName(name) {
+    const map = {
+      'extract_zip': 'Extracting archive',
+      'make_zip': 'Creating archive',
+      'read_file': 'Reading file',
+      'write_file': 'Writing file',
+      'append_file': 'Appending to file',
+      'list_files': 'Listing files',
+      'create_directory': 'Creating folder',
+      'search_files': 'Searching files',
+      'workspace_info': 'Checking workspace',
+      'fetch_url': 'Fetching URL',
+      'inspect_tls': 'Inspecting TLS certificate',
+      'remember': 'Saving memory',
+      'run_command': 'Running command',
+    };
+    if (map[name]) return map[name];
+    return String(name || 'tool').replace(/[_-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   }
 
   /* ---------- Watermark ---------- */
@@ -1179,7 +1297,6 @@
     if (__prefs.deepThink && !hasImageFile && looksLikeImageRequest(text)) { toast('Image generation is disabled while DeepThink is on.', 4500, 'err'); return; }
     if (!__user && looksLikeImageRequest(text)) { requireSignIn('Sign in to generate images with Mirox.'); return; }
     if (!__user && hasImageFile && detectImageEditIntent(text, true)) { requireSignIn('Sign in to edit images with Mirox.'); return; }
-
     if (!currentConversationId) {
       currentConversationId = uid();
       __conversations.unshift({ id: currentConversationId, title: text.slice(0, 60) || 'New chat', messages: [], created: Date.now() });
@@ -1285,7 +1402,7 @@
     let streamComplete = false;
     let renderTimer = null;
     let rawAll = '', answerText = '', thinkingText = '';
-    let hasReasoning = false, thinkingTagSeen = false;
+    let hasReasoning = false, thinkingTagSeen = false, toolSeen = false;
     const renderStreamText = () => {
       renderTimer = null;
       if (!bubbleText) return;
@@ -1308,7 +1425,7 @@
       const reqBody = {
         message: text, history, model, stream: true, search: !!forceSearch,
         deep_think: !!__prefs.deepThink,
-        tools: !!(window.MiroxExt && window.MiroxExt.toolsOn()),
+        tools: !!(window.MiroxExt && window.MiroxExt.toolsOn && window.MiroxExt.toolsOn()),
         system_extra: sysExtra,
         files: files.map((f) => ({
           name: f.name, size: f.size, type: f.type, mime: f.mime,
@@ -1367,6 +1484,7 @@
           const pl = line.slice(5).trim(); if (!pl) continue;
           if (pl === '[DONE]') { streamComplete = true; continue; }
           let o; try { o = JSON.parse(pl); } catch { continue; }
+
           if (o.signin_required && !signinTriggered) {
             signinTriggered = true;
             requireSignIn(o.message || 'Sign in to continue.');
@@ -1385,7 +1503,12 @@
             hasReasoning = true;
             thinkingText += o.t;
           }
-          if (o.tool && window.MiroxExt) window.MiroxExt.onTool(o.tool, msgEl);
+          // Native tool status rendering — no MiroxExt dependency.
+          if (o.tool) {
+            toolSeen = true;
+            renderToolStatus(msgEl, o.tool, thinkPanel);
+            if (window.MiroxExt && window.MiroxExt.onTool) try { window.MiroxExt.onTool(o.tool, msgEl); } catch {}
+          }
           if (o.img) {
             generatedImage = o.img;
             if (avatarMascot) setMascotMood('celebrate', avatarMascot.parentElement.parentElement);
@@ -1422,7 +1545,7 @@
       if (signinTriggered) { try { reader.cancel(); } catch {} }
       updateSplit();
       if (thinkPanel && thinkPanel.isConnected()) {
-        if (thinkingTagSeen || hasReasoning) thinkPanel.finalize();
+        if (thinkingTagSeen || hasReasoning || toolSeen) thinkPanel.finalize();
         else thinkPanel.hide();
       }
       full = answerText;
@@ -1602,7 +1725,7 @@
     if (!fileList || !fileList.length) return;
     const arr0 = Array.from(fileList).filter((f) => !hasAttachment(f.name, f.size));
     if (!arr0.length) return;
-    // Free-tier image upload cap (client-side pre-check). Server enforces it too.
+    // Free-tier image cap (client pre-check). Server also enforces 10.
     const incomingImages = arr0.filter((f) => (f.type || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(f.name));
     const currentImages = pendingFiles.filter((f) => f.type === 'image').length;
     if (__tier === 'free' && (currentImages + incomingImages.length) > FREE_IMAGE_UPLOAD_CAP) {
