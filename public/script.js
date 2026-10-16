@@ -2,9 +2,11 @@
   'use strict';
 
   /* ============================================================
-     MiroxAI frontend v145
-     · Tail r1 flagship (free) · real streamed thinking
-     · Promo popup + confetti · Image history delete
+     MiroxAI frontend v146
+     · Web app hits /v1/api/chat (thinking ALWAYS ON)
+     · External API uses /v1/chat/completions (thinking OFF)
+     · Tail r1 flagship (free) · promo popup + confetti
+     · Image history delete
      ============================================================ */
 
   /* ---------- i18n ---------- */
@@ -137,6 +139,15 @@
   const MAX_DUP_COMMANDS = 3;
   const MAX_DUP_REPLIES = 2;
   const CALL_SILENCE_MS = 5000;
+
+  /* ============================================================
+     API ROUTES — separate app vs external API
+       APP_CHAT    → /v1/api/chat          (thinking ALWAYS ON)
+       APP_IMAGES  → /v1/api/images
+       API_CHAT    → /v1/chat/completions  (external apps only)
+     ============================================================ */
+  const APP_CHAT_URL    = '/v1/api/chat';
+  const APP_IMAGES_URL  = '/v1/api/images';
 
   const THINK_INSTRUCTION = `Think carefully before answering, but never reveal private chain-of-thought, internal monologue, or reasoning tags. Give the user a clear, direct answer with useful explanations and conclusions.`;
 
@@ -414,7 +425,7 @@
     return out;
   }
 
-  /* ---------- Thinking panel — shows the REAL streamed reasoning ---------- */
+  /* ---------- Thinking panel ---------- */
   function createThinkPanel(deep) {
     const el = document.createElement('div');
     el.className = 'think-panel';
@@ -449,7 +460,6 @@
       if (done) { clearInterval(timer); return; }
       timerPill.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
     }, 100);
-    // Show the model's real first-person reasoning, streamed live.
     function replaceText(text) {
       if (done) return;
       const t = String(text || '').trim();
@@ -457,7 +467,6 @@
       if (t !== lastText) {
         lastText = t;
         textEl.textContent = t;
-        // Auto-scroll to bottom as it streams
         try { bodyEl.scrollTop = bodyEl.scrollHeight; } catch {}
       }
     }
@@ -480,7 +489,6 @@
       done = true; clearInterval(timer);
       timerPill.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
       setState('done');
-      // Auto-collapse shortly after finishing
       setTimeout(() => {
         if (el.isConnected && el.dataset.collapsed === 'false') {
           el.dataset.collapsed = 'true';
@@ -691,7 +699,6 @@
     safeSet(LS_KEY, slim);
   }
   function loadChats() { const v = safeGet(LS_KEY, []); __conversations = Array.isArray(v) ? v : []; }
-
   function welcomeHTML() {
     return `<div class="welcome-screen">
       <div class="welcome-mascot"><div class="mascot mascot-lg m-idle" id="welcomeMascot" data-mood="idle">${blobSvg()}</div></div>
@@ -1226,7 +1233,9 @@
         edit_image: !!editIntent, source_image: sourceImage,
         continuation: !!isContinuation,
       };
-      const res = await fetch('/v1/chat/completions', {
+
+      /* ⬇️ APP ROUTE — thinking is ALWAYS ON on the server side */
+      const res = await fetch(APP_CHAT_URL, {
         method: 'POST', headers: authHeaders(), credentials: 'same-origin',
         body: JSON.stringify(reqBody), signal: activeStreamController.signal,
       });
@@ -1694,7 +1703,8 @@
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line spin"></i> …'; }
     if (result) result.innerHTML = '<div class="studio-empty"><i class="ri-loader-4-line spin"></i> …</div>';
     try {
-      const res = await netFetch('/v1/images/generations', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ prompt, guest_id: getGuestId() }) }, 90000);
+      /* ⬇️ APP IMAGE ROUTE — session cookie auth, thinking irrelevant here */
+      const res = await netFetch(APP_IMAGES_URL, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ prompt, guest_id: getGuestId() }) }, 90000);
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok && data.image) {
         const wm = await watermarkedDataUrl(data.image);
@@ -1834,7 +1844,8 @@
     const controller = new AbortController();
     __call.currentAbort = controller;
     try {
-      const res = await fetch('/v1/chat/completions', {
+      /* ⬇️ Call mode uses the APP route */
+      const res = await fetch(APP_CHAT_URL, {
         method: 'POST', headers: authHeaders(), credentials: 'same-origin',
         body: JSON.stringify({
           message: userText,
@@ -2144,7 +2155,8 @@
   async function fetchBridgeReply(history) {
     const envBlock = buildEnvBlockString();
     const lastMsg = history[history.length - 1];
-    const r = await netFetch('/v1/chat/completions', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ message: `${envBlock}\n\n${lastMsg.content}`, history: history.slice(0, -1).map((h) => ({ role: h.role, content: h.content })), model: 'mirox-tail-r1', stream: false, deep_think: !!__prefs.deepThink }) }, 120000);
+    /* ⬇️ Bridge mode also uses the APP route */
+    const r = await netFetch(APP_CHAT_URL, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ message: `${envBlock}\n\n${lastMsg.content}`, history: history.slice(0, -1).map((h) => ({ role: h.role, content: h.content })), model: 'mirox-tail-r1', stream: false, deep_think: !!__prefs.deepThink }) }, 120000);
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error?.message || `HTTP ${r.status}`);
     return data.reply || '';
@@ -2280,19 +2292,15 @@
       if (__prefs.deepThink) toast('DeepThink is on — model reasons longer. Image generation disabled.', 3500, 'ok');
       else toast('DeepThink off.', 1800);
     });
-
     on('#searchModeBtn', 'click', (e) => { e.preventDefault(); forceSearchNext = !forceSearchNext; $('#searchModeBtn')?.classList.toggle('active', forceSearchNext); });
     on('#imageModeBtn', 'click', () => {
       if (__prefs.deepThink) { toast('Turn off DeepThink to generate images.', 3500, 'err'); return; }
       if (!__user) { requireSignIn('Sign in to use Lumenal and generate images.'); return; }
       openModal('imageModal');
     });
-
     on('#sidebarImagesDeleteAll', 'click', deleteAllImages);
-
     on('#tailPromoTryBtn', 'click', tryTailPromo);
     on('#tailPromoLaterBtn', 'click', dismissTailPromo);
-
     on('#callModeBtn', 'click', startCall);
     on('#callEndBtn', 'click', endCall);
     on('#callHoldBtn', 'click', toggleCallHold);
@@ -2305,7 +2313,6 @@
         setTimeout(() => { if (__call.active && __call.shouldListen && !__call.holding) startCallRecognition(); }, 220);
       }
     });
-
     on('#plansModeBtn', 'click', () => { openModal('plansModal'); loadPlans(); });
     on('#supportModeBtn', 'click', (e) => { e.preventDefault(); openSupportModal(); });
     on('#supportModeBtn2', 'click', () => openSupportModal());
@@ -2323,11 +2330,9 @@
       supInput.addEventListener('input', () => { supInput.style.height = 'auto'; supInput.style.height = Math.min(supInput.scrollHeight, 140) + 'px'; supportUpdateComposeState(); });
       supInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); supportSend(); } });
     }
-
     on('#rawViewCopyBtn', 'click', async () => {
       try { await navigator.clipboard.writeText(__currentRawSource || ''); toast('Source copied', 1800, 'ok'); } catch {}
     });
-
     $$('.html-runner-tab').forEach((t) => {
       t.onclick = () => {
         $$('.html-runner-tab').forEach((x) => x.classList.toggle('active', x === t));
@@ -2337,7 +2342,6 @@
     on('#hrReloadBtn', 'click', () => { const f = $('#hrIframe'); if (f) f.srcdoc = __hrCurrentCode; });
     on('#hrCopyBtn', 'click', async () => { try { await navigator.clipboard.writeText(__hrCurrentCode); toast('Source copied', 1800, 'ok'); } catch {} });
     on('#hrOpenBtn', 'click', () => { const w = window.open('', '_blank'); if (w) { w.document.open(); w.document.write(__hrCurrentCode); w.document.close(); } });
-
     $$('.settings-tab').forEach((tab) => {
       tab.onclick = () => {
         const tabKey = tab.dataset.tab;
@@ -2392,7 +2396,6 @@
     }
     on('#bridgeSendBtn', 'click', handleBridgeSend);
     $$('.bw-quick').forEach((btn) => { btn.onclick = () => { const inp2 = $('#bridgeInput'); if (inp2) { inp2.value = btn.dataset.q; updateBridgeSendBtn(); } handleBridgeSend(); }; });
-
     document.addEventListener('click', (e) => {
       const cb = e.target.closest('[data-close]');
       if (cb) {
@@ -2440,7 +2443,6 @@
         updateSendButtonState(); inp2.focus();
       }
     });
-
     bindSuggestionClicks();
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
