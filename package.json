@@ -3,12 +3,15 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=20 <25" },
+  "engines": {
+    "node": ">=20 <25"
+  },
   "scripts": {
     "start": "node api/index.js",
     "dev": "node --watch api/index.js"
   },
   "dependencies": {
+    "adm-zip": "^0.5.16",
     "archiver": "^7.0.1",
     "cors": "^2.8.5",
     "express": "^4.21.2"
