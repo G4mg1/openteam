@@ -2346,6 +2346,7 @@
     on('#generateImageBtn', 'click', genImage);
     on('#settingsBtn', 'click', (e) => { e.preventDefault(); openSettingsModal(); });
     on('#logoutBtn', 'click', doLogout);
+    on('#savePersonalizationBtn', 'click', () => savePersonalizationSettings().catch(() => { const s = document.getElementById('personalizationSaveStatus'); if (s) s.textContent = 'Save failed. Please retry.'; }));
     on('#signInFromSettingsBtn', 'click', () => { closeModal('settingsModal'); setLoginError(''); openModal('loginModal'); });
     on('#supportResolveBtn', 'click', supportResolve);
     on('#supportSendBtn', 'click', supportSend);
@@ -2486,7 +2487,27 @@
     if (!IS_PC) document.querySelectorAll('#bridgeModeBtn, #bridgeOpenBtn, [data-pane="bridge"], .sidebar-tab[data-tab="bridge"]').forEach((el) => { el.style.display = 'none'; });
   }
 
-  function openSettingsModal() { applyPrefs(); updateAccountUI(); loadVoices(); openModal('settingsModal'); }
+  function openSettingsModal() { applyPrefs(); updateAccountUI(); loadVoices(); openModal('settingsModal'); loadPersonalizationSettings().catch(() => {}); }
+  async function loadPersonalizationSettings() {
+    const status = document.getElementById('personalizationSaveStatus');
+    if (!__user) { if (status) status.textContent = 'Sign in to save personalization to your account.'; return; }
+    const data = await jsonOr('/api/settings', {}, null, 7000);
+    const settings = data?.settings || {};
+    const p = settings.personalization || {};
+    const put = (id, value) => { const el = document.getElementById(id); if (el) el.value = value || ''; };
+    put('personaSettingInput', settings.persona || ''); put('personalizationNameInput', p.name); put('personalizationNicknameInput', p.nickname); put('personalizationAboutInput', p.about); put('personalizationToneSelect', p.tone || 'default');
+    if (status) status.textContent = '';
+  }
+  async function savePersonalizationSettings() {
+    const status = document.getElementById('personalizationSaveStatus');
+    if (!__user) { if (status) status.textContent = 'Sign in first to save these settings.'; return; }
+    const existing = await jsonOr('/api/settings', {}, null, 7000);
+    const current = existing?.settings || {};
+    const body = { ...current, persona: document.getElementById('personaSettingInput')?.value || '', personalization: { ...(current.personalization || {}), name: document.getElementById('personalizationNameInput')?.value || '', nickname: document.getElementById('personalizationNicknameInput')?.value || '', about: document.getElementById('personalizationAboutInput')?.value || '', tone: document.getElementById('personalizationToneSelect')?.value || 'default' } };
+    const result = await jsonOr('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, null, 9000);
+    if (status) status.textContent = result?.ok ? 'Saved.' : 'Could not save. Please sign in again and retry.';
+    if (result?.ok) toast('Personalization saved', 1800, 'ok');
+  }
 
   async function openConversation(id) {
     const convo = __conversations.find((c) => c.id === id);
