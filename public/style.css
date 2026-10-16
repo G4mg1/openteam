@@ -1,6 +1,8 @@
 /* ════════════════════════════════════════════════════════════
-   MiroxAI — Styles v145
-   v145: My Mirox growth · minimal thinking pill · TLS quick action
+   MiroxAI — Styles v151
+   v151: native tool-status strip · minimal thinking pill ·
+         My Mirox · tail r1 promo · confetti · bridge ·
+         call overlay · HTML runner · support · image studio
    ════════════════════════════════════════════════════════════ */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -295,22 +297,35 @@ code { font-family: var(--font-mono); }
 .tool-btn.tool-deep.active i { color: var(--accent); animation: deepPulse 2.4s ease-in-out infinite; }
 @keyframes deepPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.12); } }
 
-/* Thinking panel — final minimal pill (no bubble look) */
-.think-panel { width: fit-content; max-width: 100%; padding: 0; border: 0; background: transparent; border-radius: 0; box-shadow: none; margin: 0 0 8px 0; animation: thinkIn .2s var(--ease-out); }
+/* ═══ THINKING PANEL — minimal status pill ═══ */
+.think-panel { width: fit-content; max-width: min(100%, 420px); padding: 0; border: 0; background: transparent; border-radius: 0; box-shadow: none; margin: 0 0 8px 0; animation: thinkIn .2s var(--ease-out); }
 .think-panel::before { display: none; }
 @keyframes thinkIn { from { opacity: 0; } to { opacity: 1; } }
 .think-header { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
 .think-icon { width: 16px; height: 16px; display: grid; place-items: center; background: transparent; color: var(--text-faint); font-size: 13px; flex-shrink: 0; }
-.think-panel[data-state="thinking"] .think-icon { background: transparent; color: var(--accent); box-shadow: none; animation: none; }
+.think-panel[data-state="thinking"] .think-icon { background: transparent; color: var(--accent); box-shadow: none; }
 .think-panel[data-state="thinking"] .think-icon i { animation: spin 1.4s linear infinite; }
 .think-panel[data-state="done"] .think-icon { background: transparent; color: var(--success); }
 .think-panel[data-state="failed"] .think-icon { background: transparent; color: var(--danger); }
 .think-title { flex: 1; min-width: 0; font-size: 12px; font-weight: 500; color: var(--text-muted); }
 .think-title-text { display: inline-block; color: var(--text-muted); background: none; -webkit-text-fill-color: currentColor; animation: none; }
-.think-panel[data-state="done"] .think-title-text { color: var(--text-muted); }
 .think-timer-pill { font-size: 11px; font-weight: 500; font-family: var(--font-mono); color: var(--text-faint); background: transparent; border: 0; padding: 0; flex-shrink: 0; }
-.think-panel[data-state="done"] .think-timer-pill { color: var(--text-faint); background: transparent; border: 0; }
+.think-panel[data-state="done"] .think-timer-pill,
+.think-panel[data-state="failed"] .think-timer-pill { display: none !important; }
 .think-toggle, .think-body-wrap { display: none !important; }
+
+/* ═══ TOOL STATUS STRIP ═══ */
+.tool-status-strip { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px 0; width: 100%; }
+.message-body > .think-panel + .tool-status-strip { margin-top: -2px; }
+.tool-status-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 99px; background: var(--panel-2); border: 1px solid var(--border); font-size: 11.5px; font-weight: 500; color: var(--text-muted); line-height: 1.5; animation: toolChipIn .25s var(--ease-out); }
+@keyframes toolChipIn { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
+.tool-status-chip i { font-size: 13px; line-height: 1; }
+.tool-status-chip.running { color: var(--accent); border-color: var(--accent-soft-2); background: var(--accent-soft); }
+.tool-status-chip.done { color: var(--success); border-color: rgba(22,163,74,.28); background: rgba(22,163,74,.08); }
+.tool-status-chip.error { color: var(--danger); border-color: rgba(220,38,38,.28); background: rgba(220,38,38,.08); }
+.tool-status-name { font-weight: 600; }
+.tool-status-summary { color: var(--text-faint); font-weight: 400; }
+.tool-status-summary::before { content: "·"; margin: 0 3px; color: var(--text-faint); }
 
 /* Attachments */
 .attach-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
@@ -365,7 +380,7 @@ code { font-family: var(--font-mono); }
 .mirox-toast.ok { border-color: var(--success); color: var(--success); }
 .mirox-toast.err { border-color: var(--danger); color: var(--danger); }
 
-/* CALL OVERLAY */
+/* ═══════════ CALL OVERLAY ═══════════ */
 .call-overlay { position: fixed; inset: 0; z-index: 9998; background: #06070d; display: none; flex-direction: column; align-items: center; justify-content: space-between; padding: 20px; padding-top: calc(20px + var(--safe-top)); padding-bottom: calc(28px + var(--safe-bottom)); color: #fff; overflow: hidden; }
 .call-overlay.open { display: flex; animation: callFadeIn .4s var(--ease-out); }
 @keyframes callFadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -666,7 +681,7 @@ code { font-family: var(--font-mono); }
 .support-foot a { color: var(--accent); }
 .support-dev-link { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 99px; background: var(--panel-2); border: 1px solid var(--border); font-weight: 500; }
 
-/* TAIL R1 PROMO MODAL */
+/* ═══ TAIL R1 PROMO MODAL ═══ */
 .tail-promo-overlay { z-index: 2200; }
 .modal-tail-promo { max-width: 460px; padding: 32px 28px 22px; border-radius: 22px; border: 1px solid var(--border); overflow: hidden; position: relative; background: var(--panel); text-align: center; animation: tailPromoIn .45s var(--ease-spring); }
 @keyframes tailPromoIn { from { transform: translateY(20px) scale(.94); opacity: 0; } to { transform: translateY(0) scale(1); opacity: 1; } }
@@ -690,12 +705,12 @@ code { font-family: var(--font-mono); }
 .tail-promo-foot { font-size: 11px; color: var(--text-faint); margin-top: 14px; position: relative; z-index: 1; }
 
 /* Tail r1 limited-time offer */
-.tail-offer-deadline{display:inline-flex;align-items:center;gap:8px;margin:10px auto 2px;padding:7px 12px;border:1px solid rgba(120,150,255,.35);border-radius:999px;background:rgba(100,130,255,.10);font-size:12px;font-weight:650;letter-spacing:.01em;text-align:center}
+.tail-offer-deadline { display:inline-flex; align-items:center; gap:8px; margin:10px auto 2px; padding:7px 12px; border:1px solid rgba(120,150,255,.35); border-radius:999px; background:rgba(100,130,255,.10); font-size:12px; font-weight:650; letter-spacing:.01em; text-align:center; position:relative; z-index:1; }
 
-/* CONFETTI */
+/* ═══ CONFETTI ═══ */
 @keyframes confettiFall { 0% { opacity: 1; transform: translate3d(0, -30px, 0) rotate(0deg) scale(1); } 100% { opacity: 0; transform: translate3d(var(--drift, 0px), 110vh, 0) rotate(var(--rot, 720deg)) scale(.85); } }
 
-/* MY MIROX */
+/* ═══ MY MIROX ═══ */
 .mm-hero { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: 16px; background: var(--panel-2); border: 1px solid var(--border); margin-bottom: 16px; }
 .mm-hero-avatar { width: 56px; height: 56px; display: grid; place-items: center; background: var(--accent-soft); border-radius: 16px; }
 .mm-hero-info { flex: 1; min-width: 0; }
@@ -721,7 +736,9 @@ code { font-family: var(--font-mono); }
 .mm-heat-legend { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-faint); margin-top: 10px; }
 .mm-heat-legend .mm-day { width: 14px; height: 14px; aspect-ratio: 1 / 1; font-size: 0; }
 
-/* Responsive */
+/* ════════════════════════════════════════════════════════════
+   Responsive
+   ════════════════════════════════════════════════════════════ */
 @media (max-width: 1100px) { .modal-html-runner { width: 98vw; height: 90vh; } }
 @media (max-width: 860px) {
   :root { --content-max: 100%; --sidebar-width: 285px; }
