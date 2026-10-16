@@ -1,8 +1,7 @@
 /* ============================================================
-   MiroxAI Backend v114 — Discord bot (M_KEY only)
-   · KenSearch web search
-   · Discord: chat/image/status channels, ? prefix commands
-   · Animated thinking/searching/generating bubble
+   MiroxAI Backend v115 — Discord OAuth2 + bot
+   · KenSearch · animated bubble · ? prefix commands
+   · OAuth2 invite flow so users can add the bot to their servers
    ============================================================ */
 import express from 'express';
 import cors from 'cors';
@@ -11,7 +10,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import {
   Client, GatewayIntentBits, Events, EmbedBuilder,
-  ActivityType, PermissionFlagsBits, ChannelType,
+  ActivityType, PermissionFlagsBits, AttachmentBuilder,
 } from 'discord.js';
 import { createThinkSplitter, reasoningFromDelta, contentFromDelta } from './thinking.js';
 import { getSettings, sanitizeSettings, userContextPrompt } from './settings.js';
@@ -34,8 +33,10 @@ const ALLOW_EMAIL_LOGIN = env('ALLOW_EMAIL_LOGIN') === '1';
 const KS_KEY = env('KS_KEY');
 const KS_BASE = env('KS_BASE', 'https://kensearch.lovable.app').replace(/\/+$/, '');
 
-/* ---------- Discord (only M_KEY needed) ---------- */
-const DISCORD_BOT_TOKEN = env('M_KEY');
+/* ---------- Discord ---------- */
+const DISCORD_BOT_TOKEN    = env('M_KEY');
+const DISCORD_CLIENT_ID    = env('DISCORD_CLIENT_ID');       // optional, auto-detected
+const DISCORD_CLIENT_SECRET = env('DISCORD_CLIENT_SECRET');  // optional, for OAuth2 code exchange
 const DISCORD_CHAT_CHANNEL   = '1560697976500781126';
 const DISCORD_IMAGE_CHANNEL  = '1560697947945963681';
 const DISCORD_STATUS_CHANNEL = '1560697723387387945';
@@ -43,6 +44,16 @@ const DISCORD_ROLE_OWNER  = { name: 'Mirox Owner',  color: 0xffc542, emoji: '�
 const DISCORD_ROLE_BOT    = { name: 'Mirox Bot',    color: 0x4d6bfe, emoji: '🤖' };
 const DISCORD_ROLE_MEMBER = { name: 'Mirox Member', color: 0x16a34a, emoji: '🌱' };
 const DISCORD_CMD_PREFIX  = '?';
+
+// Permission bitfield for the bot when invited via OAuth2:
+// MANAGE_ROLES | MANAGE_CHANNELS | VIEW_CHANNEL | SEND_MESSAGES | MANAGE_MESSAGES
+// | EMBED_LINKS | ATTACH_FILES | READ_MESSAGE_HISTORY | ADD_REACTIONS | USE_EXTERNAL_EMOJIS
+// | SEND_MESSAGES_IN_THREADS
+const DISCORD_PERMISSIONS = '275146730576';
+const DISCORD_SCOPES = 'bot applications.commands';
+
+// Runtime app id (filled at startup when the bot logs in)
+let DISCORD_APP_ID = DISCORD_CLIENT_ID || '';
 
 /* ---------- Data file resolution ---------- */
 function resolveDataFile() {
@@ -83,12 +94,12 @@ const DAY = 24 * 3600;
 /* ---------- Model catalogue ---------- */
 const MIROX_MODELS = {
   'mirox-tail-r1':     { label: 'Tail r1', tier: 'free', tokens: 32768, chain: 'flagship', flagship: true, tagline: 'Flagship · 350k context · best reasoning',
-    basePrompt: 'You are Tail r1 by OpenSurr — the flagship model with a 350,000+ token context window and state-of-the-art reasoning benchmark performance. Approach every task with maximum rigor. Fenced code blocks for code.' },
-  'mirox-luna-1.2':    { label: 'Luna',    tier: 'free', tokens: 4096,  chain: 'fast', basePrompt: 'You are Luna by OpenSurr. Fast, friendly, concise. Fenced code blocks for code.' },
-  'mirox-gen-1':       { label: 'Gen',     tier: 'free', tokens: 4096,  chain: 'fast', basePrompt: 'You are Gen by OpenSurr. Ultra concise. Direct answers. Fenced code blocks for code.' },
-  'mirox-pro-5':       { label: 'Pro',     tier: 'pro',  tokens: 8192,  chain: 'balanced', basePrompt: 'You are Pro by OpenSurr. Balanced depth. Fenced code blocks for code.' },
-  'mirox-ultra-10':    { label: 'Ultra',   tier: 'pro',  tokens: 8192,  chain: 'balanced', basePrompt: 'You are Ultra by OpenSurr. Deep reasoning. Fenced code blocks for code.' },
-  'mirox-eclipse-2.0': { label: 'Eclipse', tier: 'ultimate', tokens: 16384, chain: 'deep', basePrompt: 'You are Eclipse by OpenSurr. Best quality. Fenced code blocks for code.' },
+    basePrompt: 'You are Tail r1 by OpenSurr — the flagship model. Maximum rigor. Fenced code blocks for code.' },
+  'mirox-luna-1.2':    { label: 'Luna',    tier: 'free', tokens: 4096,  chain: 'fast', basePrompt: 'You are Luna by OpenSurr. Fast, friendly, concise.' },
+  'mirox-gen-1':       { label: 'Gen',     tier: 'free', tokens: 4096,  chain: 'fast', basePrompt: 'You are Gen by OpenSurr. Ultra concise. Direct answers.' },
+  'mirox-pro-5':       { label: 'Pro',     tier: 'pro',  tokens: 8192,  chain: 'balanced', basePrompt: 'You are Pro by OpenSurr. Balanced depth.' },
+  'mirox-ultra-10':    { label: 'Ultra',   tier: 'pro',  tokens: 8192,  chain: 'balanced', basePrompt: 'You are Ultra by OpenSurr. Deep reasoning.' },
+  'mirox-eclipse-2.0': { label: 'Eclipse', tier: 'ultimate', tokens: 16384, chain: 'deep', basePrompt: 'You are Eclipse by OpenSurr. Best quality.' },
 };
 
 const CHAINS = {
@@ -138,11 +149,7 @@ Support: support@miroxai.org`;
 const THINKING_RULE = `Before answering, provide a brief user-facing progress summary in <thinking>...</thinking>, then the answer. 1-3 short sentences. Close with </thinking>, then the answer.`;
 const DEEP_THINK_RULE = `DEEP THINK MODE — check assumptions, edge cases, results. Concise summary (up to 4 sentences), then a complete answer.`;
 const TAIL_R1_REASONING_RULE = `TAIL R1 FLAGSHIP MODE — maximum rigor. Verify approach. Trace examples. Note confidence.`;
-
-const BRIDGE_PROMPT = `BRIDGE MODE — operate through the user's connected bridge.
-TAGS: <bridge-write>, <bridge-append>, <bridge-read>, <bridge-list>, <bridge-exec>, <bridge-sudo>.
-Reply DONE when finished.`;
-
+const BRIDGE_PROMPT = `BRIDGE MODE — operate through the user's connected bridge. Tags: <bridge-write>, <bridge-append>, <bridge-read>, <bridge-list>, <bridge-exec>, <bridge-sudo>. Reply DONE when finished.`;
 const DISCORD_PROMPT = `You are Mirox on Discord. Reply in a friendly, concise tone.
 - Use Discord markdown (**bold**, *italic*, \`code\`).
 - Keep replies under 1900 chars.
@@ -248,16 +255,11 @@ async function kv(cmd) {
 }
 
 async function readMain() {
-  if (KV_ON) {
-    try { return await kv(['GET', KV_DB_KEY]); } catch (e) { console.warn('[db] KV read failed:', e.message); }
-  }
+  if (KV_ON) { try { return await kv(['GET', KV_DB_KEY]); } catch (e) { console.warn('[db] KV read failed:', e.message); } }
   for (const f of DATA_FILES) {
     try {
       const raw = await fs.readFile(f, 'utf8');
-      if (raw && raw.length > 2) {
-        if (f !== DATA_FILE) console.log(`[db] loaded from fallback path: ${f}`);
-        return raw;
-      }
+      if (raw && raw.length > 2) { if (f !== DATA_FILE) console.log(`[db] loaded from fallback path: ${f}`); return raw; }
     } catch (e) { if (e.code !== 'ENOENT') console.warn(`[db] read ${f} failed:`, e.message); }
   }
   return null;
@@ -289,16 +291,9 @@ function persist() {
   const snap = JSON.stringify(db);
   const job = writeChain.then(async () => {
     let ok = false;
-    if (KV_ON) {
-      try { await kv(['SET', KV_DB_KEY, snap]); ok = true; }
-      catch (e) { console.error('[db] KV write failed:', e.message); }
-    }
+    if (KV_ON) { try { await kv(['SET', KV_DB_KEY, snap]); ok = true; } catch (e) { console.error('[db] KV write failed:', e.message); } }
     for (const f of DATA_FILES) {
-      try {
-        await fs.mkdir(path.dirname(f), { recursive: true });
-        await fs.writeFile(f, snap, 'utf8');
-        ok = true;
-      } catch (e) { /* silent */ }
+      try { await fs.mkdir(path.dirname(f), { recursive: true }); await fs.writeFile(f, snap, 'utf8'); ok = true; } catch (e) {}
     }
     return ok;
   });
@@ -365,10 +360,7 @@ function resolveModelId(raw) {
       if (MIROX_MODELS[low]) return low;
       const norm = low.replace(/_/g, '-');
       if (MIROX_MODELS[norm]) return norm;
-      for (const id of Object.keys(MIROX_MODELS)) {
-        if (id.toLowerCase() === norm) return id;
-        if (id.toLowerCase().startsWith(norm + '.')) return id;
-      }
+      for (const id of Object.keys(MIROX_MODELS)) { if (id.toLowerCase() === norm) return id; if (id.toLowerCase().startsWith(norm + '.')) return id; }
     }
   }
   const low = s.toLowerCase();
@@ -392,7 +384,6 @@ function fallbackModelId(raw) {
   if (/eclipse/.test(s)) return 'mirox-eclipse-2.0';
   return 'mirox-tail-r1';
 }
-
 async function authFromRequest(req) {
   const h = String(req.headers.authorization || '');
   if (!h) return { user: await currentUser(req), viaKey: false };
@@ -412,24 +403,7 @@ async function authFromRequest(req) {
 async function kensearchSearch(query, limit = 5) {
   if (!KS_KEY) return null;
   try {
-    const r = await fetchT(`${KS_BASE}/api/public/v1/search`, {
-      method: 'POST',
-      headers: { 'x-api-key': KS_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, limit }),
-    }, 15000);
-    if (!r.ok) return null;
-    const d = await r.json();
-    return d?.data || null;
-  } catch (e) { console.warn('[kensearch]', e.message); return null; }
-}
-async function kensearchRead(url, format = 'markdown') {
-  if (!KS_KEY) return null;
-  try {
-    const r = await fetchT(`${KS_BASE}/api/public/v1/read`, {
-      method: 'POST',
-      headers: { 'x-api-key': KS_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, format }),
-    }, 15000);
+    const r = await fetchT(`${KS_BASE}/api/public/v1/search`, { method: 'POST', headers: { 'x-api-key': KS_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ query, limit }) }, 15000);
     if (!r.ok) return null;
     const d = await r.json();
     return d?.data || null;
@@ -438,11 +412,7 @@ async function kensearchRead(url, format = 'markdown') {
 async function kensearchWebinfo(url) {
   if (!KS_KEY) return null;
   try {
-    const r = await fetchT(`${KS_BASE}/api/public/v1/webinfo`, {
-      method: 'POST',
-      headers: { 'x-api-key': KS_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url }),
-    }, 15000);
+    const r = await fetchT(`${KS_BASE}/api/public/v1/webinfo`, { method: 'POST', headers: { 'x-api-key': KS_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) }, 15000);
     if (!r.ok) return null;
     const d = await r.json();
     return d?.data || null;
@@ -485,10 +455,7 @@ async function webSearch(query, max = 5) {
       const results = ks.map((r) => ({ title: r.title || '', url: r.url || '', snippet: r.description || '', domain: (() => { try { return new URL(r.url).hostname.replace(/^www\./, ''); } catch { return ''; } })() }));
       let overview = null;
       const firstUrl = results[0]?.url;
-      if (firstUrl) {
-        const wi = await kensearchWebinfo(firstUrl);
-        if (wi && wi.summary) overview = { source: 'KenSearch', heading: wi.title || '', text: wi.summary, url: firstUrl };
-      }
+      if (firstUrl) { const wi = await kensearchWebinfo(firstUrl); if (wi && wi.summary) overview = { source: 'KenSearch', heading: wi.title || '', text: wi.summary, url: firstUrl }; }
       if (!overview) { const ws = await wikiSummary(results[0]?.title || rawQuery); if (ws) overview = { ...ws, kind: 'wiki' }; }
       return { results, overview, query: rawQuery };
     }
@@ -530,9 +497,7 @@ function detectImageIntent(text) {
 }
 
 /* ---------- Providers ---------- */
-function stripImages(messages) {
-  return messages.map((m) => ({ role: m.role, content: Array.isArray(m.content) ? m.content.filter((p) => p.type === 'text').map((p) => p.text).join('\n') : String(m.content || '') }));
-}
+function stripImages(messages) { return messages.map((m) => ({ role: m.role, content: Array.isArray(m.content) ? m.content.filter((p) => p.type === 'text').map((p) => p.text).join('\n') : String(m.content || '') })); }
 async function callOpenRouter(modelId, messages, maxTokens, stream) {
   if (!OP_KEY) throw new Error('no_op_key');
   const headers = { Authorization: `Bearer ${OP_KEY}`, 'Content-Type': 'application/json', Accept: stream ? 'text/event-stream' : 'application/json', 'HTTP-Referer': OP_REFERER, 'X-Title': OP_TITLE };
@@ -564,17 +529,10 @@ async function airouteText(messages, { fast = true, model } = {}) {
 function textToSSEStream(text) {
   const enc = new TextEncoder();
   const words = String(text || '').split(/(\s+)/);
-  const chunks = [];
-  let cur = '';
+  const chunks = []; let cur = '';
   for (const w of words) { cur += w; if (cur.length >= 24) { chunks.push(cur); cur = ''; } }
   if (cur) chunks.push(cur);
-  return new ReadableStream({
-    start(controller) {
-      for (const c of chunks) controller.enqueue(enc.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: c } }] })}\n\n`));
-      controller.enqueue(enc.encode('data: [DONE]\n\n'));
-      controller.close();
-    },
-  });
+  return new ReadableStream({ start(controller) { for (const c of chunks) controller.enqueue(enc.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: c } }] })}\n\n`)); controller.enqueue(enc.encode('data: [DONE]\n\n')); controller.close(); } });
 }
 async function miroxChatChain({ messages, cfg, stream, vision, deepThink }) {
   const maxTokens = deepThink ? Math.min(cfg.tokens * 2, 64000) : Math.min(cfg.tokens, 32000);
@@ -582,11 +540,8 @@ async function miroxChatChain({ messages, cfg, stream, vision, deepThink }) {
     const baseChain = (cfg.chain && CHAINS[cfg.chain]) ? CHAINS[cfg.chain] : OP_CHAT;
     const chain = vision ? [...new Set([...OP_VISION, ...baseChain])] : baseChain;
     for (const modelId of chain) {
-      try {
-        const msgs = OP_VISION_SET.has(modelId) ? messages : stripImages(messages);
-        const res = await callOpenRouter(modelId, msgs, maxTokens, stream);
-        return { res, provider: 'MiroxAI (SurrRoute)', model: modelId };
-      } catch (e) { console.warn('[openrouter]', modelId, e.message); }
+      try { const msgs = OP_VISION_SET.has(modelId) ? messages : stripImages(messages); const res = await callOpenRouter(modelId, msgs, maxTokens, stream); return { res, provider: 'MiroxAI (SurrRoute)', model: modelId }; }
+      catch (e) { console.warn('[openrouter]', modelId, e.message); }
     }
   }
   if (HF_API_KEY) {
@@ -655,11 +610,7 @@ async function generateImageHF(prompt) {
   if (!HF_API_KEY) return null;
   for (const model of HF_IMG_MODELS) {
     try {
-      const r = await fetchT(`${HF_TXT2IMG}/${model}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${HF_API_KEY}`, 'Content-Type': 'application/json', Accept: 'image/png' },
-        body: JSON.stringify({ inputs: prompt.slice(0, 1000), options: { wait_for_model: true } }),
-      }, 60000);
+      const r = await fetchT(`${HF_TXT2IMG}/${model}`, { method: 'POST', headers: { Authorization: `Bearer ${HF_API_KEY}`, 'Content-Type': 'application/json', Accept: 'image/png' }, body: JSON.stringify({ inputs: prompt.slice(0, 1000), options: { wait_for_model: true } }) }, 60000);
       if (!r.ok) continue;
       const ct = (r.headers.get('content-type') || '').toLowerCase();
       if (!ct.startsWith('image/')) continue;
@@ -675,11 +626,7 @@ async function generateImageHF(prompt) {
 async function generateImageAiroute(prompt) {
   if (!AIROUTE_KEY) return null;
   try {
-    const r = await fetchT(`${AIROUTE_BASE}/api/public/v1/images`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${AIROUTE_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'black-forest-labs/FLUX.1-schnell', prompt: prompt.slice(0, 2000) }),
-    }, 60000);
+    const r = await fetchT(`${AIROUTE_BASE}/api/public/v1/images`, { method: 'POST', headers: { Authorization: `Bearer ${AIROUTE_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'black-forest-labs/FLUX.1-schnell', prompt: prompt.slice(0, 2000) }) }, 60000);
     const d = await r.json().catch(() => ({}));
     if (typeof d.image === 'string') {
       if (d.image.startsWith('http')) return d.image;
@@ -715,28 +662,17 @@ function sseDone(res) { if (res.writableEnded || res.destroyed) return; try { re
 
 function buildSystemPrompt(cfg, bridge, searchUsed, persona, deepThink, modelId, systemExtra, apiMode, discordMode = false) {
   let p;
-  if (apiMode) {
-    p = IDENTITY_GUARD + '\n\n' + cfg.basePrompt;
-    p += '\n\nNever use <thinking> tags. Give the user the direct final answer only.';
-  } else {
-    p = IDENTITY_GUARD + '\n\n' + THINKING_RULE + '\n\n' + cfg.basePrompt;
-    if (deepThink) p += '\n\n' + DEEP_THINK_RULE;
-  }
+  if (apiMode) { p = IDENTITY_GUARD + '\n\n' + cfg.basePrompt; p += '\n\nNever use <thinking> tags. Give the user the direct final answer only.'; }
+  else { p = IDENTITY_GUARD + '\n\n' + THINKING_RULE + '\n\n' + cfg.basePrompt; if (deepThink) p += '\n\n' + DEEP_THINK_RULE; }
   if (modelId === 'mirox-tail-r1') p += '\n\n' + TAIL_R1_REASONING_RULE;
   if (searchUsed) p += '\n\nWEB SEARCH MODE: cite sources as [1], [2] when relevant.';
   if (persona) p += `\n\nUser preference: ${persona}`;
   if (systemExtra) p += '\n\n' + safeStr(systemExtra, 8000);
   if (discordMode) p += '\n\n' + DISCORD_PROMPT;
-  if (bridge) {
-    const e2 = bridge.env || {};
-    p += '\n\n' + BRIDGE_PROMPT;
-    p += `\n\n=== [Bridge environment] ===\nuser=${e2.user || '(unknown)'}\nhome=~\ncwd=.\nplatform=${e2.platform || '(unknown)'}`;
-  }
+  if (bridge) { const e2 = bridge.env || {}; p += '\n\n' + BRIDGE_PROMPT; p += `\n\n=== [Bridge environment] ===\nuser=${e2.user || '(unknown)'}\nhome=~\ncwd=.\nplatform=${e2.platform || '(unknown)'}`; }
   return p;
 }
-function buildEnvBlock(env) {
-  return ['[Bridge environment]', `user=${env.user || '?'}`, 'home=~', 'cwd=.', `platform=${env.platform || '?'}`].join('\n');
-}
+function buildEnvBlock(env) { return ['[Bridge environment]', `user=${env.user || '?'}`, 'home=~', 'cwd=.', `platform=${env.platform || '?'}`].join('\n'); }
 
 /* ---------- Express app ---------- */
 const app = express();
@@ -768,7 +704,7 @@ const publicUser = (u) => {
 const publicKey = (k) => ({ id: k.id, name: k.name, key: k.key, created: k.created, last_used: k.last_used || 0, revoked: !!k.revoked });
 
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
-  res.json({ ok: true, app: 'MiroxAI', version: 'v114',
+  res.json({ ok: true, app: 'MiroxAI', version: 'v115',
     providers: { openrouter: !!OP_KEY, hf: !!HF_API_KEY, airoute: !!AIROUTE_KEY, kensearch: !!KS_KEY, discord: !!DISCORD_BOT_TOKEN },
     primary_provider: 'MiroxAI (SurrRoute)',
     watermark: 'MIROXAI-WATERMARK-v1-LOGO', thinking: true, deep_think: true, api_thinking: false,
@@ -777,6 +713,8 @@ app.get(['/api/health', '/health', '/ping'], (req, res) => {
     search_provider: KS_KEY ? 'kensearch' : 'duckduckgo',
     models_endpoint: '/v1/models',
     discord_channels: { chat: DISCORD_CHAT_CHANNEL, image: DISCORD_IMAGE_CHANNEL, status: DISCORD_STATUS_CHANNEL },
+    discord_app_id: DISCORD_APP_ID || null,
+    discord_invite_url: DISCORD_APP_ID ? discordInviteUrl() : null,
     storage: { durable: KV_ON, primary_path: DATA_FILE, fallback_paths: DATA_FILES.slice(1), writable: dbOk },
     time: nowS() });
 });
@@ -787,20 +725,71 @@ app.get('/api/web/status', async (req, res) => {
   res.json({ ok: true, duckduckgo: ddg, wikipedia: wiki, kensearch: !!KS_KEY, ms: Date.now() - t0 });
 });
 
+/* ---------- Discord OAuth2 invite endpoints ---------- */
+function discordInviteUrl() {
+  if (!DISCORD_APP_ID) return null;
+  const params = new URLSearchParams({
+    client_id: DISCORD_APP_ID,
+    permissions: DISCORD_PERMISSIONS,
+    scope: DISCORD_SCOPES,
+  });
+  return `https://discord.com/oauth2/authorize?${params.toString()}`;
+}
+
+// Redirect endpoint — open in browser to invite the bot to your server
+app.get(['/api/discord/invite', '/discord/invite'], (req, res) => {
+  const url = discordInviteUrl();
+  if (!url) return res.status(503).send('Discord bot is not configured. Set M_KEY.');
+  res.redirect(url);
+});
+
+// JSON endpoint — for programmatic use
+app.get(['/api/discord/invite/url', '/discord/invite/url'], (req, res) => {
+  const url = discordInviteUrl();
+  if (!url) return res.status(503).json({ ok: false, error: 'Discord bot is not configured. Set M_KEY.' });
+  res.json({
+    ok: true,
+    url,
+    client_id: DISCORD_APP_ID,
+    permissions: DISCORD_PERMISSIONS,
+    scopes: DISCORD_SCOPES.split(' '),
+  });
+});
+
+// OAuth2 code-exchange callback.
+// Only useful if you set DISCORD_CLIENT_SECRET and use scope "identify guilds.join" (advanced).
+app.get(['/api/discord/callback', '/discord/callback'], async (req, res) => {
+  const code = safeStr(req.query.code, 500);
+  if (!code) return res.status(400).send('Missing ?code');
+  if (!DISCORD_APP_ID || !DISCORD_CLIENT_SECRET) {
+    return res.status(503).send('OAuth2 code exchange requires DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET.');
+  }
+  try {
+    const body = new URLSearchParams({
+      client_id: DISCORD_APP_ID,
+      client_secret: DISCORD_CLIENT_SECRET,
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: `${PUBLIC_ORIGIN}/api/discord/callback`,
+    });
+    const r = await fetchT('https://discord.com/api/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    }, 15000);
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) return res.status(400).json({ ok: false, error: data.error_description || data.error || 'token exchange failed', raw: data });
+    // User just granted us access. We don't need to store the token for the bot invite flow,
+    // but you could persist data.access_token here to fetch /users/@me.
+    res.json({ ok: true, access_token: data.access_token, token_type: data.token_type, scope: data.scope, expires_in: data.expires_in });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 function openaiModelList() {
   const created = Math.floor(Date.now() / 1000);
-  return {
-    object: 'list',
-    data: API_MODELS.map((id) => ({
-      id, object: 'model', created, owned_by: 'miroxai',
-      label: MIROX_MODELS[id]?.label || id,
-      tier: MIROX_MODELS[id]?.tier || 'free',
-      flagship: !!MIROX_MODELS[id]?.flagship,
-      free: MIROX_MODELS[id]?.tier === 'free',
-      context_window: MIROX_MODELS[id]?.tokens || 4096,
-      tagline: MIROX_MODELS[id]?.tagline || '',
-    })),
-  };
+  return { object: 'list', data: API_MODELS.map((id) => ({ id, object: 'model', created, owned_by: 'miroxai', label: MIROX_MODELS[id]?.label || id, tier: MIROX_MODELS[id]?.tier || 'free', flagship: !!MIROX_MODELS[id]?.flagship, free: MIROX_MODELS[id]?.tier === 'free', context_window: MIROX_MODELS[id]?.tokens || 4096, tagline: MIROX_MODELS[id]?.tagline || '' })) };
 }
 const MODEL_LIST_PATHS = ['/v1/models','/v1/models/','/models','/models/','/api/models','/api/models/','/openai/v1/models','/openai/v1/models/','/api/v1/models','/api/v1/models/'];
 app.get(MODEL_LIST_PATHS, (req, res) => { res.setHeader('Cache-Control', 'no-store'); res.json(openaiModelList()); });
@@ -811,10 +800,7 @@ app.get(['/v1/models/*', '/openai/v1/models/*', '/api/v1/models/*'], (req, res) 
   const resolved = resolveModelId(wildcard);
   if (resolved) {
     const created = Math.floor(Date.now() / 1000);
-    return res.json({ id: wildcard || resolved, object: 'model', created, owned_by: 'miroxai',
-      label: MIROX_MODELS[resolved].label, tier: MIROX_MODELS[resolved].tier,
-      flagship: !!MIROX_MODELS[resolved].flagship, free: MIROX_MODELS[resolved].tier === 'free',
-      context_window: MIROX_MODELS[resolved].tokens, tagline: MIROX_MODELS[resolved].tagline || '' });
+    return res.json({ id: wildcard || resolved, object: 'model', created, owned_by: 'miroxai', label: MIROX_MODELS[resolved].label, tier: MIROX_MODELS[resolved].tier, flagship: !!MIROX_MODELS[resolved].flagship, free: MIROX_MODELS[resolved].tier === 'free', context_window: MIROX_MODELS[resolved].tokens, tagline: MIROX_MODELS[resolved].tagline || '' });
   }
   res.status(404).json({ error: { message: `Model "${wildcard}" not found. GET /v1/models for the list.`, type: 'invalid_request_error', code: 'model_not_found' } });
 });
@@ -822,7 +808,7 @@ app.get(['/v1/models/*', '/openai/v1/models/*', '/api/v1/models/*'], (req, res) 
 app.get(['/api/config', '/config'], (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tier: m.tier, tagline: m.tagline || '', flagship: !!m.flagship, icon: m.flagship ? 'ri-star-smile-line' : undefined }));
-  res.json({ app: { name: 'MiroxAI', version: 'v114' }, models, default_model: 'mirox-tail-r1', plans: PLANS,
+  res.json({ app: { name: 'MiroxAI', version: 'v115' }, models, default_model: 'mirox-tail-r1', plans: PLANS,
     tts_available: !!F_API, search_available: true, vision_available: true, image_intent: true, image_edit: false,
     image_requires_signin: false, watermark: true, thinking: true, deep_think: true, html_runner: true, api_thinking: false,
     loginment_available: !!LM_CLIENT_ID, email_login_available: ALLOW_EMAIL_LOGIN,
@@ -831,15 +817,13 @@ app.get(['/api/config', '/config'], (req, res) => {
     image_provider: HF_API_KEY ? 'huggingface' : (AIROUTE_KEY ? 'airoute' : null),
     search_provider: KS_KEY ? 'kensearch' : 'duckduckgo',
     kde_connect_available: true, support_chat_available: true, developers_url: '/developers',
-    flagship: 'mirox-tail-r1', storage_durable: KV_ON, discord_enabled: !!DISCORD_BOT_TOKEN });
+    flagship: 'mirox-tail-r1', storage_durable: KV_ON,
+    discord_enabled: !!DISCORD_BOT_TOKEN,
+    discord_invite_url: DISCORD_APP_ID ? discordInviteUrl() : null });
 });
 
 app.get(['/api/subscription/plans', '/subscription/plans'], (req, res) => {
-  const perks = {
-    free: ['Tail r1 — free flagship','Luna & Gen unlimited','350k+ context · best reasoning','30 image gens/day','5 Eclipse/day','2 API keys','Web search','Vision','DeepThink','HTML runner'],
-    pro: ['Everything in Free','Pro & Ultra models','200 image gens/day','10 API keys'],
-    ultimate: ['Everything in Pro','Eclipse — high quality','2000 image gens/day','Priority everything'],
-  };
+  const perks = { free: ['Tail r1 — free flagship','Luna & Gen unlimited','350k+ context · best reasoning','30 image gens/day','5 Eclipse/day','2 API keys','Web search','Vision','DeepThink','HTML runner'], pro: ['Everything in Free','Pro & Ultra models','200 image gens/day','10 API keys'], ultimate: ['Everything in Pro','Eclipse — high quality','2000 image gens/day','Priority everything'] };
   const tagline = { free: 'Flagship for everyone', pro: 'Most popular', ultimate: 'Power users' };
   res.json({ ok: true, plans: Object.entries(PLANS).map(([id, p]) => ({ id, label: p.label, tagline: tagline[id], vision_limit: p.vision_limit, image_limit: p.image_limit, eclipse_limit: p.eclipse_daily_limit, price_usd: p.price_usd, api_keys_limit: p.api_keys, perks: perks[id] })) });
 });
@@ -851,13 +835,6 @@ app.get('/api/auth/loginment/start', (req, res) => {
   res.append('Set-Cookie', `mirox_lm_state=${state}; ${cookieAttrs(req, 600)}`);
   const redirect = encodeURIComponent(PUBLIC_ORIGIN + '/callback');
   res.redirect(`${LM_DOMAIN}/authorize?client_id=${encodeURIComponent(LM_CLIENT_ID)}&redirect_uri=${redirect}&state=${state}`);
-});
-app.get('/api/auth/loginment/url', (req, res) => {
-  if (!LM_CLIENT_ID) return res.status(503).json({ ok: false, error: 'Loginment is not configured.' });
-  const state = crypto.randomBytes(16).toString('hex');
-  res.append('Set-Cookie', `mirox_lm_state=${state}; ${cookieAttrs(req, 600)}`);
-  const redirect = encodeURIComponent(PUBLIC_ORIGIN + '/callback');
-  res.json({ ok: true, url: `${LM_DOMAIN}/authorize?client_id=${encodeURIComponent(LM_CLIENT_ID)}&redirect_uri=${redirect}&state=${state}` });
 });
 app.get(['/callback', '/api/auth/loginment/callback'], async (req, res) => {
   try {
@@ -875,7 +852,6 @@ app.get(['/callback', '/api/auth/loginment/callback'], async (req, res) => {
     const u = userFor(email);
     u.name = data.user.name || u.name;
     u.provider = data.user.provider || 'email';
-    u.lm_user_id = data.user.id || null;
     u.last_login = nowS();
     logEvent({ email, event: 'login', provider: u.provider });
     if (!(await persist())) return res.status(503).send('Could not save your account.');
@@ -928,10 +904,7 @@ app.post('/api/support/message', async (req, res) => {
   if (!content) return res.status(400).json({ ok: false, error: 'Message required' });
   const category = safeStr(req.body?.category, 40).trim() || 'other';
   let conv = (db.tickets || []).find((t) => t.email === u.email && t.status === 'open');
-  if (!conv) {
-    conv = { id: 'tk_' + crypto.randomBytes(6).toString('hex'), email: u.email, name: u.name || u.email, subject: content.slice(0, 80), category, status: 'open', unread_for_agent: 0, unread_for_user: 0, created: nowS(), updated: nowS(), messages: [] };
-    db.tickets.push(conv);
-  }
+  if (!conv) { conv = { id: 'tk_' + crypto.randomBytes(6).toString('hex'), email: u.email, name: u.name || u.email, subject: content.slice(0, 80), category, status: 'open', unread_for_agent: 0, unread_for_user: 0, created: nowS(), updated: nowS(), messages: [] }; db.tickets.push(conv); }
   conv.messages.push({ role: 'user', content, ts: nowS() });
   conv.updated = nowS();
   conv.unread_for_agent = (conv.unread_for_agent || 0) + 1;
@@ -996,11 +969,7 @@ app.post(['/api/keys/restore', '/keys/restore'], async (req, res) => {
     existingKeys.add(newKey.key);
     restored++;
   }
-  if (restored > 0) {
-    logEvent({ email: u.email, event: 'key_restored', count: restored });
-    const saved = await persist();
-    if (!saved) return res.status(503).json({ ok: false, error: 'Could not persist restored keys.' });
-  }
+  if (restored > 0) { logEvent({ email: u.email, event: 'key_restored', count: restored }); const saved = await persist(); if (!saved) return res.status(503).json({ ok: false, error: 'Could not persist restored keys.' }); }
   res.json({ ok: true, restored, keys: u.keys.map(publicKey), limit: maxKeys(u.tier), active: u.keys.filter((k) => !k.revoked).length });
 });
 app.post(['/api/keys/rename', '/keys/rename'], async (req, res) => {
@@ -1051,13 +1020,7 @@ app.post(['/api/images/delete', '/images/delete'], async (req, res) => {
   const prompt = safeStr(req.body?.prompt, 400);
   const ts = Number(req.body?.ts) || 0;
   const removed = [];
-  u.images = u.images.filter((it) => {
-    let match = false;
-    if (id && it.id && it.id === id) match = true;
-    else if (!id && prompt && it.prompt === prompt && (!ts || it.ts === ts)) match = true;
-    if (match) { removed.push(it); return false; }
-    return true;
-  });
+  u.images = u.images.filter((it) => { let match = false; if (id && it.id && it.id === id) match = true; else if (!id && prompt && it.prompt === prompt && (!ts || it.ts === ts)) match = true; if (match) { removed.push(it); return false; } return true; });
   for (const it of removed) if (it.id) blobDel(it.id).catch(() => {});
   if (removed.length) await persist();
   res.json({ ok: true, removed: removed.length });
@@ -1108,17 +1071,11 @@ app.post(CHAT_PATHS, async (req, res) => {
   let closed = false;
   req.on('close', () => { closed = true; });
   const isClosed = () => closed;
-
   const body = req.body || {};
   const wantStream = body.stream === true || String(req.headers.accept || '').includes('text/event-stream');
   const rawModel = safeStr(body.model, 200) || 'mirox-tail-r1';
-
   let model = resolveModelId(rawModel);
-  if (!model) {
-    model = fallbackModelId(rawModel);
-    if (model) console.log(`[chat] fallback: raw="${rawModel}" → "${model}"`);
-  }
-
+  if (!model) { model = fallbackModelId(rawModel); if (model) console.log(`[chat] fallback: raw="${rawModel}" → "${model}"`); }
   const text = safeStr(body.message, 200000).trim();
   const incomingFiles = Array.isArray(body.files) ? body.files : [];
   const files = incomingFiles.slice(0, 10);
@@ -1129,37 +1086,19 @@ app.post(CHAT_PATHS, async (req, res) => {
   const sourceImage = safeStr(body.source_image, 12 * 1024 * 1024);
   const deepThink = body.deep_think === true;
   const systemExtra = safeStr(body.system_extra, 8000);
-
   const fail = (code, message) => res.status(code).json({ error: { message, type: 'invalid_request_error', code } });
-  const signinReply = (message) => {
-    if (!wantStream) return res.json({ reply: message, signin_required: true, _ms: Date.now() - t0, provider: 'MiroxAI (SurrRoute)' });
-    sseInit(res); sseWrite(res, { signin_required: true, message }); sseWrite(res, { d: message }); sseWrite(res, { done: true }); sseDone(res); res.end();
-  };
-  const fixedReply = (message) => {
-    if (!wantStream) return res.json({ reply: message, _ms: Date.now() - t0, provider: 'MiroxAI (SurrRoute)' });
-    sseInit(res); sseWrite(res, { p: 'MiroxAI (SurrRoute)' }); sseWrite(res, { d: message }); sseWrite(res, { done: true }); sseDone(res); res.end();
-  };
-
+  const signinReply = (message) => { if (!wantStream) return res.json({ reply: message, signin_required: true, _ms: Date.now() - t0, provider: 'MiroxAI (SurrRoute)' }); sseInit(res); sseWrite(res, { signin_required: true, message }); sseWrite(res, { d: message }); sseWrite(res, { done: true }); sseDone(res); res.end(); };
+  const fixedReply = (message) => { if (!wantStream) return res.json({ reply: message, _ms: Date.now() - t0, provider: 'MiroxAI (SurrRoute)' }); sseInit(res); sseWrite(res, { p: 'MiroxAI (SurrRoute)' }); sseWrite(res, { d: message }); sseWrite(res, { done: true }); sseDone(res); res.end(); };
   try {
     const auth = await authFromRequest(req);
     if (auth.error) return fail(401, 'Invalid API key');
     const u = auth.user || null;
     const viaKey = !!auth.viaKey;
-
-    if (!model) {
-      const list = API_MODELS.map((m) => `"${m}"`).join(', ');
-      return res.status(404).json({ error: { message: `Model "${rawModel}" not found. Available: ${list}. See GET /v1/models.`, type: 'invalid_request_error', code: 'model_not_found' } });
-    }
+    if (!model) { const list = API_MODELS.map((m) => `"${m}"`).join(', '); return res.status(404).json({ error: { message: `Model "${rawModel}" not found. Available: ${list}. See GET /v1/models.`, type: 'invalid_request_error', code: 'model_not_found' } }); }
     const effectiveModel = model;
-
-    if (viaKey && !API_MODELS.includes(effectiveModel)) {
-      const list = API_MODELS.map((m) => `"${m}"`).join(', ');
-      return res.status(403).json({ error: { message: `Model "${effectiveModel}" is not available through the API. Available: ${list}.`, type: 'invalid_request_error', code: 'model_not_available' } });
-    }
-
+    if (viaKey && !API_MODELS.includes(effectiveModel)) { const list = API_MODELS.map((m) => `"${m}"`).join(', '); return res.status(403).json({ error: { message: `Model "${effectiveModel}" is not available through the API. Available: ${list}.`, type: 'invalid_request_error', code: 'model_not_available' } }); }
     const cfg = MIROX_MODELS[effectiveModel];
     if (!cfg) return res.status(404).json({ error: { message: `Model "${rawModel}" not found. See GET /v1/models.`, type: 'invalid_request_error', code: 'model_not_found' } });
-
     const tier = u ? u.tier : 'free';
     const plan = PLANS[tier] || PLANS.free;
     if (tier === 'free' && uploadedImages > 10) return fail(413, 'Free users can upload up to 10 images per message.');
@@ -1184,26 +1123,15 @@ app.post(CHAT_PATHS, async (req, res) => {
 
     const searchQuery = forceSearch ? text : detectSearchIntent(text);
     if (wantStream) sseInit(res);
-
     const apiMode = viaKey;
     const msgs = [{ role: 'system', content: buildSystemPrompt(cfg, bridge, !!searchQuery, u?.persona || '', deepThink, effectiveModel, apiMode ? systemExtra : [userContextPrompt(u), systemExtra].filter(Boolean).join('\n\n'), apiMode) }];
-    for (const h of history) {
-      const role = h && h.role;
-      const content = safeStr(h && h.content, 6000).trim();
-      if ((role === 'user' || role === 'assistant') && content) msgs.push({ role, content });
-    }
-
+    for (const h of history) { const role = h && h.role; const content = safeStr(h && h.content, 6000).trim(); if ((role === 'user' || role === 'assistant') && content) msgs.push({ role, content }); }
     let userText = text || '(no text)';
     if (bridge && !userText.startsWith('[Bridge environment]')) userText = buildEnvBlock(bridge.env || {}) + '\n\n' + userText;
-    const visionParts = [];
-    let visionUsed = false;
+    const visionParts = []; let visionUsed = false;
     for (const f of files) {
-      if (f && f.type === 'image' && typeof f.dataUrl === 'string' && f.dataUrl.startsWith('data:image/')) {
-        visionParts.push({ type: 'image_url', image_url: { url: f.dataUrl } });
-        visionUsed = true;
-      } else if (f && f.type === 'text' && typeof f.content === 'string') {
-        userText += `\n\n[Attached file: ${safeStr(f.name, 120) || 'file'}]\n${f.content.slice(0, 60000)}`;
-      }
+      if (f && f.type === 'image' && typeof f.dataUrl === 'string' && f.dataUrl.startsWith('data:image/')) { visionParts.push({ type: 'image_url', image_url: { url: f.dataUrl } }); visionUsed = true; }
+      else if (f && f.type === 'text' && typeof f.content === 'string') { userText += `\n\n[Attached file: ${safeStr(f.name, 120) || 'file'}]\n${f.content.slice(0, 60000)}`; }
     }
     msgs.push({ role: 'user', content: visionParts.length ? [{ type: 'text', text: userText }, ...visionParts] : userText });
 
@@ -1220,43 +1148,16 @@ app.post(CHAT_PATHS, async (req, res) => {
       msgs.push({ role: 'system', content: hasData ? formatSearchContext(searchQuery, searchData) : `Web search for "${searchQuery}" returned no results. Answer from your own knowledge and say you could not verify.` });
     }
 
-    const finishUsage = async () => {
-      logChat({ email: u ? u.email : 'guest', model: effectiveModel, message: (text || '(vision)').slice(0, 200) });
-      if (u) { u.daily_used += 1; if (visionUsed) u.vision_used += 1; if (effectiveModel === 'mirox-eclipse-2.0') u.eclipse_used += 1; }
-      await persist();
-    };
-
+    const finishUsage = async () => { logChat({ email: u ? u.email : 'guest', model: effectiveModel, message: (text || '(vision)').slice(0, 200) }); if (u) { u.daily_used += 1; if (visionUsed) u.vision_used += 1; if (effectiveModel === 'mirox-eclipse-2.0') u.eclipse_used += 1; } await persist(); };
     const hasBinaryFile = files.some((f) => f && f.type !== 'image' && (f.base64 || (typeof f.dataUrl === 'string' && f.dataUrl.includes(','))));
     const toolsOn = !apiMode && !!u && (hasBinaryFile || (typeof body.tools === 'boolean' ? body.tools : u.settings?.tools === true));
     if (toolsOn) {
       const saved = await saveAttachments(files, u);
       const last = msgs[msgs.length - 1];
-      if (saved.length && last && typeof last.content === 'string') {
-        last.content += `\n\n[Attached files saved to the workspace: ${saved.join(', ')}]`;
-      }
-      const out = await runAgent({
-        messages: msgs,
-        user: u,
-        chain: (m) => miroxChatChain({ messages: m, cfg, stream: false, vision: visionUsed, deepThink }).then((r) => r.res),
-        emit: (o) => { if (wantStream) sseWrite(res, o); },
-        isClosed: () => closed,
-        maxSteps: tier === 'free' ? 20 : 60,
-        beforeTool: async () => {
-          if (tier !== 'free') return true;
-          const now = Date.now();
-          const windowMs = 3 * 60 * 60 * 1000;
-          if (!Array.isArray(u.tool_step_timestamps)) u.tool_step_timestamps = [];
-          u.tool_step_timestamps = u.tool_step_timestamps.filter((ts) => Number.isFinite(ts) && now - ts < windowMs);
-          if (u.tool_step_timestamps.length >= 20) { await persist(); return false; }
-          u.tool_step_timestamps.push(now);
-          await persist();
-          return true;
-        },
-      });
+      if (saved.length && last && typeof last.content === 'string') last.content += `\n\n[Attached files saved to the workspace: ${saved.join(', ')}]`;
+      const out = await runAgent({ messages: msgs, user: u, chain: (m) => miroxChatChain({ messages: m, cfg, stream: false, vision: visionUsed, deepThink }).then((r) => r.res), emit: (o) => { if (wantStream) sseWrite(res, o); }, isClosed: () => closed, maxSteps: tier === 'free' ? 20 : 60, beforeTool: async () => { if (tier !== 'free') return true; const now = Date.now(); const windowMs = 3 * 60 * 60 * 1000; if (!Array.isArray(u.tool_step_timestamps)) u.tool_step_timestamps = []; u.tool_step_timestamps = u.tool_step_timestamps.filter((ts) => Number.isFinite(ts) && now - ts < windowMs); if (u.tool_step_timestamps.length >= 20) { await persist(); return false; } u.tool_step_timestamps.push(now); await persist(); return true; } });
       await finishUsage();
-      if (!wantStream) {
-        return res.json({ reply: out.text, tools_used: out.toolCalls, provider: 'MiroxAI (SurrRoute)', model: effectiveModel, _ms: Date.now() - t0 });
-      }
+      if (!wantStream) return res.json({ reply: out.text, tools_used: out.toolCalls, provider: 'MiroxAI (SurrRoute)', model: effectiveModel, _ms: Date.now() - t0 });
       sseWrite(res, { p: 'MiroxAI (SurrRoute)', model: effectiveModel, deep_think: deepThink });
       for (let i = 0; i < out.text.length && !closed; i += 28) sseWrite(res, { d: out.text.slice(i, i + 28) });
       if (!closed) sseWrite(res, { done: true });
@@ -1265,7 +1166,6 @@ app.post(CHAT_PATHS, async (req, res) => {
     }
 
     const result = await miroxChatChain({ messages: msgs, cfg, stream: wantStream, vision: visionUsed, deepThink });
-
     if (!wantStream) {
       const data = await result.res.json().catch(() => ({}));
       let reply = extractReplyText(data) || '(empty)';
@@ -1273,17 +1173,13 @@ app.post(CHAT_PATHS, async (req, res) => {
       await finishUsage();
       return res.json({ reply, _ms: Date.now() - t0, provider: 'MiroxAI (SurrRoute)', model: effectiveModel, search: searchQuery ? { query: searchQuery, results: searchData.results, overview: searchData.overview } : null });
     }
-
     sseWrite(res, { p: 'MiroxAI (SurrRoute)', model: effectiveModel, deep_think: deepThink });
     if (apiMode) {
       let buf = '';
       await pipeProviderStream(result.res.body, (kind, t) => { if (kind === 'answer') buf += t; }, isClosed, () => sseWrite(res, { limit: true }));
       const clean = stripThinking(buf);
       const CH = 28;
-      for (let i = 0; i < clean.length; i += CH) {
-        if (closed) break;
-        sseWrite(res, { d: clean.slice(i, i + CH) });
-      }
+      for (let i = 0; i < clean.length; i += CH) { if (closed) break; sseWrite(res, { d: clean.slice(i, i + CH) }); }
     } else {
       await pipeProviderStream(result.res.body, (kind, t) => sseWrite(res, kind === 'thinking' ? { t } : { d: t }), isClosed, () => sseWrite(res, { limit: true }));
     }
@@ -1318,7 +1214,7 @@ app.get(['/api/admin/stats', '/admin/stats'], requireAdmin, async (req, res) => 
   const imgEvents = db.events.filter((e) => /image_(generated|edited)/.test(e.event || '')).slice(-60).reverse().map((e) => ({ ts: e.ts, email: e.email || '—', prompt: e.prompt || '' }));
   const openTickets = (db.tickets || []).filter((t) => t.status === 'open').length;
   const unreadSupport = (db.tickets || []).reduce((s, t) => s + (t.unread_for_agent || 0), 0);
-  res.json({ ok: true, durable: KV_ON, db_writable: dbOk, warning: KV_ON ? null : 'No durable store configured. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN for persistent API keys.', storage_paths: DATA_FILES, users: users.length, chats: db.chats.length, events: db.events.length, images: imgEvents.length, open_tickets: openTickets, unread_support: unreadSupport, users_data: Object.fromEntries(users.map((u) => [u.email, { name: u.name, tier: u.tier, daily_used: u.daily_used, image_used: u.image_used, eclipse_used: u.eclipse_used, last_login: u.last_login, keys: (u.keys || []).length }])), chats_data: db.chats.slice(-100).reverse(), events_data: db.events.slice(-100).reverse(), images_data: imgEvents });
+  res.json({ ok: true, durable: KV_ON, db_writable: dbOk, warning: KV_ON ? null : 'No durable store configured.', storage_paths: DATA_FILES, users: users.length, chats: db.chats.length, events: db.events.length, images: imgEvents.length, open_tickets: openTickets, unread_support: unreadSupport, users_data: Object.fromEntries(users.map((u) => [u.email, { name: u.name, tier: u.tier, daily_used: u.daily_used, image_used: u.image_used, eclipse_used: u.eclipse_used, last_login: u.last_login, keys: (u.keys || []).length }])), chats_data: db.chats.slice(-100).reverse(), events_data: db.events.slice(-100).reverse(), images_data: imgEvents });
 });
 app.post(['/api/admin/set-tier', '/admin/set-tier'], requireAdmin, async (req, res) => {
   await ensureDb(req);
@@ -1404,7 +1300,7 @@ app.use((err, req, res, next) => {
   if (!res.headersSent) res.status(500).json({ ok: false, error: GENERIC_ERR });
 });
 
-console.log('[Mirox] v114 · flagship: Tail r1 (FREE) · api_thinking: OFF');
+console.log('[Mirox] v115 · flagship: Tail r1 (FREE) · api_thinking: OFF');
 console.log('[Mirox] search provider:', KS_KEY ? 'kensearch' : 'duckduckgo');
 console.log('[Mirox] discord bot:', DISCORD_BOT_TOKEN ? 'enabled' : 'disabled');
 
@@ -1413,7 +1309,7 @@ if (!process.env.VERCEL) {
 }
 
 /* ============================================================
-   DISCORD BOT — M_KEY only, hardcoded channels, ? prefix
+   DISCORD BOT — M_KEY only, hardcoded channels, ? prefix, OAuth2
    ============================================================ */
 if (DISCORD_BOT_TOKEN) {
   startDiscordBot().catch((e) => console.error('[discord]', e?.message || e));
@@ -1429,26 +1325,28 @@ async function startDiscordBot() {
     ],
   });
 
-  // per-guild persistent setup marker
-  const setupMark = new Map();
-
-  client.once(Events.ClientReady, (c) => {
+  client.once(Events.ClientReady, async (c) => {
     console.log(`[discord] logged in as ${c.user.tag}`);
+    // Auto-detect application id from the bot itself
+    try {
+      const me = await c.application.fetch();
+      DISCORD_APP_ID = me.id;
+      console.log(`[discord] application id: ${DISCORD_APP_ID}`);
+      console.log(`[discord] invite: ${discordInviteUrl()}`);
+    } catch (e) {
+      console.warn('[discord] could not fetch application id:', e.message);
+    }
     c.user.setPresence({
       activities: [{ name: '?help · MiroxAI', type: ActivityType.Watching }],
       status: 'online',
     });
   });
 
-  // ---------- helpers ----------
   const isChatChannel   = (id) => id === DISCORD_CHAT_CHANNEL;
   const isImageChannel  = (id) => id === DISCORD_IMAGE_CHANNEL;
   const isStatusChannel = (id) => id === DISCORD_STATUS_CHANNEL;
 
-  function bubble(content) {
-    // "Custom bubble" — small unicode frame around state text
-    return `▎${content}▕`;
-  }
+  function bubble(content) { return `▎${content}▕`; }
 
   async function safeReply(msg, text, opts = {}) {
     try { return await msg.reply({ content: text, ...opts }); }
@@ -1460,23 +1358,9 @@ async function startDiscordBot() {
     catch (e) { console.warn('[discord] send failed:', e.message); return null; }
   }
 
-  async function editOrSend(msg, content, embed = null) {
-    const payload = embed ? { content: content || '', embeds: [embed] } : { content: content || '' };
-    try {
-      if (msg && msg.editable) return await msg.edit(payload);
-    } catch {}
-    return safeSend(msg.channel, payload);
-  }
+  function truncate(text, n = 1900) { const s = String(text || ''); if (s.length <= n) return s; return s.slice(0, n - 20) + '\n…*(truncated)*'; }
 
-  function truncate(text, n = 1900) {
-    const s = String(text || '');
-    if (s.length <= n) return s;
-    return s.slice(0, n - 20) + '\n…*(truncated)*';
-  }
-
-  // ---------- animated bubble ----------
   async function animateBubble(channel, frames, interval = 900) {
-    // frames: array of strings
     let msg = null;
     try {
       msg = await channel.send({ content: bubble(frames[0]) });
@@ -1496,88 +1380,47 @@ async function startDiscordBot() {
       };
     } catch (e) {
       console.warn('[discord] animate failed:', e.message);
-      return { message: null, stop: async (finalText, embed = null) => {
-        const payload = embed ? { content: finalText || '', embeds: [embed] } : { content: finalText || '' };
-        return safeSend(channel, payload);
-      } };
+      return { message: null, stop: async (finalText, embed = null) => { const payload = embed ? { content: finalText || '', embeds: [embed] } : { content: finalText || '' }; return safeSend(channel, payload); } };
     }
   }
 
-  // ---------- AI chat helpers ----------
   async function runAiChat(userText, username, { deepThink = false, search = false } = {}) {
     const cfg = MIROX_MODELS['mirox-tail-r1'];
     const msgs = [
       { role: 'system', content: buildSystemPrompt(cfg, null, false, '', deepThink, 'mirox-tail-r1', '', false, true) },
       { role: 'user', content: `Discord user "${username}" says: ${userText}` },
     ];
-
     if (search) {
-      try {
-        const s = await webSearch(userText, 5);
-        const hasData = s.results.length || s.overview;
-        if (hasData) msgs.push({ role: 'system', content: formatSearchContext(userText, s) });
-      } catch {}
+      try { const s = await webSearch(userText, 5); const hasData = s.results.length || s.overview; if (hasData) msgs.push({ role: 'system', content: formatSearchContext(userText, s) }); } catch {}
     }
-
-    const result = await miroxChatChain({
-      messages: msgs,
-      cfg,
-      stream: false,
-      vision: false,
-      deepThink,
-    });
+    const result = await miroxChatChain({ messages: msgs, cfg, stream: false, vision: false, deepThink });
     const data = await result.res.json().catch(() => ({}));
     let reply = extractReplyText(data) || '(no reply)';
     reply = stripThinking(reply);
     return reply;
   }
 
-  // ---------- setup roles ----------
   async function autoSetupRoles(guild) {
     const created = [];
     const findOrCreate = async (def) => {
-      let role = guild.roles.cache.find((r) => r.name === def.name);
+      let role = guild.roles.cache.find((r) => r.name === def.name || r.name === `${def.emoji} ${def.name}`);
       if (!role) {
-        try {
-          role = await guild.roles.create({
-            name: def.name,
-            color: def.color,
-            reason: 'MiroxAI auto-setup',
-          });
-          created.push(role.name);
-        } catch (e) {
-          console.warn('[discord] role create failed:', e.message);
-        }
-      } else if (role.color !== def.color) {
-        try { await role.setColor(def.color, 'MiroxAI auto-setup'); } catch {}
+        try { role = await guild.roles.create({ name: `${def.emoji} ${def.name}`, color: def.color, reason: 'MiroxAI auto-setup' }); created.push(role.name); }
+        catch (e) { console.warn('[discord] role create failed:', e.message); }
       }
       return role;
     };
-
     const ownerRole = await findOrCreate(DISCORD_ROLE_OWNER);
     const botRole = await findOrCreate(DISCORD_ROLE_BOT);
     const memberRole = await findOrCreate(DISCORD_ROLE_MEMBER);
-
-    // Rename roles with emoji prefix
-    const renameWithEmoji = async (role, emoji) => {
-      if (!role) return;
-      const targetName = `${emoji} ${role.name.replace(/^[^\w]+/, '').trim()}`;
-      if (role.name !== targetName) {
-        try { await role.setName(targetName, 'MiroxAI auto-setup emoji'); } catch {}
-      }
-    };
-    await renameWithEmoji(ownerRole, DISCORD_ROLE_OWNER.emoji);
-    await renameWithEmoji(botRole, DISCORD_ROLE_BOT.emoji);
-    await renameWithEmoji(memberRole, DISCORD_ROLE_MEMBER.emoji);
-
     return { ownerRole, botRole, memberRole, created };
   }
 
-  // ---------- commands ----------
   const commands = {
     help: {
       desc: 'Show available commands',
       run: async (msg) => {
+        const url = discordInviteUrl();
         const embed = new EmbedBuilder()
           .setColor(0x4d6bfe)
           .setTitle('🤖 Mirox Bot — Commands')
@@ -1586,12 +1429,36 @@ async function startDiscordBot() {
             { name: '💬 Chat', value: '`?ask <msg>` — ask the AI\n`?think <msg>` — deep think\n`?search <q>` — web search + answer', inline: false },
             { name: '🎨 Images', value: '`?image <prompt>` — generate image', inline: false },
             { name: '📊 Info', value: '`?status` — bot & API status\n`?models` — list models\n`?ping` — latency', inline: false },
+            { name: '🔗 Invite', value: url ? `[Add Mirox to your server](${url})\nOr type \`?invite\`` : '`?invite` (bot not ready yet)', inline: false },
             { name: '🛠 Setup', value: '`?setup` — create roles + emojis', inline: false },
-            { name: '🧹 Utility', value: '`?userinfo [@user]` — user card\n`?serverinfo` — guild card\n`?avatar [@user]` — avatar', inline: false },
+            { name: '🧹 Utility', value: '`?userinfo [@user]`\n`?serverinfo`\n`?avatar [@user]`', inline: false },
           )
           .setFooter({ text: 'MiroxAI · by OpenSurr' });
         return safeSend(msg.channel, { embeds: [embed] });
       },
+    },
+
+    invite: {
+      desc: 'Get the OAuth2 invite link',
+      run: async (msg) => {
+        const url = discordInviteUrl();
+        if (!url) return safeReply(msg, '⚠️ Bot application ID not ready yet. Try again in a few seconds.');
+        const embed = new EmbedBuilder()
+          .setColor(0x4d6bfe)
+          .setTitle('🔗 Invite Mirox to your server')
+          .setDescription(`[**Click here to add Mirox**](${url})\n\nOr copy this link:\n\`\`\`\n${url}\n\`\`\``)
+          .addFields(
+            { name: 'Permissions', value: `Manage Roles · Manage Channels · Send Messages · Embeds · Attach Files · Read History`, inline: false },
+            { name: 'Scopes', value: `\`${DISCORD_SCOPES}\``, inline: false },
+          )
+          .setFooter({ text: 'MiroxAI · OAuth2' });
+        return safeSend(msg.channel, { embeds: [embed] });
+      },
+    },
+
+    oauth: {
+      desc: 'Alias for ?invite',
+      run: async (msg) => commands.invite.run(msg),
     },
 
     ping: {
@@ -1614,10 +1481,11 @@ async function startDiscordBot() {
           .addFields(
             { name: '🟢 Discord', value: `Online · ${client.ws.ping}ms`, inline: true },
             { name: '🌐 Web app', value: `[miroxai.org](${PUBLIC_ORIGIN})`, inline: true },
-            { name: '🧠 Chat models', value: `Tail r1 · Luna · Gen\nPro · Ultra · Eclipse`, inline: false },
+            { name: '🧠 Chat models', value: `Tail r1 · Luna · Gen · Pro · Ultra · Eclipse`, inline: false },
             { name: '🔍 Search', value: KS_KEY ? 'KenSearch ✅' : 'DuckDuckGo (fallback)', inline: true },
             { name: '🎨 Images', value: HF_API_KEY ? 'HuggingFace ✅' : (AIROUTE_KEY ? 'Airoute ✅' : 'disabled'), inline: true },
             { name: '🗄 Storage', value: KV_ON ? 'Durable (KV)' : 'Filesystem', inline: true },
+            { name: '🆔 App ID', value: DISCORD_APP_ID || '—', inline: true },
           )
           .setFooter({ text: 'MiroxAI · ' + new Date().toISOString() });
         return safeSend(msg.channel, { embeds: [embed] });
@@ -1627,13 +1495,8 @@ async function startDiscordBot() {
     models: {
       desc: 'List models',
       run: async (msg) => {
-        const lines = Object.entries(MIROX_MODELS).map(([id, m]) =>
-          `${m.flagship ? '👑' : m.tier === 'free' ? '🆓' : '💎'} **${m.label}** \`${id}\` — *${m.tagline || ''}*`);
-        const embed = new EmbedBuilder()
-          .setColor(0x4d6bfe)
-          .setTitle('🧠 Available models')
-          .setDescription(lines.join('\n'))
-          .setFooter({ text: 'API-accessible: mirox-tail-r1, mirox-luna-1.2, mirox-gen-1' });
+        const lines = Object.entries(MIROX_MODELS).map(([id, m]) => `${m.flagship ? '👑' : m.tier === 'free' ? '🆓' : '💎'} **${m.label}** \`${id}\` — *${m.tagline || ''}*`);
+        const embed = new EmbedBuilder().setColor(0x4d6bfe).setTitle('🧠 Available models').setDescription(lines.join('\n')).setFooter({ text: 'API-accessible: mirox-tail-r1, mirox-luna-1.2, mirox-gen-1' });
         return safeSend(msg.channel, { embeds: [embed] });
       },
     },
@@ -1642,30 +1505,12 @@ async function startDiscordBot() {
       desc: 'Create roles with emojis',
       run: async (msg) => {
         if (!msg.guild) return safeReply(msg, '❌ This command only works in a server.');
-        if (!msg.member.permissions.has(PermissionFlagsBits.ManageRoles)) {
-          return safeReply(msg, '🚫 You need **Manage Roles** to run setup.');
-        }
-        const anim = await animateBubble(msg.channel, [
-          '⚙️ Checking roles…',
-          '👑 Creating owner role…',
-          '🤖 Creating bot role…',
-          '🌱 Creating member role…',
-          '✨ Assigning emojis…',
-        ]);
+        if (!msg.member.permissions.has(PermissionFlagsBits.ManageRoles)) return safeReply(msg, '🚫 You need **Manage Roles** to run setup.');
+        const anim = await animateBubble(msg.channel, ['⚙️ Checking roles…', '👑 Creating owner role…', '🤖 Creating bot role…', '🌱 Creating member role…', '✨ Applying emojis…']);
         try {
           const res = await autoSetupRoles(msg.guild);
-          // Ensure command author becomes owner
-          try {
-            if (msg.guild.ownerId === msg.author.id || msg.member.permissions.has(PermissionFlagsBits.Administrator)) {
-              await msg.member.roles.add(res.ownerRole, 'MiroxAI setup — server owner');
-            }
-          } catch {}
-          // Give bot its role
-          try {
-            const me = msg.guild.members.me;
-            if (me && res.botRole) await me.roles.add(res.botRole, 'MiroxAI setup — bot role');
-          } catch {}
-
+          try { if (msg.guild.ownerId === msg.author.id || msg.member.permissions.has(PermissionFlagsBits.Administrator)) await msg.member.roles.add(res.ownerRole, 'MiroxAI setup — server owner'); } catch {}
+          try { const me = msg.guild.members.me; if (me && res.botRole) await me.roles.add(res.botRole, 'MiroxAI setup — bot role'); } catch {}
           const embed = new EmbedBuilder()
             .setColor(0x16a34a)
             .setTitle('✅ Setup complete')
@@ -1677,9 +1522,7 @@ async function startDiscordBot() {
             )
             .setFooter({ text: 'MiroxAI · roles ready' });
           await anim.stop('', embed);
-        } catch (e) {
-          await anim.stop(`❌ Setup failed: ${e.message}`);
-        }
+        } catch (e) { await anim.stop(`❌ Setup failed: ${e.message}`); }
       },
     },
 
@@ -1688,17 +1531,9 @@ async function startDiscordBot() {
       run: async (msg, args) => {
         const text = args.join(' ').trim();
         if (!text) return safeReply(msg, '❓ Usage: `?ask <your question>`');
-        const anim = await animateBubble(msg.channel, [
-          '💭 Thinking…',
-          '🧠 Reasoning…',
-          '✍️ Writing…',
-        ], 800);
-        try {
-          const reply = await runAiChat(text, msg.author.username, { deepThink: false, search: false });
-          await anim.stop(truncate(reply));
-        } catch (e) {
-          await anim.stop(`❌ ${e.message}`);
-        }
+        const anim = await animateBubble(msg.channel, ['💭 Thinking…', '🧠 Reasoning…', '✍️ Writing…'], 800);
+        try { const reply = await runAiChat(text, msg.author.username, { deepThink: false, search: false }); await anim.stop(truncate(reply)); }
+        catch (e) { await anim.stop(`❌ ${e.message}`); }
       },
     },
 
@@ -1707,18 +1542,9 @@ async function startDiscordBot() {
       run: async (msg, args) => {
         const text = args.join(' ').trim();
         if (!text) return safeReply(msg, '❓ Usage: `?think <your question>`');
-        const anim = await animateBubble(msg.channel, [
-          '🧠 Deep thinking…',
-          '🔬 Verifying…',
-          '🧩 Cross-checking…',
-          '✍️ Writing…',
-        ], 900);
-        try {
-          const reply = await runAiChat(text, msg.author.username, { deepThink: true, search: false });
-          await anim.stop(truncate(reply));
-        } catch (e) {
-          await anim.stop(`❌ ${e.message}`);
-        }
+        const anim = await animateBubble(msg.channel, ['🧠 Deep thinking…', '🔬 Verifying…', '🧩 Cross-checking…', '✍️ Writing…'], 900);
+        try { const reply = await runAiChat(text, msg.author.username, { deepThink: true, search: false }); await anim.stop(truncate(reply)); }
+        catch (e) { await anim.stop(`❌ ${e.message}`); }
       },
     },
 
@@ -1727,18 +1553,9 @@ async function startDiscordBot() {
       run: async (msg, args) => {
         const q = args.join(' ').trim();
         if (!q) return safeReply(msg, '❓ Usage: `?search <query>`');
-        const anim = await animateBubble(msg.channel, [
-          '🔍 Searching the web…',
-          '📖 Reading sources…',
-          '🧠 Summarising…',
-          '✍️ Writing…',
-        ], 900);
-        try {
-          const reply = await runAiChat(q, msg.author.username, { deepThink: false, search: true });
-          await anim.stop(truncate(reply));
-        } catch (e) {
-          await anim.stop(`❌ ${e.message}`);
-        }
+        const anim = await animateBubble(msg.channel, ['🔍 Searching the web…', '📖 Reading sources…', '🧠 Summarising…', '✍️ Writing…'], 900);
+        try { const reply = await runAiChat(q, msg.author.username, { deepThink: false, search: true }); await anim.stop(truncate(reply)); }
+        catch (e) { await anim.stop(`❌ ${e.message}`); }
       },
     },
 
@@ -1747,20 +1564,13 @@ async function startDiscordBot() {
       run: async (msg, args) => {
         const prompt = args.join(' ').trim();
         if (!prompt) return safeReply(msg, '❓ Usage: `?image <prompt>`');
-        const anim = await animateBubble(msg.channel, [
-          '🎨 Preparing canvas…',
-          '🖌️ Painting…',
-          '✨ Refining details…',
-          '💧 Watermarking…',
-        ], 1000);
+        const anim = await animateBubble(msg.channel, ['🎨 Preparing canvas…', '🖌️ Painting…', '✨ Refining details…', '💧 Watermarking…'], 1000);
         try {
           const dataUrl = await generateImage(prompt);
-          // Extract base64
           const [meta, b64] = dataUrl.split(',');
           const mime = (meta.match(/data:([^;]+)/) || [, 'image/png'])[1];
           const buf = Buffer.from(b64, 'base64');
           const ext = mime.includes('png') ? 'png' : 'jpg';
-          const { AttachmentBuilder } = await import('discord.js');
           const file = new AttachmentBuilder(buf, { name: `mirox-${Date.now()}.${ext}` });
           const embed = new EmbedBuilder()
             .setColor(0xd97757)
@@ -1770,9 +1580,7 @@ async function startDiscordBot() {
             .setFooter({ text: `Requested by ${msg.author.username}` });
           await anim.stop('', embed);
           await safeSend(msg.channel, { files: [file] });
-        } catch (e) {
-          await anim.stop(`❌ Image generation failed: ${e.message}`);
-        }
+        } catch (e) { await anim.stop(`❌ Image generation failed: ${e.message}`); }
       },
     },
 
@@ -1821,75 +1629,47 @@ async function startDiscordBot() {
       desc: 'Show avatar',
       run: async (msg) => {
         const target = msg.mentions.users.first() || msg.author;
-        const embed = new EmbedBuilder()
-          .setColor(0xd97757)
-          .setTitle(`🖼️ ${target.username}'s avatar`)
-          .setImage(target.displayAvatarURL({ size: 512 }))
-          .setFooter({ text: 'MiroxAI' });
+        const embed = new EmbedBuilder().setColor(0xd97757).setTitle(`🖼️ ${target.username}'s avatar`).setImage(target.displayAvatarURL({ size: 512 })).setFooter({ text: 'MiroxAI' });
         return safeSend(msg.channel, { embeds: [embed] });
       },
     },
   };
 
-  // ---------- message handler ----------
   client.on(Events.MessageCreate, async (msg) => {
     if (msg.author.bot) return;
     if (!msg.guild) return;
-
     const content = (msg.content || '').trim();
     const chId = msg.channel.id;
 
-    // Status channel: allow commands but no free chat
+    const runPrefixed = async () => {
+      const [cmdName, ...args] = content.slice(DISCORD_CMD_PREFIX.length).trim().split(/\s+/);
+      const cmd = commands[cmdName?.toLowerCase()];
+      if (cmd) { try { await cmd.run(msg, args); } catch (e) { console.warn('[discord] cmd error:', e.message); } return true; }
+      return false;
+    };
+
     if (isStatusChannel(chId)) {
       if (!content.startsWith(DISCORD_CMD_PREFIX)) return;
-      const [cmdName, ...args] = content.slice(DISCORD_CMD_PREFIX.length).trim().split(/\s+/);
-      const cmd = commands[cmdName.toLowerCase()];
-      if (cmd) {
-        try { await cmd.run(msg, args); } catch (e) { console.warn('[discord] cmd error:', e.message); }
-      }
+      await runPrefixed();
       return;
     }
 
-    // Image channel: only ?image / ?help / ?status etc.
     if (isImageChannel(chId)) {
-      if (content.startsWith(DISCORD_CMD_PREFIX)) {
-        const [cmdName, ...args] = content.slice(DISCORD_CMD_PREFIX.length).trim().split(/\s+/);
-        const cmd = commands[cmdName.toLowerCase()];
-        if (cmd) { try { await cmd.run(msg, args); } catch (e) { console.warn('[discord] cmd error:', e.message); } return; }
-      }
-      // Treat plain text in image channel as ?image shortcut
-      if (content) {
-        try { await commands.image.run(msg, content.split(/\s+/)); } catch (e) { console.warn('[discord] image shortcut error:', e.message); }
-      }
+      if (content.startsWith(DISCORD_CMD_PREFIX)) { if (await runPrefixed()) return; }
+      if (content) { try { await commands.image.run(msg, content.split(/\s+/)); } catch (e) { console.warn('[discord] image shortcut error:', e.message); } }
       return;
     }
 
-    // Chat channel
     if (isChatChannel(chId)) {
-      if (content.startsWith(DISCORD_CMD_PREFIX)) {
-        const [cmdName, ...args] = content.slice(DISCORD_CMD_PREFIX.length).trim().split(/\s+/);
-        const cmd = commands[cmdName.toLowerCase()];
-        if (cmd) { try { await cmd.run(msg, args); } catch (e) { console.warn('[discord] cmd error:', e.message); } return; }
-      }
+      if (content.startsWith(DISCORD_CMD_PREFIX)) { if (await runPrefixed()) return; }
       if (!content) return;
-      // Free chat → AI
-      const anim = await animateBubble(msg.channel, [
-        '💭 Thinking…',
-        '🧠 Reasoning…',
-        '✍️ Writing…',
-      ], 800);
-      try {
-        const reply = await runAiChat(content, msg.author.username, { deepThink: false, search: false });
-        await anim.stop(truncate(reply));
-      } catch (e) {
-        await anim.stop(`❌ ${e.message}`);
-      }
+      const anim = await animateBubble(msg.channel, ['💭 Thinking…', '🧠 Reasoning…', '✍️ Writing…'], 800);
+      try { const reply = await runAiChat(content, msg.author.username, { deepThink: false, search: false }); await anim.stop(truncate(reply)); }
+      catch (e) { await anim.stop(`❌ ${e.message}`); }
       return;
     }
-    // Other channels: ignore
   });
 
-  // ---------- error handling ----------
   client.on(Events.Error, (e) => console.error('[discord] error:', e?.message || e));
   client.on(Events.Warn, (e) => console.warn('[discord] warn:', e));
 
