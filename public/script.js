@@ -1223,6 +1223,7 @@
       const reqBody = {
         message: text, history, model, stream: true, search: !!forceSearch,
         deep_think: !!__prefs.deepThink,
+        tools: !!(window.MiroxExt && window.MiroxExt.toolsOn()),
         system_extra: sysExtra,
         files: files.map((f) => ({
           name: f.name, size: f.size, type: f.type, mime: f.mime,
@@ -1266,8 +1267,8 @@
           thinkingTagSeen = true;
           thinkingText = s.slice(openIdx + 10);
           answerText = s.slice(0, openIdx);
-        } else if (!hasReasoning) {
-          thinkingText = ''; answerText = s;
+        } else {
+          answerText = s;
         }
         answerText = stripThinkingLeak(answerText);
       };
@@ -1288,6 +1289,12 @@
             try { await reader.cancel(); } catch {}
             break;
           }
+          if (o.t) {
+            hasReasoning = true;
+            thinkingText += o.t;
+            if (thinkPanel && thinkPanel.isConnected()) thinkPanel.replaceText(thinkingText);
+          }
+          if (o.tool && window.MiroxExt) window.MiroxExt.onTool(o.tool, msgEl);
           if (o.img) {
             generatedImage = o.img;
             if (avatarMascot) setMascotMood('celebrate', avatarMascot.parentElement.parentElement);
@@ -1482,6 +1489,21 @@
       reader.readAsDataURL(file);
     });
   }
+  // Binary files (zip, pdf, office docs, ...) go up as base64 so the server can save them for tools.
+  const MAX_BINARY_FILE_BYTES = 25 * 1024 * 1024;
+  const BINARY_EXT_RE = /\.(zip|rar|7z|tar|gz|tgz|pdf|docx|xlsx|pptx|jar|apk|exe|bin|mp3|wav|mp4|mov)$/i;
+  function readBinaryFile(file) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = String(reader.result || '');
+        const base64 = dataUrl.split(',')[1] || '';
+        resolve({ type: 'file', name: file.name, size: file.size, mime: file.type || 'application/octet-stream', dataUrl, base64 });
+      };
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(file);
+    });
+  }
   function readTextFile(file) {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -1499,11 +1521,16 @@
     const finish = () => { newFiles.sort((a, b) => (a.order || 0) - (b.order || 0)); for (const nf of newFiles) if (!hasAttachment(nf.name, nf.size)) pendingFiles.push(nf); updatePreview(); updateSendButtonState(); };
     arr.forEach((f, idx) => {
       const isImg = (f.type || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(f.name);
-      const isTxt = !isImg && (isTextFile(f) || (f.type || '').startsWith('text/') || !f.type);
+      const isBin = !isImg && BINARY_EXT_RE.test(f.name);
+      const isTxt = !isImg && !isBin && (isTextFile(f) || (f.type || '').startsWith('text/') || (!f.type && !isBin));
       const one = () => { done++; if (done === arr.length) finish(); };
       if (isImg) imageToBase64DataURL(f).then((d) => { if (d) newFiles.push({ ...d, order: idx }); one(); }).catch(one);
+      else if (isBin) {
+        if (f.size > MAX_BINARY_FILE_BYTES) { toast('File too large (max 25 MB): ' + f.name, 4500, 'err'); one(); }
+        else readBinaryFile(f).then((d) => { if (d) newFiles.push({ ...d, order: idx }); one(); }).catch(one);
+      }
       else if (isTxt) readTextFile(f).then((d) => { if (d) newFiles.push({ ...d, order: idx }); one(); }).catch(one);
-      else one();
+      else readBinaryFile(f).then((d) => { if (d) newFiles.push({ ...d, order: idx }); one(); }).catch(one);
     });
   }
   function updatePreview() {
