@@ -2,11 +2,10 @@
   'use strict';
 
   /* ============================================================
-     MiroxAI frontend v150
-     · Aggressive narration scrubber (strips "It seems there was an issue…", "Let me try again…", "I'll extract…", "Thought for X.Xs")
-     · Native tool-status strip (no MiroxExt dependency)
-     · Thinking pill updates its label during tool loops
-     · Free-tier tool limit modal · free image upload cap · My Mirox growth
+     MiroxAI frontend v153
+     · EISDIR-safe tool handling · thinking pill shows tool status inline
+     · Kimi-style welcome + composer · My Mirox (reference design)
+     · Persona + MCP settings tabs · free-tier caps · growth tracking
      ============================================================ */
 
   /* ---------- i18n ---------- */
@@ -223,7 +222,7 @@
   }
 
   /* ---------- Prefs ---------- */
-  const DEFAULT_PREFS = { autoScroll: true, enterSend: true, vision: true, compact: false, reduceMotion: false, fontSize: 'md', mode: 'light', theme: 'default', responseLanguage: 'auto', uiLanguage: 'en', deepThink: false, autoSpeak: false, ttsVoice: '' };
+  const DEFAULT_PREFS = { autoScroll: true, enterSend: true, vision: true, compact: false, reduceMotion: false, fontSize: 'md', mode: 'light', theme: 'default', responseLanguage: 'auto', uiLanguage: 'en', deepThink: false, autoSpeak: false, ttsVoice: '', selfGrowth: false };
   function loadPrefs() {
     __prefs = Object.assign({}, DEFAULT_PREFS, safeGet(PREFS_KEY, {}));
     const app = safeGet(APPEARANCE_KEY, {});
@@ -265,7 +264,7 @@
     const btn = document.getElementById('deepThinkBtn');
     if (btn) btn.classList.toggle('active', !!__prefs.deepThink);
     const inp = document.getElementById('messageInput');
-    if (inp) inp.placeholder = __prefs.deepThink ? 'DeepThink is on — ask anything complex…' : 'How can I help you today?';
+    if (inp) inp.placeholder = __prefs.deepThink ? 'DeepThink is on — ask anything complex…' : 'Type "/" to invoke plugins and skills';
   }
 
   function loadReactions() { __reactions = safeGet(REACTIONS_KEY, {}); if (typeof __reactions !== 'object' || !__reactions) __reactions = {}; }
@@ -315,48 +314,81 @@
     const lvl = closenessLevel();
     const streak = streakCount();
     const active = activeDaysCount();
-    const total = __growth.totalMessages;
-    const days = [];
+    const userLabel = (__user?.name ? `${__user.name}'s Kimi` : 'Your Kimi');
+
+    const COLS = 48, ROWS = 8;
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    for (let i = 34; i >= 0; i--) {
-      const d = new Date(today); d.setDate(d.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
-      days.push({ key, count: __growth.days[key] || 0, day: d.getDate() });
+    const start = new Date(today);
+    start.setDate(start.getDate() - (COLS * 7 - 1));
+    start.setDate(start.getDate() - start.getDay());
+    const cells = [];
+    for (let col = 0; col < COLS; col++) {
+      for (let row = 0; row < ROWS; row++) {
+        const d = new Date(start);
+        d.setDate(d.getDate() + col * 7 + row);
+        const key = d.toISOString().slice(0, 10);
+        const c = __growth.days[key] || 0;
+        const lvl2 = c === 0 ? 0 : c < 3 ? 1 : c < 8 ? 2 : c < 20 ? 3 : 4;
+        const disabled = d > today;
+        cells.push(`<div class="mm-cell lvl-${lvl2}" title="${key} · ${c} messages" style="${disabled ? 'opacity:.35;' : ''}"></div>`);
+      }
     }
-    const heat = days.map((x) => {
-      const lvl2 = x.count === 0 ? 0 : x.count < 3 ? 1 : x.count < 8 ? 2 : x.count < 20 ? 3 : 4;
-      return `<div class="mm-day lvl-${lvl2}" title="${x.key} · ${x.count} messages">${x.day}</div>`;
-    }).join('');
+    const gridHTML = cells.join('');
+    const months = ['Nov','Dec','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct'];
+    const monthLabels = `<div class="mm-month-labels">${months.map((m) => `<span>${m}</span>`).join('')}</div>`;
+
+    const DOT_N = 12;
+    let dotHTML = '';
+    for (let y = 0; y < DOT_N; y++) {
+      for (let x = 0; x < DOT_N; x++) {
+        const dx = x - (DOT_N - 1) / 2, dy = y - (DOT_N - 1) / 2;
+        const r = Math.sqrt(dx * dx + dy * dy) / (DOT_N / 2);
+        const isOn = r < 0.42;
+        const isMid = r >= 0.42 && r < 0.7;
+        dotHTML += `<span class="mm-dot${isOn ? ' on' : isMid ? ' mid' : ''}" style="animation-delay:${(x + y) * 30}ms"></span>`;
+      }
+    }
+
     root.innerHTML = `
-      <div class="mm-hero">
-        <div class="mm-hero-avatar"><div class="mascot mascot-md m-happy" data-mood="happy">${blobSvg()}</div></div>
-        <div class="mm-hero-info">
-          <div class="mm-hero-name">${escapeHtml(__user?.name || 'Friend')}</div>
-          <div class="mm-hero-sub">${escapeHtml(lvl.label)} · ${total} messages</div>
+      <div class="mm-header">
+        <div class="mm-avatar"><i class="ri-sparkling-2-fill"></i></div>
+        <div class="mm-title-wrap">
+          <div class="mm-title">${escapeHtml(userLabel)}</div>
+          <div class="mm-subtitle">Kimi has been with you for <strong>${active}</strong> day${active === 1 ? '' : 's'} across <strong>${__growth.totalChats}</strong> chat${__growth.totalChats === 1 ? '' : 's'}, and we've chatted <strong>${streak}</strong> day${streak === 1 ? '' : 's'} in a row</div>
         </div>
-        <div class="mm-hero-badge"><i class="${lvl.icon}"></i> ${escapeHtml(lvl.label)}</div>
+        <button class="mm-self-growth-btn" type="button" id="mmEnableGrowth">
+          <i class="ri-flashlight-fill"></i><span>Enable self-growth</span>
+        </button>
       </div>
-      <div class="mm-stats">
-        <div class="mm-stat"><div class="mm-stat-num">${active}</div><div class="mm-stat-lbl">Active days</div></div>
-        <div class="mm-stat"><div class="mm-stat-num">${streak}</div><div class="mm-stat-lbl">Day streak</div></div>
-        <div class="mm-stat"><div class="mm-stat-num">${total}</div><div class="mm-stat-lbl">Messages</div></div>
-        <div class="mm-stat"><div class="mm-stat-num">${__growth.totalChats}</div><div class="mm-stat-lbl">Chats</div></div>
+
+      <div class="mm-tabs">
+        <button class="mm-tab active" type="button">Closeness</button>
+        <button class="mm-tab" type="button">Growth</button>
       </div>
-      <div class="mm-section-title">Closeness</div>
-      <div class="mm-bar"><div class="mm-bar-fill" style="width:${lvl.pct}%"></div></div>
-      <div class="mm-bar-hint">${escapeHtml(lvl.label)} — keep chatting to grow closer.</div>
-      <div class="mm-section-title">Last 35 days</div>
-      <div class="mm-heat">${heat}</div>
-      <div class="mm-heat-legend">
-        <span>Less</span>
-        <span class="mm-day lvl-0"></span>
-        <span class="mm-day lvl-1"></span>
-        <span class="mm-day lvl-2"></span>
-        <span class="mm-day lvl-3"></span>
-        <span class="mm-day lvl-4"></span>
-        <span>More</span>
+      <div class="mm-tab-hint">The more you chat or assign tasks, the closer you grow</div>
+
+      <div class="mm-heat-block">
+        <div class="mm-heat-grid">${gridHTML}</div>
+        ${monthLabels}
+      </div>
+
+      <div class="mm-growth-grid">
+        <div class="mm-growth-left">
+          <h3>Kimi can now learn and grow on its own</h3>
+          <p>Once enabled, Kimi keeps learning your preferences, habits, and ways of working, making every collaboration the start of the next one.</p>
+          <button class="mm-self-growth-btn" type="button" id="mmEnableGrowth2">
+            <i class="ri-flashlight-fill"></i><span>Enable self-growth</span>
+          </button>
+        </div>
+        <div class="mm-dotmatrix">${dotHTML}</div>
       </div>`;
-    upgradeStaticMascots(root);
+
+    const enable = () => { __prefs.selfGrowth = true; savePrefs(); toast('Self-growth enabled — Kimi will keep learning.', 3000, 'ok'); };
+    root.querySelector('#mmEnableGrowth')?.addEventListener('click', enable);
+    root.querySelector('#mmEnableGrowth2')?.addEventListener('click', enable);
+    root.querySelectorAll('.mm-tab').forEach((t) => t.addEventListener('click', () => {
+      root.querySelectorAll('.mm-tab').forEach((x) => x.classList.toggle('active', x === t));
+    }));
   }
 
   /* ---------- Confetti ---------- */
@@ -483,196 +515,54 @@
     });
   }
   upgradeStaticMascots();
-  const lbEl = document.getElementById('loadingBlob');
-  if (lbEl) lbEl.innerHTML = `<div class="mascot mascot-lg m-idle" data-mood="idle">${blobSvg()}</div>`;
-  function startIdleMascot() {
-    const cuteMoods = ['wink', 'study', 'searching', 'happy', 'thinking', 'learning', 'reading'];
-    setInterval(() => {
-      const w = document.getElementById('welcomeMascot');
-      if (!w || isReplying || !w.parentElement) return;
-      setMascotMood(cuteMoods[Math.floor(Math.random() * cuteMoods.length)], w.parentElement);
-    }, 6000);
-  }
 
-  /* ---------- Thinking-leak scrubber (AGGRESSIVE) ---------- */
+  /* ---------- Thinking-leak scrubber ---------- */
   function stripThinkingLeak(s) {
     let out = String(s == null ? '' : s);
-
-    // 1) Remove complete <thinking> blocks
     out = out.replace(/<thinking>[\s\S]*?<\/thinking>/g, '');
-    // 2) Remove dangling open <thinking>
     const lastOpen = out.lastIndexOf('<thinking>');
     if (lastOpen >= 0 && out.indexOf('</thinking>', lastOpen) === -1) out = out.slice(0, lastOpen);
     out = out.replace(/<\/?thinking>/g, '');
-    // 3) Remove partial tag tails (<thin, </think, etc.)
     const lastLt = out.lastIndexOf('<');
     if (lastLt >= 0) {
       const tail = out.slice(lastLt);
       const candidates = ['<thinking>', '</thinking>'];
-      if (candidates.some((c) => c.toLowerCase().startsWith(tail.toLowerCase()) && tail.length < c.length))
-        out = out.slice(0, lastLt);
+      if (candidates.some((c) => c.toLowerCase().startsWith(tail.toLowerCase()) && tail.length < c.length)) out = out.slice(0, lastLt);
     }
-
-    // 4) Strip reasoning-model timing prefixes: "Thought for 14.7s"
     out = out.replace(/^\s*thought\s+for\s+\d+(?:\.\d+)?\s*s\s*/im, '');
-    // 5) Strip standalone "14.7s" duration lines
     out = out.replace(/^\s*\d+(?:\.\d+)?s\s*$/gm, '');
-    // 6) Strip "Thought:" / "Reasoning:" lead-ins
     out = out.replace(/^\s*(?:thought|reasoning|analysis)\s*:\s*/im, '');
-
-    // 7) Strip first-person tool narration that leaks into the answer.
-    //    These are the EXACT patterns from the ZIP-file case.
     const NARRATION = [
-      // "It seems there was an issue with..."
       /^\s*it\s+seems\s+(?:there\s+was\s+)?(?:an?\s+)?(?:issue|problem|error|difficulty)[^\n.!?]*[.!?]?\s*/gim,
-      // "Let me try again to ensure..."
       /^\s*let\s+me\s+try\s+again[^\n.!?]*[.!?]?\s*/gim,
-      // "I'll attempt/try to extract/inspect/open..."
       /^\s*i[''']ll\s+(?:attempt\s+to\s+|try\s+to\s+|now\s+)?(?:extract|inspect|open|read|load|check|look\s+at|look\s+inside|unzip|analyse|analyze|review|fetch|download|search|browse|process|parse|scan|verify|test|write|create|run|execute|use|call)[^\n.!?]*[.!?]?\s*/gim,
-      // "I'm going to..."
       /^\s*i[''']m\s+going\s+to\s+[^\n.!?]*[.!?]?\s*/gim,
-      // "I will now..."
       /^\s*i\s+will\s+(?:now\s+)?(?:attempt\s+to\s+)?(?:extract|inspect|open|read|load|check|look|unzip|analyse|analyze|review|fetch|download|search|browse|process|parse|scan|verify|test|write|create|run|execute|use|call)[^\n.!?]*[.!?]?\s*/gim,
-      // "Let me first..."
       /^\s*let\s+me\s+(?:first\s+)?(?:extract|inspect|open|read|load|check|look\s+at|look\s+inside|unzip|analyse|analyze|review|fetch|download|search|browse|process|parse|scan|verify|test|write|create|run|execute|use|call)[^\n.!?]*[.!?]?\s*/gim,
-      // "I've extracted/inspected..."
       /^\s*i[''']ve\s+(?:extracted|inspected|opened|read|loaded|checked|analy|unzipped|reviewed|fetched|downloaded|searched|browsed|processed|parsed|scanned|verified|tested|written|created|run|executed|used|called)[^\n.!?]*[.!?]?\s*/gim,
-      // "I need to..."
       /^\s*i\s+need\s+to\s+(?:extract|inspect|open|read|load|check|look|unzip|analyse|analyze|review|fetch|download|search|browse|process|parse|scan|verify|test|write|create|run|execute|use|call)[^\n.!?]*[.!?]?\s*/gim,
-      // "Now that the file..."
       /^\s*now\s+that\s+the\s+(?:file|zip|archive|content|image|pdf)[^\n.!?]*[.!?]?\s*/gim,
-      // "Here is what I found..." lead-in
       /^\s*here[''']s\s+what\s+i\s+found[^\n.!?]*[.!?]?\s*/gim,
-      // Generic "OK, I've ..." lead-in
       /^\s*(?:ok(?:ay)?|alright|sure|got\s+it)[,.]\s+(?:i[''']ve|i[''']ll|let\s+me|i\s+will)[^\n.!?]*[.!?]?\s*/gim,
-      // "Using the X tool..." / "Using the tool..."
       /^\s*using\s+the\s+[^\n.!?]{1,60}?\s+tool[^\n.!?]*[.!?]?\s*/gim,
-      // "I will use the X tool..."
       /^\s*i\s+will\s+use\s+the\s+[^\n.!?]{1,60}?\s+tool[^\n.!?]*[.!?]?\s*/gim,
-      // "Let me use ..."
       /^\s*let\s+me\s+use\s+[^\n.!?]*[.!?]?\s*/gim,
-      // "I'll now use ..."
       /^\s*i[''']ll\s+now\s+use\s+[^\n.!?]*[.!?]?\s*/gim,
-      // "Proceeding to ..."
       /^\s*proceeding\s+to\s+[^\n.!?]*[.!?]?\s*/gim,
-      // "Next, I'll ..."
       /^\s*next[,]?\s+i[''']ll\s+[^\n.!?]*[.!?]?\s*/gim,
-      // "First, I'll ..." / "First, let me ..."
       /^\s*first[,]?\s+(?:i[''']ll|let\s+me)\s+[^\n.!?]*[.!?]?\s*/gim,
-      // "Based on the results, I ..." is fine; but "Based on the tool result..." is narration
       /^\s*based\s+on\s+the\s+(?:tool\s+)?(?:result|output)[^\n.!?]*[.!?]?\s*/gim,
-      // "The tool returned..."
       /^\s*the\s+tool\s+(?:returned|reported|showed|gave)[^\n.!?]*[.!?]?\s*/gim,
-      // "I've successfully ..."
       /^\s*i[''']ve\s+successfully\s+[^\n.!?]*[.!?]?\s*/gim,
-      // "Successfully extracted/read/..."
       /^\s*successfully\s+(?:extracted|read|loaded|opened|unzipped|created|written|run|executed)[^\n.!?]*[.!?]?\s*/gim,
     ];
     for (const re of NARRATION) out = out.replace(re, '');
-
-    // 8) Collapse the blank lines left behind
     out = out.replace(/\n{3,}/g, '\n\n').replace(/^\s+/, '');
     return out;
   }
 
-  /* ---------- Thinking panel (status pill, no transcript) ---------- */
-  function createThinkPanel(_deep) {
-    const el = document.createElement('div');
-    el.className = 'think-panel';
-    el.dataset.state = 'thinking';
-    el.dataset.collapsed = 'true';
-    el.innerHTML = `
-      <div class="think-header">
-        <div class="think-icon"><i class="ri-loader-4-line"></i></div>
-        <div class="think-title"><span class="think-title-text">Thinking</span></div>
-        <div class="think-timer-pill">0.0s</div>
-      </div>`;
-    const titleTextEl = el.querySelector('.think-title-text');
-    const timerPill = el.querySelector('.think-timer-pill');
-    const iconEl = el.querySelector('.think-icon i');
-    const t0 = performance.now();
-    let done = false;
-    const timer = setInterval(() => {
-      if (done) { clearInterval(timer); return; }
-      timerPill.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
-    }, 100);
-    function setState(next) {
-      el.dataset.state = next;
-      if (next === 'thinking') { iconEl.className = 'ri-loader-4-line'; titleTextEl.textContent = 'Thinking'; }
-      else if (next === 'done') { iconEl.className = 'ri-checkbox-circle-fill'; const secs = ((performance.now() - t0) / 1000).toFixed(1); titleTextEl.textContent = 'Thought for ' + secs + 's'; }
-      else if (next === 'failed') { iconEl.className = 'ri-error-warning-fill'; titleTextEl.textContent = 'Thinking stopped'; }
-    }
-    function setStatus(text) {
-      if (done) return;
-      if (text) titleTextEl.textContent = text;
-    }
-    function finalize() {
-      if (done) return;
-      done = true; clearInterval(timer);
-      const secs = ((performance.now() - t0) / 1000).toFixed(1);
-      timerPill.textContent = secs + 's';
-      timerPill.style.display = 'none';
-      iconEl.className = 'ri-checkbox-circle-fill';
-      el.dataset.state = 'done';
-      titleTextEl.textContent = 'Thought for ' + secs + 's';
-    }
-    function fail() {
-      if (done) return;
-      done = true; clearInterval(timer);
-      timerPill.style.display = 'none';
-      iconEl.className = 'ri-error-warning-fill';
-      el.dataset.state = 'failed';
-      titleTextEl.textContent = 'Thinking stopped';
-    }
-    function hide() { el.style.display = 'none'; done = true; clearInterval(timer); }
-    return { el, replaceText: () => {}, finalize, fail, hide, setStatus, isConnected: () => el.isConnected, destroy: () => clearInterval(timer) };
-  }
-
-  /* ---------- Tool status strip (renders server {tool:…} events) ---------- */
-  function ensureToolStrip(msgEl, thinkPanel) {
-    const bodyEl = msgEl.querySelector('.message-body');
-    if (!bodyEl) return null;
-    let strip = bodyEl.querySelector('.tool-status-strip');
-    if (!strip) {
-      strip = document.createElement('div');
-      strip.className = 'tool-status-strip';
-      // Place right after the thinking panel (or at the top of body)
-      const anchor = thinkPanel?.el?.parentNode === bodyEl ? thinkPanel.el.nextSibling : bodyEl.firstChild;
-      bodyEl.insertBefore(strip, anchor);
-    }
-    return strip;
-  }
-  function renderToolStatus(msgEl, tool, thinkPanel) {
-    const strip = ensureToolStrip(msgEl, thinkPanel);
-    if (!strip) return;
-    const name = String(tool.name || 'tool');
-    const status = String(tool.status || 'running');
-    const summary = tool.summary ? String(tool.summary).slice(0, 120) : '';
-
-    // Each call gets its own chip. Find an existing running chip with the same name.
-    let chip = strip.querySelector(`.tool-status-chip[data-name="${CSS.escape(name)}"][data-status="running"]`);
-    if (!chip) {
-      chip = document.createElement('div');
-      chip.className = 'tool-status-chip';
-      chip.dataset.name = name;
-      strip.appendChild(chip);
-    }
-    chip.dataset.status = status;
-    chip.className = 'tool-status-chip ' + status;
-
-    const icon = status === 'done' ? 'ri-check-line'
-               : status === 'error' ? 'ri-close-line'
-               : 'ri-loader-4-line spin';
-    const label = humanizeToolName(name);
-    chip.innerHTML = `<i class="${icon}"></i><span class="tool-status-name">${escapeHtml(label)}</span>${summary ? `<span class="tool-status-summary">${escapeHtml(summary)}</span>` : ''}`;
-
-    // Also update the thinking pill's label while tools run.
-    if (thinkPanel && thinkPanel.isConnected()) {
-      if (status === 'running') thinkPanel.setStatus('Running ' + label + '…');
-      else if (status === 'done') thinkPanel.setStatus('Reading results…');
-      else thinkPanel.setStatus('Tool failed — retrying…');
-    }
-  }
+  /* ---------- Thinking panel — pill with tool status inline ---------- */
+  const __toolHistory = new WeakMap();
   function humanizeToolName(name) {
     const map = {
       'extract_zip': 'Extracting archive',
@@ -691,6 +581,64 @@
     };
     if (map[name]) return map[name];
     return String(name || 'tool').replace(/[_-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+  function renderToolStatus(_msgEl, tool, thinkPanel) {
+    if (!thinkPanel || !thinkPanel.isConnected()) return;
+    const name = humanizeToolName(tool.name || 'tool');
+    const status = String(tool.status || 'running');
+    if (!__toolHistory.has(thinkPanel.el)) __toolHistory.set(thinkPanel.el, []);
+    const hist = __toolHistory.get(thinkPanel.el);
+    if (status === 'running') {
+      thinkPanel.setStatus('Running ' + name + '…');
+    } else if (status === 'done') {
+      if (!hist.includes(name)) hist.push(name);
+      thinkPanel.setStatus('Reading results…');
+    } else if (status === 'error') {
+      thinkPanel.setStatus('Tool failed — retrying…');
+    }
+    thinkPanel.setFinalSuffix(hist.length ? hist.join(' · ') : '');
+  }
+
+  function createThinkPanel(_deep) {
+    const el = document.createElement('div');
+    el.className = 'think-panel';
+    el.dataset.state = 'thinking';
+    el.dataset.collapsed = 'true';
+    el.innerHTML = `
+      <div class="think-header">
+        <div class="think-icon"><i class="ri-loader-4-line"></i></div>
+        <div class="think-title"><span class="think-title-text">Thinking</span></div>
+        <div class="think-timer-pill">0.0s</div>
+      </div>`;
+    const titleTextEl = el.querySelector('.think-title-text');
+    const timerPill = el.querySelector('.think-timer-pill');
+    const iconEl = el.querySelector('.think-icon i');
+    const t0 = performance.now();
+    let done = false;
+    let finalSuffix = '';
+    const timer = setInterval(() => {
+      if (done) { clearInterval(timer); return; }
+      timerPill.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
+    }, 100);
+    function setState(next) {
+      el.dataset.state = next;
+      if (next === 'thinking') { iconEl.className = 'ri-loader-4-line'; titleTextEl.textContent = 'Thinking'; }
+      else if (next === 'failed') { iconEl.className = 'ri-error-warning-fill'; titleTextEl.textContent = 'Thinking stopped'; }
+    }
+    function setStatus(text) { if (done) return; if (text) titleTextEl.textContent = text; }
+    function setFinalSuffix(t) { finalSuffix = t || ''; }
+    function finalize() {
+      if (done) return;
+      done = true; clearInterval(timer);
+      const secs = ((performance.now() - t0) / 1000).toFixed(1);
+      timerPill.style.display = 'none';
+      iconEl.className = 'ri-checkbox-circle-fill';
+      el.dataset.state = 'done';
+      titleTextEl.textContent = 'Thought for ' + secs + 's' + (finalSuffix ? '  ·  ' + finalSuffix : '');
+    }
+    function fail() { if (done) return; done = true; clearInterval(timer); timerPill.style.display = 'none'; iconEl.className = 'ri-error-warning-fill'; el.dataset.state = 'failed'; titleTextEl.textContent = 'Thinking stopped'; }
+    function hide() { el.style.display = 'none'; done = true; clearInterval(timer); }
+    return { el, replaceText: () => {}, setStatus, setFinalSuffix, finalize, fail, hide, isConnected: () => el.isConnected, destroy: () => clearInterval(timer) };
   }
 
   /* ---------- Watermark ---------- */
@@ -798,11 +746,7 @@
       const data = await res.json().catch(() => null);
       const images = (data && Array.isArray(data.images)) ? data.images : [];
       const deleted = readDeletedImageIds();
-      const mapped = images.map((it, i) => ({
-        ...it,
-        _id: String(it.id || it.key || it.image_id || ('img-' + String(it.ts || it.created_at || it.prompt || 'unknown') + '-' + i)),
-        _historyIds: imageHistoryIds(it, i)
-      }));
+      const mapped = images.map((it, i) => ({ ...it, _id: String(it.id || it.key || it.image_id || ('img-' + String(it.ts || it.created_at || it.prompt || 'unknown') + '-' + i)), _historyIds: imageHistoryIds(it, i) }));
       __imageHistoryItems = mapped.filter(it => !it._historyIds.some(id => deleted.has(id)));
       const stillReturned = new Set(mapped.flatMap(it => it._historyIds));
       writeDeletedImageIds([...deleted].filter(id => stillReturned.has(id)));
@@ -886,10 +830,17 @@
   function loadChats() { const v = safeGet(LS_KEY, []); __conversations = Array.isArray(v) ? v : []; }
   function welcomeHTML() {
     return `<div class="welcome-screen">
-      <div class="welcome-mascot"><div class="mascot mascot-lg m-idle" id="welcomeMascot" data-mood="idle">${blobSvg()}</div></div>
-      <h1 class="welcome-title">Hi, I'm Mirox</h1>
-      <p class="welcome-sub">Luna, Gen and <strong>Tail r1</strong> are free. Sign in to save chats and use image generation.</p>
-      <div class="suggestion-grid">
+      <div class="kimi-wordmark">MIROX</div>
+      <div class="kimi-tagline">Your AI copilot for building, research, and every-day work.</div>
+      <div class="kimi-chips">
+        <button class="kimi-chip" type="button" data-prompt="Make me a slide deck about the solar system"><i class="ri-slideshow-line"></i><span>Slides</span></button>
+        <button class="kimi-chip" type="button" data-prompt="Do deep research on quantum computing and summarize the state of the art"><i class="ri-search-eye-line"></i><span>Deep Research</span></button>
+        <button class="kimi-chip" type="button" data-prompt="Help me build a to-do web app with HTML, CSS and JS"><i class="ri-tools-line"></i><span>Build</span></button>
+        <button class="kimi-chip" type="button" data-prompt="Write a professional doc for a science fair project on AI"><i class="ri-file-text-line"></i><span>Docs</span></button>
+        <button class="kimi-chip" type="button" data-prompt="Create a spreadsheet plan for a school science fair budget"><i class="ri-table-line"></i><span>Sheets</span></button>
+        <button class="kimi-chip" type="button" data-prompt="Design a clean poster layout for a science fair project"><i class="ri-palette-line"></i><span>Design</span></button>
+      </div>
+      <div class="kimi-suggest">
         <button class="suggestion-card" type="button" data-prompt="Show me a simple Lua script that prints numbers 1 to 5"><i class="ri-code-box-line"></i><span>Write a Lua script</span></button>
         <button class="suggestion-card" type="button" data-prompt="Show me an HTML example with a table"><i class="ri-html5-line"></i><span>Show an HTML table</span></button>
         <button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span>Generate an image</span></button>
@@ -904,7 +855,7 @@
     bindSuggestionClicks(); updateTokenUsage(); renderHistory();
   }
   function bindSuggestionClicks() {
-    $$('.suggestion-card').forEach((card) => {
+    $$('.suggestion-card, .kimi-chip').forEach((card) => {
       if (card.__wired) return; card.__wired = true;
       card.onclick = () => {
         const p = card.dataset.prompt;
@@ -1100,7 +1051,6 @@
   }
   function closeHtmlRunner() { $('#htmlRunnerModal')?.classList.remove('open'); }
 
-  /* ---------- Raw view modal ---------- */
   function openRawView(text) {
     __currentRawSource = text || '';
     const modal = $('#rawViewModal'); const content = $('#rawViewContent');
@@ -1118,25 +1068,12 @@
     const liked = react === 'like';
     const disliked = react === 'dislike';
     return `
-      <button class="action-btn${liked ? ' active-liked' : ''}" data-action="like" aria-label="Like" title="Good response">
-        <i class="${liked ? 'ri-thumb-up-fill' : 'ri-thumb-up-line'}"></i><span>Like</span>
-      </button>
-      <button class="action-btn${disliked ? ' active-disliked' : ''}" data-action="dislike" aria-label="Dislike" title="Bad response">
-        <i class="${disliked ? 'ri-thumb-down-fill' : 'ri-thumb-down-line'}"></i><span>Dislike</span>
-      </button>
-      <button class="action-btn" data-action="copy" aria-label="Copy" title="Copy response">
-        <i class="ri-file-copy-line"></i><span>Copy</span>
-      </button>
-      <button class="action-btn" data-action="speak" aria-label="Read aloud" title="Read aloud">
-        <i class="ri-volume-up-line"></i><span>Read</span>
-      </button>
-      <button class="action-btn" data-action="raw" aria-label="View source" title="View raw markdown source">
-        <i class="ri-code-box-line"></i><span>Source</span>
-      </button>
-      <button class="action-btn" data-action="retry" aria-label="Regenerate" title="Regenerate">
-        <i class="ri-refresh-line"></i><span>Retry</span>
-      </button>
-    `;
+      <button class="action-btn${liked ? ' active-liked' : ''}" data-action="like" aria-label="Like" title="Good response"><i class="${liked ? 'ri-thumb-up-fill' : 'ri-thumb-up-line'}"></i><span>Like</span></button>
+      <button class="action-btn${disliked ? ' active-disliked' : ''}" data-action="dislike" aria-label="Dislike" title="Bad response"><i class="${disliked ? 'ri-thumb-down-fill' : 'ri-thumb-down-line'}"></i><span>Dislike</span></button>
+      <button class="action-btn" data-action="copy" aria-label="Copy" title="Copy response"><i class="ri-file-copy-line"></i><span>Copy</span></button>
+      <button class="action-btn" data-action="speak" aria-label="Read aloud" title="Read aloud"><i class="ri-volume-up-line"></i><span>Read</span></button>
+      <button class="action-btn" data-action="raw" aria-label="View source" title="View raw markdown source"><i class="ri-code-box-line"></i><span>Source</span></button>
+      <button class="action-btn" data-action="retry" aria-label="Regenerate" title="Regenerate"><i class="ri-refresh-line"></i><span>Retry</span></button>`;
   }
   function addMessageToDOM(role, content, ts, msgId, files, image, thinking) {
     const container = $('#chatMessages'); if (!container) return null;
@@ -1256,17 +1193,14 @@
   function looksLikeIdeasRequest(text) {
     const t = String(text || '').trim();
     if (!t) return false;
-    return /\b(ideas?|inspiration|things to build|project ideas|science fair|recommendations|examples of|concepts for|what can i make|what should i build|suggestions|best (?:way|ways|projects|options|tools|topics)|for beginners|beginner friendly)\b/i.test(t)
-      && !looksLikeImageRequest(t);
+    return /\b(ideas?|inspiration|things to build|project ideas|science fair|recommendations|examples of|concepts for|what can i make|what should i build|suggestions|best (?:way|ways|projects|options|tools|topics)|for beginners|beginner friendly)\b/i.test(t) && !looksLikeImageRequest(t);
   }
   function looksLikeImageRequest(text) {
     const t = String(text || '').trim();
     if (!t) return false;
-    return /\b(generate|create|make|draw|render|paint|show\s+me|give\s+me)\b[^.!?]{0,60}\b(image|picture|photo|illustration|drawing|painting)\b/i.test(t)
-      || /^(?:an?\s+)?(image|picture|photo|illustration)\s+of\s+/i.test(t);
+    return /\b(generate|create|make|draw|render|paint|show\s+me|give\s+me)\b[^.!?]{0,60}\b(image|picture|photo|illustration|drawing|painting)\b/i.test(t) || /^(?:an?\s+)?(image|picture|photo|illustration)\s+of\s+/i.test(t);
   }
 
-  /* ---------- Tool limit modal ---------- */
   function showToolLimitModal(message) {
     const existing = document.getElementById('toolLimitModal');
     if (existing) existing.remove();
@@ -1276,9 +1210,7 @@
     wrap.style.zIndex = '9999';
     wrap.innerHTML = `
       <div class="modal" style="max-width:420px;text-align:center;">
-        <div class="card-icon" style="margin:0 auto 14px;background:var(--accent-soft);color:var(--accent);width:52px;height:52px;border-radius:14px;display:grid;place-items:center;font-size:26px;">
-          <i class="ri-timer-flash-line"></i>
-        </div>
+        <div class="card-icon" style="margin:0 auto 14px;background:var(--accent-soft);color:var(--accent);width:52px;height:52px;border-radius:14px;display:grid;place-items:center;font-size:26px;"><i class="ri-timer-flash-line"></i></div>
         <h2 class="modal-title" style="margin-bottom:8px;">Tool limit reached</h2>
         <p class="modal-sub" style="margin-bottom:20px;">${escapeHtml(message)}</p>
         <button class="modal-btn primary" type="button" id="toolLimitOk">Got it</button>
@@ -1425,7 +1357,7 @@
       const reqBody = {
         message: text, history, model, stream: true, search: !!forceSearch,
         deep_think: !!__prefs.deepThink,
-        tools: !!(window.MiroxExt && window.MiroxExt.toolsOn && window.MiroxExt.toolsOn()),
+        tools: !!__prefs.tools,
         system_extra: sysExtra,
         files: files.map((f) => ({
           name: f.name, size: f.size, type: f.type, mime: f.mime,
@@ -1439,10 +1371,7 @@
         continuation: !!isContinuation,
       };
 
-      const res = await fetch(APP_CHAT_URL, {
-        method: 'POST', headers: authHeaders(), credentials: 'same-origin',
-        body: JSON.stringify(reqBody), signal: activeStreamController.signal,
-      });
+      const res = await fetch(APP_CHAT_URL, { method: 'POST', headers: authHeaders(), credentials: 'same-origin', body: JSON.stringify(reqBody), signal: activeStreamController.signal });
       if (!res.ok) {
         let detail = `HTTP ${res.status}`;
         try { const d = await res.json(); detail = d.error?.message || d.error || d.message || detail; } catch {}
@@ -1452,9 +1381,7 @@
       const dec = new TextDecoder();
       let buf = '';
       const bodyEl = msgEl.querySelector('.message-body');
-      const ensureBubble = () => {
-        if (!bubble) { bubble = document.createElement('div'); bubble.className = 'bubble'; bodyEl.insertBefore(bubble, timeEl); }
-      };
+      const ensureBubble = () => { if (!bubble) { bubble = document.createElement('div'); bubble.className = 'bubble'; bodyEl.insertBefore(bubble, timeEl); } };
       let signinTriggered = false;
       const updateSplit = () => {
         const s = rawAll;
@@ -1493,22 +1420,13 @@
           }
           if (o.limit) {
             try { await reader.cancel(); } catch {}
-            const msg = (o.limit && o.limit.message) ||
-              'You have used all 20 free tool steps. Your allowance refreshes 3 hours after the first step in this window.';
+            const msg = (o.limit && o.limit.message) || 'You have used all 20 free tool steps. Your allowance refreshes 3 hours after the first step in this window.';
             showToolLimitModal(msg);
             if (thinkPanel && thinkPanel.isConnected()) thinkPanel.fail();
             return;
           }
-          if (o.t) {
-            hasReasoning = true;
-            thinkingText += o.t;
-          }
-          // Native tool status rendering — no MiroxExt dependency.
-          if (o.tool) {
-            toolSeen = true;
-            renderToolStatus(msgEl, o.tool, thinkPanel);
-            if (window.MiroxExt && window.MiroxExt.onTool) try { window.MiroxExt.onTool(o.tool, msgEl); } catch {}
-          }
+          if (o.t) { hasReasoning = true; thinkingText += o.t; }
+          if (o.tool) { toolSeen = true; renderToolStatus(msgEl, o.tool, thinkPanel); }
           if (o.img) {
             generatedImage = o.img;
             if (avatarMascot) setMascotMood('celebrate', avatarMascot.parentElement.parentElement);
@@ -1519,10 +1437,7 @@
             scrollToBottom();
             continue;
           }
-          if (o.reasoning_content || o.reasoning) {
-            const r = String(o.reasoning_content || o.reasoning || '');
-            if (r) { hasReasoning = true; thinkingText += r; }
-          }
+          if (o.reasoning_content || o.reasoning) { const r = String(o.reasoning_content || o.reasoning || ''); if (r) { hasReasoning = true; thinkingText += r; } }
           const delta = o.d || o.content || (o.delta && o.delta.content) || '';
           if (delta) {
             rawAll += delta;
@@ -1725,7 +1640,6 @@
     if (!fileList || !fileList.length) return;
     const arr0 = Array.from(fileList).filter((f) => !hasAttachment(f.name, f.size));
     if (!arr0.length) return;
-    // Free-tier image cap (client pre-check). Server also enforces 10.
     const incomingImages = arr0.filter((f) => (f.type || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(f.name));
     const currentImages = pendingFiles.filter((f) => f.type === 'image').length;
     if (__tier === 'free' && (currentImages + incomingImages.length) > FREE_IMAGE_UPLOAD_CAP) {
@@ -1879,6 +1793,11 @@
     updateAccountUI();
     renderModelPicker();
     updateTokenUsage();
+    // Load account settings (persona + mcp) into __user.settings if logged in
+    if (user && !user.local) {
+      const s = await jsonOr('/api/settings', {}, null, 6000);
+      if (s && s.ok && s.settings) __user.settings = s.settings;
+    }
   }
   async function loadConfig() {
     const data = await jsonOr('/api/config', {}, null, 7000);
@@ -1961,7 +1880,7 @@
     finally { if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-image-add-line"></i> Generate'; } }
   }
 
-  /* ---------- Tail r1 promo popup ---------- */
+  /* ---------- Tail r1 promo ---------- */
   function showTailPromo() {
     const seen = safeGet(TAIL_PROMO_SEEN_KEY, false);
     if (seen) return;
@@ -2042,9 +1961,7 @@
       else if (interim) setCallTranscript((finalText + ' ' + interim).trim(), true);
       resetSilence();
     };
-    recog.onerror = (e) => {
-      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { toast('Microphone permission denied.', 3500, 'err'); endCall(); }
-    };
+    recog.onerror = (e) => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { toast('Microphone permission denied.', 3500, 'err'); endCall(); } };
     recog.onend = () => {
       clearTimeout(silenceTimer);
       __call.recog = null;
@@ -2090,20 +2007,10 @@
     try {
       const res = await fetch(APP_CHAT_URL, {
         method: 'POST', headers: authHeaders(), credentials: 'same-origin',
-        body: JSON.stringify({
-          message: userText,
-          history: __call.currentHistory.slice(0, -1).map((m) => ({ role: m.role, content: m.content })),
-          model: __model || 'mirox-luna-1.2',
-          stream: true, deep_think: false, system_extra: callSystem,
-          guest_id: getGuestId(), language: langTag,
-        }),
+        body: JSON.stringify({ message: userText, history: __call.currentHistory.slice(0, -1).map((m) => ({ role: m.role, content: m.content })), model: __model || 'mirox-luna-1.2', stream: true, deep_think: false, system_extra: callSystem, guest_id: getGuestId(), language: langTag }),
         signal: controller.signal,
       });
-      if (!res.ok) {
-        let detail = 'HTTP ' + res.status;
-        try { const d = await res.json(); detail = d.error?.message || d.error || d.message || detail; } catch {}
-        throw new Error(detail);
-      }
+      if (!res.ok) { let detail = 'HTTP ' + res.status; try { const d = await res.json(); detail = d.error?.message || d.error || d.message || detail; } catch {} throw new Error(detail); }
       const ct = (res.headers.get('content-type') || '').toLowerCase();
       let firstTokenSeen = false;
       if (ct.includes('text/event-stream') || ct.includes('text/plain')) {
@@ -2159,9 +2066,7 @@
       if (replyEl) { replyEl.textContent = 'Connection issue — try again.'; replyEl.classList.remove('typing'); }
       __call.busy = false;
       if (__call.active && !__call.holding) {
-        setTimeout(() => {
-          if (__call.active && !__call.holding) { __call.shouldListen = true; setCallPhase('idle'); startCallRecognition(); }
-        }, 1200);
+        setTimeout(() => { if (__call.active && !__call.holding) { __call.shouldListen = true; setCallPhase('idle'); startCallRecognition(); } }, 1200);
       }
     } finally { __call.currentAbort = null; __call.busy = false; }
   }
@@ -2317,29 +2222,10 @@
   function addBridgeUserMsg(text) { const c = $('#bridgeMessages'); if (!c) return; $('#bridgeEmpty')?.remove(); const el = document.createElement('div'); el.className = 'bridge-msg user'; el.innerHTML = `<div class="bridge-bubble">${escapeHtml(text).replace(/\n/g, '<br>')}</div><div class="bridge-meta">You</div>`; c.appendChild(el); scrollBridgeBottom(); }
   function addBridgeAiMsg(text) { if (!text) return; const c = $('#bridgeMessages'); if (!c) return; $('#bridgeEmpty')?.remove(); const el = document.createElement('div'); el.className = 'bridge-msg ai'; el.innerHTML = `<div class="bridge-bubble">${escapeHtml(text).replace(/\n/g, '<br>')}</div><div class="bridge-meta">Mirox</div>`; c.appendChild(el); scrollBridgeBottom(); }
   function addBridgeSystemMsg(text) { const c = $('#bridgeMessages'); if (!c) return; $('#bridgeEmpty')?.remove(); const el = document.createElement('div'); el.className = 'bridge-msg system'; el.innerHTML = `<div class="bridge-bubble">${escapeHtml(text)}</div>`; c.appendChild(el); scrollBridgeBottom(); }
-  function addBridgeActionBubble(cmd) {
-    const c = $('#bridgeMessages'); if (!c) return null;
-    const data = getActionData(cmd);
-    const el = document.createElement('div'); el.className = 'bridge-msg ai';
-    el.innerHTML = `<div class="bridge-action"><div class="bridge-action-head"><div class="bridge-action-icon"><i class="${data.icon}"></i></div><div class="bridge-action-label">${data.label}</div><span class="bridge-action-status"><i class="ri-loader-4-line spin"></i> Working</span></div></div>`;
-    c.appendChild(el); scrollBridgeBottom(); return el;
-  }
-  function updateBridgeActionBubble(el, cmd, result) {
-    if (!el) return; const status = el.querySelector('.bridge-action-status'); if (!status) return;
-    if (result && result.ok) { status.className = 'bridge-action-status ok'; status.innerHTML = '<i class="ri-check-line"></i> Done'; }
-    else if (result && result.cancelled) { status.className = 'bridge-action-status err'; status.innerHTML = '<i class="ri-close-line"></i> Cancelled'; }
-    else { status.className = 'bridge-action-status err'; status.innerHTML = '<i class="ri-close-line"></i> Failed'; }
-    scrollBridgeBottom();
-  }
+  function addBridgeActionBubble(cmd) { const c = $('#bridgeMessages'); if (!c) return null; const data = getActionData(cmd); const el = document.createElement('div'); el.className = 'bridge-msg ai'; el.innerHTML = `<div class="bridge-action"><div class="bridge-action-head"><div class="bridge-action-icon"><i class="${data.icon}"></i></div><div class="bridge-action-label">${data.label}</div><span class="bridge-action-status"><i class="ri-loader-4-line spin"></i> Working</span></div></div>`; c.appendChild(el); scrollBridgeBottom(); return el; }
+  function updateBridgeActionBubble(el, cmd, result) { if (!el) return; const status = el.querySelector('.bridge-action-status'); if (!status) return; if (result && result.ok) { status.className = 'bridge-action-status ok'; status.innerHTML = '<i class="ri-check-line"></i> Done'; } else if (result && result.cancelled) { status.className = 'bridge-action-status err'; status.innerHTML = '<i class="ri-close-line"></i> Cancelled'; } else { status.className = 'bridge-action-status err'; status.innerHTML = '<i class="ri-close-line"></i> Failed'; } scrollBridgeBottom(); }
   function getBaseName(p) { if (!p) return ''; const parts = String(p).split('/'); return parts[parts.length - 1] || p; }
-  function getActionData(cmd) {
-    const t2 = cmd.type; const base = getBaseName(cmd.path) || '';
-    if (t2 === 'write') return { icon: 'ri-file-add-line', label: `Writing <code>${escapeHtml(base)}</code>` };
-    if (t2 === 'append') return { icon: 'ri-file-edit-line', label: `Appending <code>${escapeHtml(base)}</code>` };
-    if (t2 === 'exec') return { icon: 'ri-terminal-box-line', label: 'Running command' };
-    if (t2 === 'sudo') return { icon: 'ri-shield-keyhole-line', label: 'sudo' };
-    return { icon: 'ri-terminal-line', label: 'Working' };
-  }
+  function getActionData(cmd) { const t2 = cmd.type; const base = getBaseName(cmd.path) || ''; if (t2 === 'write') return { icon: 'ri-file-add-line', label: `Writing <code>${escapeHtml(base)}</code>` }; if (t2 === 'append') return { icon: 'ri-file-edit-line', label: `Appending <code>${escapeHtml(base)}</code>` }; if (t2 === 'exec') return { icon: 'ri-terminal-box-line', label: 'Running command' }; if (t2 === 'sudo') return { icon: 'ri-shield-keyhole-line', label: 'sudo' }; return { icon: 'ri-terminal-line', label: 'Working' }; }
   function setProgressText(text) { const el = $('#bwProgressText'); if (el && text) el.textContent = text; }
   function updateBridgeProgress(pct, text) { const np = Math.max(0, Math.min(100, Math.round(pct))); if (np > bridgeProgress) bridgeProgress = np; const bar = $('#bwProgress'), fill = $('#bwProgressFill'), pctEl = $('#bwProgressPct'); if (bar) bar.style.display = 'block'; if (fill) { fill.style.width = bridgeProgress + '%'; fill.classList.toggle('done', bridgeProgress >= 100); } if (pctEl) pctEl.textContent = bridgeProgress + '%'; if (text) setProgressText(text); }
   function extractBridgeCommands(text) {
@@ -2484,6 +2370,76 @@
   }
   function closePreview() { $('#bwPreviewModal')?.classList.remove('open'); }
 
+  /* ---------- MCP manager ---------- */
+  function renderMcpList() {
+    const list = document.getElementById('mcpList'); if (!list) return;
+    const servers = (__user?.settings?.mcp_servers) || [];
+    if (!servers.length) { list.innerHTML = '<div class="mcp-empty">No MCP servers configured.</div>'; return; }
+    list.innerHTML = servers.map((s, i) => `
+      <div class="mcp-item" data-idx="${i}">
+        <div class="mcp-item-body">
+          <div class="mcp-item-name">${escapeHtml(s.name || s.id)} <span class="mcp-item-badge ${s.enabled ? 'on' : 'off'}">${s.enabled ? 'On' : 'Off'}</span></div>
+          <div class="mcp-item-url">${escapeHtml(s.url || '(stdio)')}</div>
+        </div>
+        <div class="mcp-item-actions">
+          <button class="icon-btn" data-mcp-act="edit"><i class="ri-edit-line"></i></button>
+          <button class="icon-btn" data-mcp-act="del"><i class="ri-delete-bin-line"></i></button>
+        </div>
+      </div>`).join('');
+    list.querySelectorAll('.mcp-item').forEach((item) => {
+      const idx = parseInt(item.dataset.idx, 10);
+      item.querySelector('[data-mcp-act="edit"]').onclick = () => openMcpEditor(idx);
+      item.querySelector('[data-mcp-act="del"]').onclick = () => deleteMcpServer(idx);
+    });
+  }
+  function openMcpEditor(idx) {
+    const editor = document.getElementById('mcpEditor'); if (!editor) return;
+    editor.style.display = '';
+    const servers = (__user?.settings?.mcp_servers) || [];
+    const s = typeof idx === 'number' ? servers[idx] : null;
+    editor.dataset.editingIdx = typeof idx === 'number' ? String(idx) : '';
+    document.getElementById('mcpId').value = s?.id || '';
+    document.getElementById('mcpName').value = s?.name || '';
+    document.getElementById('mcpUrl').value = s?.url || '';
+    document.getElementById('mcpHeaders').value = s?.headers ? JSON.stringify(s.headers) : '';
+    document.getElementById('mcpEnabled').checked = s ? s.enabled !== false : true;
+  }
+  function closeMcpEditor() { const e = document.getElementById('mcpEditor'); if (e) e.style.display = 'none'; }
+  async function saveMcpServer() {
+    if (!__user) { toast('Sign in to save MCP servers.'); return; }
+    const id = (document.getElementById('mcpId')?.value || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    const name = (document.getElementById('mcpName')?.value || '').trim() || id;
+    const url = (document.getElementById('mcpUrl')?.value || '').trim();
+    const enabled = !!document.getElementById('mcpEnabled')?.checked;
+    let headers = {};
+    try { const raw = document.getElementById('mcpHeaders')?.value.trim(); if (raw) headers = JSON.parse(raw); } catch { toast('Headers must be valid JSON', 3000, 'err'); return; }
+    if (!id || !url) { toast('ID and URL are required', 3000, 'err'); return; }
+    const existing = await jsonOr('/api/settings', {}, null, 7000);
+    const current = existing?.settings || {};
+    const servers = Array.isArray(current.mcp_servers) ? current.mcp_servers.slice() : [];
+    const editingIdx = document.getElementById('mcpEditor')?.dataset.editingIdx;
+    const entry = { id, name, url, headers, transport: 'http', enabled };
+    if (editingIdx !== '' && editingIdx != null) servers[parseInt(editingIdx, 10)] = entry;
+    else {
+      if (servers.some((x) => x.id === id)) { toast('ID already exists', 3000, 'err'); return; }
+      servers.push(entry);
+    }
+    const body = { ...current, mcp_servers: servers };
+    const result = await jsonOr('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, null, 9000);
+    if (result?.ok) { toast('MCP server saved', 1800, 'ok'); await refreshUsage(); renderMcpList(); closeMcpEditor(); }
+    else toast('Could not save — sign in first', 3000, 'err');
+  }
+  async function deleteMcpServer(idx) {
+    if (!__user) return;
+    if (!confirm('Delete this MCP server?')) return;
+    const existing = await jsonOr('/api/settings', {}, null, 7000);
+    const current = existing?.settings || {};
+    const servers = Array.isArray(current.mcp_servers) ? current.mcp_servers.slice() : [];
+    servers.splice(idx, 1);
+    const result = await jsonOr('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...current, mcp_servers: servers }) }, null, 9000);
+    if (result?.ok) { toast('MCP server deleted', 1800, 'ok'); await refreshUsage(); renderMcpList(); }
+  }
+
   function openModal(id) { const el = document.getElementById(id); if (el) el.classList.add('open'); }
   function closeModal(id) { const el = document.getElementById(id); if (el) el.classList.remove('open'); }
   function openSidebar() { $('#sidebar')?.classList.add('open'); $('#sidebarScrim')?.classList.add('open'); }
@@ -2549,11 +2505,7 @@
     on('#callSendNowBtn', 'click', callForceSend);
     on('#callLangSelect', 'change', (e) => {
       __call.lang = e.target.value;
-      if (__call.active && !__call.busy) {
-        __call.shouldListen = true;
-        callStopRecog();
-        setTimeout(() => { if (__call.active && __call.shouldListen && !__call.holding) startCallRecognition(); }, 220);
-      }
+      if (__call.active && !__call.busy) { __call.shouldListen = true; callStopRecog(); setTimeout(() => { if (__call.active && __call.shouldListen && !__call.holding) startCallRecognition(); }, 220); }
     });
     on('#plansModeBtn', 'click', () => { openModal('plansModal'); loadPlans(); });
     on('#supportModeBtn', 'click', (e) => { e.preventDefault(); openSupportModal(); });
@@ -2573,9 +2525,7 @@
       supInput.addEventListener('input', () => { supInput.style.height = 'auto'; supInput.style.height = Math.min(supInput.scrollHeight, 140) + 'px'; supportUpdateComposeState(); });
       supInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); supportSend(); } });
     }
-    on('#rawViewCopyBtn', 'click', async () => {
-      try { await navigator.clipboard.writeText(__currentRawSource || ''); toast('Source copied', 1800, 'ok'); } catch {}
-    });
+    on('#rawViewCopyBtn', 'click', async () => { try { await navigator.clipboard.writeText(__currentRawSource || ''); toast('Source copied', 1800, 'ok'); } catch {} });
     $$('.html-runner-tab').forEach((t) => {
       t.onclick = () => {
         $$('.html-runner-tab').forEach((x) => x.classList.toggle('active', x === t));
@@ -2590,6 +2540,7 @@
         const tabKey = tab.dataset.tab;
         $$('.settings-tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === tabKey));
         $$('.settings-pane').forEach((p) => p.classList.toggle('active', p.dataset.pane === tabKey));
+        if (tabKey === 'mcp') renderMcpList();
       };
     });
     $$('#modeSegmented .seg-btn').forEach((b) => { b.onclick = () => { __prefs.mode = b.dataset.mode; savePrefs(); applyAppearanceFromPrefs(); applyPrefs(); }; });
@@ -2603,6 +2554,7 @@
     bindToggle('reduceMotionToggle', 'reduceMotion');
     bindToggle('deepThinkToggle', 'deepThink');
     bindToggle('autoSpeakToggle', 'autoSpeak');
+    bindToggle('toolsToggle', 'tools');
     const ttsSel = document.getElementById('ttsVoiceSelect');
     if (ttsSel) ttsSel.addEventListener('change', () => { __prefs.ttsVoice = ttsSel.value; savePrefs(); });
     on('#uiLanguageSelect', 'change', (e) => { __prefs.uiLanguage = e.target.value; savePrefs(); if (isTranslatable(__prefs.uiLanguage)) toast('Translating…'); applyTranslations(); });
@@ -2639,6 +2591,13 @@
     }
     on('#bridgeSendBtn', 'click', handleBridgeSend);
     $$('.bw-quick').forEach((btn) => { btn.onclick = () => { const inp2 = $('#bridgeInput'); if (inp2) { inp2.value = btn.dataset.q; updateBridgeSendBtn(); } handleBridgeSend(); }; });
+    on('#mcpAddBtn', 'click', () => openMcpEditor());
+    on('#mcpCancelBtn', 'click', closeMcpEditor);
+    on('#mcpSaveBtn', 'click', () => saveMcpServer().catch(() => {}));
+    on('#quotaUpgradeBtn', 'click', () => { if (!__user) { setLoginError(''); openModal('loginModal'); } else { openModal('plansModal'); loadPlans(); } });
+    on('#selectProjectBtn', 'click', () => toast('Project selection coming soon', 2000));
+    on('#pluginsBtn', 'click', () => openModal('settingsModal'));
+    on('#desktopAppLink', 'click', (e) => { e.preventDefault(); toast('Desktop app coming soon', 2000); });
     document.addEventListener('click', (e) => {
       const cb = e.target.closest('[data-close]');
       if (cb) {
@@ -2671,10 +2630,7 @@
       a.download = `mirox-${Date.now()}.png`;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
     });
-    on('#filePreviewCopyBtn', 'click', async () => {
-      if (!__previewFileRef) return;
-      try { await navigator.clipboard.writeText(__previewFileRef.content || ''); toast('Copied file content', 1800, 'ok'); } catch {}
-    });
+    on('#filePreviewCopyBtn', 'click', async () => { if (!__previewFileRef) return; try { await navigator.clipboard.writeText(__previewFileRef.content || ''); toast('Copied file content', 1800, 'ok'); } catch {} });
     on('#filePreviewAskBtn', 'click', () => {
       const f = __previewFileRef;
       if (!f) return;
@@ -2704,7 +2660,11 @@
     if (!IS_PC) document.querySelectorAll('#bridgeModeBtn, #bridgeOpenBtn, [data-pane="bridge"], .sidebar-tab[data-tab="bridge"]').forEach((el) => { el.style.display = 'none'; });
   }
 
-  function openSettingsModal() { applyPrefs(); updateAccountUI(); loadVoices(); openModal('settingsModal'); loadPersonalizationSettings().catch(() => {}); }
+  function openSettingsModal() {
+    applyPrefs(); updateAccountUI(); loadVoices(); openModal('settingsModal');
+    loadPersonalizationSettings().catch(() => {});
+    renderMcpList();
+  }
   async function loadPersonalizationSettings() {
     const status = document.getElementById('personalizationSaveStatus');
     if (!__user) { if (status) status.textContent = 'Sign in to save personalization to your account.'; return; }
@@ -2723,7 +2683,7 @@
     const body = { ...current, persona: document.getElementById('personaSettingInput')?.value || '', personalization: { ...(current.personalization || {}), name: document.getElementById('personalizationNameInput')?.value || '', nickname: document.getElementById('personalizationNicknameInput')?.value || '', about: document.getElementById('personalizationAboutInput')?.value || '', tone: document.getElementById('personalizationToneSelect')?.value || 'default' } };
     const result = await jsonOr('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, null, 9000);
     if (status) status.textContent = result?.ok ? 'Saved.' : 'Could not save. Please sign in again and retry.';
-    if (result?.ok) toast('Personalization saved', 1800, 'ok');
+    if (result?.ok) toast('Persona saved', 1800, 'ok');
   }
 
   async function openConversation(id) {
