@@ -2,11 +2,10 @@
   'use strict';
 
   /* ============================================================
-     MiroxAI frontend v147
-     · Web app hits /v1/api/chat (thinking ALWAYS ON)
-     · External API uses /v1/chat/completions (thinking OFF)
+     MiroxAI frontend v148
+     · Single endpoint /v1/chat/completions for app + API
+     · Thinking is ON everywhere
      · Tail r1 flagship (free) · promo popup + confetti
-     · Image history delete
      ============================================================ */
 
   /* ---------- i18n ---------- */
@@ -141,19 +140,14 @@
   const CALL_SILENCE_MS = 5000;
 
   /* ============================================================
-     API ROUTES — separate app vs external API
-       APP_CHAT    → /v1/api/chat          (thinking ALWAYS ON)
-       APP_IMAGES  → /v1/api/images
+     SINGLE ENDPOINT — same for app and API. Thinking ON everywhere.
      ============================================================ */
-  const APP_CHAT_URL   = '/v1/api/chat';
-  const APP_IMAGES_URL = '/v1/api/images';
+  const APP_CHAT_URL   = '/v1/chat/completions';
+  const APP_IMAGES_URL = '/v1/images/generations';
 
-  /* ⚠️ NOTE: We deliberately do NOT send any instruction that tells the
-     model to hide its thinking. The server-side THINKING_RULE requires
-     <thinking>...</thinking> tags, and the thinking panel needs them.
-     Any client-side anti-thinking instruction would override the server
-     rule (last instruction wins) and kill the thinking panel. */
-  const RESPONSE_QUALITY_NOTE = 'RESPONSE QUALITY: Give a genuinely useful, complete answer rather than an overly short reply. For explanations and open-ended questions, normally write several well-developed paragraphs with context, clear reasoning summaries, examples, and practical details when useful. Answer the exact question first, then expand enough that the user can understand the topic without needing to ask for basic missing details. Do not pad with repetition; use headings and bullets only when they improve readability. Match the requested length: if the user asks for detail, provide a long, thorough answer; if they ask for a simple answer, stay concise. Never expose hidden chain-of-thought or private internal reasoning inside the visible answer — the visible answer should contain only the conclusion and a brief user-facing explanation.';
+  /* ⚠️ No anti-thinking instruction is ever sent from the client.
+     The server re-asserts the thinking rule as the FINAL instruction. */
+  const RESPONSE_QUALITY_NOTE = 'RESPONSE QUALITY: Give a genuinely useful, complete answer rather than an overly short reply. For explanations and open-ended questions, normally write several well-developed paragraphs with context, clear reasoning summaries, examples, and practical details when useful. Answer the exact question first, then expand enough that the user can understand the topic without needing to ask for basic missing details. Do not pad with repetition; use headings and bullets only when they improve readability. Match the requested length: if the user asks for detail, provide a long, thorough answer; if they ask for a simple answer, stay concise.';
   const IDEA_FORMAT_NOTE = 'IDEA-ANSWER FORMAT: Use a clean editorial layout with numbered options and short fit badges. Do not fetch or attach images unless explicitly requested.';
 
   let __config = null, __user = null, __tier = 'free', __model = 'mirox-luna-1.2';
@@ -1224,8 +1218,6 @@
     };
     const streamTimeout = setTimeout(() => { try { activeStreamController?.abort(); } catch {} }, STREAM_TIMEOUT_MS);
     try {
-      /* ⚠️ system_extra is ONLY response-quality guidance.
-         It intentionally does NOT tell the model to hide its thinking. */
       const sysExtra = RESPONSE_QUALITY_NOTE + (looksLikeIdeasRequest(text) ? '\n\n' + IDEA_FORMAT_NOTE : '');
 
       const reqBody = {
@@ -1244,7 +1236,7 @@
         continuation: !!isContinuation,
       };
 
-      /* ⬇️ APP ROUTE — thinking is ALWAYS ON on the server side */
+      /* ⬇️ Single endpoint for both app and API. Server keeps thinking on. */
       const res = await fetch(APP_CHAT_URL, {
         method: 'POST', headers: authHeaders(), credentials: 'same-origin',
         body: JSON.stringify(reqBody), signal: activeStreamController.signal,
@@ -1853,7 +1845,6 @@
     const controller = new AbortController();
     __call.currentAbort = controller;
     try {
-      /* ⬇️ Call mode uses the APP route */
       const res = await fetch(APP_CHAT_URL, {
         method: 'POST', headers: authHeaders(), credentials: 'same-origin',
         body: JSON.stringify({
