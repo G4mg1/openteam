@@ -433,7 +433,7 @@
     el.innerHTML = `
       <div class="think-header">
         <div class="think-icon"><i class="ri-loader-4-line"></i></div>
-        <div class="think-title"><span class="think-title-text">${deep ? 'DeepThink' : 'Thinking'}</span></div>
+        <div class="think-title"><span class="think-title-text">Thinking</span></div>
         <div class="think-timer-pill">0.0s</div>
         <button class="think-toggle" type="button" title="Minimize" aria-label="Minimize thinking status" aria-expanded="true"><i class="ri-arrow-up-s-line"></i></button>
       </div>
@@ -459,25 +459,25 @@
       if (done) { clearInterval(timer); return; }
       timerPill.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
     }, 100);
-    function replaceText(text) {
+    // Never render model reasoning or narration here. This is a status indicator,
+    // not a transcript of hidden thoughts or speculative tool calls.
+    function replaceText(_text) {
       if (done) return;
-      const t = String(text || '').trim();
-      if (!t) return;
+      const t = 'Working on your request…';
       if (t !== lastText) {
         lastText = t;
         textEl.textContent = t;
-        try { bodyEl.scrollTop = bodyEl.scrollHeight; } catch {}
       }
     }
     function setState(next) {
       el.dataset.state = next;
       if (next === 'thinking') {
         iconEl.className = 'ri-loader-4-line';
-        titleTextEl.textContent = deep ? 'DeepThink' : 'Thinking';
+        titleTextEl.textContent = 'Thinking';
       } else if (next === 'done') {
         iconEl.className = 'ri-checkbox-circle-fill';
         const secs = ((performance.now() - t0) / 1000).toFixed(1);
-        titleTextEl.textContent = (deep ? 'DeepThink · ' : 'Thought for ') + secs + 's';
+        titleTextEl.textContent = 'Thought for ' + secs + 's';
       } else if (next === 'failed') {
         iconEl.className = 'ri-error-warning-fill';
         titleTextEl.textContent = 'Thinking stopped';
@@ -981,13 +981,7 @@
     inner += '<div class="bubble-text"></div>';
     el.innerHTML = `${avatar}<div class="message-body"><div class="bubble">${inner}</div><div class="message-actions">${buildActions(role, id)}</div><div class="message-time">${ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</div></div>`;
     container.appendChild(el);
-    if (role === 'ai' && thinking && stripThinkingLeak(thinking).trim()) {
-      const panel = createThinkPanel(false);
-      panel.replaceText(stripThinkingLeak(thinking));
-      panel.finalize();
-      const bodyEl = el.querySelector('.message-body');
-      bodyEl.insertBefore(panel.el, bodyEl.firstChild);
-    }
+    // Intentionally do not display stored model reasoning in conversation history.
     const bt = el.querySelector('.bubble-text');
     if (role === 'user') { bt.textContent = content || ''; if (!content) bt.style.display = 'none'; }
     else if (content) { bt.innerHTML = renderMarkdown(stripThinkingLeak(content)); wireCodeButtons(bt); }
