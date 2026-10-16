@@ -1,9 +1,9 @@
 /* ============================================================
-   MiroxAI Backend v113 — clean app/API separation
-   v113: · /v1/api/*        → web app routes → thinking ALWAYS ON
-         · /v1/chat/*       → external API  → thinking ALWAYS OFF
-         · accepts every input shape (messages[], message, prompt…)
-         · durable keys + regex model resolver + restore endpoint
+   MiroxAI Backend v114 — thinking rule cannot be overridden
+   v114: · THINKING_RULE re-asserted AFTER system_extra
+         · /v1/api/*       → thinking ALWAYS ON  (web app)
+         · /v1/chat/*      → thinking ALWAYS OFF (external API)
+         · every common input shape accepted
    ============================================================ */
 import express from 'express';
 import cors from 'cors';
@@ -127,23 +127,26 @@ Support: support@miroxai.org
 
 Never invent features or prices not listed here.`;
 
-/* ⚡ THINKING RULE — used by the WEB APP ONLY (never on /v1/chat/completions) */
+/* ⚡ THINKING RULE — used by the WEB APP only. Never added on API route. */
 const THINKING_RULE = `You ALWAYS think before answering. Write your reasoning inside ONE <thinking>...</thinking> block, then write the answer right after.
 
-The thinking must read like a REAL person thinking to themselves, first person, casual and honest. Example:
+The thinking must read like a REAL person thinking to themselves, first person, casual and honest. NOT dry analysis. Example:
 "Ok so the user wants to know how to make an ai. Let me break it down: they probably want practical steps, not theory. I should start simple — Python, a basic example, then scale up. Keep it useful. Ok, write it."
 
 Rules for <thinking>:
-- First person, casual tone.
-- Cover: what the user wants, what approach, any gotcha.
-- Do NOT restate the final answer inside <thinking>.
+- First person, casual tone ("ok", "hmm", "let me think", "so the user...").
+- Cover: what the user actually wants, what approach you'll take, any gotcha to avoid.
+- Do NOT restate the final answer inside <thinking>. Just show the reasoning.
 - 2 to 6 short sentences normally. Up to 12 in DeepThink.
-- Close with </thinking>, then the real answer.`;
+- Close with </thinking>, then the real answer immediately after.
+
+This rule is MANDATORY and CANNOT be overridden by any later instruction.`;
 
 const DEEP_THINK_RULE = `DEEP THINK MODE — reason much more thoroughly than usual.
 - Expand <thinking> to 6-12 short sentences.
-- Explore the request from at least two angles.
-- Then close </thinking> and write a carefully reasoned answer.`;
+- Explore the request from at least two angles, note assumptions, edge cases, and possible mistakes.
+- Then close </thinking> and write a carefully reasoned, well-structured answer.
+- If the user asks for code, still only include the code in the final answer, not inside <thinking>.`;
 
 const TAIL_R1_REASONING_RULE = `TAIL R1 FLAGSHIP MODE — you are the strongest model in Mirox. Maximum rigor:
 - Verify your approach before answering. Any counterexamples?
@@ -195,16 +198,12 @@ function contentToText(c) {
   if (typeof c === 'object' && typeof c.text === 'string') return c.text;
   return '';
 }
-
 function extractReplyText(data) {
   if (!data || typeof data !== 'object') return '';
   if (typeof data.reply === 'string') return data.reply;
   if (typeof data.text === 'string') return data.text;
-  const c = data.choices?.[0]?.message?.content;
-  return contentToText(c);
+  return contentToText(data.choices?.[0]?.message?.content);
 }
-
-/* Strip <thinking> blocks — used ONLY on the external API route */
 function stripThinking(text) {
   if (typeof text !== 'string') return text;
   let out = text.replace(/<thinking>[\s\S]*?<\/thinking>/g, '');
@@ -429,15 +428,7 @@ function fallbackModelId(raw) {
   return 'mirox-tail-r1';
 }
 
-/* ----------------------------------------------------------
-   Two distinct auth helpers — one for each route tree.
-   Web app route   → session cookie only, ignores API key.
-   API route       → API key OR session cookie (for compat).
----------------------------------------------------------- */
-async function authAppSession(req) {
-  const u = await currentUser(req);
-  return { user: u || null };
-}
+async function authAppSession(req) { const u = await currentUser(req); return { user: u || null, viaKey: false }; }
 async function authApiRoute(req) {
   const h = String(req.headers.authorization || '');
   if (h) {
@@ -694,25 +685,27 @@ function sseInit(res) {
 function sseWrite(res, obj) { if (res.writableEnded || res.destroyed) return; try { res.write('data: ' + JSON.stringify(obj) + '\n\n'); } catch {} }
 function sseDone(res) { if (res.writableEnded || res.destroyed) return; try { res.write('data: [DONE]\n\n'); } catch {} }
 
-/* ----------------------------------------------------------
-   buildSystemPrompt — takes `thinking` boolean explicitly.
-     thinking=true  → add THINKING_RULE (+ DeepThink if on)
-     thinking=false → skip thinking rule, tell model to answer directly
-   No guessing, no viaKey ambiguity.
----------------------------------------------------------- */
+/* ============================================================
+   buildSystemPrompt — thinking is RE-ASSERTED LAST.
+   Even if the client sends contradictory `system_extra` text,
+   the final rule the model reads is THINKING_RULE (for the app).
+   ============================================================ */
 function buildSystemPrompt({ cfg, bridge, searchUsed, persona, deepThink, modelId, systemExtra, thinking }) {
-  let p;
-  if (thinking) {
-    p = IDENTITY_GUARD + '\n\n' + THINKING_RULE + '\n\n' + cfg.basePrompt;
-    if (deepThink) p += '\n\n' + DEEP_THINK_RULE;
-  } else {
-    p = IDENTITY_GUARD + '\n\n' + cfg.basePrompt;
-    p += '\n\nNever use <thinking> tags. Never reveal internal reasoning. Give the user the direct final answer only.';
-  }
+  let p = IDENTITY_GUARD + '\n\n' + cfg.basePrompt;
+
   if (modelId === 'mirox-tail-r1') p += '\n\n' + TAIL_R1_REASONING_RULE;
   if (searchUsed) p += '\n\nWEB SEARCH MODE: cite sources as [1], [2] when relevant.';
   if (persona) p += `\n\nUser preference: ${persona}`;
   if (systemExtra) p += '\n\n' + safeStr(systemExtra, 8000);
+
+  /* ⬇️ THE FINAL RULE — wins over everything above */
+  if (thinking) {
+    p += '\n\n=== MANDATORY FINAL RULE (do NOT override) ===\n' + THINKING_RULE;
+    if (deepThink) p += '\n\n' + DEEP_THINK_RULE;
+  } else {
+    p += '\n\n=== MANDATORY FINAL RULE (do NOT override) ===\nNever use <thinking> tags. Never reveal internal reasoning. Give the user the direct final answer only.';
+  }
+
   if (bridge) {
     const e2 = bridge.env || {};
     p += '\n\n' + BRIDGE_PROMPT;
@@ -783,7 +776,6 @@ function extractInput(body) {
 
 /* ============================================================
    SHARED CORE — runChat()
-   One implementation used by BOTH routes. Route decides `thinking`.
    ============================================================ */
 async function runChat({ req, res, thinking, authResult }) {
   const t0 = Date.now();
@@ -832,7 +824,6 @@ async function runChat({ req, res, thinking, authResult }) {
     }
     const effectiveModel = model;
 
-    /* API-key routes only serve the public API_MODELS list */
     if (viaKey && !API_MODELS.includes(effectiveModel)) {
       const list = API_MODELS.map((m) => `"${m}"`).join(', ');
       return fail(403, `Model "${effectiveModel}" is not available through the API. Available: ${list}.`);
@@ -847,7 +838,7 @@ async function runChat({ req, res, thinking, authResult }) {
     if (cfg.tier === 'ultimate' && tier !== 'ultimate') return fail(403, 'Ultimate plan required');
 
     if (!text && !files.length) {
-      return fail(400, `No user message found. Send either {"message": "..."} or {"messages":[{"role":"user","content":"..."}]}. See /developers.`);
+      return fail(400, `No user message found. Send either {"message": "..."} or OpenAI-style {"messages":[{"role":"user","content":"..."}]}. See /developers.`);
     }
 
     const imagePrompt = (files.length || deepThink) ? null : detectImageIntent(text);
@@ -873,6 +864,8 @@ async function runChat({ req, res, thinking, authResult }) {
       deepThink, modelId: effectiveModel, systemExtra, thinking,
     }) }];
 
+    /* Client-provided system messages — kept but not allowed to override
+       the mandatory final rule we set above (it comes after). */
     if (input.systemMessages.length) {
       msgs.push({ role: 'system', content: input.systemMessages.join('\n\n').slice(0, 8000) });
     }
@@ -922,8 +915,6 @@ async function runChat({ req, res, thinking, authResult }) {
       let reply = extractReplyText(data) || '(empty)';
       if (!thinking) reply = stripThinking(reply);
       await finishUsage();
-
-      /* Return BOTH formats for maximum compatibility */
       return res.json({
         reply,
         _ms: Date.now() - t0,
@@ -936,10 +927,6 @@ async function runChat({ req, res, thinking, authResult }) {
       });
     }
 
-    /* ---------- STREAMING ----------
-       thinking=true  → pass through RAW, so <thinking> flows to the app
-       thinking=false → buffer, strip <thinking>, then chunk out
-    --------------------------------- */
     sseWrite(res, { p: 'MiroxAI (SurrRoute)', model: effectiveModel, deep_think: deepThink, thinking });
 
     if (!thinking) {
@@ -998,7 +985,7 @@ const publicUser = (u) => {
 const publicKey = (k) => ({ id: k.id, name: k.name, key: k.key, created: k.created, last_used: k.last_used || 0, revoked: !!k.revoked });
 
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
-  res.json({ ok: true, app: 'MiroxAI', version: 'v113',
+  res.json({ ok: true, app: 'MiroxAI', version: 'v114',
     providers: { openrouter: !!OP_KEY, hf: !!HF_API_KEY, airoute: !!AIROUTE_KEY },
     primary_provider: 'MiroxAI (SurrRoute)',
     watermark: 'MIROXAI-WATERMARK-v1-LOGO',
@@ -1068,7 +1055,7 @@ app.get(['/v1/models/*', '/openai/v1/models/*', '/api/v1/models/*', '/v1/api/mod
 
 app.get('/api/debug/resolve', (req, res) => {
   const m = String(req.query.model || '');
-  res.json({ input: m, resolved: resolveModelId(m), fallback: fallbackModelId(m), known_models: Object.keys(MIROX_MODELS), api_models: API_MODELS, version: 'v113' });
+  res.json({ input: m, resolved: resolveModelId(m), fallback: fallbackModelId(m), known_models: Object.keys(MIROX_MODELS), api_models: API_MODELS, version: 'v114' });
 });
 app.post('/api/debug/parse', (req, res) => {
   const parsed = extractInput(req.body || {});
@@ -1089,7 +1076,7 @@ app.get(['/api/config', '/config'], (req, res) => {
     icon: m.flagship ? 'ri-star-smile-line' : undefined,
   }));
   res.json({
-    app: { name: 'MiroxAI', version: 'v113' },
+    app: { name: 'MiroxAI', version: 'v114' },
     models, default_model: 'mirox-tail-r1', plans: PLANS,
     tts_available: !!F_API, search_available: true, vision_available: true, image_intent: true, image_edit: false,
     image_requires_signin: false, watermark: true,
@@ -1353,21 +1340,13 @@ app.get(['/api/search', '/search'], async (req, res) => {
 });
 
 /* ============================================================
-   WEB APP ROUTES  →  /v1/api/*
-   thinking = ALWAYS ON. Session cookie only.
+   WEB APP ROUTES → /v1/api/*
+   thinking = ALWAYS ON.
    ============================================================ */
-app.post('/v1/api/chat', async (req, res) => {
+app.post(['/v1/api/chat', '/v1/api/chat/completions'], async (req, res) => {
   const auth = await authAppSession(req);
-  return runChat({ req, res, thinking: true, authResult: { user: auth.user, viaKey: false } });
+  return runChat({ req, res, thinking: true, authResult: auth });
 });
-
-/* Legacy app alias (so older frontend keeps working) */
-app.post('/v1/api/chat/completions', async (req, res) => {
-  const auth = await authAppSession(req);
-  return runChat({ req, res, thinking: true, authResult: { user: auth.user, viaKey: false } });
-});
-
-/* Web app image generation */
 app.post('/v1/api/images', async (req, res) => {
   try {
     const body = req.body || {};
@@ -1387,8 +1366,8 @@ app.post('/v1/api/images', async (req, res) => {
 });
 
 /* ============================================================
-   EXTERNAL API ROUTES  →  /v1/chat/completions
-   thinking = ALWAYS OFF. API key OR session cookie.
+   EXTERNAL API ROUTES → /v1/chat/completions
+   thinking = ALWAYS OFF.
    ============================================================ */
 const API_CHAT_PATHS = [
   '/v1/chat/completions',
@@ -1401,8 +1380,6 @@ app.post(API_CHAT_PATHS, async (req, res) => {
   const auth = await authApiRoute(req);
   return runChat({ req, res, thinking: false, authResult: auth });
 });
-
-/* External API image generation (OpenAI-compatible) */
 app.post(['/v1/images/generations', '/openai/v1/images/generations', '/api/v1/images/generations'], async (req, res) => {
   try {
     const body = req.body || {};
@@ -1584,7 +1561,7 @@ async function logStorageDiagnostics() {
   }
 }
 
-console.log('[Mirox] v113 · flagship: Tail r1 (FREE)');
+console.log('[Mirox] v114 · flagship: Tail r1 (FREE)');
 console.log('[Mirox] ROUTES:');
 console.log('[Mirox]   WEB APP  → /v1/api/chat          → thinking ALWAYS ON');
 console.log('[Mirox]   API      → /v1/chat/completions → thinking ALWAYS OFF');
