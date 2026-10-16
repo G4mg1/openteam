@@ -1065,3 +1065,22 @@ code { font-family: var(--font-mono); }
   .think-panel-clean, .think-panel-clean::before, .think-panel-clean .think-icon i { animation: none !important; transition: none !important; }
   .think-panel::before, .think-panel .think-icon, .think-panel .think-title-text { animation: none !important; }
 }
+
+/* Compact agent activity indicator: status only, never a reasoning transcript. */
+.think-panel { width: fit-content; max-width: min(100%, 420px); margin: 0 0 10px 0; border-radius: 999px; box-shadow: none; background: var(--panel-2); }
+.think-panel::before { display: none; }
+.think-header { padding: 7px 11px; gap: 8px; }
+.think-icon { width: 20px; height: 20px; border-radius: 50%; background: transparent; }
+.think-title { font-size: 12px; font-weight: 500; }
+.think-timer-pill { font-size: 11px; }
+.think-toggle, .think-body-wrap { display: none !important; }
+.think-panel[data-state="thinking"] { border-color: var(--border); box-shadow: none; }
+.think-panel[data-state="thinking"] .think-icon { background: transparent; color: var(--text-muted); box-shadow: none; }
+.think-panel[data-state="thinking"] .think-icon i { animation: spin 1.4s linear infinite; }
+/* Subtle motion on navigation controls without shifting layout. */
+.sidebar-link i, .new-chat-btn i, .sidebar-tab i, .icon-btn i { transition: transform .18s ease, opacity .18s ease; }
+.sidebar-link:hover i, .new-chat-btn:hover i, .sidebar-tab:hover i, .icon-btn:hover i { transform: translateY(-1px) scale(1.06); }
+@media (prefers-reduced-motion: reduce) { .sidebar-link i, .new-chat-btn i, .sidebar-tab i, .icon-btn i { transition: none; } }
+
+/* Tail r1 limited-time offer */
+.tail-offer-deadline{display:inline-flex;align-items:center;gap:8px;margin:10px auto 2px;padding:7px 12px;border:1px solid rgba(120,150,255,.35);border-radius:999px;background:rgba(100,130,255,.10);font-size:12px;font-weight:650;letter-spacing:.01em;text-align:center}
