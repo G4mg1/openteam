@@ -93,16 +93,47 @@ const LOCAL = {
     desc: 'Extract a .zip file in the workspace. args: {"path": "project.zip", "dest": "optional/folder"}',
     run: async (a, ws) => {
       const src = inside(ws, a.path);
+      const st = await fs.stat(src).catch(() => null);
+      if (!st) throw new Error(`Path not found: ${a.path || '(empty)'}`);
+      if (st.isDirectory()) {
+        const entries = await fs.readdir(src, { withFileTypes: true }).catch(() => []);
+        return {
+          ok: false,
+          is_directory: true,
+          error: `"${a.path}" is a directory, not a .zip file.`,
+          path: relOf(ws, src),
+          items: entries.slice(0, 100).map((e) => ({ name: e.name, dir: e.isDirectory() })),
+        };
+      }
+      if (!st.isFile()) throw new Error(`Not a regular file: ${a.path}`);
+      if (st.size > MAX_ZIP_BYTES) throw new Error(`Zip is too large (max ${Math.round(MAX_ZIP_BYTES / 1024 / 1024)} MB)`);
+      try {
+        const fh = await fs.open(src, 'r');
+        const head = Buffer.alloc(4);
+        await fh.read(head, 0, 4, 0);
+        await fh.close();
+        const isZip = head[0] === 0x50 && head[1] === 0x4b;
+        if (!isZip) throw new Error(`"${a.path}" is not a valid ZIP archive (missing PK header).`);
+      } catch (e) {
+        if (e && e.code === 'ERR_INVALID_ARG_TYPE') throw e;
+      }
       const dest = inside(ws, a.dest || path.join('extracted', path.basename(src, '.zip')));
-      const zip = new AdmZip(src);
+      let zip;
+      try {
+        zip = new AdmZip(src);
+      } catch (e) {
+        throw new Error(`Could not read ZIP: ${e.message}`);
+      }
       const entries = zip.getEntries();
       if (entries.length > MAX_ZIP_ENTRIES) throw new Error(`Zip has too many files (max ${MAX_ZIP_ENTRIES})`);
       let total = 0;
       for (const e of entries) {
-        total += e.header.size;
+        total += e.header.size || 0;
         if (total > MAX_ZIP_BYTES) throw new Error('Zip is too large once extracted');
         const target = path.resolve(dest, e.entryName);
-        if (target !== dest && !target.startsWith(dest + path.sep)) throw new Error(`Unsafe path in zip: ${e.entryName}`);
+        if (target !== dest && !target.startsWith(dest + path.sep)) {
+          throw new Error(`Unsafe path in zip: ${e.entryName}`);
+        }
       }
       await fs.mkdir(dest, { recursive: true });
       zip.extractAllTo(dest, true);
@@ -244,8 +275,6 @@ export async function executeTool(name, args, ctx) {
   }
 }
 
-// Copies base64 attachments (zips, PDFs, etc.) into the user's workspace so tools can open them.
-// Images are skipped because they go to the vision model instead.
 export async function saveAttachments(files, user) {
   const saved = [];
   const list = (Array.isArray(files) ? files : []).slice(0, 10);
@@ -266,7 +295,7 @@ export async function saveAttachments(files, user) {
   return saved;
 }
 
-const TOOL_PROTOCOL = `TOOLS ARE EXECUTABLE, NOT NARRATION. If a tool is needed, your entire assistant response must be exactly one <tool_call>{\"name\":\"tool_name\",\"arguments\":{...}}</tool_call> block with valid JSON. Do not describe an imagined extraction, browsing, or tool call in prose. Wait for the actual <tool_result>, then continue. Use the exact attachment paths explicitly listed in the latest user message; do not guess a filename from previous chats. Files are in this user's private workspace. Use relative paths. Use remember only when the user explicitly asks you to remember something. When done, answer normally and never print tool protocol tags to the user.
+const TOOL_PROTOCOL = `TOOLS ARE EXECUTABLE, NOT NARRATION. If a tool is needed, your entire assistant response must be exactly one <tool_call>{"name":"tool_name","arguments":{...}}</tool_call> block with valid JSON. Do not describe an imagined extraction, browsing, or tool call in prose. Wait for the actual <tool_result>, then continue. Use the exact attachment paths explicitly listed in the latest user message; do not guess a filename from previous chats. Files are in this user's private workspace. Use relative paths. Use remember only when the user explicitly asks you to remember something. When done, answer normally and never print tool protocol tags to the user.
 Available tools:`;
 
 function messageParts(data) {
@@ -281,7 +310,6 @@ const summarize = (r) => (r.ok
   ? (r.dest || r.path || r.saved || (r.files != null ? `${r.files} files` : 'done'))
   : (r.error || 'failed'));
 
-// Runs the tool loop. chain(messages) must return a non-streamed response object.
 export async function runAgent({ messages, chain, emit, user, isClosed = () => false, maxSteps = 8, beforeTool = async () => true }) {
   const catalog = await toolCatalog(user);
   const convo = messages.map((m) => ({ ...m }));
