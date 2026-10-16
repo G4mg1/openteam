@@ -6,7 +6,6 @@ const INIT_PARAMS = { protocolVersion: '2025-06-18', capabilities: {}, clientInf
 const toolCache = new Map();
 let nextId = 1;
 
-// Blocks localhost and private networks so users can't point the server at internal services.
 export function isSafeUrl(raw) {
   let u;
   try { u = new URL(String(raw || '')); } catch { return false; }
@@ -99,7 +98,6 @@ function stdioSession(server, fn) {
   });
 }
 
-// Opens a session, runs fn(rpc), then closes. Stateless per call, which keeps it simple.
 function withSession(server, fn) {
   if (server.transport === 'stdio') return stdioSession(server, fn);
   if (!isSafeUrl(server.url)) return Promise.reject(new Error('MCP URL not allowed'));
