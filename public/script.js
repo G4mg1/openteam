@@ -2,9 +2,9 @@
   'use strict';
 
   /* ============================================================
-     MiroxAI frontend v155
-     · Time-sensitive auto-search · plugins popover · local persona save
-     · Quota row hidden until limit · live mode pill
+     MiroxAI frontend v156
+     · Kimi-inspired UI · KenSearch integration
+     · Persona works with search · Plugins popover · My Mirox
      ============================================================ */
 
   /* ---------- i18n ---------- */
@@ -277,7 +277,7 @@
     const btn = document.getElementById('deepThinkBtn');
     if (btn) btn.classList.toggle('active', !!__prefs.deepThink);
     const inp = document.getElementById('messageInput');
-    if (inp) inp.placeholder = __prefs.deepThink ? 'DeepThink is on — ask anything complex…' : 'Type "/" to invoke plugins and skills';
+    if (inp) inp.placeholder = __prefs.deepThink ? 'DeepThink is on — ask anything complex…' : 'Ask anything, or task an agent…';
   }
 
   /* ---------- Mode pill ---------- */
@@ -307,7 +307,6 @@
   function markLimitReached(reason) {
     __limitReached = true;
     safeSet(LIMIT_REACHED_KEY, { at: Date.now(), reason });
-    // Switch free users to Instant
     if (__tier === 'free') {
       __prefs.deepThink = false;
       savePrefs();
@@ -328,7 +327,6 @@
     for (const p of PLUGIN_REGISTRY) {
       __plugins[p.id] = typeof saved[p.id] === 'boolean' ? saved[p.id] : !!p.enabled;
     }
-    // core plugins always on
     for (const p of PLUGIN_REGISTRY) if (p.core) __plugins[p.id] = true;
     if (!IS_PC) __plugins.bridge = false;
   }
@@ -987,7 +985,7 @@
   function updateSendButtonState() { const btn = $('#sendBtn'), inp = $('#messageInput'); if (!btn || !inp) return; const enable = (inp.value.trim().length > 0 || pendingFiles.length > 0) && !isReplying; btn.classList.toggle('is-disabled', !enable); btn.setAttribute('aria-disabled', String(!enable)); }
   function requireSignIn(reason) { setLoginError(''); const sub = $('#loginModalSub'); if (sub && reason) sub.textContent = reason; openModal('loginModal'); toast(reason || 'Please sign in to continue.', 3000, 'err'); }
 
-  /* ---------- Search intent detection (expanded) ---------- */
+  /* ---------- Search intent detection ---------- */
   function looksLikeIdeasRequest(text) {
     const t = String(text || '').trim(); if (!t) return false;
     return /\b(ideas?|inspiration|things to build|project ideas|science fair|recommendations|examples of|concepts for|what can i make|what should i build|suggestions|best (?:way|ways|projects|options|tools|topics)|for beginners|beginner friendly)\b/i.test(t) && !looksLikeImageRequest(t);
@@ -996,27 +994,20 @@
     const t = String(text || '').trim(); if (!t) return false;
     return /\b(generate|create|make|draw|render|paint|show\s+me|give\s+me)\b[^.!?]{0,60}\b(image|picture|photo|illustration|drawing|painting)\b/i.test(t) || /^(?:an?\s+)?(image|picture|photo|illustration)\s+of\s+/i.test(t);
   }
-  // NEW: detects time-sensitive queries that MUST trigger a web search
   function looksTimeSensitive(text) {
     const t = String(text || '').trim().toLowerCase();
     if (!t) return false;
     if (looksLikeImageRequest(t)) return false;
     const CURRENT_YEAR = new Date().getFullYear();
     const patterns = [
-      // Explicit freshness words
-      /\b(latest|newest|current|currently|today|right now|just released|just announced|recent|recently|upcoming|breaking|live|this (?:week|month|year)|right now)\b/,
-      // Any 4-digit year within the last year or future
+      /\b(latest|newest|current|currently|today|right now|just released|just announced|recent|recently|upcoming|breaking|live|this (?:week|month|year))\b/,
       new RegExp(`\\b20(?:${CURRENT_YEAR - 1}|${CURRENT_YEAR}|${CURRENT_YEAR + 1})\\b`),
-      // Model numbers & versioned products
       /\b(iphone|ipad|macbook|airpods|galaxy|pixel|surface|watch|vision\s?pro|quest)\s*\d+/i,
       /\b(gpt|claude|gemini|llama|deepseek|qwen|mixtral|o[1-9])\s*-?\s*\d/i,
-      // Prices, releases, scores, rankings, news
       /\b(price|prices|cost|worth|score|scores|results|standings|ranking|rankings|news|update|updates|version|release|released|launch|launched|announced)\b/,
       /\b(who (?:won|is|are|was)|what(?:'s| is) the (?:latest|current|newest))\b/,
       /\b(stock|share|market|weather|forecast)\b/,
-      // Comparisons that usually imply current data
       /\b(best|top|most popular|fastest|cheapest|newest|oldest) \w+/,
-      // Fallback: "who/what/where is" + unknown entity + verb
       /\b(when (?:was|is|did)|where (?:is|can i)|how much (?:is|does|do))\b/,
     ];
     return patterns.some((re) => re.test(t));
@@ -1042,7 +1033,6 @@
     if (__prefs.deepThink && !hasImageFile && looksLikeImageRequest(text)) { toast('Image generation is disabled while DeepThink is on.', 4500, 'err'); return; }
     if (!__user && looksLikeImageRequest(text)) { requireSignIn('Sign in to generate images with Mirox.'); return; }
     if (!__user && hasImageFile && detectImageEditIntent(text, true)) { requireSignIn('Sign in to edit images with Mirox.'); return; }
-
     if (!currentConversationId) {
       currentConversationId = uid();
       __conversations.unshift({ id: currentConversationId, title: text.slice(0, 60) || 'New chat', messages: [], created: Date.now() });
@@ -1059,7 +1049,6 @@
     const ideaSearch = looksLikeIdeasRequest(text);
     const timeSearch = looksTimeSensitive(text);
     const autoSearch = ideaSearch || timeSearch;
-    // time-sensitive queries AUTO-enable search
     if (timeSearch) {
       forceSearchNext = true;
       $('#searchModeBtn')?.classList.add('active');
@@ -1522,7 +1511,6 @@
       const s = await jsonOr('/api/settings', {}, null, 6000);
       if (s && s.ok && s.settings) __user.settings = s.settings;
     } else {
-      // Local user or guest: use local settings
       __user = __user || {};
       __user.settings = safeGet(LOCAL_SETTINGS_KEY, {});
     }
@@ -2019,7 +2007,6 @@
     if (editingIdx !== '' && editingIdx != null) servers[parseInt(editingIdx, 10)] = entry;
     else { if (servers.some((x) => x.id === id)) { toast('ID already exists', 3000, 'err'); return; } servers.push(entry); }
     const body = { ...current, mcp_servers: servers };
-    // Local save first
     safeSet(LOCAL_SETTINGS_KEY, body);
     if (!__user || __user.local) { toast('MCP server saved locally', 1800, 'ok'); await refreshUsage(); renderMcpList(); closeMcpEditor(); return; }
     const result = await jsonOr('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, null, 9000);
@@ -2225,7 +2212,6 @@
   }
   async function loadPersonalizationSettings() {
     const status = document.getElementById('personalizationSaveStatus');
-    // Local-first: even guests get their persona back
     const local = safeGet(LOCAL_SETTINGS_KEY, {});
     const put = (id, value) => { const el = document.getElementById(id); if (el) el.value = value || ''; };
     put('personaSettingInput', local.persona || '');
@@ -2259,7 +2245,6 @@
         tone: document.getElementById('personalizationToneSelect')?.value || 'default',
       },
     };
-    // Always save locally first
     safeSet(LOCAL_SETTINGS_KEY, body);
     if (__user && __user.settings) __user.settings = { ...(__user.settings || {}), ...body };
 
