@@ -1,10 +1,7 @@
 /* ============================================================
-   MiroxAI Backend v110 — durable API keys
-   v110: · /api/keys/restore (client-backed key recovery)
-         · multi-path DB fallback (survives /tmp wipes)
-         · auto-recovery of keys from event log
-         · loud warning when storage is ephemeral
-         · regex-based model resolver (from v109)
+   MiroxAI Backend v111 — durable API keys
+   v111: EISDIR-safe extract_zip · free-tier caps (10 images / 20 tools)
+         · narration guard · native tool-status events
    ============================================================ */
 import express from 'express';
 import cors from 'cors';
@@ -28,14 +25,6 @@ const PUBLIC_ORIGIN = env('PUBLIC_ORIGIN', 'https://miroxai.org').replace(/\/+$/
 const ADMIN_PASS = env('ADMIN_PASSWORD');
 const ALLOW_EMAIL_LOGIN = env('ALLOW_EMAIL_LOGIN') === '1';
 
-/* ---------- Durable DB path resolution ----------
-   We prefer (in order):
-     1. DB_FILE env (if set)
-     2. /var/data/mirox-db.json    (Render, Railway, Fly persistent disk)
-     3. /data/mirox-db.json        (generic persistent volume)
-     4. process.cwd()/mirox-db.json (working dir)
-     5. /tmp/mirox-db.json          (ephemeral fallback — last resort)
------------------------------------------------- */
 function resolveDataFile() {
   const candidates = [];
   const explicit = env('DB_FILE');
@@ -313,7 +302,7 @@ function persist() {
         await fs.mkdir(path.dirname(f), { recursive: true });
         await fs.writeFile(f, snap, 'utf8');
         ok = true;
-      } catch (e) { /* silent — not every path is writable */ }
+      } catch (e) { /* silent */ }
     }
     return ok;
   });
@@ -660,7 +649,6 @@ async function generateImage(prompt) {
   if (fromAiroute) return fromAiroute;
   throw new Error(GENERIC_ERR);
 }
-async function editImageWithSource(_sourceDataUrl, editPrompt) { return generateImage(`Edit this image: ${editPrompt}`); }
 
 function sseInit(res) {
   res.status(200);
@@ -727,7 +715,7 @@ const publicUser = (u) => {
 const publicKey = (k) => ({ id: k.id, name: k.name, key: k.key, created: k.created, last_used: k.last_used || 0, revoked: !!k.revoked });
 
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
-  res.json({ ok: true, app: 'MiroxAI', version: 'v110',
+  res.json({ ok: true, app: 'MiroxAI', version: 'v111',
     providers: { openrouter: !!OP_KEY, hf: !!HF_API_KEY, airoute: !!AIROUTE_KEY },
     primary_provider: 'MiroxAI (SurrRoute)',
     watermark: 'MIROXAI-WATERMARK-v1-LOGO', thinking: true, deep_think: true, api_thinking: false,
@@ -749,10 +737,7 @@ function openaiModelList() {
   return {
     object: 'list',
     data: API_MODELS.map((id) => ({
-      id,
-      object: 'model',
-      created,
-      owned_by: 'miroxai',
+      id, object: 'model', created, owned_by: 'miroxai',
       label: MIROX_MODELS[id]?.label || id,
       tier: MIROX_MODELS[id]?.tier || 'free',
       flagship: !!MIROX_MODELS[id]?.flagship,
@@ -762,84 +747,41 @@ function openaiModelList() {
     })),
   };
 }
-const MODEL_LIST_PATHS = [
-  '/v1/models', '/v1/models/',
-  '/models', '/models/',
-  '/api/models', '/api/models/',
-  '/openai/v1/models', '/openai/v1/models/',
-  '/api/v1/models', '/api/v1/models/',
-  '/v1/chat/completions/models', '/v1/chat/completions/models/',
-];
-app.get(MODEL_LIST_PATHS, (req, res) => {
-  res.setHeader('Cache-Control', 'no-store');
-  res.json(openaiModelList());
-});
-app.head(MODEL_LIST_PATHS, (req, res) => {
-  res.setHeader('Cache-Control', 'no-store');
-  res.status(200).end();
-});
+const MODEL_LIST_PATHS = ['/v1/models','/v1/models/','/models','/models/','/api/models','/api/models/','/openai/v1/models','/openai/v1/models/','/api/v1/models','/api/v1/models/'];
+app.get(MODEL_LIST_PATHS, (req, res) => { res.setHeader('Cache-Control', 'no-store'); res.json(openaiModelList()); });
+app.head(MODEL_LIST_PATHS, (req, res) => { res.setHeader('Cache-Control', 'no-store'); res.status(200).end(); });
 app.get(['/v1/models/*', '/openai/v1/models/*', '/api/v1/models/*'], (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const wildcard = req.params[0] || '';
   const resolved = resolveModelId(wildcard);
   if (resolved) {
     const created = Math.floor(Date.now() / 1000);
-    return res.json({
-      id: wildcard || resolved,
-      object: 'model',
-      created,
-      owned_by: 'miroxai',
-      label: MIROX_MODELS[resolved].label,
-      tier: MIROX_MODELS[resolved].tier,
-      flagship: !!MIROX_MODELS[resolved].flagship,
-      free: MIROX_MODELS[resolved].tier === 'free',
-      context_window: MIROX_MODELS[resolved].tokens,
-      tagline: MIROX_MODELS[resolved].tagline || '',
-    });
+    return res.json({ id: wildcard || resolved, object: 'model', created, owned_by: 'miroxai',
+      label: MIROX_MODELS[resolved].label, tier: MIROX_MODELS[resolved].tier,
+      flagship: !!MIROX_MODELS[resolved].flagship, free: MIROX_MODELS[resolved].tier === 'free',
+      context_window: MIROX_MODELS[resolved].tokens, tagline: MIROX_MODELS[resolved].tagline || '' });
   }
   res.status(404).json({ error: { message: `Model "${wildcard}" not found. GET /v1/models for the list.`, type: 'invalid_request_error', code: 'model_not_found' } });
 });
 
-app.get('/api/debug/resolve', (req, res) => {
-  const m = String(req.query.model || '');
-  res.json({
-    input: m,
-    resolved: resolveModelId(m),
-    fallback: fallbackModelId(m),
-    known_models: Object.keys(MIROX_MODELS),
-    api_models: API_MODELS,
-    version: 'v110',
-  });
-});
-
 app.get(['/api/config', '/config'], (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({
-    id, label: m.label, tier: m.tier,
-    tagline: m.tagline || '',
-    flagship: !!m.flagship,
-    icon: m.flagship ? 'ri-star-smile-line' : undefined,
-  }));
-  res.json({
-    app: { name: 'MiroxAI', version: 'v110' },
-    models, default_model: 'mirox-tail-r1', plans: PLANS,
+  const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tier: m.tier, tagline: m.tagline || '', flagship: !!m.flagship, icon: m.flagship ? 'ri-star-smile-line' : undefined }));
+  res.json({ app: { name: 'MiroxAI', version: 'v111' }, models, default_model: 'mirox-tail-r1', plans: PLANS,
     tts_available: !!F_API, search_available: true, vision_available: true, image_intent: true, image_edit: false,
-    image_requires_signin: false, watermark: true, thinking: true, deep_think: true, html_runner: true,
-    api_thinking: false,
+    image_requires_signin: false, watermark: true, thinking: true, deep_think: true, html_runner: true, api_thinking: false,
     loginment_available: !!LM_CLIENT_ID, email_login_available: ALLOW_EMAIL_LOGIN,
     airoute_available: !!AIROUTE_KEY, openrouter_available: !!OP_KEY, hf_available: !!HF_API_KEY,
     image_provider: HF_API_KEY ? 'huggingface' : (AIROUTE_KEY ? 'airoute' : null),
     kde_connect_available: true, support_chat_available: true, developers_url: '/developers',
-    flagship: 'mirox-tail-r1',
-    storage_durable: KV_ON,
-  });
+    flagship: 'mirox-tail-r1', storage_durable: KV_ON });
 });
 
 app.get(['/api/subscription/plans', '/subscription/plans'], (req, res) => {
   const perks = {
-    free: ['Tail r1 — free flagship', 'Luna & Gen unlimited', '350k+ context · best reasoning', '30 image gens/day', '5 Eclipse/day', '2 API keys', 'Web search', 'Vision', 'DeepThink', 'HTML runner'],
-    pro: ['Everything in Free', 'Pro & Ultra models', '200 image gens/day', '10 API keys'],
-    ultimate: ['Everything in Pro', 'Eclipse — high quality', '2000 image gens/day', 'Priority everything'],
+    free: ['Tail r1 — free flagship','Luna & Gen unlimited','350k+ context · best reasoning','30 image gens/day','5 Eclipse/day','2 API keys','Web search','Vision','DeepThink','HTML runner'],
+    pro: ['Everything in Free','Pro & Ultra models','200 image gens/day','10 API keys'],
+    ultimate: ['Everything in Pro','Eclipse — high quality','2000 image gens/day','Priority everything'],
   };
   const tagline = { free: 'Flagship for everyone', pro: 'Most popular', ultimate: 'Power users' };
   res.json({ ok: true, plans: Object.entries(PLANS).map(([id, p]) => ({ id, label: p.label, tagline: tagline[id], vision_limit: p.vision_limit, image_limit: p.image_limit, eclipse_limit: p.eclipse_daily_limit, price_usd: p.price_usd, api_keys_limit: p.api_keys, perks: perks[id] })) });
@@ -949,23 +891,13 @@ app.post('/api/support/close', async (req, res) => {
 });
 
 /* API KEYS */
-function keysRecoveryHint(email) {
-  if (!db.events) return 0;
-  return db.events.filter((e) => e.email === email && e.event === 'key_created').length;
-}
-
 app.get(['/api/keys', '/keys'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const u = await currentUser(req);
   if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
   const keys = u.keys.map(publicKey);
-  res.json({
-    ok: true, keys, limit: maxKeys(u.tier),
-    active: keys.filter((k) => !k.revoked).length, tier: u.tier,
-    historical_creations: keysRecoveryHint(u.email),
-  });
+  res.json({ ok: true, keys, limit: maxKeys(u.tier), active: keys.filter((k) => !k.revoked).length, tier: u.tier });
 });
-
 app.post(['/api/keys', '/keys'], async (req, res) => {
   const u = await currentUser(req);
   if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
@@ -982,17 +914,14 @@ app.post(['/api/keys', '/keys'], async (req, res) => {
   if (!saved) return res.status(503).json({ ok: false, error: 'Could not save the key.' });
   res.json({ ok: true, key: publicKey(key), keys: u.keys.map(publicKey), limit, active: u.keys.filter((k) => !k.revoked).length });
 });
-
 app.post(['/api/keys/restore', '/keys/restore'], async (req, res) => {
   const u = await currentUser(req);
   if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
   const incoming = Array.isArray(req.body?.keys) ? req.body.keys.slice(0, 50) : [];
   if (!incoming.length) return res.json({ ok: true, restored: 0, keys: u.keys.map(publicKey) });
-
   let restored = 0;
   const existingIds = new Set(u.keys.map((k) => k.id));
   const existingKeys = new Set(u.keys.map((k) => k.key));
-
   for (const raw of incoming) {
     if (!raw || typeof raw !== 'object') continue;
     const k = raw.key;
@@ -1003,33 +932,20 @@ app.post(['/api/keys/restore', '/keys/restore'], async (req, res) => {
     if (owner && owner !== u.email) continue;
     const limit = maxKeys(u.tier);
     if (u.keys.filter((x) => !x.revoked).length >= limit) break;
-    const newKey = {
-      id: typeof raw.id === 'string' && raw.id.startsWith('k_') ? raw.id : ('k_' + crypto.randomBytes(6).toString('hex')),
-      name: safeStr(raw.name, 60).trim() || `Restored key ${u.keys.length + 1}`,
-      key: k,
-      created: typeof raw.created === 'number' && raw.created > 0 ? raw.created : nowS(),
-      last_used: typeof raw.last_used === 'number' && raw.last_used > 0 ? raw.last_used : 0,
-      revoked: !!raw.revoked,
-    };
+    const newKey = { id: typeof raw.id === 'string' && raw.id.startsWith('k_') ? raw.id : ('k_' + crypto.randomBytes(6).toString('hex')), name: safeStr(raw.name, 60).trim() || `Restored key ${u.keys.length + 1}`, key: k, created: typeof raw.created === 'number' && raw.created > 0 ? raw.created : nowS(), last_used: typeof raw.last_used === 'number' && raw.last_used > 0 ? raw.last_used : 0, revoked: !!raw.revoked };
     u.keys.push(newKey);
     db.keys[k] = u.email;
     existingIds.add(newKey.id);
     existingKeys.add(newKey.key);
     restored++;
   }
-
   if (restored > 0) {
     logEvent({ email: u.email, event: 'key_restored', count: restored });
     const saved = await persist();
     if (!saved) return res.status(503).json({ ok: false, error: 'Could not persist restored keys.' });
   }
-
-  res.json({
-    ok: true, restored, keys: u.keys.map(publicKey),
-    limit: maxKeys(u.tier), active: u.keys.filter((k) => !k.revoked).length,
-  });
+  res.json({ ok: true, restored, keys: u.keys.map(publicKey), limit: maxKeys(u.tier), active: u.keys.filter((k) => !k.revoked).length });
 });
-
 app.post(['/api/keys/rename', '/keys/rename'], async (req, res) => {
   const u = await currentUser(req);
   if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
@@ -1068,12 +984,7 @@ app.get(['/api/images/history', '/images/history'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const u = await currentUser(req);
   if (!u) return res.json({ ok: true, images: [] });
-  const items = await Promise.all(u.images.slice(0, 30).map(async (it, i) => ({
-    id: it.id || ('img-' + String(it.ts || 'x') + '-' + i),
-    ts: it.ts, prompt: it.prompt,
-    image: it.remote || (await blobGet(it.id)),
-    watermarked: it.watermarked === true,
-  })));
+  const items = await Promise.all(u.images.slice(0, 30).map(async (it, i) => ({ id: it.id || ('img-' + String(it.ts || 'x') + '-' + i), ts: it.ts, prompt: it.prompt, image: it.remote || (await blobGet(it.id)), watermarked: it.watermarked === true })));
   res.json({ ok: true, images: items.filter((x) => x.image) });
 });
 app.post(['/api/images/delete', '/images/delete'], async (req, res) => {
@@ -1133,13 +1044,7 @@ app.post(['/v1/images/generations', '/openai/v1/images/generations', '/api/v1/im
 });
 
 /* CHAT COMPLETIONS */
-const CHAT_PATHS = [
-  '/v1/chat/completions',
-  '/chat/completions',
-  '/openai/v1/chat/completions',
-  '/api/v1/chat/completions',
-  '/api/chat/completions',
-];
+const CHAT_PATHS = ['/v1/chat/completions','/chat/completions','/openai/v1/chat/completions','/api/v1/chat/completions','/api/chat/completions'];
 
 app.post(CHAT_PATHS, async (req, res) => {
   const t0 = Date.now();
@@ -1264,7 +1169,6 @@ app.post(CHAT_PATHS, async (req, res) => {
       await persist();
     };
 
-    // Attaching a binary file (zip, pdf, ...) always turns tools on for that message, so the file can be opened.
     const hasBinaryFile = files.some((f) => f && f.type !== 'image' && (f.base64 || (typeof f.dataUrl === 'string' && f.dataUrl.includes(','))));
     const toolsOn = !apiMode && !!u && (hasBinaryFile || (typeof body.tools === 'boolean' ? body.tools : u.settings?.tools === true));
     if (toolsOn) {
@@ -1310,12 +1214,7 @@ app.post(CHAT_PATHS, async (req, res) => {
       let reply = extractReplyText(data) || '(empty)';
       if (apiMode) reply = stripThinking(reply);
       await finishUsage();
-      return res.json({
-        reply, _ms: Date.now() - t0,
-        provider: 'MiroxAI (SurrRoute)',
-        model: effectiveModel,
-        search: searchQuery ? { query: searchQuery, results: searchData.results, overview: searchData.overview } : null,
-      });
+      return res.json({ reply, _ms: Date.now() - t0, provider: 'MiroxAI (SurrRoute)', model: effectiveModel, search: searchQuery ? { query: searchQuery, results: searchData.results, overview: searchData.overview } : null });
     }
 
     sseWrite(res, { p: 'MiroxAI (SurrRoute)', model: effectiveModel, deep_think: deepThink });
@@ -1362,15 +1261,7 @@ app.get(['/api/admin/stats', '/admin/stats'], requireAdmin, async (req, res) => 
   const imgEvents = db.events.filter((e) => /image_(generated|edited)/.test(e.event || '')).slice(-60).reverse().map((e) => ({ ts: e.ts, email: e.email || '—', prompt: e.prompt || '' }));
   const openTickets = (db.tickets || []).filter((t) => t.status === 'open').length;
   const unreadSupport = (db.tickets || []).reduce((s, t) => s + (t.unread_for_agent || 0), 0);
-  res.json({
-    ok: true, durable: KV_ON, db_writable: dbOk,
-    warning: KV_ON ? null : 'No durable store configured. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN for persistent API keys.',
-    storage_paths: DATA_FILES,
-    users: users.length, chats: db.chats.length, events: db.events.length, images: imgEvents.length,
-    open_tickets: openTickets, unread_support: unreadSupport,
-    users_data: Object.fromEntries(users.map((u) => [u.email, { name: u.name, tier: u.tier, daily_used: u.daily_used, image_used: u.image_used, eclipse_used: u.eclipse_used, last_login: u.last_login, keys: (u.keys || []).length }])),
-    chats_data: db.chats.slice(-100).reverse(), events_data: db.events.slice(-100).reverse(), images_data: imgEvents,
-  });
+  res.json({ ok: true, durable: KV_ON, db_writable: dbOk, warning: KV_ON ? null : 'No durable store configured. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN for persistent API keys.', storage_paths: DATA_FILES, users: users.length, chats: db.chats.length, events: db.events.length, images: imgEvents.length, open_tickets: openTickets, unread_support: unreadSupport, users_data: Object.fromEntries(users.map((u) => [u.email, { name: u.name, tier: u.tier, daily_used: u.daily_used, image_used: u.image_used, eclipse_used: u.eclipse_used, last_login: u.last_login, keys: (u.keys || []).length }])), chats_data: db.chats.slice(-100).reverse(), events_data: db.events.slice(-100).reverse(), images_data: imgEvents });
 });
 app.post(['/api/admin/set-tier', '/admin/set-tier'], requireAdmin, async (req, res) => {
   await ensureDb(req);
@@ -1457,40 +1348,9 @@ app.use((err, req, res, next) => {
   if (!res.headersSent) res.status(500).json({ ok: false, error: GENERIC_ERR });
 });
 
-/* Startup diagnostics */
-function logResolverSelfTest() {
-  const tests = ['mirox-gen-1', 'custom/mirox-gen-1', 'openai/custom/mirox-tail-r1', 'MiroxAI/mirox-luna-1.2', 'MIROX-TAIL-R1'];
-  console.log('[Mirox] resolver self-test:');
-  for (const t of tests) console.log(`   "${t}" → ${resolveModelId(t)}`);
-}
-async function logStorageDiagnostics() {
-  console.log('[Mirox] storage:');
-  console.log(`   KV (Upstash Redis): ${KV_ON ? 'YES — durable ✓' : 'NO'}`);
-  for (const f of DATA_FILES) {
-    try {
-      await fs.mkdir(path.dirname(f), { recursive: true });
-      await fs.access(path.dirname(f));
-      console.log(`   ${f} → writable ✓`);
-    } catch (e) {
-      console.log(`   ${f} → not writable (${e.code || e.message})`);
-    }
-  }
-  if (!KV_ON && DATA_FILES[0] === '/tmp/mirox-db.json') {
-    console.warn('');
-    console.warn('  ⚠ WARNING: No durable storage detected!');
-    console.warn('  ⚠ API keys and user data will be LOST on every cold start.');
-    console.warn('  ⚠ Fix: set UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN,');
-    console.warn('  ⚠      or set DB_FILE to a persistent path.');
-    console.warn('');
-  }
-}
-
-console.log('[Mirox] v110 · flagship: Tail r1 (FREE) · api_thinking: OFF');
-console.log('[Mirox] model endpoints:', MODEL_LIST_PATHS.join('  '));
+console.log('[Mirox] v111 · flagship: Tail r1 (FREE) · api_thinking: OFF');
 console.log('[Mirox] chat endpoints:', CHAT_PATHS.join('  '));
 console.log('[Mirox] image provider:', HF_API_KEY ? 'huggingface' : (AIROUTE_KEY ? 'airoute' : 'none'));
-logResolverSelfTest();
-logStorageDiagnostics();
 
 if (!process.env.VERCEL) {
   app.listen(PORT, () => console.log('[Mirox] Server at http://localhost:' + PORT));
