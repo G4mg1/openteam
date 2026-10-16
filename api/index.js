@@ -30,7 +30,7 @@ const ALLOW_EMAIL_LOGIN = env('ALLOW_EMAIL_LOGIN') === '1';
      1. DB_FILE env (if set)
      2. /var/data/mirox-db.json    (Render, Railway, Fly persistent disk)
      3. /data/mirox-db.json        (generic persistent volume)
-     4. process.cwd()/mirox-db.json (working dir — often persistent)
+     4. process.cwd()/mirox-db.json (working dir)
      5. /tmp/mirox-db.json          (ephemeral fallback — last resort)
 ------------------------------------------------ */
 function resolveDataFile() {
@@ -44,7 +44,7 @@ function resolveDataFile() {
   return candidates;
 }
 const DATA_FILES = resolveDataFile();
-const DATA_FILE = DATA_FILES[0]; // primary (used for writes when possible)
+const DATA_FILE = DATA_FILES[0];
 const IMG_DIR = env('IMG_DIR', '/tmp/mirox-img');
 
 const OP_KEY = env('OP_KEY');
@@ -273,7 +273,6 @@ async function kv(cmd) {
   return d.result;
 }
 
-/* Try reading from every candidate path until we find one with data */
 async function readMain() {
   if (KV_ON) {
     try { return await kv(['GET', KV_DB_KEY]); } catch (e) { console.warn('[db] KV read failed:', e.message); }
@@ -311,7 +310,6 @@ async function loadDb() {
   return dbLoading;
 }
 
-/* Write to every candidate path — this is the key durability fix. */
 function persist() {
   if (!db || !dbOk) return Promise.resolve(false);
   const snap = JSON.stringify(db);
@@ -321,15 +319,12 @@ function persist() {
       try { await kv(['SET', KV_DB_KEY, snap]); ok = true; }
       catch (e) { console.error('[db] KV write failed:', e.message); }
     }
-    /* Always also mirror to disk — best effort */
     for (const f of DATA_FILES) {
       try {
         await fs.mkdir(path.dirname(f), { recursive: true });
         await fs.writeFile(f, snap, 'utf8');
         ok = true;
-      } catch (e) {
-        /* Silent — many paths won't be writable */
-      }
+      } catch (e) { /* silent — not every path is writable */ }
     }
     return ok;
   });
@@ -383,7 +378,7 @@ function clearSessionCookie(req, res) { res.append('Set-Cookie', `mirox_sess=; $
 async function ensureDb(req) { if (req && req.__dbReady) return; await loadDb(); if (req) req.__dbReady = true; }
 async function currentUser(req) { await ensureDb(req); if (!dbOk) return null; const s = readSession(getCookie(req, 'mirox_sess')); if (!s || !s.uid) return null; return userFor(s.uid); }
 
-/* ---------- Model resolver (regex-based) ---------- */
+/* ---------- Model resolver ---------- */
 function resolveModelId(raw) {
   if (raw == null) return null;
   const s = String(raw).trim();
@@ -741,7 +736,6 @@ app.get(['/api/health', '/health', '/ping'], (req, res) => {
     image_provider: HF_API_KEY ? 'huggingface' : (AIROUTE_KEY ? 'airoute' : null),
     models_endpoint: '/v1/models',
     storage: { durable: KV_ON, primary_path: DATA_FILE, fallback_paths: DATA_FILES.slice(1), writable: dbOk },
-    db: { durable: KV_ON, writable: dbOk, paths: DATA_FILES },
     time: nowS() });
 });
 
@@ -751,9 +745,6 @@ app.get('/api/web/status', async (req, res) => {
   res.json({ ok: true, duckduckgo: ddg, wikipedia: wiki, ms: Date.now() - t0 });
 });
 
-/* ============================================================
-   MODEL LIST
-   ============================================================ */
 function openaiModelList() {
   const created = Math.floor(Date.now() / 1000);
   return {
@@ -945,17 +936,10 @@ app.post('/api/support/close', async (req, res) => {
   res.json({ ok: true });
 });
 
-/* ============================================================
-   API KEYS — now with restore endpoint
-   ============================================================ */
-
-/* Auto-recovery: if a user has no keys but the event log shows they
-   once created some, warn. (Can't recover the actual key strings —
-   they're only shown once at creation — but this helps debugging.) */
+/* API KEYS */
 function keysRecoveryHint(email) {
   if (!db.events) return 0;
-  const created = db.events.filter((e) => e.email === email && e.event === 'key_created').length;
-  return created;
+  return db.events.filter((e) => e.email === email && e.event === 'key_created').length;
 }
 
 app.get(['/api/keys', '/keys'], async (req, res) => {
@@ -963,14 +947,10 @@ app.get(['/api/keys', '/keys'], async (req, res) => {
   const u = await currentUser(req);
   if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
   const keys = u.keys.map(publicKey);
-  const recovered = keysRecoveryHint(u.email);
   res.json({
-    ok: true,
-    keys,
-    limit: maxKeys(u.tier),
-    active: keys.filter((k) => !k.revoked).length,
-    tier: u.tier,
-    historical_creations: recovered,
+    ok: true, keys, limit: maxKeys(u.tier),
+    active: keys.filter((k) => !k.revoked).length, tier: u.tier,
+    historical_creations: keysRecoveryHint(u.email),
   });
 });
 
@@ -991,11 +971,6 @@ app.post(['/api/keys', '/keys'], async (req, res) => {
   res.json({ ok: true, key: publicKey(key), keys: u.keys.map(publicKey), limit, active: u.keys.filter((k) => !k.revoked).length });
 });
 
-/* ---------- NEW: client-backed key restore ----------
-   The developers page saves a copy of the user's keys in the browser.
-   If the server DB loses them (e.g. ephemeral /tmp wipe on serverless),
-   the client posts its saved copy here and any missing keys are restored.
---------------------------------------------- */
 app.post(['/api/keys/restore', '/keys/restore'], async (req, res) => {
   const u = await currentUser(req);
   if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
@@ -1012,7 +987,6 @@ app.post(['/api/keys/restore', '/keys/restore'], async (req, res) => {
     if (typeof k !== 'string' || !k.startsWith('mxk_live_')) continue;
     if (existingKeys.has(k)) continue;
     if (existingIds.has(raw.id)) continue;
-    /* If a different user already owns this key string, skip it */
     const owner = db.keys[k];
     if (owner && owner !== u.email) continue;
     const limit = maxKeys(u.tier);
@@ -1039,11 +1013,8 @@ app.post(['/api/keys/restore', '/keys/restore'], async (req, res) => {
   }
 
   res.json({
-    ok: true,
-    restored,
-    keys: u.keys.map(publicKey),
-    limit: maxKeys(u.tier),
-    active: u.keys.filter((k) => !k.revoked).length,
+    ok: true, restored, keys: u.keys.map(publicKey),
+    limit: maxKeys(u.tier), active: u.keys.filter((k) => !k.revoked).length,
   });
 });
 
@@ -1087,8 +1058,7 @@ app.get(['/api/images/history', '/images/history'], async (req, res) => {
   if (!u) return res.json({ ok: true, images: [] });
   const items = await Promise.all(u.images.slice(0, 30).map(async (it, i) => ({
     id: it.id || ('img-' + String(it.ts || 'x') + '-' + i),
-    ts: it.ts,
-    prompt: it.prompt,
+    ts: it.ts, prompt: it.prompt,
     image: it.remote || (await blobGet(it.id)),
     watermarked: it.watermarked === true,
   })));
@@ -1150,9 +1120,7 @@ app.post(['/v1/images/generations', '/openai/v1/images/generations', '/api/v1/im
   } catch { res.status(502).json({ error: { message: GENERIC_ERR } }); }
 });
 
-/* ============================================================
-   CHAT COMPLETIONS — every URL clients try
-   ============================================================ */
+/* CHAT COMPLETIONS */
 const CHAT_PATHS = [
   '/v1/chat/completions',
   '/chat/completions',
@@ -1289,8 +1257,7 @@ app.post(CHAT_PATHS, async (req, res) => {
       if (apiMode) reply = stripThinking(reply);
       await finishUsage();
       return res.json({
-        reply,
-        _ms: Date.now() - t0,
+        reply, _ms: Date.now() - t0,
         provider: 'MiroxAI (SurrRoute)',
         model: effectiveModel,
         search: searchQuery ? { query: searchQuery, results: searchData.results, overview: searchData.overview } : null,
@@ -1436,7 +1403,7 @@ app.use((err, req, res, next) => {
   if (!res.headersSent) res.status(500).json({ ok: false, error: GENERIC_ERR });
 });
 
-/* ---------- Startup diagnostics ---------- */
+/* Startup diagnostics */
 function logResolverSelfTest() {
   const tests = ['mirox-gen-1', 'custom/mirox-gen-1', 'openai/custom/mirox-tail-r1', 'MiroxAI/mirox-luna-1.2', 'MIROX-TAIL-R1'];
   console.log('[Mirox] resolver self-test:');
