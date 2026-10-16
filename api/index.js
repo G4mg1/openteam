@@ -139,22 +139,9 @@ Support: support@miroxai.org
 
 Never invent features or prices not listed here.`;
 
-const THINKING_RULE = `You ALWAYS think before answering. Write your reasoning inside ONE <thinking>...</thinking> block, then write the answer right after.
+const THINKING_RULE = `Before answering, provide a brief user-facing progress summary in <thinking>...</thinking>, then the answer. This is a concise summary of the approach, not private chain-of-thought. Do not narrate hidden deliberations, invent tool activity, or claim a tool ran unless it actually ran. Normally use 1-3 short sentences. Close with </thinking>, then the answer.`;
 
-The thinking must read like a REAL person thinking to themselves, first person, casual and honest. Example:
-"Ok so the user wants to know how to make an ai. Let me break it down: they probably want practical steps, not theory. I should start simple — Python, a basic example, then scale up. Keep it useful. Ok, write it."
-
-Rules for <thinking>:
-- First person, casual tone.
-- Cover: what the user wants, what approach, any gotcha.
-- Do NOT restate the final answer inside <thinking>.
-- 2 to 6 short sentences normally. Up to 12 in DeepThink.
-- Close with </thinking>, then the real answer.`;
-
-const DEEP_THINK_RULE = `DEEP THINK MODE — reason much more thoroughly than usual.
-- Expand <thinking> to 6-12 short sentences.
-- Explore the request from at least two angles.
-- Then close </thinking> and write a carefully reasoned answer.`;
+const DEEP_THINK_RULE = `DEEP THINK MODE — take extra care checking assumptions, edge cases, and the result. Show only a concise user-facing summary of the approach (up to 4 sentences), not private chain-of-thought. Then give a complete, carefully checked answer.`;
 
 const TAIL_R1_REASONING_RULE = `TAIL R1 FLAGSHIP MODE — you are the strongest model in Mirox. Maximum rigor:
 - Verify your approach before answering. Any counterexamples?
@@ -162,12 +149,11 @@ const TAIL_R1_REASONING_RULE = `TAIL R1 FLAGSHIP MODE — you are the strongest 
 - For factual claims: note confidence. If uncertain, say so.
 - For "how do I": give the shortest working path first, then optional depth.`;
 
-const BRIDGE_PROMPT = `BRIDGE MODE — You are Mirox, working on the user's machine.
-You receive a [Bridge environment] block at the top of every user message.
-RULE 0 — Think inside <thinking>...</thinking> before writing code.
-RULE 1 — Never paste code into visible text. Use <bridge-write> or <bridge-append>.
-RULE 2 — Always close tags.
-RULE 3 — Long files: first chunk with <bridge-write>, rest with <bridge-append>.
+const BRIDGE_PROMPT = `BRIDGE MODE — You are Mirox, operating through the user's explicitly connected local bridge. You receive a [Bridge environment] block at the top of each user message.
+RULE 1 — Perform real file operations with bridge tags; never claim a file was created or a command ran unless the bridge returned success.
+RULE 2 — For coding/build tasks, inspect the target folder first with <bridge-list>, create or update files with <bridge-write>/<bridge-append>, then run a relevant build/test command with <bridge-exec> when available. Read back important files or command output to verify.
+RULE 3 — Use paths only inside the user's home or explicitly configured project folders. Never overwrite unrelated files. Ask before destructive actions, installing packages, using elevated privileges, or changing system settings. Avoid <bridge-sudo> unless the user explicitly approves the exact command.
+RULE 4 — Keep code out of normal chat when the bridge is connected; use bridge tags. Always close every tag. For long files, use <bridge-write> once and <bridge-append> for remaining chunks.
 TAGS:
   <bridge-write path="/abs/path">...</bridge-write>
   <bridge-append path="/abs/path">...</bridge-append>
@@ -175,7 +161,7 @@ TAGS:
   <bridge-list path="/abs/path"/>
   <bridge-exec>cd /abs/dir && ls -la</bridge-exec>
   <bridge-sudo>apt install foo</bridge-sudo>
-When finished, reply DONE on its own line plus a one-line summary.`;
+When finished, reply DONE on its own line with a concise summary of what was actually changed and verified.`;
 
 const safeStr = (v, max = 200000) => { if (v == null) return ''; const s = typeof v === 'string' ? v : JSON.stringify(v); return s.length > max ? s.slice(0, max) : s; };
 const nowS = () => Math.floor(Date.now() / 1000);
@@ -1272,7 +1258,7 @@ app.post(CHAT_PATHS, async (req, res) => {
     };
 
     // Attaching a binary file (zip, pdf, ...) always turns tools on for that message, so the file can be opened.
-    const hasBinaryFile = files.some((f) => f && f.type === 'file' && f.base64);
+    const hasBinaryFile = files.some((f) => f && f.type !== 'image' && (f.base64 || (typeof f.dataUrl === 'string' && f.dataUrl.includes(','))));
     const toolsOn = !apiMode && !!u && (hasBinaryFile || (typeof body.tools === 'boolean' ? body.tools : u.settings?.tools === true));
     if (toolsOn) {
       const saved = await saveAttachments(files, u);
