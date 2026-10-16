@@ -2,9 +2,12 @@
   'use strict';
 
   /* ============================================================
-     MiroxAI frontend v148
+     MiroxAI frontend v149
      · Single endpoint /v1/chat/completions for app + API
-     · Thinking is ON everywhere
+     · Thinking status pill (no transcript)
+     · Free-tier tool limit modal (20 steps / 3 h)
+     · Free-tier image upload cap (10 per message)
+     · My Mirox growth / closeness / calendar heatmap
      · Tail r1 flagship (free) · promo popup + confetti
      ============================================================ */
 
@@ -128,6 +131,7 @@
   const PREFS_KEY = 'miroxai_prefs_v16';
   const BRIDGE_OPTS_KEY = 'miroxai_bridge_opts_v1';
   const TAIL_PROMO_SEEN_KEY = 'miroxai_tail_promo_seen_v1';
+  const GROWTH_KEY = 'mirox_growth_v1';
   const PASTE_ATTACH_THRESHOLD = 1024;
   const NET_TIMEOUT_MS = 15000;
   const STREAM_TIMEOUT_MS = 600000;
@@ -138,15 +142,14 @@
   const MAX_DUP_COMMANDS = 3;
   const MAX_DUP_REPLIES = 2;
   const CALL_SILENCE_MS = 5000;
+  const FREE_IMAGE_UPLOAD_CAP = 10;
 
   /* ============================================================
-     SINGLE ENDPOINT — same for app and API. Thinking ON everywhere.
+     SINGLE ENDPOINT — same for app and API.
      ============================================================ */
   const APP_CHAT_URL   = '/v1/chat/completions';
   const APP_IMAGES_URL = '/v1/images/generations';
 
-  /* ⚠️ No anti-thinking instruction is ever sent from the client.
-     The server re-asserts the thinking rule as the FINAL instruction. */
   const RESPONSE_QUALITY_NOTE = 'RESPONSE QUALITY: Give a genuinely useful, complete answer rather than an overly short reply. For explanations and open-ended questions, normally write several well-developed paragraphs with context, clear reasoning summaries, examples, and practical details when useful. Answer the exact question first, then expand enough that the user can understand the topic without needing to ask for basic missing details. Do not pad with repetition; use headings and bullets only when they improve readability. Match the requested length: if the user asks for detail, provide a long, thorough answer; if they ask for a simple answer, stay concise.';
   const IDEA_FORMAT_NOTE = 'IDEA-ANSWER FORMAT: Use a clean editorial layout with numbered options and short fit badges. Do not fetch or attach images unless explicitly requested.';
 
@@ -183,6 +186,8 @@
   };
 
   let __currentSpeakMsgId = null;
+
+  let __growth = { days: {}, totalMessages: 0, totalChats: 0, createdAt: Date.now() };
 
   const uid = () => 'c_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
   const escapeHtml = (s) => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
@@ -272,6 +277,99 @@
   /* ---------- Reactions ---------- */
   function loadReactions() { __reactions = safeGet(REACTIONS_KEY, {}); if (typeof __reactions !== 'object' || !__reactions) __reactions = {}; }
   function saveReactions() { safeSet(REACTIONS_KEY, __reactions); }
+
+  /* ---------- Growth / My Mirox ---------- */
+  function loadGrowth() {
+    const g = safeGet(GROWTH_KEY, null);
+    if (g && typeof g === 'object') __growth = Object.assign(__growth, g);
+    if (!__growth.days || typeof __growth.days !== 'object') __growth.days = {};
+    if (typeof __growth.totalMessages !== 'number') __growth.totalMessages = 0;
+    if (typeof __growth.totalChats !== 'number') __growth.totalChats = 0;
+  }
+  function saveGrowth() { safeSet(GROWTH_KEY, __growth); }
+  function recordGrowth(messageCount = 1) {
+    const d = new Date().toISOString().slice(0, 10);
+    __growth.days[d] = (__growth.days[d] || 0) + messageCount;
+    __growth.totalMessages += messageCount;
+    __growth.totalChats = (__conversations || []).length;
+    saveGrowth();
+  }
+  function closenessLevel() {
+    const m = __growth.totalMessages;
+    if (m >= 500) return { label: 'Inseparable', icon: 'ri-heart-3-fill', pct: 100 };
+    if (m >= 250) return { label: 'Very close',  icon: 'ri-heart-3-line', pct: 80 };
+    if (m >= 100) return { label: 'Close',       icon: 'ri-heart-2-line', pct: 60 };
+    if (m >= 40)  return { label: 'Friendly',    icon: 'ri-heart-line',   pct: 40 };
+    if (m >= 10)  return { label: 'Warming up',  icon: 'ri-seedling-line', pct: 20 };
+    return { label: 'Just met', icon: 'ri-sparkling-2-line', pct: 5 };
+  }
+  function activeDaysCount() { return Object.keys(__growth.days || {}).length; }
+  function streakCount() {
+    const days = Object.keys(__growth.days || {}).sort();
+    if (!days.length) return 0;
+    let streak = 0;
+    const d = new Date(); d.setHours(0, 0, 0, 0);
+    for (let i = 0; i < 400; i++) {
+      const key = d.toISOString().slice(0, 10);
+      if (__growth.days[key]) { streak++; d.setDate(d.getDate() - 1); }
+      else break;
+    }
+    return streak;
+  }
+  function renderMyMirox() {
+    const root = document.getElementById('myMiroxBody');
+    if (!root) return;
+    const lvl = closenessLevel();
+    const streak = streakCount();
+    const active = activeDaysCount();
+    const total = __growth.totalMessages;
+
+    const days = [];
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    for (let i = 34; i >= 0; i--) {
+      const d = new Date(today); d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      days.push({ key, count: __growth.days[key] || 0, day: d.getDate() });
+    }
+    const heat = days.map((x) => {
+      const lvl2 = x.count === 0 ? 0 : x.count < 3 ? 1 : x.count < 8 ? 2 : x.count < 20 ? 3 : 4;
+      return `<div class="mm-day lvl-${lvl2}" title="${x.key} · ${x.count} messages">${x.day}</div>`;
+    }).join('');
+
+    root.innerHTML = `
+      <div class="mm-hero">
+        <div class="mm-hero-avatar"><div class="mascot mascot-md m-happy" data-mood="happy">${blobSvg()}</div></div>
+        <div class="mm-hero-info">
+          <div class="mm-hero-name">${escapeHtml(__user?.name || 'Friend')}</div>
+          <div class="mm-hero-sub">${escapeHtml(lvl.label)} · ${total} messages</div>
+        </div>
+        <div class="mm-hero-badge"><i class="${lvl.icon}"></i> ${escapeHtml(lvl.label)}</div>
+      </div>
+
+      <div class="mm-stats">
+        <div class="mm-stat"><div class="mm-stat-num">${active}</div><div class="mm-stat-lbl">Active days</div></div>
+        <div class="mm-stat"><div class="mm-stat-num">${streak}</div><div class="mm-stat-lbl">Day streak</div></div>
+        <div class="mm-stat"><div class="mm-stat-num">${total}</div><div class="mm-stat-lbl">Messages</div></div>
+        <div class="mm-stat"><div class="mm-stat-num">${__growth.totalChats}</div><div class="mm-stat-lbl">Chats</div></div>
+      </div>
+
+      <div class="mm-section-title">Closeness</div>
+      <div class="mm-bar"><div class="mm-bar-fill" style="width:${lvl.pct}%"></div></div>
+      <div class="mm-bar-hint">${escapeHtml(lvl.label)} — keep chatting to grow closer.</div>
+
+      <div class="mm-section-title">Last 35 days</div>
+      <div class="mm-heat">${heat}</div>
+      <div class="mm-heat-legend">
+        <span>Less</span>
+        <span class="mm-day lvl-0"></span>
+        <span class="mm-day lvl-1"></span>
+        <span class="mm-day lvl-2"></span>
+        <span class="mm-day lvl-3"></span>
+        <span class="mm-day lvl-4"></span>
+        <span>More</span>
+      </div>`;
+    upgradeStaticMascots(root);
+  }
 
   /* ---------- Confetti ---------- */
   function fireConfetti() {
@@ -419,92 +517,62 @@
     if (lastLt >= 0) {
       const tail = out.slice(lastLt);
       const candidates = ['<thinking>', '</thinking>'];
-      if (candidates.some((c) => c.toLowerCase().startsWith(tail.toLowerCase()) && tail.length < c.length)) out = out.slice(0, lastLt);
+      if (candidates.some((c) => c.toLowerCase().startsWith(tail.toLowerCase()) && tail.length < c.length))
+        out = out.slice(0, lastLt);
     }
+    const NARRATION = [
+      /^i['’]ll\s+(?:attempt to|try to|now)?\s*(?:extract|inspect|open|read|load|check|look at|look inside|unzip|analyse|analyze|review|fetch|download|search|browse|process|parse|scan|verify|test|write|create|run|execute|use|call)[^\n.!?]*[.!?]?\s*/gim,
+      /^i['’]m\s+going to\s+[^\n.!?]*[.!?]?\s*/gim,
+      /^i\s+will\s+(?:now\s+)?(?:attempt to\s+)?(?:extract|inspect|open|read|load|check|look|unzip|analyse|analyze|review|fetch|download|search|browse|process|parse|scan|verify|test|write|create|run|execute|use|call)[^\n.!?]*[.!?]?\s*/gim,
+      /^let me\s+(?:first\s+)?(?:extract|inspect|open|read|load|check|look at|look inside|unzip|analyse|analyze|review|fetch|download|search|browse|process|parse|scan|verify|test|write|create|run|execute|use|call)[^\n.!?]*[.!?]?\s*/gim,
+      /^i['’]ve\s+(?:extracted|inspected|opened|read|loaded|checked|analy|unzipped|reviewed|fetched|downloaded|searched|browsed|processed|parsed|scanned|verified|tested|written|created|run|executed|used|called)[^\n.!?]*[.!?]?\s*/gim,
+      /^\s*i\s+need to\s+(?:extract|inspect|open|read|load|check|look|unzip|analyse|analyze|review|fetch|download|search|browse|process|parse|scan|verify|test|write|create|run|execute|use|call)[^\n.!?]*[.!?]?\s*/gim,
+    ];
+    for (const re of NARRATION) out = out.replace(re, '');
+    out = out.replace(/\n{3,}/g, '\n\n').replace(/^\s+/, '');
     return out;
   }
 
   /* ---------- Thinking panel ---------- */
-  function createThinkPanel(deep) {
+  function createThinkPanel(_deep) {
     const el = document.createElement('div');
     el.className = 'think-panel';
     el.dataset.state = 'thinking';
-    el.dataset.collapsed = 'false';
+    el.dataset.collapsed = 'true';
     el.innerHTML = `
       <div class="think-header">
         <div class="think-icon"><i class="ri-loader-4-line"></i></div>
         <div class="think-title"><span class="think-title-text">Thinking</span></div>
         <div class="think-timer-pill">0.0s</div>
-        <button class="think-toggle" type="button" title="Minimize" aria-label="Minimize thinking status" aria-expanded="true"><i class="ri-arrow-up-s-line"></i></button>
-      </div>
-      <div class="think-body-wrap"><div class="think-body"><div class="think-text" data-think-text>Getting started…</div></div></div>`;
+      </div>`;
     const titleTextEl = el.querySelector('.think-title-text');
     const timerPill = el.querySelector('.think-timer-pill');
-    const toggle = el.querySelector('.think-toggle');
-    const textEl = el.querySelector('[data-think-text]');
     const iconEl = el.querySelector('.think-icon i');
-    const bodyEl = el.querySelector('.think-body');
     const t0 = performance.now();
-    let done = false, lastText = '';
-    toggle.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const collapsed = el.dataset.collapsed !== 'true';
-      el.dataset.collapsed = String(collapsed);
-      toggle.setAttribute('aria-expanded', String(!collapsed));
-      toggle.title = collapsed ? 'Expand thinking' : 'Minimize';
-      toggle.setAttribute('aria-label', toggle.title);
-      toggle.innerHTML = `<i class="${collapsed ? 'ri-arrow-down-s-line' : 'ri-arrow-up-s-line'}"></i>`;
-    });
+    let done = false;
     const timer = setInterval(() => {
       if (done) { clearInterval(timer); return; }
       timerPill.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
     }, 100);
-    // Never render model reasoning or narration here. This is a status indicator,
-    // not a transcript of hidden thoughts or speculative tool calls.
-    function replaceText(_text) {
-      if (done) return;
-      const t = 'Working on your request…';
-      if (t !== lastText) {
-        lastText = t;
-        textEl.textContent = t;
-      }
-    }
     function setState(next) {
       el.dataset.state = next;
-      if (next === 'thinking') {
-        iconEl.className = 'ri-loader-4-line';
-        titleTextEl.textContent = 'Thinking';
-      } else if (next === 'done') {
-        iconEl.className = 'ri-checkbox-circle-fill';
-        const secs = ((performance.now() - t0) / 1000).toFixed(1);
-        titleTextEl.textContent = 'Thought for ' + secs + 's';
-      } else if (next === 'failed') {
-        iconEl.className = 'ri-error-warning-fill';
-        titleTextEl.textContent = 'Thinking stopped';
-      }
+      if (next === 'thinking') { iconEl.className = 'ri-loader-4-line'; titleTextEl.textContent = 'Thinking'; }
+      else if (next === 'done') { iconEl.className = 'ri-checkbox-circle-fill'; const secs = ((performance.now() - t0) / 1000).toFixed(1); titleTextEl.textContent = 'Thought for ' + secs + 's'; }
+      else if (next === 'failed') { iconEl.className = 'ri-error-warning-fill'; titleTextEl.textContent = 'Thinking stopped'; }
     }
     function finalize() {
       if (done) return;
       done = true; clearInterval(timer);
       timerPill.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's';
       setState('done');
-      setTimeout(() => {
-        if (el.isConnected && el.dataset.collapsed === 'false') {
-          el.dataset.collapsed = 'true';
-          toggle.setAttribute('aria-expanded', 'false');
-          toggle.title = 'Expand thinking';
-          toggle.innerHTML = '<i class="ri-arrow-down-s-line"></i>';
-        }
-      }, 1800);
     }
-    function fail(msg) {
+    function fail() {
       if (done) return;
       done = true; clearInterval(timer);
-      if (!lastText) textEl.textContent = msg ? String(msg).slice(0, 220) : 'The request could not finish.';
       setState('failed');
     }
     function hide() { el.style.display = 'none'; done = true; clearInterval(timer); }
-    return { el, replaceText, finalize, fail, hide, isConnected: () => el.isConnected, destroy: () => clearInterval(timer) };
+    return { el, replaceText: () => {}, finalize, fail, hide, isConnected: () => el.isConnected, destroy: () => clearInterval(timer) };
   }
 
   /* ---------- Watermark ---------- */
@@ -981,7 +1049,6 @@
     inner += '<div class="bubble-text"></div>';
     el.innerHTML = `${avatar}<div class="message-body"><div class="bubble">${inner}</div><div class="message-actions">${buildActions(role, id)}</div><div class="message-time">${ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</div></div>`;
     container.appendChild(el);
-    // Intentionally do not display stored model reasoning in conversation history.
     const bt = el.querySelector('.bubble-text');
     if (role === 'user') { bt.textContent = content || ''; if (!content) bt.style.display = 'none'; }
     else if (content) { bt.innerHTML = renderMarkdown(stripThinkingLeak(content)); wireCodeButtons(bt); }
@@ -1080,6 +1147,29 @@
     return /\b(generate|create|make|draw|render|paint|show\s+me|give\s+me)\b[^.!?]{0,60}\b(image|picture|photo|illustration|drawing|painting)\b/i.test(t)
       || /^(?:an?\s+)?(image|picture|photo|illustration)\s+of\s+/i.test(t);
   }
+
+  /* ---------- Tool limit modal ---------- */
+  function showToolLimitModal(message) {
+    const existing = document.getElementById('toolLimitModal');
+    if (existing) existing.remove();
+    const wrap = document.createElement('div');
+    wrap.id = 'toolLimitModal';
+    wrap.className = 'modal-overlay open';
+    wrap.style.zIndex = '9999';
+    wrap.innerHTML = `
+      <div class="modal" style="max-width:420px;text-align:center;">
+        <div class="card-icon" style="margin:0 auto 14px;background:var(--accent-soft);color:var(--accent);width:52px;height:52px;border-radius:14px;display:grid;place-items:center;font-size:26px;">
+          <i class="ri-timer-flash-line"></i>
+        </div>
+        <h2 class="modal-title" style="margin-bottom:8px;">Tool limit reached</h2>
+        <p class="modal-sub" style="margin-bottom:20px;">${escapeHtml(message)}</p>
+        <button class="modal-btn primary" type="button" id="toolLimitOk">Got it</button>
+      </div>`;
+    document.body.appendChild(wrap);
+    wrap.querySelector('#toolLimitOk').onclick = () => wrap.remove();
+    wrap.addEventListener('click', (e) => { if (e.target === wrap) wrap.remove(); });
+  }
+
   function handleSend() {
     if (isReplying) return;
     const inp = $('#messageInput'); if (!inp) return;
@@ -1102,6 +1192,7 @@
     const files = pendingFiles.slice();
     pendingFiles = []; updatePreview(); updateSendButtonState();
     saveChats(); renderHistory(); updateTokenUsage();
+    recordGrowth(1);
     const ideaSearch = looksLikeIdeasRequest(text);
     sendToAPI(text, files, forceSearchNext || ideaSearch);
     forceSearchNext = false;
@@ -1190,7 +1281,7 @@
     const editIntent = hasAttachedImage ? detectImageEditIntent(text, true) : null;
     const sourceImage = editIntent ? (visionFiles[0].pngDataUrl || visionFiles[0].dataUrl) : null;
     activeStreamController = new AbortController();
-    let generatedImage = null, gotToken = false;
+    let generatedImage = null;
     let streamComplete = false;
     let renderTimer = null;
     let rawAll = '', answerText = '', thinkingText = '';
@@ -1231,7 +1322,6 @@
         continuation: !!isContinuation,
       };
 
-      /* ⬇️ Single endpoint for both app and API. Server keeps thinking on. */
       const res = await fetch(APP_CHAT_URL, {
         method: 'POST', headers: authHeaders(), credentials: 'same-origin',
         body: JSON.stringify(reqBody), signal: activeStreamController.signal,
@@ -1283,10 +1373,17 @@
             try { await reader.cancel(); } catch {}
             break;
           }
+          if (o.limit) {
+            try { await reader.cancel(); } catch {}
+            const msg = (o.limit && o.limit.message) ||
+              'You have used all 20 free tool steps. Your allowance refreshes 3 hours after the first step in this window.';
+            showToolLimitModal(msg);
+            if (thinkPanel && thinkPanel.isConnected()) thinkPanel.fail();
+            return;
+          }
           if (o.t) {
             hasReasoning = true;
             thinkingText += o.t;
-            if (thinkPanel && thinkPanel.isConnected()) thinkPanel.replaceText(thinkingText);
           }
           if (o.tool && window.MiroxExt) window.MiroxExt.onTool(o.tool, msgEl);
           if (o.img) {
@@ -1296,24 +1393,19 @@
             bubble.innerHTML = `<div class="gen-image"><img src="${o.img}" draggable="false" alt=""></div><div class="bubble-text"></div>`;
             bubbleText = bubble.querySelector('.bubble-text');
             const img = bubble.querySelector('img'); if (img) img.onclick = () => openImageViewer(o.img);
-            if (thinkPanel && thinkPanel.isConnected()) thinkPanel.replaceText('Generating image…');
             scrollToBottom();
             continue;
           }
           if (o.reasoning_content || o.reasoning) {
             const r = String(o.reasoning_content || o.reasoning || '');
-            if (r) { hasReasoning = true; thinkingText += r; if (thinkPanel && thinkPanel.isConnected()) thinkPanel.replaceText(thinkingText); }
+            if (r) { hasReasoning = true; thinkingText += r; }
           }
           const delta = o.d || o.content || (o.delta && o.delta.content) || '';
           if (delta) {
             rawAll += delta;
             updateSplit();
-            if (thinkPanel && thinkPanel.isConnected()) {
-              if (thinkingTagSeen || hasReasoning) thinkPanel.replaceText(thinkingText);
-            }
             if (answerText.length > 0) {
-              if (!gotToken) {
-                gotToken = true;
+              if (!bubbleText) {
                 if (avatarMascot) setMascotMood('coding', avatarMascot.parentElement.parentElement);
                 ensureBubble();
                 bubble.innerHTML = '<div class="bubble-text"></div>';
@@ -1330,7 +1422,7 @@
       if (signinTriggered) { try { reader.cancel(); } catch {} }
       updateSplit();
       if (thinkPanel && thinkPanel.isConnected()) {
-        if (thinkingTagSeen || hasReasoning) { thinkPanel.replaceText(stripThinkingLeak(thinkingText)); thinkPanel.finalize(); }
+        if (thinkingTagSeen || hasReasoning) thinkPanel.finalize();
         else thinkPanel.hide();
       }
       full = answerText;
@@ -1379,7 +1471,7 @@
       clearTimeout(streamTimeout);
       const aborted = e.name === 'AbortError';
       const msg = aborted ? 'Stopped.' : (e.message || 'Something went wrong.');
-      if (thinkPanel && thinkPanel.isConnected()) thinkPanel.fail(msg);
+      if (thinkPanel && thinkPanel.isConnected()) thinkPanel.fail();
       if (avatarMascot) setMascotMood('error', avatarMascot.parentElement.parentElement);
       const bodyEl = msgEl.querySelector('.message-body');
       if (!bubble) { bubble = document.createElement('div'); bubble.className = 'bubble'; bodyEl.insertBefore(bubble, timeEl); }
@@ -1483,7 +1575,6 @@
       reader.readAsDataURL(file);
     });
   }
-  // Binary files (zip, pdf, office docs, ...) go up as base64 so the server can save them for tools.
   const MAX_BINARY_FILE_BYTES = 25 * 1024 * 1024;
   const BINARY_EXT_RE = /\.(zip|rar|7z|tar|gz|tgz|pdf|docx|xlsx|pptx|jar|apk|exe|bin|mp3|wav|mp4|mov)$/i;
   function readBinaryFile(file) {
@@ -1509,8 +1600,16 @@
   function hasAttachment(name, size) { return pendingFiles.some((f) => f.name === name && f.size === size); }
   function handleFiles(fileList) {
     if (!fileList || !fileList.length) return;
-    const arr = []; for (const f of Array.from(fileList)) { if (hasAttachment(f.name, f.size)) continue; arr.push(f); }
-    if (!arr.length) return;
+    const arr0 = Array.from(fileList).filter((f) => !hasAttachment(f.name, f.size));
+    if (!arr0.length) return;
+    // Free-tier image upload cap (client-side pre-check). Server enforces it too.
+    const incomingImages = arr0.filter((f) => (f.type || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(f.name));
+    const currentImages = pendingFiles.filter((f) => f.type === 'image').length;
+    if (__tier === 'free' && (currentImages + incomingImages.length) > FREE_IMAGE_UPLOAD_CAP) {
+      toast(`Free users can attach up to ${FREE_IMAGE_UPLOAD_CAP} images per message. Upgrade to Pro for more.`, 4500, 'err');
+      return;
+    }
+    const arr = arr0;
     let done = 0; const newFiles = [];
     const finish = () => { newFiles.sort((a, b) => (a.order || 0) - (b.order || 0)); for (const nf of newFiles) if (!hasAttachment(nf.name, nf.size)) pendingFiles.push(nf); updatePreview(); updateSendButtonState(); };
     arr.forEach((f, idx) => {
@@ -2274,6 +2373,7 @@
     on('#sidebarScrim', 'click', closeSidebar);
     on('#brandLogo', 'click', (e) => { e.preventDefault(); startNewChat(); if (window.innerWidth <= 860) closeSidebar(); });
     on('#newChatBtn', 'click', () => { startNewChat(); if (window.innerWidth <= 860) closeSidebar(); });
+    on('#myMiroxBtn', 'click', (e) => { e.preventDefault(); openModal('myMiroxModal'); renderMyMirox(); });
     $$('.sidebar-tab').forEach((tab) => {
       tab.onclick = () => {
         const tabKey = tab.dataset.tab;
@@ -2543,6 +2643,7 @@
       loadPrefs();
       loadI18nCache();
       loadReactions();
+      loadGrowth();
       applyAppearanceFromPrefs();
       applyPrefs();
       loadChats();
