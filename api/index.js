@@ -451,13 +451,17 @@ async function ddgInstantAnswer(query) { try { const r = await fetchT(`https://a
 async function wikiSearch(query) { try { const r = await fetchT(`https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(query)}&srlimit=3&origin=*`, {}, 8000); if (!r.ok) return []; const d = await r.json(); return (d?.query?.search || []).map((h) => ({ title: h.title, url: `https://en.wikipedia.org/wiki/${encodeURIComponent(h.title.replace(/ /g, '_'))}`, snippet: stripHtml(h.snippet), domain: 'en.wikipedia.org' })); } catch { return []; } }
 async function wikiSummary(title) { try { const r = await fetchT(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`, {}, 7000); if (!r.ok) return null; const d = await r.json(); if (!d.extract) return null; return { source: 'Wikipedia', heading: d.title || title, text: d.extract, url: d.content_urls?.desktop?.page || '' }; } catch { return null; } }
 async function webSearch(query, max = 5) {
-  const [organic, instant] = await Promise.all([duckSearch(query, max), ddgInstantAnswer(query)]);
-  let results = organic.length ? organic : await wikiSearch(query);
+  const rawQuery = String(query || '').trim();
+  const domainMatch = rawQuery.match(/^(?:site:)?([a-z0-9.-]+\.[a-z]{2,})(?:\s+(.+))?$/i);
+  const siteMatch = rawQuery.match(/^site:([a-z0-9.-]+)(?:\s+(.+))?$/i);
+  const searchQuery = siteMatch ? `site:${siteMatch[1]} ${siteMatch[2] || ''}`.trim() : (domainMatch ? `site:${domainMatch[1]} ${domainMatch[2] || ''}`.trim() : rawQuery);
+  const [organic, instant] = await Promise.all([duckSearch(searchQuery, max), ddgInstantAnswer(searchQuery)]);
+  let results = organic.length ? organic : await wikiSearch(searchQuery);
   const seen = new Set();
   results = results.filter((r) => (seen.has(r.url) ? false : (seen.add(r.url), true))).slice(0, max);
   let overview = instant && instant.text ? { ...instant, kind: 'instant' } : null;
-  if (!overview) { const ws = await wikiSummary(results[0]?.title || query); if (ws) overview = { ...ws, kind: 'wiki' }; }
-  return { results, overview };
+  if (!overview) { const ws = await wikiSummary(results[0]?.title || searchQuery); if (ws) overview = { ...ws, kind: 'wiki' }; }
+  return { results, overview, query: searchQuery };
 }
 function formatSearchContext(query, data) {
   const parts = [];
@@ -1154,7 +1158,9 @@ app.post(CHAT_PATHS, async (req, res) => {
   }
 
   const text = safeStr(body.message, 200000).trim();
-  const files = Array.isArray(body.files) ? body.files.slice(0, 4) : [];
+  const incomingFiles = Array.isArray(body.files) ? body.files : [];
+  const files = incomingFiles.slice(0, 10);
+  const uploadedImages = incomingFiles.filter((f) => f && (f.type === 'image' || /^image\//i.test(String(f.mimeType || f.mime_type || '')))).length;
   const history = Array.isArray(body.history) ? body.history.slice(-14) : [];
   const bridge = body.bridge && body.bridge.connected ? body.bridge : null;
   const forceSearch = body.search === true;
@@ -1194,6 +1200,7 @@ app.post(CHAT_PATHS, async (req, res) => {
 
     const tier = u ? u.tier : 'free';
     const plan = PLANS[tier] || PLANS.free;
+    if (tier === 'free' && uploadedImages > 10) return fail(413, 'Free users can upload up to 10 images per message.');
     if (cfg.tier === 'pro' && TIER_RANK[tier] < 1) return fail(403, 'Pro plan required');
     if (cfg.tier === 'ultimate' && tier !== 'ultimate') return fail(403, 'Ultimate plan required');
     if (!text && !files.length) return fail(400, 'Empty message');
@@ -1272,6 +1279,18 @@ app.post(CHAT_PATHS, async (req, res) => {
         chain: (m) => miroxChatChain({ messages: m, cfg, stream: false, vision: visionUsed, deepThink }).then((r) => r.res),
         emit: (o) => { if (wantStream) sseWrite(res, o); },
         isClosed: () => closed,
+        maxSteps: tier === 'free' ? 20 : 60,
+        beforeTool: async () => {
+          if (tier !== 'free') return true;
+          const now = Date.now();
+          const windowMs = 3 * 60 * 60 * 1000;
+          if (!Array.isArray(u.tool_step_timestamps)) u.tool_step_timestamps = [];
+          u.tool_step_timestamps = u.tool_step_timestamps.filter((ts) => Number.isFinite(ts) && now - ts < windowMs);
+          if (u.tool_step_timestamps.length >= 20) { await persist(); return false; }
+          u.tool_step_timestamps.push(now);
+          await persist();
+          return true;
+        },
       });
       await finishUsage();
       if (!wantStream) {
