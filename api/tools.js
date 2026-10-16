@@ -107,6 +107,58 @@ const LOCAL = {
       return { dest: relOf(ws, out), bytes: (await fs.stat(out)).size };
     },
   },
+  create_directory: {
+    desc: 'Create a folder in the workspace. args: {"path": "src/components"}',
+    run: async (a, ws) => {
+      const dir = inside(ws, a.path);
+      await fs.mkdir(dir, { recursive: true });
+      return { path: relOf(ws, dir), created: true };
+    },
+  },
+  append_file: {
+    desc: 'Append text to a file in the workspace. args: {"path": "notes.md", "content": "..."}',
+    run: async (a, ws) => {
+      const file = inside(ws, a.path);
+      const content = String(a.content ?? '');
+      if (content.length > 500000) throw new Error('Append too large');
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.appendFile(file, content, 'utf8');
+      return { path: relOf(ws, file), appendedBytes: Buffer.byteLength(content) };
+    },
+  },
+  search_files: {
+    desc: 'Search text files in a workspace folder. args: {"query": "TODO", "path": "."}',
+    run: async (a, ws) => {
+      const root = inside(ws, a.path || '.');
+      const query = String(a.query || '').slice(0, 200);
+      if (!query) throw new Error('query is required');
+      const matches = [];
+      const walk = async (dir, depth = 0) => {
+        if (depth > 8 || matches.length >= 100) return;
+        let entries = [];
+        try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { return; }
+        for (const ent of entries) {
+          if (matches.length >= 100) break;
+          if (ent.name === 'node_modules' || ent.name === '.git' || ent.name === '.next') continue;
+          const full = path.join(dir, ent.name);
+          if (ent.isDirectory()) { await walk(full, depth + 1); continue; }
+          try {
+            const st = await fs.stat(full);
+            if (st.size > 1_000_000) continue;
+            const data = await fs.readFile(full, 'utf8');
+            const lines = data.split(/\r?\n/);
+            lines.forEach((line, i) => { if (line.includes(query) && matches.length < 100) matches.push({ path: relOf(ws, full), line: i + 1, text: line.slice(0, 300) }); });
+          } catch {}
+        }
+      };
+      await walk(root);
+      return { query, matches };
+    },
+  },
+  workspace_info: {
+    desc: 'Show workspace path and top-level files. args: {}',
+    run: async (_a, ws) => ({ path: ws, items: (await fs.readdir(ws, { withFileTypes: true })).slice(0, 100).map((e) => ({ name: e.name, dir: e.isDirectory() })) }),
+  },
   fetch_url: {
     desc: 'Fetch a web page and return its text. args: {"url": "https://..."}',
     run: async (a) => {
@@ -195,9 +247,7 @@ export async function saveAttachments(files, user) {
   return saved;
 }
 
-const TOOL_PROTOCOL = `TOOLS: You can act on the user's behalf with tools. To use one, reply with ONLY this block and nothing else:
-<tool_call>{"name": "tool_name", "arguments": {...}}</tool_call>
-The result comes back in a <tool_result> message. Use one tool per reply. When you have what you need, write the final answer normally with no <tool_call>. Use relative paths; files live in the user's private workspace. Use remember only for facts the user asked you to keep.
+const TOOL_PROTOCOL = `TOOLS ARE EXECUTABLE, NOT NARRATION. If a tool is needed, your entire assistant response must be exactly one <tool_call>{\"name\":\"tool_name\",\"arguments\":{...}}</tool_call> block with valid JSON. Do not describe an imagined extraction, browsing, or tool call in prose. Wait for the actual <tool_result>, then continue. Use the exact attachment paths explicitly listed in the latest user message; do not guess a filename from previous chats. Files are in this user's private workspace. Use relative paths. Use remember only when the user explicitly asks you to remember something. When done, answer normally and never print tool protocol tags to the user.
 Available tools:`;
 
 function messageParts(data) {
