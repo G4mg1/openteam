@@ -40,7 +40,6 @@ function cleanServer(raw) {
   if (!id) return null;
   const base = { id, name: clip(raw.name, 60) || id, enabled: raw.enabled !== false };
   if (raw.transport === 'stdio') {
-    // Spawning local processes is only allowed on a machine you control (npm start locally).
     if (process.env.MIROX_ALLOW_STDIO !== '1') return null;
     const command = clip(raw.command, 300);
     if (!command) return null;
@@ -69,7 +68,6 @@ export function sanitizeSettings(raw) {
   };
 }
 
-// Used by the remember tool. Mutates the user's settings; the caller persists.
 export function addMemory(user, fact) {
   const f = clip(fact, 300);
   if (!user) return { ok: false, error: 'Login required' };
@@ -81,7 +79,6 @@ export function addMemory(user, fact) {
   return { ok: true, saved: f };
 }
 
-// Text injected into the system prompt for logged-in chats.
 export function userContextPrompt(u) {
   const s = getSettings(u);
   const p = s.personalization;
