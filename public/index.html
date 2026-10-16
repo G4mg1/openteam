@@ -12,7 +12,7 @@
 <link href="https://cdn.jsdelivr.net/npm/remixicon@4.9.0/fonts/remixicon.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/devicon.min.css" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
-<link rel="stylesheet" href="/ext/mirox-extras.css">
+
 </head>
 <body>
 
@@ -395,6 +395,19 @@
         </div>
         <button id="logoutBtn" class="modal-btn danger" type="button" style="display:none;margin-top:10px;">Sign out</button>
       </div>
+      <div class="setting-group" id="personalizationSettingsGroup">
+        <h4>Personalization &amp; persona</h4>
+        <p class="setting-help">Set how Mirox should respond. These options use the existing account settings.</p>
+        <label class="setting-row-info" for="personaSettingInput"><span class="setting-row-label">Custom persona / instructions</span></label>
+        <textarea id="personaSettingInput" class="modal-input" rows="3" maxlength="1000" placeholder="e.g. Explain things simply, use practical examples…" style="width:100%;resize:vertical;margin:8px 0 12px;"></textarea>
+        <div class="setting-row"><label class="setting-row-info" for="personalizationNameInput"><span class="setting-row-label">Name</span></label><input id="personalizationNameInput" class="modal-input" maxlength="60" placeholder="Name" style="max-width:220px;"></div>
+        <div class="setting-row"><label class="setting-row-info" for="personalizationNicknameInput"><span class="setting-row-label">Preferred nickname</span></label><input id="personalizationNicknameInput" class="modal-input" maxlength="60" placeholder="Nickname" style="max-width:220px;"></div>
+        <label class="setting-row-info" for="personalizationAboutInput"><span class="setting-row-label">About you / response context</span></label>
+        <textarea id="personalizationAboutInput" class="modal-input" rows="2" maxlength="1500" placeholder="Optional context to help tailor answers…" style="width:100%;resize:vertical;margin:8px 0 12px;"></textarea>
+        <div class="setting-row"><label class="setting-row-info" for="personalizationToneSelect"><span class="setting-row-label">Response tone</span></label><select id="personalizationToneSelect" class="modal-select" style="max-width:220px"><option value="default">Default</option><option value="friendly">Friendly</option><option value="concise">Concise</option><option value="formal">Formal</option><option value="playful">Playful</option></select></div>
+        <button id="savePersonalizationBtn" class="modal-btn primary" type="button" style="margin-top:12px">Save personalization</button>
+        <span id="personalizationSaveStatus" class="setting-help" aria-live="polite"></span>
+      </div>
       <div class="setting-group">
         <h4>Reasoning</h4>
         <div class="setting-row">
@@ -594,6 +607,6 @@
 </div>
 
 <script src="/script.js" defer></script>
-<script src="/ext/mirox-extras.js" defer></script>
+
 </body>
 </html>
