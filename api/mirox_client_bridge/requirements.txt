@@ -1,4 +1,0 @@
-aiohttp>=3.9
-# Optional: clipboard and screenshot support
-pyperclip>=1.8
-pillow>=10.0
