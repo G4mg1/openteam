@@ -1,10 +1,9 @@
 /* ============================================================
-   MiroxAI Backend v112 — clear thinking routing
-   v112: · Web app (session)  → thinking ON, streams live
-         · API (mxk_live_ key) → thinking OFF, stripped from output
+   MiroxAI Backend v113 — clean app/API separation
+   v113: · /v1/api/*        → web app routes → thinking ALWAYS ON
+         · /v1/chat/*       → external API  → thinking ALWAYS OFF
          · accepts every input shape (messages[], message, prompt…)
-         · OpenAI-compatible response fields (choices[0]…)
-         · durable keys + regex resolver
+         · durable keys + regex model resolver + restore endpoint
    ============================================================ */
 import express from 'express';
 import cors from 'cors';
@@ -128,7 +127,7 @@ Support: support@miroxai.org
 
 Never invent features or prices not listed here.`;
 
-/* ⚡ THINKING RULE — used ONLY by the web app (session cookie). Never for API keys. */
+/* ⚡ THINKING RULE — used by the WEB APP ONLY (never on /v1/chat/completions) */
 const THINKING_RULE = `You ALWAYS think before answering. Write your reasoning inside ONE <thinking>...</thinking> block, then write the answer right after.
 
 The thinking must read like a REAL person thinking to themselves, first person, casual and honest. Example:
@@ -180,7 +179,6 @@ async function fetchT(url, opts = {}, ms = 20000) {
 }
 function safeEq(a, b) { const x = Buffer.from(String(a)), y = Buffer.from(String(b)); return x.length === y.length && crypto.timingSafeEqual(x, y); }
 
-/* Flatten OpenAI-style content (string | parts[]) to plain text */
 function contentToText(c) {
   if (c == null) return '';
   if (typeof c === 'string') return c;
@@ -206,7 +204,7 @@ function extractReplyText(data) {
   return contentToText(c);
 }
 
-/* Remove <thinking> blocks — used ONLY for API responses */
+/* Strip <thinking> blocks — used ONLY on the external API route */
 function stripThinking(text) {
   if (typeof text !== 'string') return text;
   let out = text.replace(/<thinking>[\s\S]*?<\/thinking>/g, '');
@@ -431,25 +429,31 @@ function fallbackModelId(raw) {
   return 'mirox-tail-r1';
 }
 
-/* ============================================================
-   AUTH — the CRITICAL return here is `viaKey`:
-     • Web app: sends session cookie, no Authorization header → viaKey: false
-     • API:     sends "Authorization: Bearer mxk_live_…"       → viaKey: true
-   `viaKey` is what toggles thinking OFF for API requests only.
-   ============================================================ */
-async function authFromRequest(req) {
+/* ----------------------------------------------------------
+   Two distinct auth helpers — one for each route tree.
+   Web app route   → session cookie only, ignores API key.
+   API route       → API key OR session cookie (for compat).
+---------------------------------------------------------- */
+async function authAppSession(req) {
+  const u = await currentUser(req);
+  return { user: u || null };
+}
+async function authApiRoute(req) {
   const h = String(req.headers.authorization || '');
-  if (!h) return { user: await currentUser(req), viaKey: false }; /* web app */
-  const m = h.match(/^Bearer\s+(mxk_live_[A-Za-z0-9]{24,})$/);
-  if (!m) return { error: 'invalid' };
-  await ensureDb(req);
-  if (!dbOk) return { error: 'invalid' };
-  const owner = db.keys[m[1]];
-  const u = owner ? db.users[owner] : null;
-  const k = u ? u.keys.find((x) => x.key === m[1]) : null;
-  if (!u || !k || k.revoked) return { error: 'invalid' };
-  k.last_used = nowS(); persist();
-  return { user: userFor(owner), viaKey: true }; /* API */
+  if (h) {
+    const m = h.match(/^Bearer\s+(mxk_live_[A-Za-z0-9]{24,})$/);
+    if (!m) return { error: 'invalid', viaKey: true };
+    await ensureDb(req);
+    if (!dbOk) return { error: 'invalid', viaKey: true };
+    const owner = db.keys[m[1]];
+    const u = owner ? db.users[owner] : null;
+    const k = u ? u.keys.find((x) => x.key === m[1]) : null;
+    if (!u || !k || k.revoked) return { error: 'invalid', viaKey: true };
+    k.last_used = nowS(); persist();
+    return { user: userFor(owner), viaKey: true };
+  }
+  const u = await currentUser(req);
+  return { user: u || null, viaKey: false };
 }
 
 /* ---------- Web search ---------- */
@@ -678,7 +682,6 @@ async function generateImage(prompt) {
   if (fromAiroute) return fromAiroute;
   throw new Error(GENERIC_ERR);
 }
-async function editImageWithSource(_sourceDataUrl, editPrompt) { return generateImage(`Edit this image: ${editPrompt}`); }
 
 function sseInit(res) {
   res.status(200);
@@ -691,21 +694,20 @@ function sseInit(res) {
 function sseWrite(res, obj) { if (res.writableEnded || res.destroyed) return; try { res.write('data: ' + JSON.stringify(obj) + '\n\n'); } catch {} }
 function sseDone(res) { if (res.writableEnded || res.destroyed) return; try { res.write('data: [DONE]\n\n'); } catch {} }
 
-/* ============================================================
-   buildSystemPrompt — `apiMode` toggles thinking
-     • apiMode = false  → WEB APP: thinking rule is ADDED → thinking panel fills
-     • apiMode = true   → API:     thinking rule SKIPPED, model told to answer directly
-   ============================================================ */
-function buildSystemPrompt(cfg, bridge, searchUsed, persona, deepThink, modelId, systemExtra, apiMode) {
+/* ----------------------------------------------------------
+   buildSystemPrompt — takes `thinking` boolean explicitly.
+     thinking=true  → add THINKING_RULE (+ DeepThink if on)
+     thinking=false → skip thinking rule, tell model to answer directly
+   No guessing, no viaKey ambiguity.
+---------------------------------------------------------- */
+function buildSystemPrompt({ cfg, bridge, searchUsed, persona, deepThink, modelId, systemExtra, thinking }) {
   let p;
-  if (apiMode) {
-    /* ---------- API KEY PATH: no thinking ---------- */
-    p = IDENTITY_GUARD + '\n\n' + cfg.basePrompt;
-    p += '\n\nNever use <thinking> tags. Never reveal internal reasoning. Give the user the direct final answer only.';
-  } else {
-    /* ---------- WEB APP PATH: thinking fully ON ---------- */
+  if (thinking) {
     p = IDENTITY_GUARD + '\n\n' + THINKING_RULE + '\n\n' + cfg.basePrompt;
     if (deepThink) p += '\n\n' + DEEP_THINK_RULE;
+  } else {
+    p = IDENTITY_GUARD + '\n\n' + cfg.basePrompt;
+    p += '\n\nNever use <thinking> tags. Never reveal internal reasoning. Give the user the direct final answer only.';
   }
   if (modelId === 'mirox-tail-r1') p += '\n\n' + TAIL_R1_REASONING_RULE;
   if (searchUsed) p += '\n\nWEB SEARCH MODE: cite sources as [1], [2] when relevant.';
@@ -722,9 +724,7 @@ function buildEnvBlock(env) {
   return ['[Bridge environment]', `user=${env.user || '?'}`, 'home=~', 'cwd=.', `platform=${env.platform || '?'}`, 'allowed_dirs=home and explicitly configured project folders', `kdeConnect=${env.kde_connect_available ? 'true' : 'false'}`].join('\n');
 }
 
-/* ============================================================
-   extractInput — accept every common client shape
-   ============================================================ */
+/* ---------- Input extraction ---------- */
 function extractInput(body) {
   const out = { text: '', history: [], systemMessages: [], usedShape: '' };
 
@@ -781,6 +781,190 @@ function extractInput(body) {
   return out;
 }
 
+/* ============================================================
+   SHARED CORE — runChat()
+   One implementation used by BOTH routes. Route decides `thinking`.
+   ============================================================ */
+async function runChat({ req, res, thinking, authResult }) {
+  const t0 = Date.now();
+  let closed = false;
+  req.on('close', () => { closed = true; });
+  const isClosed = () => closed;
+
+  const body = req.body || {};
+  const wantStream = body.stream === true || String(req.headers.accept || '').includes('text/event-stream');
+  const rawModel = safeStr(body.model, 200) || 'mirox-tail-r1';
+
+  let model = resolveModelId(rawModel);
+  if (!model) {
+    model = fallbackModelId(rawModel);
+    if (model) console.log(`[chat] fallback: raw="${rawModel}" → "${model}"`);
+  }
+
+  const input = extractInput(body);
+  const text = input.text;
+  const incomingHistory = input.history.slice(-14);
+
+  const files = Array.isArray(body.files) ? body.files.slice(0, 4) : [];
+  const bridge = body.bridge && body.bridge.connected ? body.bridge : null;
+  const forceSearch = body.search === true;
+  const deepThink = body.deep_think === true;
+  const systemExtra = safeStr(body.system_extra, 8000);
+
+  const fail = (code, message, type = 'invalid_request_error') => res.status(code).json({ error: { message, type } });
+  const signinReply = (message) => {
+    if (!wantStream) return res.json({ reply: message, signin_required: true, _ms: Date.now() - t0, provider: 'MiroxAI (SurrRoute)' });
+    sseInit(res); sseWrite(res, { signin_required: true, message }); sseWrite(res, { d: message }); sseWrite(res, { done: true }); sseDone(res); res.end();
+  };
+  const fixedReply = (message) => {
+    if (!wantStream) return res.json({ reply: message, _ms: Date.now() - t0, provider: 'MiroxAI (SurrRoute)' });
+    sseInit(res); sseWrite(res, { p: 'MiroxAI (SurrRoute)' }); sseWrite(res, { d: message }); sseWrite(res, { done: true }); sseDone(res); res.end();
+  };
+
+  try {
+    if (authResult.error) return fail(401, 'Invalid API key', 'authentication_error');
+    const u = authResult.user || null;
+    const viaKey = !!authResult.viaKey;
+
+    if (!model) {
+      const list = API_MODELS.map((m) => `"${m}"`).join(', ');
+      return fail(404, `Model "${rawModel}" not found. Available: ${list}. See GET /v1/models.`, 'model_not_found');
+    }
+    const effectiveModel = model;
+
+    /* API-key routes only serve the public API_MODELS list */
+    if (viaKey && !API_MODELS.includes(effectiveModel)) {
+      const list = API_MODELS.map((m) => `"${m}"`).join(', ');
+      return fail(403, `Model "${effectiveModel}" is not available through the API. Available: ${list}.`);
+    }
+
+    const cfg = MIROX_MODELS[effectiveModel];
+    if (!cfg) return fail(404, `Model "${rawModel}" not found. See GET /v1/models.`, 'model_not_found');
+
+    const tier = u ? u.tier : 'free';
+    const plan = PLANS[tier] || PLANS.free;
+    if (cfg.tier === 'pro' && TIER_RANK[tier] < 1) return fail(403, 'Pro plan required');
+    if (cfg.tier === 'ultimate' && tier !== 'ultimate') return fail(403, 'Ultimate plan required');
+
+    if (!text && !files.length) {
+      return fail(400, `No user message found. Send either {"message": "..."} or {"messages":[{"role":"user","content":"..."}]}. See /developers.`);
+    }
+
+    const imagePrompt = (files.length || deepThink) ? null : detectImageIntent(text);
+    if (imagePrompt) {
+      if (!u) return signinReply('Sign in to generate images with Mirox.');
+      if (u.image_used >= plan.image_limit) return fixedReply(`Daily image limit reached for the ${plan.label} plan.`);
+      try {
+        const dataUrl = await generateImage(imagePrompt);
+        u.image_used += 1;
+        await saveImage(u, imagePrompt, dataUrl);
+        logEvent({ email: u.email, event: 'image_generated_chat', prompt: imagePrompt.slice(0, 300) });
+        await persist();
+        if (!wantStream) return res.json({ reply: '', image: dataUrl, watermarked: true, _ms: Date.now() - t0 });
+        sseInit(res); sseWrite(res, { img: dataUrl, watermarked: true }); sseWrite(res, { done: true }); sseDone(res); return res.end();
+      } catch { return fixedReply('Image generation failed. Please try again in a moment.'); }
+    }
+
+    const searchQuery = forceSearch ? text : detectSearchIntent(text);
+    if (wantStream) sseInit(res);
+
+    const msgs = [{ role: 'system', content: buildSystemPrompt({
+      cfg, bridge, searchUsed: !!searchQuery, persona: u?.persona || '',
+      deepThink, modelId: effectiveModel, systemExtra, thinking,
+    }) }];
+
+    if (input.systemMessages.length) {
+      msgs.push({ role: 'system', content: input.systemMessages.join('\n\n').slice(0, 8000) });
+    }
+    for (const h of incomingHistory) {
+      const role = h.role === 'assistant' ? 'assistant' : 'user';
+      const content = safeStr(h.content, 6000).trim();
+      if (content) msgs.push({ role, content });
+    }
+
+    let userText = text || '(no text)';
+    if (bridge && !userText.startsWith('[Bridge environment]')) userText = buildEnvBlock(bridge.env || {}) + '\n\n' + userText;
+    const visionParts = [];
+    let visionUsed = false;
+    for (const f of files) {
+      if (f && f.type === 'image' && typeof f.dataUrl === 'string' && f.dataUrl.startsWith('data:image/')) {
+        visionParts.push({ type: 'image_url', image_url: { url: f.dataUrl } });
+        visionUsed = true;
+      } else if (f && f.type === 'text' && typeof f.content === 'string') {
+        userText += `\n\n[Attached file: ${safeStr(f.name, 120) || 'file'}]\n${f.content.slice(0, 60000)}`;
+      }
+    }
+    msgs.push({ role: 'user', content: visionParts.length ? [{ type: 'text', text: userText }, ...visionParts] : userText });
+
+    let searchData = null;
+    if (searchQuery) {
+      if (wantStream) sseWrite(res, { search: { query: searchQuery } });
+      searchData = await webSearch(searchQuery, 5).catch(() => ({ results: [], overview: null }));
+      if (wantStream) {
+        if (searchData.overview?.text) sseWrite(res, { overview: { source: searchData.overview.source, heading: searchData.overview.heading || '', text: searchData.overview.text, url: searchData.overview.url || '' } });
+        for (const r of searchData.results) { if (closed) break; sseWrite(res, { source: { title: r.title, url: r.url, domain: r.domain || '' } }); await sleep(60); }
+        sseWrite(res, { search_done: true, count: searchData.results.length });
+      }
+      const hasData = searchData.results.length || searchData.overview;
+      msgs.push({ role: 'system', content: hasData ? formatSearchContext(searchQuery, searchData) : `Web search for "${searchQuery}" returned no results. Answer from your own knowledge and say you could not verify.` });
+    }
+
+    const finishUsage = async () => {
+      logChat({ email: u ? u.email : 'guest', model: effectiveModel, message: (text || '(vision)').slice(0, 200) });
+      if (u) { u.daily_used += 1; if (visionUsed) u.vision_used += 1; if (effectiveModel === 'mirox-eclipse-2.0') u.eclipse_used += 1; }
+      await persist();
+    };
+
+    const result = await miroxChatChain({ messages: msgs, cfg, stream: wantStream, vision: visionUsed, deepThink });
+
+    if (!wantStream) {
+      const data = await result.res.json().catch(() => ({}));
+      let reply = extractReplyText(data) || '(empty)';
+      if (!thinking) reply = stripThinking(reply);
+      await finishUsage();
+
+      /* Return BOTH formats for maximum compatibility */
+      return res.json({
+        reply,
+        _ms: Date.now() - t0,
+        provider: 'MiroxAI (SurrRoute)',
+        model: effectiveModel,
+        search: searchQuery ? { query: searchQuery, results: searchData.results, overview: searchData.overview } : null,
+        object: 'chat.completion',
+        choices: [{ index: 0, message: { role: 'assistant', content: reply }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+      });
+    }
+
+    /* ---------- STREAMING ----------
+       thinking=true  → pass through RAW, so <thinking> flows to the app
+       thinking=false → buffer, strip <thinking>, then chunk out
+    --------------------------------- */
+    sseWrite(res, { p: 'MiroxAI (SurrRoute)', model: effectiveModel, deep_think: deepThink, thinking });
+
+    if (!thinking) {
+      let buf = '';
+      await pipeProviderStream(result.res.body, (d) => { buf += d; }, isClosed, () => sseWrite(res, { limit: true }));
+      const clean = stripThinking(buf);
+      const CH = 28;
+      for (let i = 0; i < clean.length; i += CH) {
+        if (closed) break;
+        sseWrite(res, { d: clean.slice(i, i + CH) });
+      }
+    } else {
+      await pipeProviderStream(result.res.body, (d) => sseWrite(res, { d }), isClosed, () => sseWrite(res, { limit: true }));
+    }
+    if (!closed) sseWrite(res, { done: true });
+    sseDone(res);
+    await finishUsage();
+    res.end();
+  } catch (e) {
+    console.warn('[chat]', e.message);
+    if (res.headersSent) { if (wantStream) { sseWrite(res, { error: { message: GENERIC_ERR } }); sseDone(res); } try { res.end(); } catch {} }
+    else res.status(502).json({ error: { message: GENERIC_ERR } });
+  }
+}
+
 /* ---------- App ---------- */
 const app = express();
 app.set('trust proxy', 1);
@@ -790,14 +974,12 @@ app.use(express.json({ limit: '20mb' }));
 app.use(express.text({ type: ['text/*', 'application/x-www-form-urlencoded'], limit: '1mb' }));
 
 app.use((req, res, next) => {
-  if (req.path.startsWith('/v1') || req.path.startsWith('/openai') || /chat\/completions/.test(req.path)) {
-    const hasKey = !!req.headers.authorization;
-    let shape = 'none';
-    if (Array.isArray(req.body?.messages)) shape = `messages[${req.body.messages.length}]`;
-    else if (typeof req.body?.message === 'string') shape = 'message';
-    else if (typeof req.body?.prompt === 'string') shape = 'prompt';
-    else if (typeof req.body?.input === 'string') shape = 'input';
-    console.log(`[api] ${req.method} ${req.path} key=${hasKey ? 'yes' : 'no'} mode=${hasKey ? 'API (no thinking)' : 'APP (thinking ON)'} body=${shape}`);
+  const isChat = /chat/.test(req.path) && req.method === 'POST';
+  const isV1Api = req.path.startsWith('/v1/api');
+  const isV1Chat = req.path.startsWith('/v1/chat') || req.path === '/v1/chat/completions' || req.path === '/openai/v1/chat/completions';
+  if (isChat || isV1Api || isV1Chat) {
+    const route = isV1Api ? 'APP  (thinking ON)' : 'API  (thinking OFF)';
+    console.log(`[route] ${req.method} ${req.path} → ${route}`);
   }
   next();
 });
@@ -816,11 +998,15 @@ const publicUser = (u) => {
 const publicKey = (k) => ({ id: k.id, name: k.name, key: k.key, created: k.created, last_used: k.last_used || 0, revoked: !!k.revoked });
 
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
-  res.json({ ok: true, app: 'MiroxAI', version: 'v112',
+  res.json({ ok: true, app: 'MiroxAI', version: 'v113',
     providers: { openrouter: !!OP_KEY, hf: !!HF_API_KEY, airoute: !!AIROUTE_KEY },
     primary_provider: 'MiroxAI (SurrRoute)',
     watermark: 'MIROXAI-WATERMARK-v1-LOGO',
-    thinking: { app: true, deep_think_app: true, api: false, api_deep_think: false },
+    routes: {
+      app:  '/v1/api/chat  (thinking ON, session cookie)',
+      api:  '/v1/chat/completions  (thinking OFF, API key, OpenAI-compatible)',
+    },
+    thinking: { app: true, api: false },
     flagship: 'mirox-tail-r1', flagship_free: true,
     input_formats: ['message', 'messages[]', 'prompt', 'input', 'inputs', 'content', 'text'],
     image_provider: HF_API_KEY ? 'huggingface' : (AIROUTE_KEY ? 'airoute' : null),
@@ -854,13 +1040,14 @@ const MODEL_LIST_PATHS = [
   '/v1/models', '/v1/models/',
   '/models', '/models/',
   '/api/models', '/api/models/',
+  '/v1/api/models', '/v1/api/models/',
   '/openai/v1/models', '/openai/v1/models/',
   '/api/v1/models', '/api/v1/models/',
   '/v1/chat/completions/models', '/v1/chat/completions/models/',
 ];
 app.get(MODEL_LIST_PATHS, (req, res) => { res.setHeader('Cache-Control', 'no-store'); res.json(openaiModelList()); });
 app.head(MODEL_LIST_PATHS, (req, res) => { res.setHeader('Cache-Control', 'no-store'); res.status(200).end(); });
-app.get(['/v1/models/*', '/openai/v1/models/*', '/api/v1/models/*'], (req, res) => {
+app.get(['/v1/models/*', '/openai/v1/models/*', '/api/v1/models/*', '/v1/api/models/*'], (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const wildcard = req.params[0] || '';
   const resolved = resolveModelId(wildcard);
@@ -881,7 +1068,7 @@ app.get(['/v1/models/*', '/openai/v1/models/*', '/api/v1/models/*'], (req, res) 
 
 app.get('/api/debug/resolve', (req, res) => {
   const m = String(req.query.model || '');
-  res.json({ input: m, resolved: resolveModelId(m), fallback: fallbackModelId(m), known_models: Object.keys(MIROX_MODELS), api_models: API_MODELS, version: 'v112' });
+  res.json({ input: m, resolved: resolveModelId(m), fallback: fallbackModelId(m), known_models: Object.keys(MIROX_MODELS), api_models: API_MODELS, version: 'v113' });
 });
 app.post('/api/debug/parse', (req, res) => {
   const parsed = extractInput(req.body || {});
@@ -902,11 +1089,12 @@ app.get(['/api/config', '/config'], (req, res) => {
     icon: m.flagship ? 'ri-star-smile-line' : undefined,
   }));
   res.json({
-    app: { name: 'MiroxAI', version: 'v112' },
+    app: { name: 'MiroxAI', version: 'v113' },
     models, default_model: 'mirox-tail-r1', plans: PLANS,
     tts_available: !!F_API, search_available: true, vision_available: true, image_intent: true, image_edit: false,
     image_requires_signin: false, watermark: true,
     thinking: true, deep_think: true, api_thinking: false,
+    routes: { app_chat: '/v1/api/chat', api_chat: '/v1/chat/completions', app_images: '/v1/api/images' },
     input_formats: ['message', 'messages[]', 'prompt', 'input', 'inputs', 'content', 'text'],
     loginment_available: !!LM_CLIENT_ID, email_login_available: ALLOW_EMAIL_LOGIN,
     airoute_available: !!AIROUTE_KEY, openrouter_available: !!OP_KEY, hf_available: !!HF_API_KEY,
@@ -1164,15 +1352,28 @@ app.get(['/api/search', '/search'], async (req, res) => {
   catch { res.status(500).json({ ok: false, error: 'Search failed' }); }
 });
 
-/* IMAGE GEN API */
-app.post(['/v1/images/generations', '/openai/v1/images/generations', '/api/v1/images/generations'], async (req, res) => {
+/* ============================================================
+   WEB APP ROUTES  →  /v1/api/*
+   thinking = ALWAYS ON. Session cookie only.
+   ============================================================ */
+app.post('/v1/api/chat', async (req, res) => {
+  const auth = await authAppSession(req);
+  return runChat({ req, res, thinking: true, authResult: { user: auth.user, viaKey: false } });
+});
+
+/* Legacy app alias (so older frontend keeps working) */
+app.post('/v1/api/chat/completions', async (req, res) => {
+  const auth = await authAppSession(req);
+  return runChat({ req, res, thinking: true, authResult: { user: auth.user, viaKey: false } });
+});
+
+/* Web app image generation */
+app.post('/v1/api/images', async (req, res) => {
   try {
     const body = req.body || {};
     const prompt = (typeof body.prompt === 'string' ? body.prompt : (typeof body.message === 'string' ? body.message : contentToText(body.input))).trim();
     if (!prompt) return res.status(400).json({ error: { message: 'Prompt required' } });
-    const auth = await authFromRequest(req);
-    if (auth.error) return res.status(401).json({ error: { message: 'Invalid API key' } });
-    const u = auth.user;
+    const u = await currentUser(req);
     if (!u) return res.status(401).json({ error: { message: 'Sign in to generate images' } });
     const plan = PLANS[u.tier] || PLANS.free;
     if (u.image_used >= plan.image_limit) return res.status(429).json({ error: { message: 'Daily image limit reached' } });
@@ -1186,199 +1387,40 @@ app.post(['/v1/images/generations', '/openai/v1/images/generations', '/api/v1/im
 });
 
 /* ============================================================
-   CHAT COMPLETIONS
+   EXTERNAL API ROUTES  →  /v1/chat/completions
+   thinking = ALWAYS OFF. API key OR session cookie.
    ============================================================ */
-const CHAT_PATHS = [
+const API_CHAT_PATHS = [
   '/v1/chat/completions',
   '/chat/completions',
   '/openai/v1/chat/completions',
   '/api/v1/chat/completions',
   '/api/chat/completions',
 ];
+app.post(API_CHAT_PATHS, async (req, res) => {
+  const auth = await authApiRoute(req);
+  return runChat({ req, res, thinking: false, authResult: auth });
+});
 
-app.post(CHAT_PATHS, async (req, res) => {
-  const t0 = Date.now();
-  let closed = false;
-  req.on('close', () => { closed = true; });
-  const isClosed = () => closed;
-
-  const body = req.body || {};
-  const wantStream = body.stream === true || String(req.headers.accept || '').includes('text/event-stream');
-  const rawModel = safeStr(body.model, 200) || 'mirox-tail-r1';
-
-  let model = resolveModelId(rawModel);
-  if (!model) {
-    model = fallbackModelId(rawModel);
-    if (model) console.log(`[chat] fallback: raw="${rawModel}" → "${model}"`);
-  }
-
-  const input = extractInput(body);
-  const text = input.text;
-  const incomingHistory = input.history.slice(-14);
-
-  const files = Array.isArray(body.files) ? body.files.slice(0, 4) : [];
-  const bridge = body.bridge && body.bridge.connected ? body.bridge : null;
-  const forceSearch = body.search === true;
-  const sourceImage = safeStr(body.source_image, 12 * 1024 * 1024);
-  const deepThink = body.deep_think === true;
-  const systemExtra = safeStr(body.system_extra, 8000);
-
-  const fail = (code, message, type = 'invalid_request_error') => res.status(code).json({ error: { message, type } });
-  const signinReply = (message) => {
-    if (!wantStream) return res.json({ reply: message, signin_required: true, _ms: Date.now() - t0, provider: 'MiroxAI (SurrRoute)' });
-    sseInit(res); sseWrite(res, { signin_required: true, message }); sseWrite(res, { d: message }); sseWrite(res, { done: true }); sseDone(res); res.end();
-  };
-  const fixedReply = (message) => {
-    if (!wantStream) return res.json({ reply: message, _ms: Date.now() - t0, provider: 'MiroxAI (SurrRoute)' });
-    sseInit(res); sseWrite(res, { p: 'MiroxAI (SurrRoute)' }); sseWrite(res, { d: message }); sseWrite(res, { done: true }); sseDone(res); res.end();
-  };
-
+/* External API image generation (OpenAI-compatible) */
+app.post(['/v1/images/generations', '/openai/v1/images/generations', '/api/v1/images/generations'], async (req, res) => {
   try {
-    const auth = await authFromRequest(req);
-    if (auth.error) return fail(401, 'Invalid API key', 'authentication_error');
-    const u = auth.user || null;
-
-    /* ---------- THIS IS THE THINKING TOGGLE ----------
-       viaKey === true  → API request → apiMode = true → NO thinking
-       viaKey === false → web app     → apiMode = false → thinking ON
-    --------------------------------------------------- */
-    const viaKey = !!auth.viaKey;
-    const apiMode = viaKey;
-
-    if (!model) {
-      const list = API_MODELS.map((m) => `"${m}"`).join(', ');
-      return fail(404, `Model "${rawModel}" not found. Available: ${list}. See GET /v1/models.`, 'model_not_found');
-    }
-    const effectiveModel = model;
-
-    if (viaKey && !API_MODELS.includes(effectiveModel)) {
-      const list = API_MODELS.map((m) => `"${m}"`).join(', ');
-      return fail(403, `Model "${effectiveModel}" is not available through the API. Available: ${list}.`);
-    }
-
-    const cfg = MIROX_MODELS[effectiveModel];
-    if (!cfg) return fail(404, `Model "${rawModel}" not found. See GET /v1/models.`, 'model_not_found');
-
-    const tier = u ? u.tier : 'free';
-    const plan = PLANS[tier] || PLANS.free;
-    if (cfg.tier === 'pro' && TIER_RANK[tier] < 1) return fail(403, 'Pro plan required');
-    if (cfg.tier === 'ultimate' && tier !== 'ultimate') return fail(403, 'Ultimate plan required');
-
-    if (!text && !files.length) {
-      return fail(400, `No user message found. Send either {"message": "..."} or OpenAI-style {"messages":[{"role":"user","content":"..."}]}. See /developers.`);
-    }
-
-    const imagePrompt = (files.length || deepThink) ? null : detectImageIntent(text);
-    if (imagePrompt) {
-      if (!u) return signinReply('Sign in to generate images with Mirox.');
-      if (u.image_used >= plan.image_limit) return fixedReply(`Daily image limit reached for the ${plan.label} plan.`);
-      try {
-        const dataUrl = await generateImage(imagePrompt);
-        u.image_used += 1;
-        await saveImage(u, imagePrompt, dataUrl);
-        logEvent({ email: u.email, event: 'image_generated_chat', prompt: imagePrompt.slice(0, 300) });
-        await persist();
-        if (!wantStream) return res.json({ reply: '', image: dataUrl, watermarked: true, _ms: Date.now() - t0 });
-        sseInit(res); sseWrite(res, { img: dataUrl, watermarked: true }); sseWrite(res, { done: true }); sseDone(res); return res.end();
-      } catch { return fixedReply('Image generation failed. Please try again in a moment.'); }
-    }
-
-    const searchQuery = forceSearch ? text : detectSearchIntent(text);
-    if (wantStream) sseInit(res);
-
-    /* Build the system prompt — thinking is added only when !apiMode */
-    const msgs = [{ role: 'system', content: buildSystemPrompt(cfg, bridge, !!searchQuery, u?.persona || '', deepThink, effectiveModel, systemExtra, apiMode) }];
-
-    if (input.systemMessages.length) {
-      msgs.push({ role: 'system', content: input.systemMessages.join('\n\n').slice(0, 8000) });
-    }
-    for (const h of incomingHistory) {
-      const role = h.role === 'assistant' ? 'assistant' : 'user';
-      const content = safeStr(h.content, 6000).trim();
-      if (content) msgs.push({ role, content });
-    }
-
-    let userText = text || '(no text)';
-    if (bridge && !userText.startsWith('[Bridge environment]')) userText = buildEnvBlock(bridge.env || {}) + '\n\n' + userText;
-    const visionParts = [];
-    let visionUsed = false;
-    for (const f of files) {
-      if (f && f.type === 'image' && typeof f.dataUrl === 'string' && f.dataUrl.startsWith('data:image/')) {
-        visionParts.push({ type: 'image_url', image_url: { url: f.dataUrl } });
-        visionUsed = true;
-      } else if (f && f.type === 'text' && typeof f.content === 'string') {
-        userText += `\n\n[Attached file: ${safeStr(f.name, 120) || 'file'}]\n${f.content.slice(0, 60000)}`;
-      }
-    }
-    msgs.push({ role: 'user', content: visionParts.length ? [{ type: 'text', text: userText }, ...visionParts] : userText });
-
-    let searchData = null;
-    if (searchQuery) {
-      if (wantStream) sseWrite(res, { search: { query: searchQuery } });
-      searchData = await webSearch(searchQuery, 5).catch(() => ({ results: [], overview: null }));
-      if (wantStream) {
-        if (searchData.overview?.text) sseWrite(res, { overview: { source: searchData.overview.source, heading: searchData.overview.heading || '', text: searchData.overview.text, url: searchData.overview.url || '' } });
-        for (const r of searchData.results) { if (closed) break; sseWrite(res, { source: { title: r.title, url: r.url, domain: r.domain || '' } }); await sleep(60); }
-        sseWrite(res, { search_done: true, count: searchData.results.length });
-      }
-      const hasData = searchData.results.length || searchData.overview;
-      msgs.push({ role: 'system', content: hasData ? formatSearchContext(searchQuery, searchData) : `Web search for "${searchQuery}" returned no results. Answer from your own knowledge and say you could not verify.` });
-    }
-
-    const finishUsage = async () => {
-      logChat({ email: u ? u.email : 'guest', model: effectiveModel, message: (text || '(vision)').slice(0, 200) });
-      if (u) { u.daily_used += 1; if (visionUsed) u.vision_used += 1; if (effectiveModel === 'mirox-eclipse-2.0') u.eclipse_used += 1; }
-      await persist();
-    };
-
-    const result = await miroxChatChain({ messages: msgs, cfg, stream: wantStream, vision: visionUsed, deepThink });
-
-    if (!wantStream) {
-      const data = await result.res.json().catch(() => ({}));
-      let reply = extractReplyText(data) || '(empty)';
-      if (apiMode) reply = stripThinking(reply);
-      await finishUsage();
-      return res.json({
-        reply,
-        _ms: Date.now() - t0,
-        provider: 'MiroxAI (SurrRoute)',
-        model: effectiveModel,
-        search: searchQuery ? { query: searchQuery, results: searchData.results, overview: searchData.overview } : null,
-        object: 'chat.completion',
-        choices: [{ index: 0, message: { role: 'assistant', content: reply }, finish_reason: 'stop' }],
-        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
-      });
-    }
-
-    /* ---------- STREAMING ----------
-       API (apiMode=true):  buffer → strip <thinking> → emit
-       APP (apiMode=false): pipe raw — the <thinking> tags flow into the app
-                            and script.js renders them into the thinking panel.
-    --------------------------------- */
-    sseWrite(res, { p: 'MiroxAI (SurrRoute)', model: effectiveModel, deep_think: deepThink, thinking: !apiMode });
-
-    if (apiMode) {
-      let buf = '';
-      await pipeProviderStream(result.res.body, (d) => { buf += d; }, isClosed, () => sseWrite(res, { limit: true }));
-      const clean = stripThinking(buf);
-      const CH = 28;
-      for (let i = 0; i < clean.length; i += CH) {
-        if (closed) break;
-        sseWrite(res, { d: clean.slice(i, i + CH) });
-      }
-    } else {
-      /* Raw passthrough — thinking tags preserved for the web app */
-      await pipeProviderStream(result.res.body, (d) => sseWrite(res, { d }), isClosed, () => sseWrite(res, { limit: true }));
-    }
-    if (!closed) sseWrite(res, { done: true });
-    sseDone(res);
-    await finishUsage();
-    res.end();
-  } catch (e) {
-    console.warn('[chat]', e.message);
-    if (res.headersSent) { if (wantStream) { sseWrite(res, { error: { message: GENERIC_ERR } }); sseDone(res); } try { res.end(); } catch {} }
-    else res.status(502).json({ error: { message: GENERIC_ERR } });
-  }
+    const body = req.body || {};
+    const prompt = (typeof body.prompt === 'string' ? body.prompt : (typeof body.message === 'string' ? body.message : contentToText(body.input))).trim();
+    if (!prompt) return res.status(400).json({ error: { message: 'Prompt required' } });
+    const auth = await authApiRoute(req);
+    if (auth.error) return res.status(401).json({ error: { message: 'Invalid API key' } });
+    const u = auth.user;
+    if (!u) return res.status(401).json({ error: { message: 'Sign in to generate images' } });
+    const plan = PLANS[u.tier] || PLANS.free;
+    if (u.image_used >= plan.image_limit) return res.status(429).json({ error: { message: 'Daily image limit reached' } });
+    const dataUrl = await generateImage(prompt);
+    u.image_used += 1;
+    await saveImage(u, prompt, dataUrl);
+    logEvent({ email: u.email, event: 'image_generated', prompt: prompt.slice(0, 300) });
+    await persist();
+    res.json({ ok: true, image: dataUrl, watermarked: true });
+  } catch { res.status(502).json({ error: { message: GENERIC_ERR } }); }
 });
 
 /* ADMIN */
@@ -1542,11 +1584,11 @@ async function logStorageDiagnostics() {
   }
 }
 
-console.log('[Mirox] v112 · flagship: Tail r1 (FREE)');
-console.log('[Mirox] thinking  → APP: ON (streamed live)   API: OFF (stripped)');
+console.log('[Mirox] v113 · flagship: Tail r1 (FREE)');
+console.log('[Mirox] ROUTES:');
+console.log('[Mirox]   WEB APP  → /v1/api/chat          → thinking ALWAYS ON');
+console.log('[Mirox]   API      → /v1/chat/completions → thinking ALWAYS OFF');
 console.log('[Mirox] accepts:', ['message', 'messages[]', 'prompt', 'input', 'inputs', 'content', 'text'].join(', '));
-console.log('[Mirox] model endpoints:', MODEL_LIST_PATHS.join('  '));
-console.log('[Mirox] chat endpoints:', CHAT_PATHS.join('  '));
 console.log('[Mirox] image provider:', HF_API_KEY ? 'huggingface' : (AIROUTE_KEY ? 'airoute' : 'none'));
 logResolverSelfTest();
 logInputSelfTest();
