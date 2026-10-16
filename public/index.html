@@ -18,11 +18,7 @@
 <div class="bg-glow" aria-hidden="true"><span class="glow g1"></span><span class="glow g2"></span><span class="glow g3"></span></div>
 
 <div id="loadingScreen" class="loading-screen">
-  <div class="ld-mark" aria-hidden="true">
-    <span class="ld-dot d1"></span>
-    <span class="ld-dot d2"></span>
-    <span class="ld-dot d3"></span>
-  </div>
+  <div class="ld-mark" aria-hidden="true"><span class="ld-dot d1"></span><span class="ld-dot d2"></span><span class="ld-dot d3"></span></div>
   <div class="ld-word">Mirox</div>
   <div class="ld-bar"><span></span></div>
   <div class="loading-tip" id="loadingTip">Waking up Luna…</div>
@@ -109,7 +105,7 @@
         <button class="kimi-chip" type="button" data-prompt="Design a clean poster layout for a science fair project"><i class="ri-palette-line"></i><span>Design</span></button>
       </div>
       <div class="kimi-suggest">
-        <button class="suggestion-card" type="button" data-prompt="Show me a simple Lua script that prints numbers 1 to 5"><i class="ri-code-box-line"></i><span>Write a Lua script</span></button>
+        <button class="suggestion-card" type="button" data-prompt="What is the latest iPhone"><i class="ri-global-line"></i><span>Latest iPhone?</span></button>
         <button class="suggestion-card" type="button" data-prompt="Show me an HTML example with a table"><i class="ri-html5-line"></i><span>Show an HTML table</span></button>
         <button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span>Generate an image</span></button>
         <button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span>Explain a concept</span></button>
@@ -124,12 +120,14 @@
       <div id="attachmentList" class="attachment-list"></div>
       <button id="removeAttachmentBtn" class="icon-btn" type="button" title="Remove"><i class="ri-close-line"></i></button>
     </div>
+
     <div class="tools-row">
-      <button id="deepThinkBtn" class="tool-btn tool-deep" type="button" title="DeepThink"><i class="ri-brain-line"></i><span>DeepThink</span></button>
       <button id="searchModeBtn" class="tool-btn" type="button"><i class="ri-global-line"></i><span>Search</span></button>
+      <button id="deepThinkBtn" class="tool-btn tool-deep" type="button" title="DeepThink"><i class="ri-brain-line"></i><span>DeepThink</span></button>
       <button id="imageModeBtn" class="tool-btn" type="button"><i class="ri-image-line"></i><span>Lumenal</span></button>
       <button id="callModeBtn" class="tool-btn" type="button"><i class="ri-phone-line"></i><span>Call</span></button>
       <button id="bridgeModeBtn" class="tool-btn pc-only" type="button"><i class="ri-link"></i><span>Bridge</span></button>
+      <button id="pluginsModeBtn" class="tool-btn" type="button"><i class="ri-puzzle-2-line"></i><span>Plugins</span><i class="ri-arrow-down-s-line" style="font-size:11px;margin-left:2px;"></i></button>
       <button id="plansModeBtn" class="tool-btn" type="button"><i class="ri-vip-crown-line"></i><span>Plans</span></button>
       <button id="supportModeBtn2" class="tool-btn" type="button"><i class="ri-question-line"></i><span>Help</span></button>
     </div>
@@ -143,31 +141,28 @@
       <button type="button" id="sendBtn" class="send-btn is-disabled" aria-disabled="true" title="Send"><i class="ri-arrow-up-line"></i></button>
     </div>
 
-    <div class="kimi-quota-row">
+    <div class="kimi-quota-row" id="quotaRow" style="display:none;">
       <div class="kimi-quota-left">
         <button class="kimi-quota-btn" type="button" id="quotaUpgradeBtn">
-          <i class="ri-sparkling-fill"></i><span>Free quota used up</span><span class="kimi-quota-link">Upgrade</span>
+          <i class="ri-sparkling-fill"></i><span id="quotaText">Free quota used up</span><span class="kimi-quota-link">Upgrade</span>
         </button>
       </div>
       <div class="kimi-quota-right">
-        <span class="kimi-mode-pill">Instant <strong>Standard</strong></span>
-      </div>
-    </div>
-
-    <div class="kimi-context-row">
-      <div class="kimi-context-left">
-        <button class="kimi-context-btn" type="button" id="selectProjectBtn"><i class="ri-folder-3-line"></i><span>Select project</span></button>
-        <span class="kimi-context-sep">·</span>
-        <button class="kimi-context-btn" type="button" id="pluginsBtn">
-          <span class="plugin-icons"><i class="devicon-javascript-plain colored"></i><i class="ri-puzzle-2-line"></i></span><span>Plugins</span>
-        </button>
-      </div>
-      <div class="kimi-context-right">
-        <a href="#" class="kimi-context-link" id="desktopAppLink"><i class="ri-computer-line"></i> Use desktop app</a>
+        <span class="kimi-mode-pill" id="modePill">Instant <strong id="modePillValue">Standard</strong></span>
       </div>
     </div>
 
     <div class="composer-note">Attach code or text files (.py, .js, .txt, .md, …) and ask Mirox to explain, fix, or rewrite them.</div>
+  </div>
+
+  <div id="pluginsPopover" class="plugins-popover" role="menu" aria-hidden="true">
+    <div class="plugins-popover-head">
+      <i class="ri-puzzle-2-line"></i>
+      <span>Plugins</span>
+      <button class="icon-btn" id="pluginsCloseBtn" type="button"><i class="ri-close-line"></i></button>
+    </div>
+    <div class="plugins-list" id="pluginsList"></div>
+    <div class="plugins-popover-foot">Toggle plugins for this chat.</div>
   </div>
 </main>
 
@@ -405,7 +400,7 @@
       </div>
       <div class="setting-group">
         <h4>Persona &amp; instructions</h4>
-        <p class="setting-help">How Mirox should speak and behave with you.</p>
+        <p class="setting-help">How Mirox should speak and behave with you. Saved locally even when signed out.</p>
         <label class="setting-row-info" for="personaSettingInput"><span class="setting-row-label">Custom persona / instructions</span></label>
         <textarea id="personaSettingInput" class="modal-input" rows="4" maxlength="1000" placeholder="e.g. Explain things simply, use practical examples, keep it warm…" style="width:100%;resize:vertical;margin:8px 0 12px;"></textarea>
         <label class="setting-row-info" for="personalizationAboutInput"><span class="setting-row-label">About you / response context</span></label>
