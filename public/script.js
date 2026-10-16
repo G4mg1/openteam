@@ -2,7 +2,7 @@
   'use strict';
 
   /* ============================================================
-     MiroxAI frontend v146
+     MiroxAI frontend v147
      · Web app hits /v1/api/chat (thinking ALWAYS ON)
      · External API uses /v1/chat/completions (thinking OFF)
      · Tail r1 flagship (free) · promo popup + confetti
@@ -144,12 +144,17 @@
      API ROUTES — separate app vs external API
        APP_CHAT    → /v1/api/chat          (thinking ALWAYS ON)
        APP_IMAGES  → /v1/api/images
-       API_CHAT    → /v1/chat/completions  (external apps only)
      ============================================================ */
-  const APP_CHAT_URL    = '/v1/api/chat';
-  const APP_IMAGES_URL  = '/v1/api/images';
+  const APP_CHAT_URL   = '/v1/api/chat';
+  const APP_IMAGES_URL = '/v1/api/images';
 
-  const THINK_INSTRUCTION = `Think carefully before answering, but never reveal private chain-of-thought, internal monologue, or reasoning tags. Give the user a clear, direct answer with useful explanations and conclusions.`;
+  /* ⚠️ NOTE: We deliberately do NOT send any instruction that tells the
+     model to hide its thinking. The server-side THINKING_RULE requires
+     <thinking>...</thinking> tags, and the thinking panel needs them.
+     Any client-side anti-thinking instruction would override the server
+     rule (last instruction wins) and kill the thinking panel. */
+  const RESPONSE_QUALITY_NOTE = 'RESPONSE QUALITY: Give a genuinely useful, complete answer rather than an overly short reply. For explanations and open-ended questions, normally write several well-developed paragraphs with context, clear reasoning summaries, examples, and practical details when useful. Answer the exact question first, then expand enough that the user can understand the topic without needing to ask for basic missing details. Do not pad with repetition; use headings and bullets only when they improve readability. Match the requested length: if the user asks for detail, provide a long, thorough answer; if they ask for a simple answer, stay concise. Never expose hidden chain-of-thought or private internal reasoning inside the visible answer — the visible answer should contain only the conclusion and a brief user-facing explanation.';
+  const IDEA_FORMAT_NOTE = 'IDEA-ANSWER FORMAT: Use a clean editorial layout with numbered options and short fit badges. Do not fetch or attach images unless explicitly requested.';
 
   let __config = null, __user = null, __tier = 'free', __model = 'mirox-luna-1.2';
   let currentConversationId = null, isReplying = false;
@@ -1219,9 +1224,14 @@
     };
     const streamTimeout = setTimeout(() => { try { activeStreamController?.abort(); } catch {} }, STREAM_TIMEOUT_MS);
     try {
+      /* ⚠️ system_extra is ONLY response-quality guidance.
+         It intentionally does NOT tell the model to hide its thinking. */
+      const sysExtra = RESPONSE_QUALITY_NOTE + (looksLikeIdeasRequest(text) ? '\n\n' + IDEA_FORMAT_NOTE : '');
+
       const reqBody = {
         message: text, history, model, stream: true, search: !!forceSearch,
-        deep_think: !!__prefs.deepThink, system_extra: THINK_INSTRUCTION + '\n\nRESPONSE QUALITY: Give a genuinely useful, complete answer rather than an overly short reply. For explanations and open-ended questions, normally write several well-developed paragraphs with context, clear reasoning summaries, examples, and practical details when useful. Answer the exact question first, then expand enough that the user can understand the topic without needing to ask for basic missing details. Do not pad with repetition; use headings and bullets only when they improve readability. Match the requested length: if the user asks for detail, provide a long, thorough answer; if they ask for a simple answer, stay concise. Never expose hidden chain-of-thought or private internal reasoning; provide only the conclusion and a brief user-facing explanation.\n\n' + (looksLikeIdeasRequest(text) ? 'IDEA-ANSWER FORMAT: Use a clean editorial layout with numbered options and short fit badges. Do not fetch or attach images unless explicitly requested. Never reveal hidden chain-of-thought.' : ''),
+        deep_think: !!__prefs.deepThink,
+        system_extra: sysExtra,
         files: files.map((f) => ({
           name: f.name, size: f.size, type: f.type, mime: f.mime,
           width: f.width, height: f.height, dataUrl: f.dataUrl,
@@ -1703,7 +1713,6 @@
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line spin"></i> …'; }
     if (result) result.innerHTML = '<div class="studio-empty"><i class="ri-loader-4-line spin"></i> …</div>';
     try {
-      /* ⬇️ APP IMAGE ROUTE — session cookie auth, thinking irrelevant here */
       const res = await netFetch(APP_IMAGES_URL, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ prompt, guest_id: getGuestId() }) }, 90000);
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok && data.image) {
@@ -2155,7 +2164,6 @@
   async function fetchBridgeReply(history) {
     const envBlock = buildEnvBlockString();
     const lastMsg = history[history.length - 1];
-    /* ⬇️ Bridge mode also uses the APP route */
     const r = await netFetch(APP_CHAT_URL, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ message: `${envBlock}\n\n${lastMsg.content}`, history: history.slice(0, -1).map((h) => ({ role: h.role, content: h.content })), model: 'mirox-tail-r1', stream: false, deep_think: !!__prefs.deepThink }) }, 120000);
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error?.message || `HTTP ${r.status}`);
@@ -2285,7 +2293,6 @@
     on('#stopBtn', 'click', stopStreaming);
     on('#modelPickerBtn', 'click', (e) => { e.stopPropagation(); if ($('#modelPickerMenu')?.classList.contains('open')) closeModelPicker(); else openModelPicker(); });
     document.addEventListener('click', (e) => { if (!e.target.closest('#modelPicker')) closeModelPicker(); });
-
     on('#deepThinkBtn', 'click', () => {
       __prefs.deepThink = !__prefs.deepThink;
       savePrefs(); applyDeepThinkUI();
