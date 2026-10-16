@@ -12,7 +12,6 @@
 <link href="https://cdn.jsdelivr.net/npm/remixicon@4.9.0/fonts/remixicon.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/devicon.min.css" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
-
 </head>
 <body>
 
@@ -73,6 +72,7 @@
       <button id="upgradeBtn" class="upgrade-btn" type="button" title="Plans"><i class="ri-vip-crown-line"></i></button>
     </div>
     <div class="sidebar-links">
+      <a href="#" id="myMiroxBtn" class="sidebar-link"><i class="ri-user-heart-line"></i> <span>My Mirox</span></a>
       <a href="#" id="settingsBtn" class="sidebar-link"><i class="ri-settings-3-line"></i> <span>Settings</span></a>
       <a href="#" id="supportModeBtn" class="sidebar-link"><i class="ri-customer-service-2-line"></i> <span>Support</span></a>
       <a href="/developers" class="sidebar-link" target="_blank" rel="noopener"><i class="ri-code-s-slash-line"></i> <span>Developers</span></a>
@@ -138,7 +138,7 @@
   </div>
 </main>
 
-<!-- ═══════════ CALL OVERLAY ═══════════ -->
+<!-- CALL OVERLAY -->
 <div id="callOverlay" class="call-overlay">
   <div class="call-bg-anim" aria-hidden="true">
     <div class="call-bg-blob b1"></div>
@@ -232,7 +232,7 @@
   </div>
 </div>
 
-<!-- RAW VIEW (message source) -->
+<!-- RAW VIEW -->
 <div id="rawViewModal" class="modal-overlay">
   <div class="modal modal-raw-view">
     <button class="icon-btn modal-close" type="button" data-close="rawViewModal"><i class="ri-close-line"></i></button>
@@ -263,6 +263,16 @@
       <button class="modal-btn" type="button" id="filePreviewCopyBtn"><i class="ri-file-copy-line"></i> Copy content</button>
       <button class="modal-btn primary" type="button" id="filePreviewAskBtn"><i class="ri-sparkling-2-line"></i> Ask Mirox about this</button>
     </div>
+  </div>
+</div>
+
+<!-- MY MIROX -->
+<div id="myMiroxModal" class="modal-overlay">
+  <div class="modal modal-wide" style="max-width:640px;">
+    <button class="icon-btn modal-close" type="button" data-close="myMiroxModal"><i class="ri-close-line"></i></button>
+    <h2 class="modal-title">My Mirox</h2>
+    <p class="modal-sub">Your relationship with Mirox — how close you are and how you grow together.</p>
+    <div id="myMiroxBody"></div>
   </div>
 </div>
 
@@ -319,6 +329,7 @@
             <button class="bw-quick" data-q="Build a modern landing page in my home folder">Landing page</button>
             <button class="bw-quick" data-q="Build a snake game in my home folder">Snake game</button>
             <button class="bw-quick" data-q="Build a todo app in my home folder">Todo app</button>
+            <button class="bw-quick" data-q="Inspect the TLS certificate for miroxai.org">Inspect TLS · miroxai.org</button>
           </div>
         </div>
       </aside>
@@ -583,7 +594,7 @@
   </div>
 </div>
 
-<!-- ═══════════ TAIL R1 PROMO POPUP ═══════════ -->
+<!-- TAIL R1 PROMO POPUP -->
 <div id="tailPromoModal" class="modal-overlay tail-promo-overlay">
   <div class="modal modal-tail-promo">
     <button class="icon-btn modal-close" type="button" data-close="tailPromoModal"><i class="ri-close-line"></i></button>
