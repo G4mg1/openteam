@@ -8,7 +8,7 @@
 <link rel="icon" href="/logo.png" type="image/png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/remixicon@4.9.0/fonts/remixicon.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/devicon.min.css" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
@@ -18,9 +18,13 @@
 <div class="bg-glow" aria-hidden="true"><span class="glow g1"></span><span class="glow g2"></span><span class="glow g3"></span></div>
 
 <div id="loadingScreen" class="loading-screen">
-  <div class="loading-blob" id="loadingBlob"></div>
-  <div class="loading-brand">Mirox</div>
-  <div class="loading-line"><div class="loading-line-fill"></div></div>
+  <div class="ld-mark" aria-hidden="true">
+    <span class="ld-dot d1"></span>
+    <span class="ld-dot d2"></span>
+    <span class="ld-dot d3"></span>
+  </div>
+  <div class="ld-word">Mirox</div>
+  <div class="ld-bar"><span></span></div>
   <div class="loading-tip" id="loadingTip">Waking up Luna…</div>
 </div>
 
@@ -31,7 +35,7 @@
     <a href="#" id="brandLogo" class="brand"><img class="brand-logo" src="/logo.png" alt="" onerror="this.style.display='none'"><span class="brand-text">MiroxAI</span></a>
     <button id="sidebarCloseBtn" class="icon-btn sidebar-close" type="button" title="Close"><i class="ri-close-line"></i></button>
   </div>
-  <button id="newChatBtn" class="new-chat-btn" type="button"><i class="ri-add-line"></i><span>New chat</span></button>
+  <button id="newChatBtn" class="new-chat-btn" type="button"><i class="ri-add-line"></i><span>New chat</span><kbd class="nc-kbd">Ctrl K</kbd></button>
   <div class="sidebar-tabs" role="tablist">
     <button class="sidebar-tab active" type="button" data-tab="chats"><i class="ri-chat-3-line"></i> <span>Chats</span></button>
     <button class="sidebar-tab" type="button" data-tab="bridge"><i class="ri-link"></i> <span>Bridge</span></button>
@@ -52,9 +56,7 @@
     <div class="sidebar-images-panel">
       <div class="sidebar-images-header">
         <span class="sidebar-images-count" id="sidebarImagesCount">0 images</span>
-        <button id="sidebarImagesDeleteAll" class="sidebar-images-delete-all" type="button" title="Delete all images">
-          <i class="ri-delete-bin-6-line"></i><span>Delete all</span>
-        </button>
+        <button id="sidebarImagesDeleteAll" class="sidebar-images-delete-all" type="button"><i class="ri-delete-bin-6-line"></i><span>Delete all</span></button>
       </div>
       <div id="sidebarImageHistory" class="sidebar-image-grid"><div class="sidebar-image-empty">No images yet.</div></div>
     </div>
@@ -96,10 +98,17 @@
 
   <div id="chatMessages" class="chat-messages">
     <div class="welcome-screen">
-      <div class="welcome-mascot"><div class="mascot mascot-lg" id="welcomeMascot" data-mood="idle"></div></div>
-      <h1 class="welcome-title">Hi, I'm Mirox</h1>
-      <p class="welcome-sub">Luna, Gen and <strong>Tail r1</strong> are free. Sign in to save chats and use image generation.</p>
-      <div class="suggestion-grid">
+      <div class="kimi-wordmark">MIROX</div>
+      <div class="kimi-tagline">Your AI copilot for building, research, and every-day work.</div>
+      <div class="kimi-chips">
+        <button class="kimi-chip" type="button" data-prompt="Make me a slide deck about the solar system"><i class="ri-slideshow-line"></i><span>Slides</span></button>
+        <button class="kimi-chip" type="button" data-prompt="Do deep research on quantum computing and summarize the state of the art"><i class="ri-search-eye-line"></i><span>Deep Research</span></button>
+        <button class="kimi-chip" type="button" data-prompt="Help me build a to-do web app with HTML, CSS and JS"><i class="ri-tools-line"></i><span>Build</span></button>
+        <button class="kimi-chip" type="button" data-prompt="Write a professional doc for a science fair project on AI"><i class="ri-file-text-line"></i><span>Docs</span></button>
+        <button class="kimi-chip" type="button" data-prompt="Create a spreadsheet plan for a school science fair budget"><i class="ri-table-line"></i><span>Sheets</span></button>
+        <button class="kimi-chip" type="button" data-prompt="Design a clean poster layout for a science fair project"><i class="ri-palette-line"></i><span>Design</span></button>
+      </div>
+      <div class="kimi-suggest">
         <button class="suggestion-card" type="button" data-prompt="Show me a simple Lua script that prints numbers 1 to 5"><i class="ri-code-box-line"></i><span>Write a Lua script</span></button>
         <button class="suggestion-card" type="button" data-prompt="Show me an HTML example with a table"><i class="ri-html5-line"></i><span>Show an HTML table</span></button>
         <button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span>Generate an image</span></button>
@@ -116,9 +125,7 @@
       <button id="removeAttachmentBtn" class="icon-btn" type="button" title="Remove"><i class="ri-close-line"></i></button>
     </div>
     <div class="tools-row">
-      <button id="deepThinkBtn" class="tool-btn tool-deep" type="button" title="DeepThink: model reasons longer before answering">
-        <i class="ri-brain-line"></i><span>DeepThink</span>
-      </button>
+      <button id="deepThinkBtn" class="tool-btn tool-deep" type="button" title="DeepThink"><i class="ri-brain-line"></i><span>DeepThink</span></button>
       <button id="searchModeBtn" class="tool-btn" type="button"><i class="ri-global-line"></i><span>Search</span></button>
       <button id="imageModeBtn" class="tool-btn" type="button"><i class="ri-image-line"></i><span>Lumenal</span></button>
       <button id="callModeBtn" class="tool-btn" type="button"><i class="ri-phone-line"></i><span>Call</span></button>
@@ -126,90 +133,71 @@
       <button id="plansModeBtn" class="tool-btn" type="button"><i class="ri-vip-crown-line"></i><span>Plans</span></button>
       <button id="supportModeBtn2" class="tool-btn" type="button"><i class="ri-question-line"></i><span>Help</span></button>
     </div>
-    <div class="composer">
-      <button type="button" id="attachBtn" class="icon-btn attach-btn" title="Attach files"><i class="ri-attachment-2"></i></button>
+
+    <div class="composer kimi-composer">
+      <button type="button" id="attachBtn" class="icon-btn attach-btn" title="Attach files"><i class="ri-add-line"></i></button>
       <input type="file" id="fileInput" multiple hidden accept="image/*,.txt,.md,.json,.csv,.log,.py,.js,.mjs,.ts,.tsx,.jsx,.html,.htm,.css,.scss,.yml,.yaml,.xml,.sh,.bash,.sql,.java,.c,.h,.cpp,.hpp,.go,.rs,.rb,.php,.lua,.zip">
-      <textarea id="messageInput" class="message-input" rows="1" placeholder="How can I help you today?"></textarea>
+      <textarea id="messageInput" class="message-input" rows="1" placeholder="Type &quot;/&quot; to invoke plugins and skills"></textarea>
       <button type="button" id="voiceBtn" class="icon-btn voice-btn" title="Voice input"><i class="ri-mic-line"></i></button>
       <button type="button" id="stopBtn" class="icon-btn stop-btn" style="display:none;" title="Stop"><i class="ri-stop-circle-line"></i></button>
       <button type="button" id="sendBtn" class="send-btn is-disabled" aria-disabled="true" title="Send"><i class="ri-arrow-up-line"></i></button>
     </div>
+
+    <div class="kimi-quota-row">
+      <div class="kimi-quota-left">
+        <button class="kimi-quota-btn" type="button" id="quotaUpgradeBtn">
+          <i class="ri-sparkling-fill"></i><span>Free quota used up</span><span class="kimi-quota-link">Upgrade</span>
+        </button>
+      </div>
+      <div class="kimi-quota-right">
+        <span class="kimi-mode-pill">Instant <strong>Standard</strong></span>
+      </div>
+    </div>
+
+    <div class="kimi-context-row">
+      <div class="kimi-context-left">
+        <button class="kimi-context-btn" type="button" id="selectProjectBtn"><i class="ri-folder-3-line"></i><span>Select project</span></button>
+        <span class="kimi-context-sep">·</span>
+        <button class="kimi-context-btn" type="button" id="pluginsBtn">
+          <span class="plugin-icons"><i class="devicon-javascript-plain colored"></i><i class="ri-puzzle-2-line"></i></span><span>Plugins</span>
+        </button>
+      </div>
+      <div class="kimi-context-right">
+        <a href="#" class="kimi-context-link" id="desktopAppLink"><i class="ri-computer-line"></i> Use desktop app</a>
+      </div>
+    </div>
+
     <div class="composer-note">Attach code or text files (.py, .js, .txt, .md, …) and ask Mirox to explain, fix, or rewrite them.</div>
   </div>
 </main>
 
-<!-- CALL OVERLAY -->
 <div id="callOverlay" class="call-overlay">
-  <div class="call-bg-anim" aria-hidden="true">
-    <div class="call-bg-blob b1"></div>
-    <div class="call-bg-blob b2"></div>
-    <div class="call-bg-blob b3"></div>
-  </div>
-
+  <div class="call-bg-anim" aria-hidden="true"><div class="call-bg-blob b1"></div><div class="call-bg-blob b2"></div><div class="call-bg-blob b3"></div></div>
   <div class="call-top-bar">
     <div class="call-live-badge" id="callLiveBadge"><i class="ri-flashlight-fill"></i> <span id="callLiveText">Live</span></div>
     <div class="call-lang-wrap">
       <i class="ri-translate-2"></i>
       <select id="callLangSelect" class="call-lang-select">
-        <option value="en-US">English</option>
-        <option value="fa-IR">فارسی — Farsi</option>
-        <option value="ar-SA">العربية — Arabic</option>
-        <option value="tr-TR">Türkçe — Turkish</option>
-        <option value="de-DE">Deutsch — German</option>
-        <option value="fr-FR">Français — French</option>
-        <option value="es-ES">Español — Spanish</option>
-        <option value="es-MX">Español (México)</option>
-        <option value="it-IT">Italiano — Italian</option>
-        <option value="pt-BR">Português — Portuguese</option>
-        <option value="ru-RU">Русский — Russian</option>
-        <option value="hi-IN">हिन्दी — Hindi</option>
-        <option value="zh-CN">简体中文 — Chinese</option>
-        <option value="ja-JP">日本語 — Japanese</option>
-        <option value="ko-KR">한국어 — Korean</option>
-        <option value="vi-VN">Tiếng Việt — Vietnamese</option>
-        <option value="th-TH">ไทย — Thai</option>
-        <option value="id-ID">Bahasa Indonesia</option>
-        <option value="nl-NL">Nederlands — Dutch</option>
-        <option value="pl-PL">Polski — Polish</option>
-        <option value="sv-SE">Svenska — Swedish</option>
-        <option value="el-GR">Ελληνικά — Greek</option>
-        <option value="cs-CZ">Čeština — Czech</option>
-        <option value="ro-RO">Română — Romanian</option>
-        <option value="uk-UA">Українська — Ukrainian</option>
-        <option value="he-IL">עברית — Hebrew</option>
+        <option value="en-US">English</option><option value="fa-IR">فارسی</option><option value="ar-SA">العربية</option>
+        <option value="tr-TR">Türkçe</option><option value="de-DE">Deutsch</option><option value="fr-FR">Français</option>
+        <option value="es-ES">Español</option><option value="ru-RU">Русский</option><option value="hi-IN">हिन्दी</option>
+        <option value="zh-CN">简体中文</option><option value="ja-JP">日本語</option><option value="ko-KR">한국어</option>
       </select>
     </div>
   </div>
-
   <div class="call-center">
-    <div class="call-blob-wrap" id="callBlobWrap" data-state="idle">
-      <div class="call-blob"></div>
-      <div class="call-blob-shadow"></div>
-    </div>
-
+    <div class="call-blob-wrap" id="callBlobWrap" data-state="idle"><div class="call-blob"></div><div class="call-blob-shadow"></div></div>
     <div class="call-status" id="callStatus">Listening…</div>
-
     <div class="call-transcript" id="callTranscript"></div>
     <div class="call-reply" id="callReply"></div>
   </div>
-
   <div class="call-controls">
-    <button id="callHoldBtn" class="call-btn-2 hold" type="button">
-      <span class="call-btn-icon"><i class="ri-pause-line"></i></span>
-      <span class="call-btn-label">Hold</span>
-    </button>
-    <button id="callSendNowBtn" class="call-btn-2 sendnow" type="button" style="display:none;">
-      <span class="call-btn-icon"><i class="ri-send-plane-fill"></i></span>
-      <span class="call-btn-label">Send</span>
-    </button>
-    <button id="callEndBtn" class="call-btn-2 end" type="button">
-      <span class="call-btn-icon"><i class="ri-close-line"></i></span>
-      <span class="call-btn-label">End</span>
-    </button>
+    <button id="callHoldBtn" class="call-btn-2 hold" type="button"><span class="call-btn-icon"><i class="ri-pause-line"></i></span><span class="call-btn-label">Hold</span></button>
+    <button id="callSendNowBtn" class="call-btn-2 sendnow" type="button" style="display:none;"><span class="call-btn-icon"><i class="ri-send-plane-fill"></i></span><span class="call-btn-label">Send</span></button>
+    <button id="callEndBtn" class="call-btn-2 end" type="button"><span class="call-btn-icon"><i class="ri-close-line"></i></span><span class="call-btn-label">End</span></button>
   </div>
 </div>
 
-<!-- HTML RUNNER -->
 <div id="htmlRunnerModal" class="modal-overlay html-runner-modal">
   <div class="modal modal-html-runner">
     <button class="icon-btn modal-close" type="button" data-close="htmlRunnerModal"><i class="ri-close-line"></i></button>
@@ -220,9 +208,9 @@
         <button class="html-runner-tab" data-hr-tab="source"><i class="ri-code-line"></i> Source</button>
       </div>
       <div class="html-runner-actions">
-        <button class="icon-btn" id="hrReloadBtn" title="Reload"><i class="ri-refresh-line"></i></button>
-        <button class="icon-btn" id="hrOpenBtn" title="Open in new tab"><i class="ri-external-link-line"></i></button>
-        <button class="icon-btn" id="hrCopyBtn" title="Copy source"><i class="ri-file-copy-line"></i></button>
+        <button class="icon-btn" id="hrReloadBtn"><i class="ri-refresh-line"></i></button>
+        <button class="icon-btn" id="hrOpenBtn"><i class="ri-external-link-line"></i></button>
+        <button class="icon-btn" id="hrCopyBtn"><i class="ri-file-copy-line"></i></button>
       </div>
     </div>
     <div class="html-runner-body">
@@ -232,25 +220,15 @@
   </div>
 </div>
 
-<!-- RAW VIEW -->
 <div id="rawViewModal" class="modal-overlay">
   <div class="modal modal-raw-view">
     <button class="icon-btn modal-close" type="button" data-close="rawViewModal"><i class="ri-close-line"></i></button>
-    <div class="raw-view-head">
-      <i class="ri-code-box-line"></i>
-      <div>
-        <div class="raw-view-title">Raw response source</div>
-        <div class="raw-view-sub">Markdown as the model sent it</div>
-      </div>
-    </div>
+    <div class="raw-view-head"><i class="ri-code-box-line"></i><div><div class="raw-view-title">Raw response source</div><div class="raw-view-sub">Markdown as the model sent it</div></div></div>
     <pre class="raw-view-content" id="rawViewContent"></pre>
-    <div class="raw-view-actions">
-      <button class="modal-btn" type="button" id="rawViewCopyBtn"><i class="ri-file-copy-line"></i> Copy source</button>
-    </div>
+    <div class="raw-view-actions"><button class="modal-btn" type="button" id="rawViewCopyBtn"><i class="ri-file-copy-line"></i> Copy source</button></div>
   </div>
 </div>
 
-<!-- FILE PREVIEW -->
 <div id="filePreviewModal" class="modal-overlay">
   <div class="modal modal-file-preview">
     <button class="icon-btn modal-close" type="button" data-close="filePreviewModal"><i class="ri-close-line"></i></button>
@@ -266,17 +244,13 @@
   </div>
 </div>
 
-<!-- MY MIROX -->
 <div id="myMiroxModal" class="modal-overlay">
-  <div class="modal modal-wide" style="max-width:640px;">
+  <div class="modal modal-my-mirox">
     <button class="icon-btn modal-close" type="button" data-close="myMiroxModal"><i class="ri-close-line"></i></button>
-    <h2 class="modal-title">My Mirox</h2>
-    <p class="modal-sub">Your relationship with Mirox — how close you are and how you grow together.</p>
     <div id="myMiroxBody"></div>
   </div>
 </div>
 
-<!-- BRIDGE WORKSPACE -->
 <div id="bridgeWorkspace" class="bridge-workspace-overlay">
   <div class="bridge-workspace-panel" id="bwPanel">
     <header class="bridge-workspace-top">
@@ -337,7 +311,6 @@
   </div>
 </div>
 
-<!-- LIVE PREVIEW -->
 <div id="bwPreviewModal" class="planner-overlay">
   <div class="planner-panel preview-panel">
     <header class="planner-top">
@@ -353,7 +326,6 @@
   </div>
 </div>
 
-<!-- SUDO -->
 <div id="sudoModal" class="question-overlay">
   <div class="question-panel sudo-panel">
     <div class="question-top">
@@ -365,11 +337,9 @@
     <div class="sudo-input-wrap"><input type="password" id="sudoPasswordInput" class="modal-input" autocomplete="current-password" spellcheck="false"><button class="icon-btn sudo-reveal" type="button" id="sudoRevealBtn"><i class="ri-eye-line"></i></button></div>
     <label class="sudo-remember"><input type="checkbox" id="sudoRememberChk"><span>Remember for this session</span></label>
     <div class="question-footer" style="margin-top:14px;"><button id="sudoSkipBtn" class="modal-btn" type="button"><i class="ri-skip-forward-line"></i> <span>Skip</span></button><button id="sudoSubmitBtn" class="modal-btn primary" type="button"><span>Run with sudo</span> <i class="ri-arrow-right-line"></i></button></div>
-    <div id="sudoHint" class="sudo-hint"></div>
   </div>
 </div>
 
-<!-- LOGIN -->
 <div id="loginModal" class="modal-overlay">
   <div class="modal modal-auth">
     <button class="icon-btn modal-close" type="button" data-close="loginModal"><i class="ri-close-line"></i></button>
@@ -377,8 +347,8 @@
     <h2 class="auth-title">Sign in</h2>
     <p class="auth-sub" id="loginModalSub">Continue with your name and email.</p>
     <form id="simpleLoginForm" class="auth-form" autocomplete="on" novalidate>
-      <div class="auth-field"><label for="loginName">Name</label><input type="text" id="loginName" class="auth-input" placeholder="Your name" required maxlength="60" autocomplete="name" spellcheck="false"></div>
-      <div class="auth-field"><label for="loginEmail">Email</label><input type="email" id="loginEmail" class="auth-input" placeholder="you@gmail.com" required autocomplete="email" spellcheck="false"></div>
+      <div class="auth-field"><label for="loginName">Name</label><input type="text" id="loginName" class="auth-input" placeholder="Your name" required maxlength="60" autocomplete="name"></div>
+      <div class="auth-field"><label for="loginEmail">Email</label><input type="email" id="loginEmail" class="auth-input" placeholder="you@gmail.com" required autocomplete="email"></div>
       <div id="loginError" class="auth-error" role="alert" style="display:none;"></div>
       <button type="submit" class="auth-btn" id="loginSubmitBtn"><span>Continue</span><i class="ri-arrow-right-line"></i></button>
       <div class="auth-hint">By continuing you agree to our terms and privacy policy.</div>
@@ -386,17 +356,19 @@
   </div>
 </div>
 
-<!-- SETTINGS -->
 <div id="settingsModal" class="modal-overlay">
-  <div class="modal modal-wide">
+  <div class="modal modal-wide modal-settings">
     <button class="icon-btn modal-close" type="button" data-close="settingsModal"><i class="ri-close-line"></i></button>
     <h2 class="modal-title">Settings</h2>
     <div class="settings-tabs" role="tablist">
       <button class="settings-tab active" type="button" data-tab="general"><i class="ri-settings-3-line"></i><span>General</span></button>
+      <button class="settings-tab" type="button" data-tab="persona"><i class="ri-user-star-line"></i><span>Persona</span></button>
+      <button class="settings-tab" type="button" data-tab="mcp"><i class="ri-plug-2-line"></i><span>MCP</span></button>
       <button class="settings-tab" type="button" data-tab="appearance"><i class="ri-palette-line"></i><span>Appearance</span></button>
       <button class="settings-tab" type="button" data-tab="language"><i class="ri-translate-2"></i><span>Language</span></button>
       <button class="settings-tab" type="button" data-tab="data"><i class="ri-database-2-line"></i><span>Data</span></button>
     </div>
+
     <div class="settings-pane active" data-pane="general">
       <div class="setting-group">
         <h4>Account</h4>
@@ -406,56 +378,75 @@
         </div>
         <button id="logoutBtn" class="modal-btn danger" type="button" style="display:none;margin-top:10px;">Sign out</button>
       </div>
-      <div class="setting-group" id="personalizationSettingsGroup">
-        <h4>Personalization &amp; persona</h4>
-        <p class="setting-help">Set how Mirox should respond. These options use the existing account settings.</p>
-        <label class="setting-row-info" for="personaSettingInput"><span class="setting-row-label">Custom persona / instructions</span></label>
-        <textarea id="personaSettingInput" class="modal-input" rows="3" maxlength="1000" placeholder="e.g. Explain things simply, use practical examples…" style="width:100%;resize:vertical;margin:8px 0 12px;"></textarea>
-        <div class="setting-row"><label class="setting-row-info" for="personalizationNameInput"><span class="setting-row-label">Name</span></label><input id="personalizationNameInput" class="modal-input" maxlength="60" placeholder="Name" style="max-width:220px;"></div>
-        <div class="setting-row"><label class="setting-row-info" for="personalizationNicknameInput"><span class="setting-row-label">Preferred nickname</span></label><input id="personalizationNicknameInput" class="modal-input" maxlength="60" placeholder="Nickname" style="max-width:220px;"></div>
-        <label class="setting-row-info" for="personalizationAboutInput"><span class="setting-row-label">About you / response context</span></label>
-        <textarea id="personalizationAboutInput" class="modal-input" rows="2" maxlength="1500" placeholder="Optional context to help tailor answers…" style="width:100%;resize:vertical;margin:8px 0 12px;"></textarea>
-        <div class="setting-row"><label class="setting-row-info" for="personalizationToneSelect"><span class="setting-row-label">Response tone</span></label><select id="personalizationToneSelect" class="modal-select" style="max-width:220px"><option value="default">Default</option><option value="friendly">Friendly</option><option value="concise">Concise</option><option value="formal">Formal</option><option value="playful">Playful</option></select></div>
-        <button id="savePersonalizationBtn" class="modal-btn primary" type="button" style="margin-top:12px">Save personalization</button>
-        <span id="personalizationSaveStatus" class="setting-help" aria-live="polite"></span>
-      </div>
       <div class="setting-group">
         <h4>Reasoning</h4>
-        <div class="setting-row">
-          <div class="setting-row-info"><span class="setting-row-label">DeepThink</span><span class="setting-row-sub">Model reasons longer before answering.</span></div>
-          <label class="switch"><input type="checkbox" id="deepThinkToggle"><span class="switch-slider"></span></label>
-        </div>
+        <div class="setting-row"><div class="setting-row-info"><span class="setting-row-label">DeepThink</span><span class="setting-row-sub">Model reasons longer before answering.</span></div><label class="switch"><input type="checkbox" id="deepThinkToggle"><span class="switch-slider"></span></label></div>
+        <div class="setting-row"><div class="setting-row-info"><span class="setting-row-label">Tools</span><span class="setting-row-sub">Allow file/tool usage (free: 20 steps / 3 h)</span></div><label class="switch"><input type="checkbox" id="toolsToggle"><span class="switch-slider"></span></label></div>
       </div>
       <div class="setting-group">
         <h4>Voice</h4>
-        <div class="setting-row">
-          <div class="setting-row-info"><span class="setting-row-label">Auto-play replies</span><span class="setting-row-sub">Read AI replies aloud</span></div>
-          <label class="switch"><input type="checkbox" id="autoSpeakToggle"><span class="switch-slider"></span></label>
-        </div>
-        <div class="setting-row">
-          <div class="setting-row-info"><span class="setting-row-label">Voice</span><span class="setting-row-sub">Preferred TTS voice</span></div>
-          <select id="ttsVoiceSelect" class="modal-select" style="max-width:220px;"></select>
-        </div>
+        <div class="setting-row"><div class="setting-row-info"><span class="setting-row-label">Auto-play replies</span><span class="setting-row-sub">Read AI replies aloud</span></div><label class="switch"><input type="checkbox" id="autoSpeakToggle"><span class="switch-slider"></span></label></div>
+        <div class="setting-row"><div class="setting-row-info"><span class="setting-row-label">Voice</span><span class="setting-row-sub">Preferred TTS voice</span></div><select id="ttsVoiceSelect" class="modal-select" style="max-width:220px;"></select></div>
       </div>
       <div class="setting-group">
         <h4>Behavior</h4>
-        <div class="setting-row"><div class="setting-row-info"><span class="setting-row-label">Auto-scroll</span><span class="setting-row-sub">Follow new messages</span></div><label class="switch"><input type="checkbox" id="autoScrollToggle" checked><span class="switch-slider"></span></label></div>
-        <div class="setting-row"><div class="setting-row-info"><span class="setting-row-label">Send with Enter</span><span class="setting-row-sub">Use Shift+Enter for new line</span></div><label class="switch"><input type="checkbox" id="enterSendToggle" checked><span class="switch-slider"></span></label></div>
-        <div class="setting-row"><div class="setting-row-info"><span class="setting-row-label">Vision for images</span><span class="setting-row-sub">Send images to AI (base64)</span></div><label class="switch"><input type="checkbox" id="visionToggle" checked><span class="switch-slider"></span></label></div>
-        <div class="setting-row"><div class="setting-row-info"><span class="setting-row-label">Compact mode</span><span class="setting-row-sub">Tighter spacing</span></div><label class="switch"><input type="checkbox" id="compactToggle"><span class="switch-slider"></span></label></div>
+        <div class="setting-row"><div class="setting-row-info"><span class="setting-row-label">Auto-scroll</span></div><label class="switch"><input type="checkbox" id="autoScrollToggle" checked><span class="switch-slider"></span></label></div>
+        <div class="setting-row"><div class="setting-row-info"><span class="setting-row-label">Send with Enter</span></div><label class="switch"><input type="checkbox" id="enterSendToggle" checked><span class="switch-slider"></span></label></div>
+        <div class="setting-row"><div class="setting-row-info"><span class="setting-row-label">Vision for images</span></div><label class="switch"><input type="checkbox" id="visionToggle" checked><span class="switch-slider"></span></label></div>
+        <div class="setting-row"><div class="setting-row-info"><span class="setting-row-label">Compact mode</span></div><label class="switch"><input type="checkbox" id="compactToggle"><span class="switch-slider"></span></label></div>
       </div>
     </div>
-    <div class="settings-pane" data-pane="appearance">
+
+    <div class="settings-pane" data-pane="persona">
       <div class="setting-group">
-        <h4>Mode</h4>
+        <h4>Identity</h4>
+        <div class="setting-row"><label class="setting-row-info" for="personalizationNameInput"><span class="setting-row-label">Your name</span></label><input id="personalizationNameInput" class="modal-input" maxlength="60" placeholder="Name" style="max-width:220px;"></div>
+        <div class="setting-row"><label class="setting-row-info" for="personalizationNicknameInput"><span class="setting-row-label">Preferred nickname</span></label><input id="personalizationNicknameInput" class="modal-input" maxlength="60" placeholder="Nickname" style="max-width:220px;"></div>
+      </div>
+      <div class="setting-group">
+        <h4>Persona &amp; instructions</h4>
+        <p class="setting-help">How Mirox should speak and behave with you.</p>
+        <label class="setting-row-info" for="personaSettingInput"><span class="setting-row-label">Custom persona / instructions</span></label>
+        <textarea id="personaSettingInput" class="modal-input" rows="4" maxlength="1000" placeholder="e.g. Explain things simply, use practical examples, keep it warm…" style="width:100%;resize:vertical;margin:8px 0 12px;"></textarea>
+        <label class="setting-row-info" for="personalizationAboutInput"><span class="setting-row-label">About you / response context</span></label>
+        <textarea id="personalizationAboutInput" class="modal-input" rows="3" maxlength="1500" placeholder="Optional context to help tailor answers…" style="width:100%;resize:vertical;margin:8px 0 12px;"></textarea>
+        <div class="setting-row"><label class="setting-row-info" for="personalizationToneSelect"><span class="setting-row-label">Response tone</span></label><select id="personalizationToneSelect" class="modal-select" style="max-width:220px"><option value="default">Default</option><option value="friendly">Friendly</option><option value="concise">Concise</option><option value="formal">Formal</option><option value="playful">Playful</option></select></div>
+        <button id="savePersonalizationBtn" class="modal-btn primary" type="button" style="margin-top:12px">Save persona</button>
+        <span id="personalizationSaveStatus" class="setting-help" aria-live="polite"></span>
+      </div>
+    </div>
+
+    <div class="settings-pane" data-pane="mcp">
+      <div class="setting-group">
+        <h4>MCP servers</h4>
+        <p class="setting-help">Connect external Model Context Protocol servers. Tools from enabled servers become available to Mirox during chat.</p>
+        <div class="mcp-list" id="mcpList"><div class="mcp-empty">No MCP servers configured.</div></div>
+        <button class="modal-btn" type="button" id="mcpAddBtn"><i class="ri-add-line"></i> Add MCP server</button>
+      </div>
+      <div class="setting-group mcp-editor" id="mcpEditor" style="display:none;">
+        <h4>New / Edit server</h4>
+        <div class="setting-row"><label class="setting-row-info"><span class="setting-row-label">ID (short, unique)</span></label><input id="mcpId" class="modal-input" maxlength="40" placeholder="my-mcp"></div>
+        <div class="setting-row"><label class="setting-row-info"><span class="setting-row-label">Name</span></label><input id="mcpName" class="modal-input" maxlength="60" placeholder="My MCP"></div>
+        <div class="setting-row"><label class="setting-row-info"><span class="setting-row-label">URL (https)</span></label><input id="mcpUrl" class="modal-input" placeholder="https://example.com/mcp"></div>
+        <label class="setting-row-info"><span class="setting-row-label">Headers (JSON, optional)</span></label>
+        <textarea id="mcpHeaders" class="modal-input" rows="2" placeholder='{"Authorization": "Bearer …"}' style="width:100%;resize:vertical;margin:8px 0 12px;"></textarea>
+        <div class="setting-row"><span class="setting-row-label">Enabled</span><label class="switch" style="margin-left:auto;"><input type="checkbox" id="mcpEnabled" checked><span class="switch-slider"></span></label></div>
+        <div style="display:flex;gap:8px;margin-top:12px;">
+          <button class="modal-btn" type="button" id="mcpCancelBtn" style="flex:1;">Cancel</button>
+          <button class="modal-btn primary" type="button" id="mcpSaveBtn" style="flex:1.4;">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-pane" data-pane="appearance">
+      <div class="setting-group"><h4>Mode</h4>
         <div class="segmented" id="modeSegmented">
           <button class="seg-btn" type="button" data-mode="light">Light</button>
           <button class="seg-btn" type="button" data-mode="dark">Dark</button>
           <button class="seg-btn" type="button" data-mode="auto">Auto</button>
         </div>
       </div>
-      <div class="setting-group">
-        <h4>Accent color</h4>
+      <div class="setting-group"><h4>Accent color</h4>
         <div class="swatch-grid" id="accentSwatches">
           <button class="swatch" type="button" data-theme="default" style="--sw:#d97757"></button>
           <button class="swatch" type="button" data-theme="blue" style="--sw:#4d6bfe"></button>
@@ -465,69 +456,61 @@
           <button class="swatch" type="button" data-theme="rose" style="--sw:#e11d48"></button>
         </div>
       </div>
-      <div class="setting-group">
-        <h4>Font size</h4>
+      <div class="setting-group"><h4>Font size</h4>
         <div class="segmented" id="fontSizeSegmented">
           <button class="seg-btn" type="button" data-fontsize="sm">Small</button>
           <button class="seg-btn" type="button" data-fontsize="md">Medium</button>
           <button class="seg-btn" type="button" data-fontsize="lg">Large</button>
         </div>
       </div>
-      <div class="setting-group">
-        <h4>Animations</h4>
-        <div class="setting-row"><div class="setting-row-info"><span class="setting-row-label">Reduce motion</span><span class="setting-row-sub">Minimize animations</span></div><label class="switch"><input type="checkbox" id="reduceMotionToggle"><span class="switch-slider"></span></label></div>
+      <div class="setting-group"><h4>Animations</h4>
+        <div class="setting-row"><span class="setting-row-label">Reduce motion</span><label class="switch" style="margin-left:auto;"><input type="checkbox" id="reduceMotionToggle"><span class="switch-slider"></span></label></div>
       </div>
     </div>
+
     <div class="settings-pane" data-pane="language">
-      <div class="setting-group">
-        <h4>Interface language</h4>
-        <p class="setting-help">English uses no API calls. Other languages use the free MyMemory API.</p>
+      <div class="setting-group"><h4>Interface language</h4>
         <select id="uiLanguageSelect" class="modal-select">
-          <option value="en">English</option><option value="fa">فارسی — Farsi</option><option value="de">Deutsch — German</option>
-          <option value="es">Español — Spanish</option><option value="es-MX">Español (México)</option><option value="fr">Français — French</option>
-          <option value="it">Italiano — Italian</option><option value="pt">Português — Portuguese</option><option value="ru">Русский — Russian</option>
-          <option value="ar">العربية — Arabic</option><option value="he">עברית — Hebrew</option><option value="tr">Türkçe — Turkish</option>
-          <option value="hi">हिन्दी — Hindi</option><option value="zh-CN">简体中文 — Chinese (Simplified)</option><option value="ja">日本語 — Japanese</option>
-          <option value="ko">한국어 — Korean</option><option value="vi">Tiếng Việt — Vietnamese</option><option value="th">ไทย — Thai</option>
-          <option value="id">Bahasa Indonesia</option><option value="nl">Nederlands — Dutch</option><option value="pl">Polski — Polish</option>
-          <option value="sv">Svenska — Swedish</option><option value="el">Ελληνικά — Greek</option><option value="cs">Čeština — Czech</option>
-          <option value="ro">Română — Romanian</option><option value="uk">Українська — Ukrainian</option>
+          <option value="en">English</option><option value="fa">فارسی</option><option value="de">Deutsch</option>
+          <option value="es">Español</option><option value="fr">Français</option><option value="it">Italiano</option>
+          <option value="pt">Português</option><option value="ru">Русский</option><option value="ar">العربية</option>
+          <option value="he">עברית</option><option value="tr">Türkçe</option><option value="hi">हिन्दी</option>
+          <option value="zh-CN">简体中文</option><option value="ja">日本語</option><option value="ko">한국어</option>
+          <option value="vi">Tiếng Việt</option><option value="th">ไทย</option><option value="id">Bahasa Indonesia</option>
+          <option value="nl">Nederlands</option><option value="pl">Polski</option><option value="sv">Svenska</option>
+          <option value="el">Ελληνικά</option><option value="cs">Čeština</option><option value="ro">Română</option>
+          <option value="uk">Українська</option>
         </select>
         <div id="translateStatus" class="translate-status"></div>
       </div>
-      <div class="setting-group">
-        <h4>Preferred response language</h4>
+      <div class="setting-group"><h4>Preferred response language</h4>
         <select id="languageSelect" class="modal-select">
           <option value="auto">Auto-detect</option><option value="en">English</option><option value="fa">فارسی</option>
-          <option value="de">Deutsch</option><option value="es-MX">Español (México)</option><option value="es">Español</option>
-          <option value="fr">Français</option><option value="ru">Русский</option><option value="ar">العربية</option>
-          <option value="zh-CN">简体中文</option><option value="ja">日本語</option>
+          <option value="de">Deutsch</option><option value="es">Español</option><option value="fr">Français</option>
+          <option value="ru">Русский</option><option value="ar">العربية</option><option value="zh-CN">简体中文</option>
+          <option value="ja">日本語</option>
         </select>
       </div>
     </div>
+
     <div class="settings-pane" data-pane="data">
-      <div class="setting-group">
-        <h4>Chats</h4>
+      <div class="setting-group"><h4>Chats</h4>
         <button id="exportChatsBtn" class="modal-btn" type="button"><i class="ri-download-2-line"></i> <span>Export all chats (JSON)</span></button>
         <button id="clearChatsBtn" class="modal-btn danger" type="button"><i class="ri-delete-bin-6-line"></i> <span>Clear all chats</span></button>
       </div>
-      <div class="setting-group">
-        <h4>Images</h4>
+      <div class="setting-group"><h4>Images</h4>
         <button id="clearImagesBtn" class="modal-btn danger" type="button"><i class="ri-image-2-line"></i> <span>Delete all generated images</span></button>
       </div>
-      <div class="setting-group">
-        <h4>Translation cache</h4>
+      <div class="setting-group"><h4>Translation cache</h4>
         <button id="clearI18nCacheBtn" class="modal-btn" type="button"><i class="ri-eraser-line"></i> <span>Clear translation cache</span></button>
       </div>
-      <div class="setting-group">
-        <h4>Developers</h4>
+      <div class="setting-group"><h4>Developers</h4>
         <a href="/developers" target="_blank" rel="noopener" class="modal-btn" style="text-decoration:none;"><i class="ri-code-s-slash-line"></i> <span>Open Developer Docs</span></a>
       </div>
     </div>
   </div>
 </div>
 
-<!-- PLANS -->
 <div id="plansModal" class="modal-overlay">
   <div class="modal modal-wide">
     <button class="icon-btn modal-close" type="button" data-close="plansModal"><i class="ri-close-line"></i></button>
@@ -537,7 +520,6 @@
   </div>
 </div>
 
-<!-- IMAGE STUDIO -->
 <div id="imageModal" class="modal-overlay">
   <div class="modal">
     <button class="icon-btn modal-close" type="button" data-close="imageModal"><i class="ri-close-line"></i></button>
@@ -551,14 +533,13 @@
   </div>
 </div>
 
-<!-- SUPPORT -->
 <div id="supportModal" class="modal-overlay">
   <div class="modal modal-support">
     <button class="icon-btn modal-close" type="button" data-close="supportModal"><i class="ri-close-line"></i></button>
     <div class="support-head">
       <div class="support-head-icon"><i class="ri-customer-service-2-line"></i></div>
       <div class="support-head-text"><div class="support-head-title">Support</div><div class="support-head-sub" id="supportHeadSub">Live chat with our team</div></div>
-      <button id="supportResolveBtn" class="support-resolve-btn" type="button" style="display:none;" title="Mark as resolved"><i class="ri-check-double-line"></i> <span>Resolve</span></button>
+      <button id="supportResolveBtn" class="support-resolve-btn" type="button" style="display:none;"><i class="ri-check-double-line"></i> <span>Resolve</span></button>
     </div>
     <div class="support-chat-body"><div class="support-chat-messages" id="supportChatMessages"><div class="support-chat-empty"><div class="support-chat-empty-icon"><i class="ri-chat-smile-2-line"></i></div><div class="support-chat-empty-title">How can we help?</div><div class="support-chat-empty-sub">Send us a message and a member of our team will reply right here.</div></div></div></div>
     <div class="support-compose">
@@ -569,7 +550,7 @@
           <option value="abuse">Report abuse</option><option value="other">Other</option>
         </select>
       </div>
-      <div class="support-input-row"><textarea id="supportInput" rows="1" placeholder="Type your message…"></textarea><button id="supportSendBtn" class="send-btn is-disabled" type="button" aria-disabled="true" title="Send"><i class="ri-arrow-up-line"></i></button></div>
+      <div class="support-input-row"><textarea id="supportInput" rows="1" placeholder="Type your message…"></textarea><button id="supportSendBtn" class="send-btn is-disabled" type="button" aria-disabled="true"><i class="ri-arrow-up-line"></i></button></div>
       <div class="support-input-hint" id="supportInputHint">Enter to send · Shift+Enter for a new line</div>
     </div>
     <div class="support-foot">
@@ -579,28 +560,21 @@
   </div>
 </div>
 
-<!-- IMAGE VIEWER -->
 <div id="imageViewer" class="image-viewer">
   <div class="image-viewer-backdrop" data-iv-close></div>
   <div class="image-viewer-panel">
-    <div class="image-viewer-top">
-      <div class="image-viewer-title">Generated image</div>
-      <button class="icon-btn" type="button" data-iv-close><i class="ri-close-line"></i></button>
-    </div>
+    <div class="image-viewer-top"><div class="image-viewer-title">Generated image</div><button class="icon-btn" type="button" data-iv-close><i class="ri-close-line"></i></button></div>
     <div class="image-viewer-canvas-wrap"><canvas id="ivCanvas"></canvas></div>
-    <div class="image-viewer-actions">
-      <button class="iv-btn" type="button" id="ivDownload"><i class="ri-download-2-line"></i> <span>Download</span></button>
-    </div>
+    <div class="image-viewer-actions"><button class="iv-btn" type="button" id="ivDownload"><i class="ri-download-2-line"></i> <span>Download</span></button></div>
   </div>
 </div>
 
-<!-- TAIL R1 PROMO POPUP -->
 <div id="tailPromoModal" class="modal-overlay tail-promo-overlay">
   <div class="modal modal-tail-promo">
     <button class="icon-btn modal-close" type="button" data-close="tailPromoModal"><i class="ri-close-line"></i></button>
     <div class="tail-promo-glow" aria-hidden="true"></div>
     <div class="tail-promo-badge"><i class="ri-star-smile-fill"></i> <span>NEW FLAGSHIP · FREE</span></div>
-    <div class="tail-offer-deadline" role="note">This offer will end on 30 November.</div>
+    <div class="tail-offer-deadline">This offer will end on 30 November.</div>
     <h2 class="tail-promo-title">Meet <em>Tail&nbsp;r1</em></h2>
     <p class="tail-promo-sub">Our most powerful model yet. Smarter reasoning, longer context, sharper answers — and it's completely free for everyone.</p>
     <div class="tail-promo-stats">
@@ -609,9 +583,7 @@
       <div class="tail-stat"><div class="tail-stat-num">Free</div><div class="tail-stat-lbl">for all users</div></div>
     </div>
     <div class="tail-promo-actions">
-      <button type="button" class="tail-promo-try" id="tailPromoTryBtn">
-        <i class="ri-rocket-2-fill"></i> <span>Try Tail r1</span>
-      </button>
+      <button type="button" class="tail-promo-try" id="tailPromoTryBtn"><i class="ri-rocket-2-fill"></i> <span>Try Tail r1</span></button>
       <button type="button" class="tail-promo-later" id="tailPromoLaterBtn">Maybe later</button>
     </div>
     <div class="tail-promo-foot">Tip: click the model picker anytime to switch back.</div>
@@ -619,6 +591,5 @@
 </div>
 
 <script src="/script.js" defer></script>
-
 </body>
 </html>
