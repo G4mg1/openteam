@@ -1,65 +1,76 @@
-// Splits model output into "thinking" and "answer" parts.
-// Works on streamed chunks, so a <thinking> tag split across two chunks is still caught.
-
-const OPEN = '<thinking>';
-const CLOSE = '</thinking>';
-
-// How many trailing chars could be the start of `tag`? Hold them back until we know.
-function partialTail(s, tag) {
-  for (let k = Math.min(tag.length - 1, s.length); k > 0; k--) {
-    if (s.endsWith(tag.slice(0, k))) return k;
-  }
-  return 0;
-}
+/* Thinking-tag splitter used by both the streaming path (server -> browser)
+   and the tool loop (server -> tools). Keeps <thinking>…</thinking> content
+   separate from the answer so the UI can render it as a status pill only. */
 
 export function createThinkSplitter() {
   let buf = '';
   let inThink = false;
+  let seenThinkOpen = false;
+  const OPEN = '<thinking>';
+  const CLOSE = '</thinking>';
 
-  const drain = (emit, final) => {
-    while (true) {
-      const tag = inThink ? CLOSE : OPEN;
-      const kind = inThink ? 'thinking' : 'answer';
-      const i = buf.indexOf(tag);
-      if (i !== -1) {
-        if (i > 0) emit(kind, buf.slice(0, i));
-        buf = buf.slice(i + tag.length);
-        inThink = !inThink;
-        continue;
+  const scan = (emit) => {
+    while (buf.length) {
+      if (!inThink) {
+        const i = buf.indexOf(OPEN);
+        if (i === -1) {
+          // Emit safe prefix, keep last few chars in case an open tag is split.
+          const keep = Math.max(0, buf.length - OPEN.length + 1);
+          if (keep > 0) emit('answer', buf.slice(0, keep));
+          buf = buf.slice(keep);
+          break;
+        }
+        if (i > 0) emit('answer', buf.slice(0, i));
+        buf = buf.slice(i + OPEN.length);
+        inThink = true;
+        seenThinkOpen = true;
+      } else {
+        const j = buf.indexOf(CLOSE);
+        if (j === -1) {
+          const keep = Math.max(0, buf.length - CLOSE.length + 1);
+          if (keep > 0) emit('thinking', buf.slice(0, keep));
+          buf = buf.slice(keep);
+          break;
+        }
+        if (j > 0) emit('thinking', buf.slice(0, j));
+        buf = buf.slice(j + CLOSE.length);
+        inThink = false;
       }
-      const hold = final ? 0 : partialTail(buf, tag);
-      const out = buf.length - hold;
-      if (out > 0) emit(kind, buf.slice(0, out));
-      buf = buf.slice(out);
-      return;
     }
   };
 
   return {
-    push(delta, emit) { buf += delta; drain(emit, false); },
-    flush(emit) { drain(emit, true); },
+    push(chunk, emit) { buf += chunk; scan(emit); },
+    flush(emit) {
+      if (!buf) return;
+      if (inThink) emit('thinking', buf);
+      else emit('answer', buf);
+      buf = '';
+    },
+    hasSeenThink() { return seenThinkOpen; },
   };
 }
 
-// Whole-string version, for non-streamed replies.
-export function splitFull(text) {
-  let thinking = '';
-  let answer = '';
-  const sink = (kind, t) => { if (kind === 'thinking') thinking += t; else answer += t; };
-  const sp = createThinkSplitter();
-  sp.push(String(text || ''), sink);
-  sp.flush(sink);
-  return { thinking: thinking.trim(), answer: answer.trim() };
-}
-
-// Reasoning models send thinking in a separate field.
+/* Reasoning fields from providers (OpenRouter-style). */
 export function reasoningFromDelta(delta) {
-  return String(delta?.reasoning_content || delta?.reasoning || '');
+  if (!delta || typeof delta !== 'object') return '';
+  return String(delta.reasoning_content || delta.reasoning || '');
 }
 
+/* Answer content from delta. */
 export function contentFromDelta(delta) {
-  const c = delta?.content;
-  if (typeof c === 'string') return c;
-  if (Array.isArray(c)) return c.map((p) => (typeof p === 'string' ? p : (p?.text || ''))).join('');
-  return '';
+  if (!delta || typeof delta !== 'object') return '';
+  let c = delta.content;
+  if (Array.isArray(c)) c = c.map((p) => (typeof p === 'string' ? p : (p?.text || ''))).join('');
+  return String(c || '');
+}
+
+/* Split a complete string into { thinking, answer }. */
+export function splitFull(text) {
+  const s = String(text || '');
+  const open = s.indexOf('<thinking>');
+  if (open === -1) return { thinking: '', answer: s };
+  const close = s.indexOf('</thinking>', open);
+  if (close === -1) return { thinking: s.slice(open + 10), answer: s.slice(0, open) };
+  return { thinking: s.slice(open + 10, close), answer: s.slice(0, open) + s.slice(close + 11) };
 }
