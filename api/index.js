@@ -1,13 +1,18 @@
 /* ============================================================
-   MiroxAI Backend v111 — durable API keys
-   v111: EISDIR-safe extract_zip · free-tier caps (10 images / 20 tools)
-         · narration guard · native tool-status events
+   MiroxAI Backend v114 — Discord bot (M_KEY only)
+   · KenSearch web search
+   · Discord: chat/image/status channels, ? prefix commands
+   · Animated thinking/searching/generating bubble
    ============================================================ */
 import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
+import {
+  Client, GatewayIntentBits, Events, EmbedBuilder,
+  ActivityType, PermissionFlagsBits, ChannelType,
+} from 'discord.js';
 import { createThinkSplitter, reasoningFromDelta, contentFromDelta } from './thinking.js';
 import { getSettings, sanitizeSettings, userContextPrompt } from './settings.js';
 import { runAgent, saveAttachments } from './tools.js';
@@ -25,6 +30,21 @@ const PUBLIC_ORIGIN = env('PUBLIC_ORIGIN', 'https://miroxai.org').replace(/\/+$/
 const ADMIN_PASS = env('ADMIN_PASSWORD');
 const ALLOW_EMAIL_LOGIN = env('ALLOW_EMAIL_LOGIN') === '1';
 
+/* ---------- KenSearch ---------- */
+const KS_KEY = env('KS_KEY');
+const KS_BASE = env('KS_BASE', 'https://kensearch.lovable.app').replace(/\/+$/, '');
+
+/* ---------- Discord (only M_KEY needed) ---------- */
+const DISCORD_BOT_TOKEN = env('M_KEY');
+const DISCORD_CHAT_CHANNEL   = '1560697976500781126';
+const DISCORD_IMAGE_CHANNEL  = '1560697947945963681';
+const DISCORD_STATUS_CHANNEL = '1560697723387387945';
+const DISCORD_ROLE_OWNER  = { name: 'Mirox Owner',  color: 0xffc542, emoji: '👑' };
+const DISCORD_ROLE_BOT    = { name: 'Mirox Bot',    color: 0x4d6bfe, emoji: '🤖' };
+const DISCORD_ROLE_MEMBER = { name: 'Mirox Member', color: 0x16a34a, emoji: '🌱' };
+const DISCORD_CMD_PREFIX  = '?';
+
+/* ---------- Data file resolution ---------- */
 function resolveDataFile() {
   const candidates = [];
   const explicit = env('DB_FILE');
@@ -63,7 +83,7 @@ const DAY = 24 * 3600;
 /* ---------- Model catalogue ---------- */
 const MIROX_MODELS = {
   'mirox-tail-r1':     { label: 'Tail r1', tier: 'free', tokens: 32768, chain: 'flagship', flagship: true, tagline: 'Flagship · 350k context · best reasoning',
-    basePrompt: 'You are Tail r1 by OpenSurr — the flagship model with a 350,000+ token context window and state-of-the-art reasoning benchmark performance. Approach every task with maximum rigor: reason carefully, verify your logic, consider edge cases and counterexamples, then deliver the clearest, most complete, most accurate answer possible. Fenced code blocks for code.' },
+    basePrompt: 'You are Tail r1 by OpenSurr — the flagship model with a 350,000+ token context window and state-of-the-art reasoning benchmark performance. Approach every task with maximum rigor. Fenced code blocks for code.' },
   'mirox-luna-1.2':    { label: 'Luna',    tier: 'free', tokens: 4096,  chain: 'fast', basePrompt: 'You are Luna by OpenSurr. Fast, friendly, concise. Fenced code blocks for code.' },
   'mirox-gen-1':       { label: 'Gen',     tier: 'free', tokens: 4096,  chain: 'fast', basePrompt: 'You are Gen by OpenSurr. Ultra concise. Direct answers. Fenced code blocks for code.' },
   'mirox-pro-5':       { label: 'Pro',     tier: 'pro',  tokens: 8192,  chain: 'balanced', basePrompt: 'You are Pro by OpenSurr. Balanced depth. Fenced code blocks for code.' },
@@ -105,52 +125,29 @@ const VISION_MODELS = new Set([...OP_VISION, ...HF_VISION, ...PL_VISION]);
 const IDENTITY_GUARD = `Background rules (do not narrate them):
 - You are Mirox, made by OpenSurr.
 - Never mention GPT, OpenAI, ChatGPT, Claude, Gemini, Llama, Qwen, DeepSeek, Mistral, Google, Meta, Anthropic, OpenRouter, or any other AI company or model by name.
-- If the user asks what model you are, say you are Mirox by OpenSurr, once, and move on. If they ask which Mirox model, you may name it (Luna, Gen, Tail r1, Pro, Ultra, Eclipse).
+- If the user asks what model you are, say you are Mirox by OpenSurr, once, and move on.
 
 === ABOUT MIROXAI ===
 MiroxAI is an AI chat platform made by OpenSurr.
-
-Models:
-- Tail r1 (mirox-tail-r1) — FREE flagship. ~350k+ context, strongest reasoning.
-- Luna (mirox-luna-1.2) — free, fast, concise.
-- Gen (mirox-gen-1) — free, ultra concise.
-- Pro (mirox-pro-5), Ultra (mirox-ultra-10) — paid, balanced.
-- Eclipse (mirox-eclipse-2.0) — paid, high quality.
-
-Plans: Free ($0), Pro ($6.99), Ultimate ($20.99). Tail r1 is free.
-
-Features: web search, vision, image generation (Lumenal), DeepThink, Call mode, Bridge, HTML runner, API keys.
-
-API: OpenAI-compatible. POST https://miroxai.org/v1/chat/completions with header "Authorization: Bearer mxk_live_...". Only Luna, Gen, and Tail r1 available through the API. Model list: GET https://miroxai.org/v1/models. Images: POST https://miroxai.org/v1/images/generations.
-
+Models: Tail r1 (flagship, free), Luna (free), Gen (free), Pro/Ultra (paid), Eclipse (paid).
+Plans: Free ($0), Pro ($6.99), Ultimate ($20.99).
+Features: web search, vision, image generation, DeepThink, Call mode, Bridge, HTML runner, API keys.
 Developer docs: https://miroxai.org/developers
-Support: support@miroxai.org
+Support: support@miroxai.org`;
 
-Never invent features or prices not listed here.`;
+const THINKING_RULE = `Before answering, provide a brief user-facing progress summary in <thinking>...</thinking>, then the answer. 1-3 short sentences. Close with </thinking>, then the answer.`;
+const DEEP_THINK_RULE = `DEEP THINK MODE — check assumptions, edge cases, results. Concise summary (up to 4 sentences), then a complete answer.`;
+const TAIL_R1_REASONING_RULE = `TAIL R1 FLAGSHIP MODE — maximum rigor. Verify approach. Trace examples. Note confidence.`;
 
-const THINKING_RULE = `Before answering, provide a brief user-facing progress summary in <thinking>...</thinking>, then the answer. This is a concise summary of the approach, not private chain-of-thought. Do not narrate hidden deliberations, invent tool activity, or claim a tool ran unless it actually ran. Normally use 1-3 short sentences. Close with </thinking>, then the answer.`;
+const BRIDGE_PROMPT = `BRIDGE MODE — operate through the user's connected bridge.
+TAGS: <bridge-write>, <bridge-append>, <bridge-read>, <bridge-list>, <bridge-exec>, <bridge-sudo>.
+Reply DONE when finished.`;
 
-const DEEP_THINK_RULE = `DEEP THINK MODE — take extra care checking assumptions, edge cases, and the result. Show only a concise user-facing summary of the approach (up to 4 sentences), not private chain-of-thought. Then give a complete, carefully checked answer.`;
-
-const TAIL_R1_REASONING_RULE = `TAIL R1 FLAGSHIP MODE — you are the strongest model in Mirox. Maximum rigor:
-- Verify your approach before answering. Any counterexamples?
-- For math or code: trace through at least one example.
-- For factual claims: note confidence. If uncertain, say so.
-- For "how do I": give the shortest working path first, then optional depth.`;
-
-const BRIDGE_PROMPT = `BRIDGE MODE — You are Mirox, operating through the user's explicitly connected local bridge. You receive a [Bridge environment] block at the top of each user message.
-RULE 1 — Perform real file operations with bridge tags; never claim a file was created or a command ran unless the bridge returned success.
-RULE 2 — For coding/build tasks, inspect the target folder first with <bridge-list>, create or update files with <bridge-write>/<bridge-append>, then run a relevant build/test command with <bridge-exec> when available. Read back important files or command output to verify.
-RULE 3 — Use paths only inside the user's home or explicitly configured project folders. Never overwrite unrelated files. Ask before destructive actions, installing packages, using elevated privileges, or changing system settings. Avoid <bridge-sudo> unless the user explicitly approves the exact command.
-RULE 4 — Keep code out of normal chat when the bridge is connected; use bridge tags. Always close every tag. For long files, use <bridge-write> once and <bridge-append> for remaining chunks.
-TAGS:
-  <bridge-write path="/abs/path">...</bridge-write>
-  <bridge-append path="/abs/path">...</bridge-append>
-  <bridge-read path="/abs/path"/>
-  <bridge-list path="/abs/path"/>
-  <bridge-exec>cd /abs/dir && ls -la</bridge-exec>
-  <bridge-sudo>apt install foo</bridge-sudo>
-When finished, reply DONE on its own line with a concise summary of what was actually changed and verified.`;
+const DISCORD_PROMPT = `You are Mirox on Discord. Reply in a friendly, concise tone.
+- Use Discord markdown (**bold**, *italic*, \`code\`).
+- Keep replies under 1900 chars.
+- Don't prefix replies with the user's name.
+- Never output <thinking> tags — answer directly.`;
 
 const safeStr = (v, max = 200000) => { if (v == null) return ''; const s = typeof v === 'string' ? v : JSON.stringify(v); return s.length > max ? s.slice(0, max) : s; };
 const nowS = () => Math.floor(Date.now() / 1000);
@@ -196,8 +193,7 @@ function watermarkPng(buffer) {
   const chunk = Buffer.concat([lenBuf, type, data, crcBuf]);
   const iend = buffer.indexOf(Buffer.from('IEND', 'latin1'));
   if (iend < 4) return null;
-  const insertAt = iend - 4;
-  return Buffer.concat([buffer.slice(0, insertAt), chunk, buffer.slice(insertAt)]);
+  return Buffer.concat([buffer.slice(0, iend - 4), chunk, buffer.slice(iend - 4)]);
 }
 function watermarkJpeg(buffer) {
   if (buffer.length < 2 || buffer[0] !== 0xff || buffer[1] !== 0xd8) return null;
@@ -412,7 +408,48 @@ async function authFromRequest(req) {
   return { user: userFor(owner), viaKey: true };
 }
 
-/* ---------- Web search ---------- */
+/* ---------- KenSearch ---------- */
+async function kensearchSearch(query, limit = 5) {
+  if (!KS_KEY) return null;
+  try {
+    const r = await fetchT(`${KS_BASE}/api/public/v1/search`, {
+      method: 'POST',
+      headers: { 'x-api-key': KS_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, limit }),
+    }, 15000);
+    if (!r.ok) return null;
+    const d = await r.json();
+    return d?.data || null;
+  } catch (e) { console.warn('[kensearch]', e.message); return null; }
+}
+async function kensearchRead(url, format = 'markdown') {
+  if (!KS_KEY) return null;
+  try {
+    const r = await fetchT(`${KS_BASE}/api/public/v1/read`, {
+      method: 'POST',
+      headers: { 'x-api-key': KS_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, format }),
+    }, 15000);
+    if (!r.ok) return null;
+    const d = await r.json();
+    return d?.data || null;
+  } catch (e) { console.warn('[kensearch]', e.message); return null; }
+}
+async function kensearchWebinfo(url) {
+  if (!KS_KEY) return null;
+  try {
+    const r = await fetchT(`${KS_BASE}/api/public/v1/webinfo`, {
+      method: 'POST',
+      headers: { 'x-api-key': KS_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    }, 15000);
+    if (!r.ok) return null;
+    const d = await r.json();
+    return d?.data || null;
+  } catch (e) { console.warn('[kensearch]', e.message); return null; }
+}
+
+/* ---------- Web search fallback ---------- */
 const SEARCH_TIMEOUT_MS = 14000;
 const stripHtml = (s) => String(s || '').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&#x27;/g, "'").replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
 async function duckSearch(query, max = 5) {
@@ -439,8 +476,23 @@ async function duckSearch(query, max = 5) {
 async function ddgInstantAnswer(query) { try { const r = await fetchT(`https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`, {}, 8000); if (!r.ok) return null; const d = await r.json(); if (!(d.Abstract || d.Answer || d.Definition)) return null; return { heading: d.Heading || '', text: d.Abstract || d.Answer || d.Definition || '', source: d.AbstractSource || 'DuckDuckGo', url: d.AbstractURL || '' }; } catch { return null; } }
 async function wikiSearch(query) { try { const r = await fetchT(`https://en.wikipedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(query)}&srlimit=3&origin=*`, {}, 8000); if (!r.ok) return []; const d = await r.json(); return (d?.query?.search || []).map((h) => ({ title: h.title, url: `https://en.wikipedia.org/wiki/${encodeURIComponent(h.title.replace(/ /g, '_'))}`, snippet: stripHtml(h.snippet), domain: 'en.wikipedia.org' })); } catch { return []; } }
 async function wikiSummary(title) { try { const r = await fetchT(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`, {}, 7000); if (!r.ok) return null; const d = await r.json(); if (!d.extract) return null; return { source: 'Wikipedia', heading: d.title || title, text: d.extract, url: d.content_urls?.desktop?.page || '' }; } catch { return null; } }
+
 async function webSearch(query, max = 5) {
   const rawQuery = String(query || '').trim();
+  if (KS_KEY) {
+    const ks = await kensearchSearch(rawQuery, max);
+    if (ks && Array.isArray(ks) && ks.length) {
+      const results = ks.map((r) => ({ title: r.title || '', url: r.url || '', snippet: r.description || '', domain: (() => { try { return new URL(r.url).hostname.replace(/^www\./, ''); } catch { return ''; } })() }));
+      let overview = null;
+      const firstUrl = results[0]?.url;
+      if (firstUrl) {
+        const wi = await kensearchWebinfo(firstUrl);
+        if (wi && wi.summary) overview = { source: 'KenSearch', heading: wi.title || '', text: wi.summary, url: firstUrl };
+      }
+      if (!overview) { const ws = await wikiSummary(results[0]?.title || rawQuery); if (ws) overview = { ...ws, kind: 'wiki' }; }
+      return { results, overview, query: rawQuery };
+    }
+  }
   const domainMatch = rawQuery.match(/^(?:site:)?([a-z0-9.-]+\.[a-z]{2,})(?:\s+(.+))?$/i);
   const siteMatch = rawQuery.match(/^site:([a-z0-9.-]+)(?:\s+(.+))?$/i);
   const searchQuery = siteMatch ? `site:${siteMatch[1]} ${siteMatch[2] || ''}`.trim() : (domainMatch ? `site:${domainMatch[1]} ${domainMatch[2] || ''}`.trim() : rawQuery);
@@ -470,7 +522,7 @@ function detectSearchIntent(text) {
 function detectImageIntent(text) {
   const t = String(text || '').trim();
   if (!t) return null;
-  let m = t.match(/^(?:please\s+)?(?:can\s+you\s+|could\s+you\s+|i\s+want\s+(?:you\s+)?to\s+)?(?:generate|create|make|draw|render|paint|show\s+me|give\s+me)\s+(?:me\s+)?(?:an?\s+|the\s+)?(?:image|picture|photo|illustration|drawing|painting)\s+(?:of\s+|with\s+|showing\s+)?(.+?)[\s.?!,;:]*$/i);
+  let m = t.match(/^(?:please\s+)?(?:can\s+you\s+|could\s+you\s+)?(?:generate|create|make|draw|render|paint|show\s+me|give\s+me)\s+(?:me\s+)?(?:an?\s+|the\s+)?(?:image|picture|photo|illustration|drawing|painting)\s+(?:of\s+|with\s+|showing\s+)?(.+?)[\s.?!,;:]*$/i);
   if (m && m[1]) return m[1].trim();
   m = t.match(/^(?:an?\s+)?(?:image|picture|photo|illustration)\s+of\s+(.+?)[\s.?!,;:]*$/i);
   if (m && m[1]) return m[1].trim();
@@ -598,7 +650,7 @@ async function pipeProviderStream(body, onEvent, isClosed, onLimit = () => {}) {
   } finally { try { reader.releaseLock(); } catch {} }
 }
 
-/* ---------- Images ---------- */
+/* ---------- Image generation ---------- */
 async function generateImageHF(prompt) {
   if (!HF_API_KEY) return null;
   for (const model of HF_IMG_MODELS) {
@@ -661,11 +713,11 @@ function sseInit(res) {
 function sseWrite(res, obj) { if (res.writableEnded || res.destroyed) return; try { res.write('data: ' + JSON.stringify(obj) + '\n\n'); } catch {} }
 function sseDone(res) { if (res.writableEnded || res.destroyed) return; try { res.write('data: [DONE]\n\n'); } catch {} }
 
-function buildSystemPrompt(cfg, bridge, searchUsed, persona, deepThink, modelId, systemExtra, apiMode) {
+function buildSystemPrompt(cfg, bridge, searchUsed, persona, deepThink, modelId, systemExtra, apiMode, discordMode = false) {
   let p;
   if (apiMode) {
     p = IDENTITY_GUARD + '\n\n' + cfg.basePrompt;
-    p += '\n\nNever use <thinking> tags. Never reveal internal reasoning. Give the user the direct final answer only.';
+    p += '\n\nNever use <thinking> tags. Give the user the direct final answer only.';
   } else {
     p = IDENTITY_GUARD + '\n\n' + THINKING_RULE + '\n\n' + cfg.basePrompt;
     if (deepThink) p += '\n\n' + DEEP_THINK_RULE;
@@ -674,18 +726,19 @@ function buildSystemPrompt(cfg, bridge, searchUsed, persona, deepThink, modelId,
   if (searchUsed) p += '\n\nWEB SEARCH MODE: cite sources as [1], [2] when relevant.';
   if (persona) p += `\n\nUser preference: ${persona}`;
   if (systemExtra) p += '\n\n' + safeStr(systemExtra, 8000);
+  if (discordMode) p += '\n\n' + DISCORD_PROMPT;
   if (bridge) {
     const e2 = bridge.env || {};
     p += '\n\n' + BRIDGE_PROMPT;
-    p += `\n\n=== [Bridge environment] ===\nuser=${e2.user || '(unknown)'}\nhome=~\ncwd=.\nplatform=${e2.platform || '(unknown)'}\nallowed_dirs=home and explicitly configured project folders\nkdeConnect=${e2.kde_connect_available ? 'true' : 'false'}`;
+    p += `\n\n=== [Bridge environment] ===\nuser=${e2.user || '(unknown)'}\nhome=~\ncwd=.\nplatform=${e2.platform || '(unknown)'}`;
   }
   return p;
 }
 function buildEnvBlock(env) {
-  return ['[Bridge environment]', `user=${env.user || '?'}`, 'home=~', 'cwd=.', `platform=${env.platform || '?'}`, 'allowed_dirs=home and explicitly configured project folders', `kdeConnect=${env.kde_connect_available ? 'true' : 'false'}`].join('\n');
+  return ['[Bridge environment]', `user=${env.user || '?'}`, 'home=~', 'cwd=.', `platform=${env.platform || '?'}`].join('\n');
 }
 
-/* ---------- App ---------- */
+/* ---------- Express app ---------- */
 const app = express();
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
@@ -715,13 +768,15 @@ const publicUser = (u) => {
 const publicKey = (k) => ({ id: k.id, name: k.name, key: k.key, created: k.created, last_used: k.last_used || 0, revoked: !!k.revoked });
 
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
-  res.json({ ok: true, app: 'MiroxAI', version: 'v111',
-    providers: { openrouter: !!OP_KEY, hf: !!HF_API_KEY, airoute: !!AIROUTE_KEY },
+  res.json({ ok: true, app: 'MiroxAI', version: 'v114',
+    providers: { openrouter: !!OP_KEY, hf: !!HF_API_KEY, airoute: !!AIROUTE_KEY, kensearch: !!KS_KEY, discord: !!DISCORD_BOT_TOKEN },
     primary_provider: 'MiroxAI (SurrRoute)',
     watermark: 'MIROXAI-WATERMARK-v1-LOGO', thinking: true, deep_think: true, api_thinking: false,
     flagship: 'mirox-tail-r1', flagship_free: true,
     image_provider: HF_API_KEY ? 'huggingface' : (AIROUTE_KEY ? 'airoute' : null),
+    search_provider: KS_KEY ? 'kensearch' : 'duckduckgo',
     models_endpoint: '/v1/models',
+    discord_channels: { chat: DISCORD_CHAT_CHANNEL, image: DISCORD_IMAGE_CHANNEL, status: DISCORD_STATUS_CHANNEL },
     storage: { durable: KV_ON, primary_path: DATA_FILE, fallback_paths: DATA_FILES.slice(1), writable: dbOk },
     time: nowS() });
 });
@@ -729,7 +784,7 @@ app.get(['/api/health', '/health', '/ping'], (req, res) => {
 app.get('/api/web/status', async (req, res) => {
   const t0 = Date.now();
   const [ddg, wiki] = await Promise.all([duckSearch('test', 1).then((r) => r.length > 0).catch(() => false), wikiSearch('Python').then((r) => r.length > 0).catch(() => false)]);
-  res.json({ ok: true, duckduckgo: ddg, wikipedia: wiki, ms: Date.now() - t0 });
+  res.json({ ok: true, duckduckgo: ddg, wikipedia: wiki, kensearch: !!KS_KEY, ms: Date.now() - t0 });
 });
 
 function openaiModelList() {
@@ -767,14 +822,16 @@ app.get(['/v1/models/*', '/openai/v1/models/*', '/api/v1/models/*'], (req, res) 
 app.get(['/api/config', '/config'], (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tier: m.tier, tagline: m.tagline || '', flagship: !!m.flagship, icon: m.flagship ? 'ri-star-smile-line' : undefined }));
-  res.json({ app: { name: 'MiroxAI', version: 'v111' }, models, default_model: 'mirox-tail-r1', plans: PLANS,
+  res.json({ app: { name: 'MiroxAI', version: 'v114' }, models, default_model: 'mirox-tail-r1', plans: PLANS,
     tts_available: !!F_API, search_available: true, vision_available: true, image_intent: true, image_edit: false,
     image_requires_signin: false, watermark: true, thinking: true, deep_think: true, html_runner: true, api_thinking: false,
     loginment_available: !!LM_CLIENT_ID, email_login_available: ALLOW_EMAIL_LOGIN,
     airoute_available: !!AIROUTE_KEY, openrouter_available: !!OP_KEY, hf_available: !!HF_API_KEY,
+    kensearch_available: !!KS_KEY,
     image_provider: HF_API_KEY ? 'huggingface' : (AIROUTE_KEY ? 'airoute' : null),
+    search_provider: KS_KEY ? 'kensearch' : 'duckduckgo',
     kde_connect_available: true, support_chat_available: true, developers_url: '/developers',
-    flagship: 'mirox-tail-r1', storage_durable: KV_ON });
+    flagship: 'mirox-tail-r1', storage_durable: KV_ON, discord_enabled: !!DISCORD_BOT_TOKEN });
 });
 
 app.get(['/api/subscription/plans', '/subscription/plans'], (req, res) => {
@@ -1336,7 +1393,6 @@ app.get('/api/bridge/download', async (req, res) => {
 /* FALLBACKS */
 app.use((req, res) => {
   if (req.path.startsWith('/api') || req.path.startsWith('/v1') || req.path.startsWith('/openai')) {
-    console.warn(`[404] ${req.method} ${req.path}`);
     return res.status(404).json({ ok: false, error: 'Not found', path: req.path, hint: 'See GET /v1/models' });
   }
   res.sendFile(path.join(PUBLIC_DIR, 'index.html'), (err) => { if (err) res.status(404).send('Not found'); });
@@ -1348,12 +1404,496 @@ app.use((err, req, res, next) => {
   if (!res.headersSent) res.status(500).json({ ok: false, error: GENERIC_ERR });
 });
 
-console.log('[Mirox] v111 · flagship: Tail r1 (FREE) · api_thinking: OFF');
-console.log('[Mirox] chat endpoints:', CHAT_PATHS.join('  '));
-console.log('[Mirox] image provider:', HF_API_KEY ? 'huggingface' : (AIROUTE_KEY ? 'airoute' : 'none'));
+console.log('[Mirox] v114 · flagship: Tail r1 (FREE) · api_thinking: OFF');
+console.log('[Mirox] search provider:', KS_KEY ? 'kensearch' : 'duckduckgo');
+console.log('[Mirox] discord bot:', DISCORD_BOT_TOKEN ? 'enabled' : 'disabled');
 
 if (!process.env.VERCEL) {
   app.listen(PORT, () => console.log('[Mirox] Server at http://localhost:' + PORT));
+}
+
+/* ============================================================
+   DISCORD BOT — M_KEY only, hardcoded channels, ? prefix
+   ============================================================ */
+if (DISCORD_BOT_TOKEN) {
+  startDiscordBot().catch((e) => console.error('[discord]', e?.message || e));
+}
+
+async function startDiscordBot() {
+  const client = new Client({
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMessages,
+      GatewayIntentBits.MessageContent,
+      GatewayIntentBits.GuildMembers,
+    ],
+  });
+
+  // per-guild persistent setup marker
+  const setupMark = new Map();
+
+  client.once(Events.ClientReady, (c) => {
+    console.log(`[discord] logged in as ${c.user.tag}`);
+    c.user.setPresence({
+      activities: [{ name: '?help · MiroxAI', type: ActivityType.Watching }],
+      status: 'online',
+    });
+  });
+
+  // ---------- helpers ----------
+  const isChatChannel   = (id) => id === DISCORD_CHAT_CHANNEL;
+  const isImageChannel  = (id) => id === DISCORD_IMAGE_CHANNEL;
+  const isStatusChannel = (id) => id === DISCORD_STATUS_CHANNEL;
+
+  function bubble(content) {
+    // "Custom bubble" — small unicode frame around state text
+    return `▎${content}▕`;
+  }
+
+  async function safeReply(msg, text, opts = {}) {
+    try { return await msg.reply({ content: text, ...opts }); }
+    catch (e) { console.warn('[discord] reply failed:', e.message); return null; }
+  }
+
+  async function safeSend(channel, payload) {
+    try { return await channel.send(payload); }
+    catch (e) { console.warn('[discord] send failed:', e.message); return null; }
+  }
+
+  async function editOrSend(msg, content, embed = null) {
+    const payload = embed ? { content: content || '', embeds: [embed] } : { content: content || '' };
+    try {
+      if (msg && msg.editable) return await msg.edit(payload);
+    } catch {}
+    return safeSend(msg.channel, payload);
+  }
+
+  function truncate(text, n = 1900) {
+    const s = String(text || '');
+    if (s.length <= n) return s;
+    return s.slice(0, n - 20) + '\n…*(truncated)*';
+  }
+
+  // ---------- animated bubble ----------
+  async function animateBubble(channel, frames, interval = 900) {
+    // frames: array of strings
+    let msg = null;
+    try {
+      msg = await channel.send({ content: bubble(frames[0]) });
+      let idx = 0;
+      const iv = setInterval(async () => {
+        idx++;
+        if (idx >= frames.length) return;
+        try { await msg.edit({ content: bubble(frames[idx]) }); } catch {}
+      }, interval);
+      return {
+        message: msg,
+        stop: async (finalText, embed = null) => {
+          clearInterval(iv);
+          const payload = embed ? { content: finalText || '', embeds: [embed] } : { content: finalText || '' };
+          try { await msg.edit(payload); } catch {}
+        },
+      };
+    } catch (e) {
+      console.warn('[discord] animate failed:', e.message);
+      return { message: null, stop: async (finalText, embed = null) => {
+        const payload = embed ? { content: finalText || '', embeds: [embed] } : { content: finalText || '' };
+        return safeSend(channel, payload);
+      } };
+    }
+  }
+
+  // ---------- AI chat helpers ----------
+  async function runAiChat(userText, username, { deepThink = false, search = false } = {}) {
+    const cfg = MIROX_MODELS['mirox-tail-r1'];
+    const msgs = [
+      { role: 'system', content: buildSystemPrompt(cfg, null, false, '', deepThink, 'mirox-tail-r1', '', false, true) },
+      { role: 'user', content: `Discord user "${username}" says: ${userText}` },
+    ];
+
+    if (search) {
+      try {
+        const s = await webSearch(userText, 5);
+        const hasData = s.results.length || s.overview;
+        if (hasData) msgs.push({ role: 'system', content: formatSearchContext(userText, s) });
+      } catch {}
+    }
+
+    const result = await miroxChatChain({
+      messages: msgs,
+      cfg,
+      stream: false,
+      vision: false,
+      deepThink,
+    });
+    const data = await result.res.json().catch(() => ({}));
+    let reply = extractReplyText(data) || '(no reply)';
+    reply = stripThinking(reply);
+    return reply;
+  }
+
+  // ---------- setup roles ----------
+  async function autoSetupRoles(guild) {
+    const created = [];
+    const findOrCreate = async (def) => {
+      let role = guild.roles.cache.find((r) => r.name === def.name);
+      if (!role) {
+        try {
+          role = await guild.roles.create({
+            name: def.name,
+            color: def.color,
+            reason: 'MiroxAI auto-setup',
+          });
+          created.push(role.name);
+        } catch (e) {
+          console.warn('[discord] role create failed:', e.message);
+        }
+      } else if (role.color !== def.color) {
+        try { await role.setColor(def.color, 'MiroxAI auto-setup'); } catch {}
+      }
+      return role;
+    };
+
+    const ownerRole = await findOrCreate(DISCORD_ROLE_OWNER);
+    const botRole = await findOrCreate(DISCORD_ROLE_BOT);
+    const memberRole = await findOrCreate(DISCORD_ROLE_MEMBER);
+
+    // Rename roles with emoji prefix
+    const renameWithEmoji = async (role, emoji) => {
+      if (!role) return;
+      const targetName = `${emoji} ${role.name.replace(/^[^\w]+/, '').trim()}`;
+      if (role.name !== targetName) {
+        try { await role.setName(targetName, 'MiroxAI auto-setup emoji'); } catch {}
+      }
+    };
+    await renameWithEmoji(ownerRole, DISCORD_ROLE_OWNER.emoji);
+    await renameWithEmoji(botRole, DISCORD_ROLE_BOT.emoji);
+    await renameWithEmoji(memberRole, DISCORD_ROLE_MEMBER.emoji);
+
+    return { ownerRole, botRole, memberRole, created };
+  }
+
+  // ---------- commands ----------
+  const commands = {
+    help: {
+      desc: 'Show available commands',
+      run: async (msg) => {
+        const embed = new EmbedBuilder()
+          .setColor(0x4d6bfe)
+          .setTitle('🤖 Mirox Bot — Commands')
+          .setDescription(`Prefix: \`${DISCORD_CMD_PREFIX}\`  ·  Channels: <#${DISCORD_CHAT_CHANNEL}> · <#${DISCORD_IMAGE_CHANNEL}> · <#${DISCORD_STATUS_CHANNEL}>`)
+          .addFields(
+            { name: '💬 Chat', value: '`?ask <msg>` — ask the AI\n`?think <msg>` — deep think\n`?search <q>` — web search + answer', inline: false },
+            { name: '🎨 Images', value: '`?image <prompt>` — generate image', inline: false },
+            { name: '📊 Info', value: '`?status` — bot & API status\n`?models` — list models\n`?ping` — latency', inline: false },
+            { name: '🛠 Setup', value: '`?setup` — create roles + emojis', inline: false },
+            { name: '🧹 Utility', value: '`?userinfo [@user]` — user card\n`?serverinfo` — guild card\n`?avatar [@user]` — avatar', inline: false },
+          )
+          .setFooter({ text: 'MiroxAI · by OpenSurr' });
+        return safeSend(msg.channel, { embeds: [embed] });
+      },
+    },
+
+    ping: {
+      desc: 'Latency',
+      run: async (msg) => {
+        const t = Date.now();
+        const m = await safeSend(msg.channel, { content: bubble('🏓 Pinging…') });
+        if (!m) return;
+        const latency = Date.now() - t;
+        return m.edit({ content: bubble(`🏓 Pong · gateway ${client.ws.ping}ms · roundtrip ${latency}ms`) });
+      },
+    },
+
+    status: {
+      desc: 'Bot + API status',
+      run: async (msg) => {
+        const embed = new EmbedBuilder()
+          .setColor(0x16a34a)
+          .setTitle('📡 MiroxAI Status')
+          .addFields(
+            { name: '🟢 Discord', value: `Online · ${client.ws.ping}ms`, inline: true },
+            { name: '🌐 Web app', value: `[miroxai.org](${PUBLIC_ORIGIN})`, inline: true },
+            { name: '🧠 Chat models', value: `Tail r1 · Luna · Gen\nPro · Ultra · Eclipse`, inline: false },
+            { name: '🔍 Search', value: KS_KEY ? 'KenSearch ✅' : 'DuckDuckGo (fallback)', inline: true },
+            { name: '🎨 Images', value: HF_API_KEY ? 'HuggingFace ✅' : (AIROUTE_KEY ? 'Airoute ✅' : 'disabled'), inline: true },
+            { name: '🗄 Storage', value: KV_ON ? 'Durable (KV)' : 'Filesystem', inline: true },
+          )
+          .setFooter({ text: 'MiroxAI · ' + new Date().toISOString() });
+        return safeSend(msg.channel, { embeds: [embed] });
+      },
+    },
+
+    models: {
+      desc: 'List models',
+      run: async (msg) => {
+        const lines = Object.entries(MIROX_MODELS).map(([id, m]) =>
+          `${m.flagship ? '👑' : m.tier === 'free' ? '🆓' : '💎'} **${m.label}** \`${id}\` — *${m.tagline || ''}*`);
+        const embed = new EmbedBuilder()
+          .setColor(0x4d6bfe)
+          .setTitle('🧠 Available models')
+          .setDescription(lines.join('\n'))
+          .setFooter({ text: 'API-accessible: mirox-tail-r1, mirox-luna-1.2, mirox-gen-1' });
+        return safeSend(msg.channel, { embeds: [embed] });
+      },
+    },
+
+    setup: {
+      desc: 'Create roles with emojis',
+      run: async (msg) => {
+        if (!msg.guild) return safeReply(msg, '❌ This command only works in a server.');
+        if (!msg.member.permissions.has(PermissionFlagsBits.ManageRoles)) {
+          return safeReply(msg, '🚫 You need **Manage Roles** to run setup.');
+        }
+        const anim = await animateBubble(msg.channel, [
+          '⚙️ Checking roles…',
+          '👑 Creating owner role…',
+          '🤖 Creating bot role…',
+          '🌱 Creating member role…',
+          '✨ Assigning emojis…',
+        ]);
+        try {
+          const res = await autoSetupRoles(msg.guild);
+          // Ensure command author becomes owner
+          try {
+            if (msg.guild.ownerId === msg.author.id || msg.member.permissions.has(PermissionFlagsBits.Administrator)) {
+              await msg.member.roles.add(res.ownerRole, 'MiroxAI setup — server owner');
+            }
+          } catch {}
+          // Give bot its role
+          try {
+            const me = msg.guild.members.me;
+            if (me && res.botRole) await me.roles.add(res.botRole, 'MiroxAI setup — bot role');
+          } catch {}
+
+          const embed = new EmbedBuilder()
+            .setColor(0x16a34a)
+            .setTitle('✅ Setup complete')
+            .addFields(
+              { name: `${DISCORD_ROLE_OWNER.emoji} Owner`, value: res.ownerRole ? `<@&${res.ownerRole.id}>` : '—', inline: true },
+              { name: `${DISCORD_ROLE_BOT.emoji} Bot`, value: res.botRole ? `<@&${res.botRole.id}>` : '—', inline: true },
+              { name: `${DISCORD_ROLE_MEMBER.emoji} Member`, value: res.memberRole ? `<@&${res.memberRole.id}>` : '—', inline: true },
+              { name: '➕ Created', value: res.created.length ? res.created.join(', ') : 'Nothing new', inline: false },
+            )
+            .setFooter({ text: 'MiroxAI · roles ready' });
+          await anim.stop('', embed);
+        } catch (e) {
+          await anim.stop(`❌ Setup failed: ${e.message}`);
+        }
+      },
+    },
+
+    ask: {
+      desc: 'Ask the AI',
+      run: async (msg, args) => {
+        const text = args.join(' ').trim();
+        if (!text) return safeReply(msg, '❓ Usage: `?ask <your question>`');
+        const anim = await animateBubble(msg.channel, [
+          '💭 Thinking…',
+          '🧠 Reasoning…',
+          '✍️ Writing…',
+        ], 800);
+        try {
+          const reply = await runAiChat(text, msg.author.username, { deepThink: false, search: false });
+          await anim.stop(truncate(reply));
+        } catch (e) {
+          await anim.stop(`❌ ${e.message}`);
+        }
+      },
+    },
+
+    think: {
+      desc: 'Deep think',
+      run: async (msg, args) => {
+        const text = args.join(' ').trim();
+        if (!text) return safeReply(msg, '❓ Usage: `?think <your question>`');
+        const anim = await animateBubble(msg.channel, [
+          '🧠 Deep thinking…',
+          '🔬 Verifying…',
+          '🧩 Cross-checking…',
+          '✍️ Writing…',
+        ], 900);
+        try {
+          const reply = await runAiChat(text, msg.author.username, { deepThink: true, search: false });
+          await anim.stop(truncate(reply));
+        } catch (e) {
+          await anim.stop(`❌ ${e.message}`);
+        }
+      },
+    },
+
+    search: {
+      desc: 'Web search + answer',
+      run: async (msg, args) => {
+        const q = args.join(' ').trim();
+        if (!q) return safeReply(msg, '❓ Usage: `?search <query>`');
+        const anim = await animateBubble(msg.channel, [
+          '🔍 Searching the web…',
+          '📖 Reading sources…',
+          '🧠 Summarising…',
+          '✍️ Writing…',
+        ], 900);
+        try {
+          const reply = await runAiChat(q, msg.author.username, { deepThink: false, search: true });
+          await anim.stop(truncate(reply));
+        } catch (e) {
+          await anim.stop(`❌ ${e.message}`);
+        }
+      },
+    },
+
+    image: {
+      desc: 'Generate an image',
+      run: async (msg, args) => {
+        const prompt = args.join(' ').trim();
+        if (!prompt) return safeReply(msg, '❓ Usage: `?image <prompt>`');
+        const anim = await animateBubble(msg.channel, [
+          '🎨 Preparing canvas…',
+          '🖌️ Painting…',
+          '✨ Refining details…',
+          '💧 Watermarking…',
+        ], 1000);
+        try {
+          const dataUrl = await generateImage(prompt);
+          // Extract base64
+          const [meta, b64] = dataUrl.split(',');
+          const mime = (meta.match(/data:([^;]+)/) || [, 'image/png'])[1];
+          const buf = Buffer.from(b64, 'base64');
+          const ext = mime.includes('png') ? 'png' : 'jpg';
+          const { AttachmentBuilder } = await import('discord.js');
+          const file = new AttachmentBuilder(buf, { name: `mirox-${Date.now()}.${ext}` });
+          const embed = new EmbedBuilder()
+            .setColor(0xd97757)
+            .setTitle('🎨 Lumenal 1.0')
+            .setDescription(`*${truncate(prompt, 300)}*`)
+            .setImage(`attachment://${file.name}`)
+            .setFooter({ text: `Requested by ${msg.author.username}` });
+          await anim.stop('', embed);
+          await safeSend(msg.channel, { files: [file] });
+        } catch (e) {
+          await anim.stop(`❌ Image generation failed: ${e.message}`);
+        }
+      },
+    },
+
+    userinfo: {
+      desc: 'User info card',
+      run: async (msg) => {
+        const target = msg.mentions.members.first() || msg.member;
+        const embed = new EmbedBuilder()
+          .setColor(0x4d6bfe)
+          .setTitle(`👤 ${target.user.username}`)
+          .setThumbnail(target.user.displayAvatarURL({ size: 256 }))
+          .addFields(
+            { name: '🆔 ID', value: target.id, inline: true },
+            { name: '📅 Joined', value: target.joinedAt ? `<t:${Math.floor(target.joinedAt.getTime() / 1000)}:R>` : '—', inline: true },
+            { name: '🎂 Account', value: `<t:${Math.floor(target.user.createdTimestamp / 1000)}:R>`, inline: true },
+            { name: '🎭 Roles', value: target.roles.cache.filter((r) => r.name !== '@everyone').map((r) => `<@&${r.id}>`).slice(0, 10).join(', ') || '—', inline: false },
+          )
+          .setFooter({ text: 'MiroxAI' });
+        return safeSend(msg.channel, { embeds: [embed] });
+      },
+    },
+
+    serverinfo: {
+      desc: 'Server info card',
+      run: async (msg) => {
+        if (!msg.guild) return safeReply(msg, '❌ Server-only command.');
+        const g = msg.guild;
+        const embed = new EmbedBuilder()
+          .setColor(0x16a34a)
+          .setTitle(`🏠 ${g.name}`)
+          .setThumbnail(g.iconURL({ size: 256 }) || '')
+          .addFields(
+            { name: '🆔 ID', value: g.id, inline: true },
+            { name: '👥 Members', value: String(g.memberCount), inline: true },
+            { name: '📅 Created', value: `<t:${Math.floor(g.createdTimestamp / 1000)}:R>`, inline: true },
+            { name: '👑 Owner', value: `<@${g.ownerId}>`, inline: true },
+            { name: '💠 Roles', value: String(g.roles.cache.size), inline: true },
+            { name: '📺 Channels', value: String(g.channels.cache.size), inline: true },
+          )
+          .setFooter({ text: 'MiroxAI' });
+        return safeSend(msg.channel, { embeds: [embed] });
+      },
+    },
+
+    avatar: {
+      desc: 'Show avatar',
+      run: async (msg) => {
+        const target = msg.mentions.users.first() || msg.author;
+        const embed = new EmbedBuilder()
+          .setColor(0xd97757)
+          .setTitle(`🖼️ ${target.username}'s avatar`)
+          .setImage(target.displayAvatarURL({ size: 512 }))
+          .setFooter({ text: 'MiroxAI' });
+        return safeSend(msg.channel, { embeds: [embed] });
+      },
+    },
+  };
+
+  // ---------- message handler ----------
+  client.on(Events.MessageCreate, async (msg) => {
+    if (msg.author.bot) return;
+    if (!msg.guild) return;
+
+    const content = (msg.content || '').trim();
+    const chId = msg.channel.id;
+
+    // Status channel: allow commands but no free chat
+    if (isStatusChannel(chId)) {
+      if (!content.startsWith(DISCORD_CMD_PREFIX)) return;
+      const [cmdName, ...args] = content.slice(DISCORD_CMD_PREFIX.length).trim().split(/\s+/);
+      const cmd = commands[cmdName.toLowerCase()];
+      if (cmd) {
+        try { await cmd.run(msg, args); } catch (e) { console.warn('[discord] cmd error:', e.message); }
+      }
+      return;
+    }
+
+    // Image channel: only ?image / ?help / ?status etc.
+    if (isImageChannel(chId)) {
+      if (content.startsWith(DISCORD_CMD_PREFIX)) {
+        const [cmdName, ...args] = content.slice(DISCORD_CMD_PREFIX.length).trim().split(/\s+/);
+        const cmd = commands[cmdName.toLowerCase()];
+        if (cmd) { try { await cmd.run(msg, args); } catch (e) { console.warn('[discord] cmd error:', e.message); } return; }
+      }
+      // Treat plain text in image channel as ?image shortcut
+      if (content) {
+        try { await commands.image.run(msg, content.split(/\s+/)); } catch (e) { console.warn('[discord] image shortcut error:', e.message); }
+      }
+      return;
+    }
+
+    // Chat channel
+    if (isChatChannel(chId)) {
+      if (content.startsWith(DISCORD_CMD_PREFIX)) {
+        const [cmdName, ...args] = content.slice(DISCORD_CMD_PREFIX.length).trim().split(/\s+/);
+        const cmd = commands[cmdName.toLowerCase()];
+        if (cmd) { try { await cmd.run(msg, args); } catch (e) { console.warn('[discord] cmd error:', e.message); } return; }
+      }
+      if (!content) return;
+      // Free chat → AI
+      const anim = await animateBubble(msg.channel, [
+        '💭 Thinking…',
+        '🧠 Reasoning…',
+        '✍️ Writing…',
+      ], 800);
+      try {
+        const reply = await runAiChat(content, msg.author.username, { deepThink: false, search: false });
+        await anim.stop(truncate(reply));
+      } catch (e) {
+        await anim.stop(`❌ ${e.message}`);
+      }
+      return;
+    }
+    // Other channels: ignore
+  });
+
+  // ---------- error handling ----------
+  client.on(Events.Error, (e) => console.error('[discord] error:', e?.message || e));
+  client.on(Events.Warn, (e) => console.warn('[discord] warn:', e));
+
+  await client.login(DISCORD_BOT_TOKEN);
 }
 
 export default app;
