@@ -42,6 +42,20 @@
     { "source": "/models/:path*", "destination": "/api/index" },
     { "source": "/images/history", "destination": "/api/index" },
 
+    { "source": "/tos", "destination": "/api/index" },
+    { "source": "/tos/", "destination": "/api/index" },
+    { "source": "/terms", "destination": "/api/index" },
+    { "source": "/terms/", "destination": "/api/index" },
+    { "source": "/terms-of-service", "destination": "/api/index" },
+    { "source": "/terms-of-service/", "destination": "/api/index" },
+
+    { "source": "/privacy-policy", "destination": "/api/index" },
+    { "source": "/privacy-policy/", "destination": "/api/index" },
+    { "source": "/privacy", "destination": "/api/index" },
+    { "source": "/privacy/", "destination": "/api/index" },
+    { "source": "/privacyPolicy", "destination": "/api/index" },
+    { "source": "/privacyPolicy/", "destination": "/api/index" },
+
     { "source": "/admin", "destination": "/admin.html" },
     { "source": "/admin/", "destination": "/admin.html" },
     { "source": "/admin/console", "destination": "/admin.html" },
@@ -64,6 +78,18 @@
       "headers": [
         { "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate" },
         { "key": "Pragma", "value": "no-cache" }
+      ]
+    },
+    {
+      "source": "/tos",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=3600" }
+      ]
+    },
+    {
+      "source": "/privacy-policy",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=3600" }
       ]
     }
   ],
