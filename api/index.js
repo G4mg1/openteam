@@ -3,6 +3,7 @@
    · KenSearch web search
    · Discord: chat/image/status channels, ? prefix commands
    · Animated thinking/searching/generating bubble
+   · /tos and /privacy-policy pages (raw HTML)
    ============================================================ */
 import express from 'express';
 import cors from 'cors';
@@ -780,6 +781,7 @@ app.get(['/api/health', '/health', '/ping'], (req, res) => {
     bot_thinking: false,
     discord_channels: { chat: DISCORD_CHAT_CHANNEL, image: DISCORD_IMAGE_CHANNEL, status: DISCORD_STATUS_CHANNEL },
     storage: { durable: KV_ON, primary_path: DATA_FILE, fallback_paths: DATA_FILES.slice(1), writable: dbOk },
+    legal: { tos: '/tos', privacy: '/privacy-policy' },
     time: nowS() });
 });
 
@@ -834,7 +836,8 @@ app.get(['/api/config', '/config'], (req, res) => {
     image_provider: HF_API_KEY ? 'huggingface' : (AIROUTE_KEY ? 'airoute' : null),
     search_provider: KS_KEY ? 'kensearch' : 'duckduckgo',
     kde_connect_available: true, support_chat_available: true, developers_url: '/developers',
-    flagship: 'mirox-tail-r1', storage_durable: KV_ON, discord_enabled: !!DISCORD_BOT_TOKEN });
+    flagship: 'mirox-tail-r1', storage_durable: KV_ON, discord_enabled: !!DISCORD_BOT_TOKEN,
+    legal: { tos: '/tos', privacy: '/privacy-policy' } });
 });
 
 app.get(['/api/subscription/plans', '/subscription/plans'], (req, res) => {
@@ -1400,6 +1403,159 @@ app.get('/api/bridge/download', async (req, res) => {
   await archive.finalize();
 });
 
+/* ============================================================
+   LEGAL PAGES — /tos and /privacy-policy
+   Self-contained, no extra files, no DB needed.
+   ============================================================ */
+const LEGAL_STYLE = `
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.65;color:#1f2937;background:#f8fafc;padding:2rem 1rem;font-size:15px}
+  .wrap{max-width:820px;margin:0 auto;background:#fff;border-radius:14px;
+    padding:2.5rem 2.25rem;box-shadow:0 4px 18px rgba(15,23,42,.06);border:1px solid #e5e7eb}
+  .back{display:inline-block;margin-bottom:1.25rem;color:#4d6bfe;text-decoration:none;font-size:.9rem;font-weight:500}
+  .back:hover{text-decoration:underline}
+  h1{font-size:1.85rem;margin:0 0 .25rem;color:#0f172a;letter-spacing:-.01em}
+  .updated{color:#6b7280;font-size:.88rem;margin:0 0 2rem;padding-bottom:1rem;border-bottom:1px solid #f1f5f9}
+  h2{font-size:1.15rem;margin:2.25rem 0 .6rem;color:#0f172a}
+  h2:first-of-type{margin-top:0}
+  p,li{color:#374151}
+  p{margin:0 0 .9rem}
+  ul{margin:0 0 1rem;padding-left:1.25rem}
+  li{margin:.25rem 0}
+  strong{color:#111827}
+  a{color:#4d6bfe;text-decoration:none}
+  a:hover{text-decoration:underline}
+  footer{margin-top:2.5rem;padding-top:1.5rem;border-top:1px solid #e5e7eb;color:#6b7280;font-size:.85rem;text-align:center}
+  code{background:#f1f5f9;padding:.1rem .35rem;border-radius:4px;font-size:.9em}
+`;
+function legalPage(title, bodyHtml) {
+  return `<!doctype html><html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="index,follow">
+<title>${title} — MiroxAI</title>
+<style>${LEGAL_STYLE}</style>
+</head><body><div class="wrap">
+<a class="back" href="/">← Back to MiroxAI</a>
+<h1>${title}</h1>
+${bodyHtml}
+<footer>MiroxAI is operated by OpenSurr · <a href="mailto:support@miroxai.org">support@miroxai.org</a></footer>
+</div></body></html>`;
+}
+
+const TOS_BODY = `
+<p class="updated">Last updated: January 2025</p>
+<p>Welcome to MiroxAI. These Terms of Service (“Terms”) govern your access to and use of the MiroxAI website, applications, API, and Discord bot (collectively, the “Service”), operated by OpenSurr (“we”, “us”, or “our”). By accessing or using the Service, you agree to be bound by these Terms. If you do not agree, please do not use the Service.</p>
+
+<h2>1. Acceptance of Terms</h2>
+<p>By creating an account, signing in, using an API key, or accessing the Service in any way, you confirm that you are at least 13 years old (or the minimum age required in your jurisdiction) and that you agree to these Terms.</p>
+
+<h2>2. Description of Service</h2>
+<p>MiroxAI provides AI-powered chat, web search, vision analysis, image generation, API access, and related tools. We may add, change, or remove features at any time without notice.</p>
+
+<h2>3. Accounts</h2>
+<p>You are responsible for maintaining the confidentiality of your account credentials and any API keys. You agree to provide accurate information and to notify us promptly of any unauthorized use of your account. You may not share accounts in a way that violates these Terms.</p>
+
+<h2>4. Acceptable Use</h2>
+<p>You agree not to use the Service to:</p>
+<ul>
+<li>Violate any applicable law or regulation;</li>
+<li>Infringe the intellectual property or privacy rights of others;</li>
+<li>Generate, store, or distribute harmful, abusive, harassing, hateful, or illegal content;</li>
+<li>Attempt to bypass rate limits, security measures, or access controls;</li>
+<li>Reverse-engineer, scrape, or resell the Service without prior written permission;</li>
+<li>Interfere with the operation of the Service or other users’ access;</li>
+<li>Use the Service for spam, phishing, malware distribution, or automated abuse.</li>
+</ul>
+
+<h2>5. API Keys</h2>
+<p>API keys are personal credentials issued to your account. You are solely responsible for all activity performed with your keys. If a key is compromised, revoke it immediately from your dashboard. We may revoke keys that violate these Terms or that appear to be compromised.</p>
+
+<h2>6. Plans and Payments</h2>
+<p>Some features require a paid plan (Pro or Ultimate). Prices are displayed in USD at checkout. Except where required by applicable law, payments are non-refundable. We may change prices with reasonable notice; your continued use after a price change constitutes acceptance.</p>
+
+<h2>7. Your Content</h2>
+<p>You retain ownership of the prompts, files, and other content you submit. You grant us a limited license to process your content solely to provide the Service. AI-generated output may not be unique and may be inaccurate; you are responsible for how you use it.</p>
+
+<h2>8. AI Output Disclaimer</h2>
+<p>The Service generates content using artificial intelligence. Output may be incorrect, incomplete, outdated, or offensive. Do not rely on it for legal, medical, financial, or other professional advice. Always verify important information independently.</p>
+
+<h2>9. Availability and Changes</h2>
+<p>We aim to keep the Service available but do not guarantee uninterrupted access. We may suspend, modify, or discontinue any part of the Service at any time without liability.</p>
+
+<h2>10. Termination</h2>
+<p>We may suspend or terminate your access if you violate these Terms or if required by law. You may stop using the Service at any time. Upon termination, sections that by their nature should survive (such as disclaimers and limitation of liability) will continue to apply.</p>
+
+<h2>11. Limitation of Liability</h2>
+<p>To the maximum extent permitted by law, the Service is provided “as is” and “as available” without warranties of any kind, express or implied. OpenSurr is not liable for indirect, incidental, special, consequential, or punitive damages, or for any loss of data, revenue, or profits arising from your use of the Service.</p>
+
+<h2>12. Changes to These Terms</h2>
+<p>We may update these Terms from time to time. Material changes will be reflected by an updated date at the top of this page. Continued use of the Service after changes take effect constitutes acceptance of the updated Terms.</p>
+
+<h2>13. Contact</h2>
+<p>Questions about these Terms? Email <a href="mailto:support@miroxai.org">support@miroxai.org</a>.</p>
+`;
+
+const PRIVACY_BODY = `
+<p class="updated">Last updated: January 2025</p>
+<p>This Privacy Policy explains how OpenSurr (“we”, “us”) collects, uses, and protects your information when you use MiroxAI (the “Service”). By using the Service, you consent to the practices described here.</p>
+
+<h2>1. Information We Collect</h2>
+<ul>
+<li><strong>Account information:</strong> name, email address, and login provider.</li>
+<li><strong>Usage data:</strong> messages sent to the AI, prompts, model selections, and feature usage (e.g., image generations, web searches).</li>
+<li><strong>API data:</strong> API keys and request metadata such as timestamps and model names.</li>
+<li><strong>Technical data:</strong> IP address, browser type, and basic device information used for security and diagnostics.</li>
+</ul>
+
+<h2>2. How We Use Your Information</h2>
+<ul>
+<li>To provide and improve the Service;</li>
+<li>To process your requests, prompts, and searches;</li>
+<li>To manage accounts, API keys, and subscription plans;</li>
+<li>To detect abuse, enforce limits, and maintain security;</li>
+<li>To respond to support requests and communicate service updates.</li>
+</ul>
+
+<h2>3. Cookies and Sessions</h2>
+<p>We use a small number of cookies to keep you signed in (a secure session cookie) and to protect against cross-site request forgery. We do not use advertising cookies.</p>
+
+<h2>4. Third-Party Services</h2>
+<p>To operate the Service, we may send your prompts to third-party AI model providers and search services so that results can be returned to you. These providers process data on our behalf and are bound by their own terms and privacy policies. We do not sell your personal information.</p>
+
+<h2>5. Data Retention</h2>
+<p>We retain account data and chat history for as long as your account is active or as needed to provide the Service. You may request deletion of your account data at any time by contacting us.</p>
+
+<h2>6. Your Rights</h2>
+<p>Depending on your jurisdiction, you may have the right to access, correct, export, or delete your personal data. To exercise these rights, email <a href="mailto:support@miroxai.org">support@miroxai.org</a>. We aim to respond within a reasonable timeframe.</p>
+
+<h2>7. Children’s Privacy</h2>
+<p>The Service is not directed to children under 13. We do not knowingly collect personal information from children. If you believe a child has provided us information, please contact us and we will delete it.</p>
+
+<h2>8. Security</h2>
+<p>We use reasonable technical and organizational measures to protect your data, including encrypted connections and signed session tokens. No system is completely secure, so please use strong credentials and keep your API keys private.</p>
+
+<h2>9. International Transfers</h2>
+<p>Your information may be processed in countries other than your own. We take steps to ensure appropriate safeguards are in place when data is transferred internationally.</p>
+
+<h2>10. Changes to This Policy</h2>
+<p>We may update this Privacy Policy from time to time. Material changes will be reflected by an updated date at the top of this page.</p>
+
+<h2>11. Contact</h2>
+<p>Questions about privacy? Email <a href="mailto:support@miroxai.org">support@miroxai.org</a>.</p>
+`;
+
+app.get(['/tos', '/terms', '/terms-of-service'], (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.type('html').send(legalPage('Terms of Service', TOS_BODY));
+});
+app.get(['/privacy-policy', '/privacy', '/privacyPolicy'], (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.type('html').send(legalPage('Privacy Policy', PRIVACY_BODY));
+});
+
 /* FALLBACKS */
 app.use((req, res) => {
   if (req.path.startsWith('/api') || req.path.startsWith('/v1') || req.path.startsWith('/openai')) {
@@ -1418,6 +1574,7 @@ console.log('[Mirox] v114 · flagship: Tail r1 (FREE) · api_thinking: OFF');
 console.log('[Mirox] bot endpoint: /v1/bot/chat · thinking: OFF (forced)');
 console.log('[Mirox] search provider:', KS_KEY ? 'kensearch' : 'duckduckgo');
 console.log('[Mirox] discord bot:', DISCORD_BOT_TOKEN ? 'enabled' : 'disabled');
+console.log('[Mirox] legal pages: /tos · /privacy-policy');
 
 if (!process.env.VERCEL) {
   app.listen(PORT, () => console.log('[Mirox] Server at http://localhost:' + PORT));
@@ -1599,6 +1756,7 @@ async function startDiscordBot() {
             { name: '📊 Info', value: '`?status` — bot & API status\n`?models` — list models\n`?ping` — latency', inline: false },
             { name: '🛠 Setup', value: '`?setup` — create roles + emojis', inline: false },
             { name: '🧹 Utility', value: '`?userinfo [@user]` — user card\n`?serverinfo` — guild card\n`?avatar [@user]` — avatar', inline: false },
+            { name: '📄 Legal', value: `[Terms](${PUBLIC_ORIGIN}/tos) · [Privacy](${PUBLIC_ORIGIN}/privacy-policy)`, inline: false },
           )
           .setFooter({ text: 'MiroxAI · by OpenSurr' });
         return safeSend(msg.channel, { embeds: [embed] });
