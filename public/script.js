@@ -785,7 +785,7 @@
         <button class="kimi-chip" type="button" data-prompt="Design a clean poster layout for a science fair project"><i class="ri-palette-line"></i><span>Design</span></button>
       </div>
       <div class="kimi-suggest">
-        <button class="suggestion-card" type="button" data-prompt="What is the latest iPhone"><i class="ri-global-line"></i><span>Latest iPhone?</span></button>
+        <button class="suggestion-card" type="button" data-prompt="Latest Mirox Models?"><i class="ri-global-line"></i><span>Latest Mirox Models?</span></button>
         <button class="suggestion-card" type="button" data-prompt="Show me an HTML example with a table"><i class="ri-html5-line"></i><span>Show an HTML table</span></button>
         <button class="suggestion-card" type="button" data-prompt="Generate me an image of a cat"><i class="ri-image-line"></i><span>Generate an image</span></button>
         <button class="suggestion-card" type="button" data-prompt="Explain a concept simply"><i class="ri-lightbulb-line"></i><span>Explain a concept</span></button>
