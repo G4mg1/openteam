@@ -1101,13 +1101,15 @@ app.post(['/v1/images/generations', '/openai/v1/images/generations', '/api/v1/im
 });
 
 /* CHAT COMPLETIONS */
-const CHAT_PATHS = ['/v1/chat/completions','/chat/completions','/openai/v1/chat/completions','/api/v1/chat/completions','/api/chat/completions'];
+const CHAT_PATHS = ['/v1/chat/completions','/chat/completions','/openai/v1/chat/completions','/api/v1/chat/completions','/api/chat/completions','/v1/bot/chat'];
 
 app.post(CHAT_PATHS, async (req, res) => {
   const t0 = Date.now();
   let closed = false;
   req.on('close', () => { closed = true; });
   const isClosed = () => closed;
+
+  const isBotEndpoint = req.path === '/v1/bot/chat';
 
   const body = req.body || {};
   const wantStream = body.stream === true || String(req.headers.accept || '').includes('text/event-stream');
@@ -1141,7 +1143,9 @@ app.post(CHAT_PATHS, async (req, res) => {
   };
 
   try {
-    const auth = await authFromRequest(req);
+    const auth = isBotEndpoint
+      ? { user: null, viaKey: false }
+      : await authFromRequest(req);
     if (auth.error) return fail(401, 'Invalid API key');
     const u = auth.user || null;
     const viaKey = !!auth.viaKey;
