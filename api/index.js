@@ -776,6 +776,8 @@ app.get(['/api/health', '/health', '/ping'], (req, res) => {
     image_provider: HF_API_KEY ? 'huggingface' : (AIROUTE_KEY ? 'airoute' : null),
     search_provider: KS_KEY ? 'kensearch' : 'duckduckgo',
     models_endpoint: '/v1/models',
+    bot_endpoint: '/v1/bot/chat',
+    bot_thinking: false,
     discord_channels: { chat: DISCORD_CHAT_CHANNEL, image: DISCORD_IMAGE_CHANNEL, status: DISCORD_STATUS_CHANNEL },
     storage: { durable: KV_ON, primary_path: DATA_FILE, fallback_paths: DATA_FILES.slice(1), writable: dbOk },
     time: nowS() });
@@ -825,6 +827,7 @@ app.get(['/api/config', '/config'], (req, res) => {
   res.json({ app: { name: 'MiroxAI', version: 'v114' }, models, default_model: 'mirox-tail-r1', plans: PLANS,
     tts_available: !!F_API, search_available: true, vision_available: true, image_intent: true, image_edit: false,
     image_requires_signin: false, watermark: true, thinking: true, deep_think: true, html_runner: true, api_thinking: false,
+    bot_endpoint: '/v1/bot/chat', bot_thinking: false,
     loginment_available: !!LM_CLIENT_ID, email_login_available: ALLOW_EMAIL_LOGIN,
     airoute_available: !!AIROUTE_KEY, openrouter_available: !!OP_KEY, hf_available: !!HF_API_KEY,
     kensearch_available: !!KS_KEY,
@@ -1129,7 +1132,8 @@ app.post(CHAT_PATHS, async (req, res) => {
   const bridge = body.bridge && body.bridge.connected ? body.bridge : null;
   const forceSearch = body.search === true;
   const sourceImage = safeStr(body.source_image, 12 * 1024 * 1024);
-  const deepThink = body.deep_think === true;
+  // Bot endpoint NEVER does thinking — deep_think is forced off and cannot be enabled.
+  const deepThink = isBotEndpoint ? false : (body.deep_think === true);
   const systemExtra = safeStr(body.system_extra, 8000);
 
   const fail = (code, message) => res.status(code).json({ error: { message, type: 'invalid_request_error', code } });
@@ -1171,7 +1175,8 @@ app.post(CHAT_PATHS, async (req, res) => {
     if (cfg.tier === 'ultimate' && tier !== 'ultimate') return fail(403, 'Ultimate plan required');
     if (!text && !files.length) return fail(400, 'Empty message');
 
-    const imagePrompt = (files.length || deepThink) ? null : detectImageIntent(text);
+    // Bot endpoint: skip image intent entirely (image gen needs a signed-in user; bots have none).
+    const imagePrompt = isBotEndpoint ? null : ((files.length || deepThink) ? null : detectImageIntent(text));
     if (imagePrompt) {
       if (!u) return signinReply('Sign in to generate images with Mirox.');
       if (u.image_used >= plan.image_limit) return fixedReply(`Daily image limit reached for the ${plan.label} plan.`);
@@ -1189,7 +1194,8 @@ app.post(CHAT_PATHS, async (req, res) => {
     const searchQuery = forceSearch ? text : detectSearchIntent(text);
     if (wantStream) sseInit(res);
 
-    const apiMode = viaKey;
+    // apiMode => no <thinking> prompt, thinking stripped from output, no tool use.
+    const apiMode = viaKey || isBotEndpoint;
     const msgs = [{ role: 'system', content: buildSystemPrompt(cfg, bridge, !!searchQuery, u?.persona || '', deepThink, effectiveModel, apiMode ? systemExtra : [userContextPrompt(u), systemExtra].filter(Boolean).join('\n\n'), apiMode) }];
     for (const h of history) {
       const role = h && h.role;
@@ -1409,6 +1415,7 @@ app.use((err, req, res, next) => {
 });
 
 console.log('[Mirox] v114 · flagship: Tail r1 (FREE) · api_thinking: OFF');
+console.log('[Mirox] bot endpoint: /v1/bot/chat · thinking: OFF (forced)');
 console.log('[Mirox] search provider:', KS_KEY ? 'kensearch' : 'duckduckgo');
 console.log('[Mirox] discord bot:', DISCORD_BOT_TOKEN ? 'enabled' : 'disabled');
 
@@ -1895,7 +1902,7 @@ async function startDiscordBot() {
 
   // ---------- error handling ----------
   client.on(Events.Error, (e) => console.error('[discord] error:', e?.message || e));
-  client.on(Events.Warn, (e) => console.warn('[discord] warn:', e));
+  client.on(Events.Warn, (e) => console.warn('[discord] warn:', e?.message || e));
 
   await client.login(DISCORD_BOT_TOKEN);
 }
