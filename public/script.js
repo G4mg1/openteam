@@ -2,7 +2,7 @@
   'use strict';
 
   /* ============================================================
-     MiroxAI frontend v156
+     MiroxAI frontend v156 (FIXED: guest sign-in works)
      · Kimi-inspired UI · KenSearch integration
      · Persona works with search · Plugins popover · My Mirox
      ============================================================ */
@@ -1495,14 +1495,17 @@
     }
   }
 
-  /* ---------- Usage/config ---------- */
+  /* ---------- Usage/config ----------
+     ⭐ FIXED: __user stays null for guests → sign-in UI works everywhere.
+     Previously `__user = __user || {}` made __user an empty object (truthy),
+     so every `if (!__user)` check failed and hid the sign-in button. */
   async function refreshUsage() {
     const local = getLocalUser();
     const res = await jsonOr('/api/me', {}, null, 7000);
     let user = null;
     if (res && res.user) user = { ...res.user, local: false };
     else if (local) user = { name: local.name, email: local.email, tier: 'free', local: true };
-    __user = user;
+    __user = user;                                    // ← stays null for guests
     __tier = user ? (user.tier || 'free') : 'free';
     updateAccountUI();
     renderModelPicker();
@@ -1510,10 +1513,10 @@
     if (user && !user.local) {
       const s = await jsonOr('/api/settings', {}, null, 6000);
       if (s && s.ok && s.settings) __user.settings = s.settings;
-    } else {
-      __user = __user || {};
+    } else if (user) {
       __user.settings = safeGet(LOCAL_SETTINGS_KEY, {});
     }
+    // guest → __user === null → login button visible → works ✅
   }
   async function loadConfig() {
     const data = await jsonOr('/api/config', {}, null, 7000);
@@ -1969,7 +1972,8 @@
   /* ---------- MCP manager ---------- */
   function renderMcpList() {
     const list = document.getElementById('mcpList'); if (!list) return;
-    const servers = (__user?.settings?.mcp_servers) || [];
+    const settings = (__user && __user.settings) || safeGet(LOCAL_SETTINGS_KEY, {});
+    const servers = settings.mcp_servers || [];
     if (!servers.length) { list.innerHTML = '<div class="mcp-empty">No MCP servers configured.</div>'; return; }
     list.innerHTML = servers.map((s, i) => `<div class="mcp-item" data-idx="${i}"><div class="mcp-item-body"><div class="mcp-item-name">${escapeHtml(s.name || s.id)} <span class="mcp-item-badge ${s.enabled ? 'on' : 'off'}">${s.enabled ? 'On' : 'Off'}</span></div><div class="mcp-item-url">${escapeHtml(s.url || '(stdio)')}</div></div><div class="mcp-item-actions"><button class="icon-btn" data-mcp-act="edit"><i class="ri-edit-line"></i></button><button class="icon-btn" data-mcp-act="del"><i class="ri-delete-bin-line"></i></button></div></div>`).join('');
     list.querySelectorAll('.mcp-item').forEach((item) => {
@@ -1981,7 +1985,8 @@
   function openMcpEditor(idx) {
     const editor = document.getElementById('mcpEditor'); if (!editor) return;
     editor.style.display = '';
-    const servers = (__user?.settings?.mcp_servers) || [];
+    const settings = (__user && __user.settings) || safeGet(LOCAL_SETTINGS_KEY, {});
+    const servers = settings.mcp_servers || [];
     const s = typeof idx === 'number' ? servers[idx] : null;
     editor.dataset.editingIdx = typeof idx === 'number' ? String(idx) : '';
     document.getElementById('mcpId').value = s?.id || '';
