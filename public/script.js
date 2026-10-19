@@ -2,9 +2,10 @@
   'use strict';
 
   /* ============================================================
-     MiroxAI frontend v156 (FIXED: guest sign-in works)
+     MiroxAI frontend v156
      · Kimi-inspired UI · KenSearch integration
      · Persona works with search · Plugins popover · My Mirox
+     · Welcome brand uses logo.png + "Mirox AI" text
      ============================================================ */
 
   /* ---------- i18n ---------- */
@@ -774,7 +775,10 @@
   function loadChats() { const v = safeGet(LS_KEY, []); __conversations = Array.isArray(v) ? v : []; }
   function welcomeHTML() {
     return `<div class="welcome-screen">
-      <div class="kimi-wordmark">MIROX</div>
+      <div class="welcome-brand">
+        <img class="welcome-brand-logo" src="/logo.png" alt="Mirox AI logo" onerror="this.style.display='none'">
+        <span class="welcome-brand-text">Mirox AI</span>
+      </div>
       <div class="kimi-tagline">Your AI copilot for building, research, and every-day work.</div>
       <div class="kimi-chips">
         <button class="kimi-chip" type="button" data-prompt="Make me a slide deck about the solar system"><i class="ri-slideshow-line"></i><span>Slides</span></button>
@@ -1495,17 +1499,14 @@
     }
   }
 
-  /* ---------- Usage/config ----------
-     ⭐ FIXED: __user stays null for guests → sign-in UI works everywhere.
-     Previously `__user = __user || {}` made __user an empty object (truthy),
-     so every `if (!__user)` check failed and hid the sign-in button. */
+  /* ---------- Usage/config (FIXED guest sign-in) ---------- */
   async function refreshUsage() {
     const local = getLocalUser();
     const res = await jsonOr('/api/me', {}, null, 7000);
     let user = null;
     if (res && res.user) user = { ...res.user, local: false };
     else if (local) user = { name: local.name, email: local.email, tier: 'free', local: true };
-    __user = user;                                    // ← stays null for guests
+    __user = user; // stays null for guests → sign-in UI works
     __tier = user ? (user.tier || 'free') : 'free';
     updateAccountUI();
     renderModelPicker();
@@ -1516,7 +1517,6 @@
     } else if (user) {
       __user.settings = safeGet(LOCAL_SETTINGS_KEY, {});
     }
-    // guest → __user === null → login button visible → works ✅
   }
   async function loadConfig() {
     const data = await jsonOr('/api/config', {}, null, 7000);
