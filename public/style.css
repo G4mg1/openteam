@@ -2,6 +2,7 @@
    MiroxAI — Styles v156
    · Kimi-inspired white theme · KenSearch integration
    · Plugins popover · hidden quota until limit · mode pill
+   · NEW: welcome screen uses logo + brand text instead of bold MIROX
    ════════════════════════════════════════════════════════════ */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root{--bg:#fff;--panel:#fff;--panel-2:#f6f7f9;--panel-3:#eef0f3;--border:#e5e7eb;--border-strong:#d1d5db;--text:#0f1216;--text-muted:#4b5563;--text-faint:#9ca3af;--accent:#d97757;--accent-hover:#c96442;--accent-soft:rgba(217,119,87,.10);--accent-soft-2:rgba(217,119,87,.18);--accent-glow:rgba(217,119,87,.22);--accent-gradient:linear-gradient(135deg,var(--accent),var(--accent-hover));--blob-ink:var(--accent);--blob-eye:#fff;--code-bg:#282c34;--code-header:#21252b;--code-border:#181a1f;--code-text:#abb2bf;--danger:#dc2626;--success:#16a34a;--warn:#d97706;--radius:12px;--radius-lg:16px;--radius-xl:22px;--sidebar-width:300px;--content-max:820px;--base-font:15px;--font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;--font-serif:'Instrument Serif',Georgia,serif;--font-mono:'JetBrains Mono','SF Mono',Consolas,monospace;--shadow-sm:0 1px 2px rgba(15,18,22,.04),0 1px 3px rgba(15,18,22,.06);--shadow-md:0 4px 12px rgba(15,18,22,.06),0 2px 4px rgba(15,18,22,.04);--shadow-lg:0 12px 40px rgba(15,18,22,.10),0 4px 12px rgba(15,18,22,.06);--shadow-accent:0 6px 24px var(--accent-glow);--safe-top:env(safe-area-inset-top,0px);--safe-bottom:env(safe-area-inset-bottom,0px);--safe-left:env(safe-area-inset-left,0px);--safe-right:env(safe-area-inset-right,0px);--ease-spring:cubic-bezier(.34,1.4,.64,1);--ease-out:cubic-bezier(.32,.72,0,1);}
@@ -185,8 +186,12 @@ code{font-family:var(--font-mono)}
 .chat-messages{flex:1;overflow-y:auto;overflow-x:hidden;padding:32px 24px 12px;min-height:0;background:var(--bg)}
 .compact-mode .chat-messages{padding:20px 16px 10px}
 .welcome-screen{max-width:var(--content-max);margin:0 auto;text-align:center;padding:46px 16px 24px}
-.kimi-wordmark{font-family:var(--font-family);font-weight:900;font-size:76px;letter-spacing:-.05em;line-height:1;color:var(--text);margin-bottom:12px;animation:brandIn .5s var(--ease-out) both}
-:root[data-mode="dark"] .kimi-wordmark{color:var(--text)}
+
+/* ══ NEW WELCOME BRAND (logo + "Mirox AI" text) ══ */
+.welcome-brand{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;margin-bottom:18px;animation:brandIn .5s var(--ease-out) both}
+.welcome-brand-logo{width:72px;height:72px;border-radius:18px;object-fit:contain;box-shadow:0 8px 24px -10px var(--accent-glow)}
+.welcome-brand-text{font-family:var(--font-serif);font-style:italic;font-weight:500;font-size:28px;letter-spacing:-.015em;line-height:1;color:var(--text);opacity:.92}
+
 .kimi-tagline{font-size:14px;color:var(--text-muted);margin-bottom:28px}
 .kimi-chips{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-bottom:24px}
 .kimi-chip{display:inline-flex;align-items:center;gap:7px;padding:8px 15px;border-radius:999px;border:1px solid var(--border);background:var(--panel);font-size:13px;font-weight:500;color:var(--text-muted);transition:background .15s,color .15s,border-color .15s,transform .15s}
@@ -769,7 +774,8 @@ code{font-family:var(--font-mono)}
   .chat-header{padding:10px 14px;min-height:56px;gap:6px}
   .chat-title{font-size:16px}
   .chat-messages{padding:14px 12px 6px}
-  .kimi-wordmark{font-size:52px}
+  .welcome-brand-logo{width:60px;height:60px;border-radius:16px}
+  .welcome-brand-text{font-size:22px}
   .kimi-chip{font-size:12px;padding:7px 12px}
   .kimi-suggest{grid-template-columns:1fr 1fr}
   .kimi-quota-row{font-size:11.5px}
