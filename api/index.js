@@ -1,8 +1,9 @@
 /* ============================================================
-   MiroxAI Backend v114 — Discord bot (M_KEY only)
+   MiroxAI Backend v115 — VPS-backed storage + payments
    · KenSearch web search
-   · Discord: chat/image/status channels, ? prefix commands
-   · Animated thinking/searching/generating bubble
+   · Discord bot
+   · NEW: Persistent storage via SSH to your VPS (VPS_IP/VPS_KEY)
+   · NEW: Manual payment requests + admin approval
    · /tos and /privacy-policy pages (raw HTML)
    ============================================================ */
 import express from 'express';
@@ -45,7 +46,133 @@ const DISCORD_ROLE_BOT    = { name: 'Mirox Bot',    color: 0x4d6bfe, emoji: '�
 const DISCORD_ROLE_MEMBER = { name: 'Mirox Member', color: 0x16a34a, emoji: '🌱' };
 const DISCORD_CMD_PREFIX  = '?';
 
-/* ---------- Data file resolution ---------- */
+/* ============================================================
+   NEW: VPS STORAGE via SSH
+   Configure VPS_IP + VPS_KEY to persist the DB to your VPS.
+   ============================================================ */
+const VPS_IP       = env('VPS_IP');
+const VPS_KEY      = env('VPS_KEY', 'root');   // SSH password (per your setup)
+const VPS_USER     = env('VPS_USER', 'root');
+const VPS_PORT     = Number(env('VPS_PORT', '22'));
+const VPS_DB_PATH  = env('VPS_DB_PATH', '/var/lib/mirox/mirox-db.json');
+let   VPS_ON       = !!(VPS_IP && VPS_KEY);
+
+let _ssh2Mod = null;
+let _sshClient = null;
+let _sshReady = null;
+let _vpsBreakerUntil = 0;
+const VPS_BREAKER_MS = 30_000;
+
+async function getSSH2() {
+  if (_ssh2Mod) return _ssh2Mod;
+  _ssh2Mod = await import('ssh2');
+  return _ssh2Mod;
+}
+
+async function getSSHClient() {
+  if (Date.now() < _vpsBreakerUntil) throw new Error('vps_breaker_open');
+  if (_sshClient && _sshClient._ready) return _sshClient;
+  if (_sshReady) return _sshReady;
+  _sshReady = (async () => {
+    const { Client: SSHClient } = await getSSH2();
+    return await new Promise((resolve, reject) => {
+      const conn = new SSHClient();
+      const t = setTimeout(() => { try { conn.end(); } catch {} reject(new Error('ssh_timeout')); }, 20_000);
+      conn.on('ready', () => {
+        clearTimeout(t);
+        conn._ready = true;
+        _sshClient = conn;
+        conn.on('close', () => { _sshClient = null; _sshReady = null; });
+        conn.on('error', () => { _sshClient = null; _sshReady = null; });
+        resolve(conn);
+      });
+      conn.on('error', (e) => {
+        clearTimeout(t);
+        _sshReady = null;
+        _vpsBreakerUntil = Date.now() + VPS_BREAKER_MS;
+        reject(e);
+      });
+      conn.connect({
+        host: VPS_IP,
+        port: VPS_PORT,
+        username: VPS_USER,
+        password: VPS_KEY,
+        readyTimeout: 20_000,
+      });
+    });
+  })();
+  try { return await _sshReady; } catch (e) { _sshReady = null; throw e; }
+}
+
+async function vpsExec(cmd, timeoutMs = 20_000) {
+  const conn = await getSSHClient();
+  return await new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('exec_timeout')), timeoutMs);
+    conn.exec(cmd, (err, stream) => {
+      if (err) { clearTimeout(t); return reject(err); }
+      let stdout = '', stderr = '';
+      stream.on('data', (d) => { stdout += d.toString(); });
+      stream.stderr.on('data', (d) => { stderr += d.toString(); });
+      stream.on('close', (code) => { clearTimeout(t); resolve({ code, stdout, stderr }); });
+      stream.on('error', (e) => { clearTimeout(t); reject(e); });
+    });
+  });
+}
+
+async function vpsReadFile() {
+  const conn = await getSSHClient();
+  return await new Promise((resolve, reject) => {
+    conn.sftp((err, sftp) => {
+      if (err) return reject(err);
+      const chunks = [];
+      const stream = sftp.createReadStream(VPS_DB_PATH);
+      stream.on('data', (c) => chunks.push(c));
+      stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+      stream.on('error', reject);
+    });
+  });
+}
+
+async function vpsWriteFile(content) {
+  const conn = await getSSHClient();
+  return await new Promise((resolve, reject) => {
+    conn.sftp((err, sftp) => {
+      if (err) return reject(err);
+      const stream = sftp.createWriteStream(VPS_DB_PATH);
+      stream.on('close', () => resolve(true));
+      stream.on('error', reject);
+      stream.end(Buffer.from(content, 'utf8'));
+    });
+  });
+}
+
+async function vpsEnsure() {
+  if (!VPS_ON) return false;
+  try {
+    const dir = path.posix.dirname(VPS_DB_PATH);
+    const { code, stderr } = await vpsExec(
+      `mkdir -p ${JSON.stringify(dir)} && touch ${JSON.stringify(VPS_DB_PATH)} && chmod 700 ${JSON.stringify(dir)} && chmod 600 ${JSON.stringify(VPS_DB_PATH)}`
+    );
+    if (code !== 0) throw new Error(stderr || 'mkdir_failed');
+    return true;
+  } catch (e) {
+    console.error('[vps] ensure failed:', e.message);
+    return false;
+  }
+}
+
+// Probe ssh2 availability once at boot
+if (VPS_ON) {
+  try { await getSSH2(); }
+  catch {
+    console.error('[vps] ssh2 is not installed — run: npm install ssh2');
+    console.error('[vps] VPS storage disabled. Falling back to filesystem.');
+    VPS_ON = false;
+  }
+  if (VPS_ON) console.log(`[vps] storage enabled → ${VPS_USER}@${VPS_IP}:${VPS_DB_PATH}`);
+}
+
+/* ---------- Data file resolution (fallback only) ---------- */
 function resolveDataFile() {
   const candidates = [];
   const explicit = env('DB_FILE');
@@ -213,7 +340,8 @@ function applyWatermark(buffer, mime) {
 
 /* ---------- DB ---------- */
 let db = null, dbOk = false, dbLoading = null, writeChain = Promise.resolve();
-const emptyDb = () => ({ users: {}, keys: {}, chats: [], events: [], tickets: [] });
+let lastWrittenHash = '';
+const emptyDb = () => ({ users: {}, keys: {}, chats: [], events: [], tickets: [], payment_requests: [] });
 
 function normalize(raw) {
   const d = Object.assign(emptyDb(), raw && typeof raw === 'object' ? raw : {});
@@ -222,6 +350,7 @@ function normalize(raw) {
   d.chats = Array.isArray(d.chats) ? d.chats.slice(-300) : [];
   d.events = Array.isArray(d.events) ? d.events.slice(-300) : [];
   d.tickets = Array.isArray(d.tickets) ? d.tickets.slice(-200) : [];
+  d.payment_requests = Array.isArray(d.payment_requests) ? d.payment_requests.slice(-500) : [];
   for (const t of d.tickets) if (!Array.isArray(t.messages)) t.messages = [];
   for (const u of Object.values(d.users)) {
     if (!Array.isArray(u.keys)) u.keys = Array.isArray(u.api_keys) ? u.api_keys : [];
@@ -250,7 +379,23 @@ async function kv(cmd) {
 
 async function readMain() {
   if (KV_ON) {
-    try { return await kv(['GET', KV_DB_KEY]); } catch (e) { console.warn('[db] KV read failed:', e.message); }
+    try {
+      const v = await kv(['GET', KV_DB_KEY]);
+      if (v && v.length > 2) return v;
+    } catch (e) { console.warn('[db] KV read failed:', e.message); }
+  }
+  if (VPS_ON) {
+    try {
+      if (await vpsEnsure()) {
+        const content = await vpsReadFile();
+        if (content && content.trim().length > 2) {
+          console.log('[db] loaded from VPS');
+          return content;
+        }
+      }
+    } catch (e) {
+      console.warn('[db] VPS read failed:', e.message);
+    }
   }
   for (const f of DATA_FILES) {
     try {
@@ -265,7 +410,7 @@ async function readMain() {
 }
 
 async function loadDb() {
-  if (db && dbOk && !KV_ON) return db;
+  if (db && dbOk && !KV_ON && !VPS_ON) return db;
   if (dbLoading) return dbLoading;
   dbLoading = (async () => {
     try {
@@ -274,7 +419,8 @@ async function loadDb() {
       dbOk = true;
       const userCount = Object.keys(db.users || {}).length;
       const keyCount = Object.values(db.users || {}).reduce((s, u) => s + ((u.keys || []).length), 0);
-      console.log(`[db] loaded — users=${userCount} keys=${keyCount} path=${KV_ON ? 'KV' : DATA_FILE}`);
+      const src = VPS_ON ? 'VPS' : (KV_ON ? 'KV' : DATA_FILE);
+      console.log(`[db] loaded — users=${userCount} keys=${keyCount} source=${src}`);
     } catch (e) {
       console.error('[db] load failed:', e.message);
       if (!db) db = normalize(null);
@@ -285,22 +431,35 @@ async function loadDb() {
   return dbLoading;
 }
 
+async function writeAllBackends(snap) {
+  let ok = false;
+  if (KV_ON) {
+    try { await kv(['SET', KV_DB_KEY, snap]); ok = true; }
+    catch (e) { console.error('[db] KV write failed:', e.message); }
+  }
+  if (VPS_ON) {
+    try {
+      if (await vpsEnsure()) { await vpsWriteFile(snap); ok = true; }
+    } catch (e) { console.error('[db] VPS write failed:', e.message); }
+  }
+  for (const f of DATA_FILES) {
+    try {
+      await fs.mkdir(path.dirname(f), { recursive: true });
+      await fs.writeFile(f, snap, 'utf8');
+      ok = true;
+    } catch {}
+  }
+  return ok;
+}
+
 function persist() {
   if (!db || !dbOk) return Promise.resolve(false);
   const snap = JSON.stringify(db);
+  const hash = crypto.createHash('sha1').update(snap).digest('hex');
+  if (hash === lastWrittenHash) return Promise.resolve(true);
   const job = writeChain.then(async () => {
-    let ok = false;
-    if (KV_ON) {
-      try { await kv(['SET', KV_DB_KEY, snap]); ok = true; }
-      catch (e) { console.error('[db] KV write failed:', e.message); }
-    }
-    for (const f of DATA_FILES) {
-      try {
-        await fs.mkdir(path.dirname(f), { recursive: true });
-        await fs.writeFile(f, snap, 'utf8');
-        ok = true;
-      } catch (e) { /* silent */ }
-    }
+    const ok = await writeAllBackends(snap);
+    if (ok) lastWrittenHash = hash;
     return ok;
   });
   writeChain = job.then(() => undefined, () => undefined);
@@ -769,7 +928,7 @@ const publicUser = (u) => {
 const publicKey = (k) => ({ id: k.id, name: k.name, key: k.key, created: k.created, last_used: k.last_used || 0, revoked: !!k.revoked });
 
 app.get(['/api/health', '/health', '/ping'], (req, res) => {
-  res.json({ ok: true, app: 'MiroxAI', version: 'v114',
+  res.json({ ok: true, app: 'MiroxAI', version: 'v115',
     providers: { openrouter: !!OP_KEY, hf: !!HF_API_KEY, airoute: !!AIROUTE_KEY, kensearch: !!KS_KEY, discord: !!DISCORD_BOT_TOKEN },
     primary_provider: 'MiroxAI (SurrRoute)',
     watermark: 'MIROXAI-WATERMARK-v1-LOGO', thinking: true, deep_think: true, api_thinking: false,
@@ -780,7 +939,15 @@ app.get(['/api/health', '/health', '/ping'], (req, res) => {
     bot_endpoint: '/v1/bot/chat',
     bot_thinking: false,
     discord_channels: { chat: DISCORD_CHAT_CHANNEL, image: DISCORD_IMAGE_CHANNEL, status: DISCORD_STATUS_CHANNEL },
-    storage: { durable: KV_ON, primary_path: DATA_FILE, fallback_paths: DATA_FILES.slice(1), writable: dbOk },
+    storage: {
+      durable: KV_ON || VPS_ON,
+      kv_enabled: KV_ON,
+      vps_enabled: VPS_ON,
+      vps_db_path: VPS_ON ? `${VPS_USER}@${VPS_IP}:${VPS_DB_PATH}` : null,
+      primary_path: VPS_ON ? VPS_DB_PATH : DATA_FILE,
+      fallback_paths: DATA_FILES,
+      writable: dbOk,
+    },
     legal: { tos: '/tos', privacy: '/privacy-policy' },
     time: nowS() });
 });
@@ -826,7 +993,7 @@ app.get(['/v1/models/*', '/openai/v1/models/*', '/api/v1/models/*'], (req, res) 
 app.get(['/api/config', '/config'], (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const models = Object.entries(MIROX_MODELS).map(([id, m]) => ({ id, label: m.label, tier: m.tier, tagline: m.tagline || '', flagship: !!m.flagship, icon: m.flagship ? 'ri-star-smile-line' : undefined }));
-  res.json({ app: { name: 'MiroxAI', version: 'v114' }, models, default_model: 'mirox-tail-r1', plans: PLANS,
+  res.json({ app: { name: 'MiroxAI', version: 'v115' }, models, default_model: 'mirox-tail-r1', plans: PLANS,
     tts_available: !!F_API, search_available: true, vision_available: true, image_intent: true, image_edit: false,
     image_requires_signin: false, watermark: true, thinking: true, deep_think: true, html_runner: true, api_thinking: false,
     bot_endpoint: '/v1/bot/chat', bot_thinking: false,
@@ -836,7 +1003,8 @@ app.get(['/api/config', '/config'], (req, res) => {
     image_provider: HF_API_KEY ? 'huggingface' : (AIROUTE_KEY ? 'airoute' : null),
     search_provider: KS_KEY ? 'kensearch' : 'duckduckgo',
     kde_connect_available: true, support_chat_available: true, developers_url: '/developers',
-    flagship: 'mirox-tail-r1', storage_durable: KV_ON, discord_enabled: !!DISCORD_BOT_TOKEN,
+    flagship: 'mirox-tail-r1', storage_durable: KV_ON || VPS_ON, discord_enabled: !!DISCORD_BOT_TOKEN,
+    payments_available: true,
     legal: { tos: '/tos', privacy: '/privacy-policy' } });
 });
 
@@ -921,6 +1089,38 @@ app.post('/api/settings', async (req, res) => {
   res.json({ ok: true, settings: getSettings(u) });
 });
 
+/* ============================================================
+   NEW: PAYMENT REQUESTS (manual admin approval)
+   ============================================================ */
+app.post(['/api/payment/request-upgrade', '/payment/request-upgrade'], async (req, res) => {
+  const u = await currentUser(req);
+  if (!u) return res.status(401).json({ ok: false, error: 'Sign in to upgrade.' });
+  const requested = safeStr(req.body?.tier, 20).trim().toLowerCase();
+  const note = safeStr(req.body?.note, 500).trim();
+  if (!['pro', 'ultimate'].includes(requested)) return res.status(400).json({ ok: false, error: 'Invalid tier. Choose pro or ultimate.' });
+  if (TIER_RANK[requested] <= TIER_RANK[u.tier]) return res.status(400).json({ ok: false, error: `You are already on ${u.tier}. Choose a higher tier.` });
+  const existing = db.payment_requests.find((r) => r.email === u.email && r.status === 'pending');
+  if (existing) return res.json({ ok: true, request: existing, message: 'You already have a pending upgrade request. Admin will review it.' });
+  const request = {
+    id: 'pr_' + crypto.randomBytes(6).toString('hex'),
+    email: u.email, name: u.name || u.email,
+    current_tier: u.tier, requested_tier: requested, note,
+    status: 'pending', created: nowS(), updated: nowS(),
+  };
+  db.payment_requests.push(request);
+  if (db.payment_requests.length > 500) db.payment_requests.splice(0, db.payment_requests.length - 500);
+  logEvent({ email: u.email, event: 'payment_requested', tier: requested });
+  await persist();
+  res.json({ ok: true, request, message: 'Request received. Admin will review and activate your plan.' });
+});
+
+app.get(['/api/payment/my-requests', '/payment/my-requests'], async (req, res) => {
+  const u = await currentUser(req);
+  if (!u) return res.status(401).json({ ok: false, error: 'Login required' });
+  const requests = (db.payment_requests || []).filter((r) => r.email === u.email).slice(-20).reverse();
+  res.json({ ok: true, requests });
+});
+
 /* SUPPORT */
 app.get('/api/support/conversation', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
@@ -974,7 +1174,7 @@ app.post(['/api/keys', '/keys'], async (req, res) => {
   db.keys[raw] = u.email;
   logEvent({ email: u.email, event: 'key_created', id: key.id, name });
   const saved = await persist();
-  if (!saved) return res.status(503).json({ ok: false, error: 'Could not save the key.' });
+  if (!saved) return res.status(503).json({ ok: false, error: 'Could not save the key. Storage may be temporarily unavailable.' });
   res.json({ ok: true, key: publicKey(key), keys: u.keys.map(publicKey), limit, active: u.keys.filter((k) => !k.revoked).length });
 });
 app.post(['/api/keys/restore', '/keys/restore'], async (req, res) => {
@@ -1135,7 +1335,6 @@ app.post(CHAT_PATHS, async (req, res) => {
   const bridge = body.bridge && body.bridge.connected ? body.bridge : null;
   const forceSearch = body.search === true;
   const sourceImage = safeStr(body.source_image, 12 * 1024 * 1024);
-  // Bot endpoint NEVER does thinking — deep_think is forced off and cannot be enabled.
   const deepThink = isBotEndpoint ? false : (body.deep_think === true);
   const systemExtra = safeStr(body.system_extra, 8000);
 
@@ -1178,7 +1377,6 @@ app.post(CHAT_PATHS, async (req, res) => {
     if (cfg.tier === 'ultimate' && tier !== 'ultimate') return fail(403, 'Ultimate plan required');
     if (!text && !files.length) return fail(400, 'Empty message');
 
-    // Bot endpoint: skip image intent entirely (image gen needs a signed-in user; bots have none).
     const imagePrompt = isBotEndpoint ? null : ((files.length || deepThink) ? null : detectImageIntent(text));
     if (imagePrompt) {
       if (!u) return signinReply('Sign in to generate images with Mirox.');
@@ -1197,7 +1395,6 @@ app.post(CHAT_PATHS, async (req, res) => {
     const searchQuery = forceSearch ? text : detectSearchIntent(text);
     if (wantStream) sseInit(res);
 
-    // apiMode => no <thinking> prompt, thinking stripped from output, no tool use.
     const apiMode = viaKey || isBotEndpoint;
     const msgs = [{ role: 'system', content: buildSystemPrompt(cfg, bridge, !!searchQuery, u?.persona || '', deepThink, effectiveModel, apiMode ? systemExtra : [userContextPrompt(u), systemExtra].filter(Boolean).join('\n\n'), apiMode) }];
     for (const h of history) {
@@ -1331,7 +1528,14 @@ app.get(['/api/admin/stats', '/admin/stats'], requireAdmin, async (req, res) => 
   const imgEvents = db.events.filter((e) => /image_(generated|edited)/.test(e.event || '')).slice(-60).reverse().map((e) => ({ ts: e.ts, email: e.email || '—', prompt: e.prompt || '' }));
   const openTickets = (db.tickets || []).filter((t) => t.status === 'open').length;
   const unreadSupport = (db.tickets || []).reduce((s, t) => s + (t.unread_for_agent || 0), 0);
-  res.json({ ok: true, durable: KV_ON, db_writable: dbOk, warning: KV_ON ? null : 'No durable store configured. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN for persistent API keys.', storage_paths: DATA_FILES, users: users.length, chats: db.chats.length, events: db.events.length, images: imgEvents.length, open_tickets: openTickets, unread_support: unreadSupport, users_data: Object.fromEntries(users.map((u) => [u.email, { name: u.name, tier: u.tier, daily_used: u.daily_used, image_used: u.image_used, eclipse_used: u.eclipse_used, last_login: u.last_login, keys: (u.keys || []).length }])), chats_data: db.chats.slice(-100).reverse(), events_data: db.events.slice(-100).reverse(), images_data: imgEvents });
+  const pendingPayments = (db.payment_requests || []).filter((r) => r.status === 'pending').length;
+  res.json({ ok: true, durable: KV_ON || VPS_ON, kv: KV_ON, vps: VPS_ON, db_writable: dbOk,
+    storage: VPS_ON ? `vps:${VPS_USER}@${VPS_IP}:${VPS_DB_PATH}` : (KV_ON ? 'upstash-kv' : DATA_FILE),
+    warning: (!KV_ON && !VPS_ON) ? 'No durable store configured. Set VPS_IP+VPS_KEY (or Upstash) for persistent data.' : null,
+    storage_paths: DATA_FILES, users: users.length, chats: db.chats.length, events: db.events.length, images: imgEvents.length,
+    open_tickets: openTickets, unread_support: unreadSupport, pending_payments: pendingPayments,
+    users_data: Object.fromEntries(users.map((u) => [u.email, { name: u.name, tier: u.tier, daily_used: u.daily_used, image_used: u.image_used, eclipse_used: u.eclipse_used, last_login: u.last_login, keys: (u.keys || []).length }])),
+    chats_data: db.chats.slice(-100).reverse(), events_data: db.events.slice(-100).reverse(), images_data: imgEvents });
 });
 app.post(['/api/admin/set-tier', '/admin/set-tier'], requireAdmin, async (req, res) => {
   await ensureDb(req);
@@ -1346,6 +1550,53 @@ app.post(['/api/admin/set-tier', '/admin/set-tier'], requireAdmin, async (req, r
   if (!(await persist())) return res.status(500).json({ ok: false, error: 'Save failed.' });
   res.json({ ok: true, email, tier });
 });
+
+/* NEW: VPS connectivity test for admin */
+app.get(['/api/admin/vps-test', '/admin/vps-test'], requireAdmin, async (req, res) => {
+  if (!VPS_ON) return res.json({ ok: false, error: 'VPS not configured (set VPS_IP + VPS_KEY).' });
+  try {
+    const probe = await vpsExec(`ls -la ${JSON.stringify(path.posix.dirname(VPS_DB_PATH))} && echo '---' && wc -c ${JSON.stringify(VPS_DB_PATH)} 2>/dev/null || true`);
+    res.json({ ok: true, vps_ip: VPS_IP, user: VPS_USER, db_path: VPS_DB_PATH, output: probe.stdout });
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+/* NEW: Payment management endpoints */
+app.get(['/api/admin/payment-requests', '/admin/payment-requests'], requireAdmin, async (req, res) => {
+  await ensureDb(req);
+  const list = (db.payment_requests || []).slice().sort((a, b) => b.created - a.created);
+  res.json({ ok: true, requests: list });
+});
+app.post(['/api/admin/payment-approve', '/admin/payment-approve'], requireAdmin, async (req, res) => {
+  await ensureDb(req);
+  const id = safeStr(req.body?.id, 60);
+  const request = (db.payment_requests || []).find((r) => r.id === id);
+  if (!request) return res.status(404).json({ ok: false, error: 'Request not found' });
+  if (request.status !== 'pending') return res.status(400).json({ ok: false, error: 'Already processed' });
+  const u = userFor(request.email);
+  u.tier = request.requested_tier;
+  request.status = 'approved';
+  request.updated = nowS();
+  request.processed_by = 'admin';
+  logEvent({ email: request.email, event: 'payment_approved', tier: request.requested_tier });
+  if (!(await persist())) return res.status(500).json({ ok: false, error: 'Save failed.' });
+  res.json({ ok: true, request, user: { email: u.email, tier: u.tier } });
+});
+app.post(['/api/admin/payment-reject', '/admin/payment-reject'], requireAdmin, async (req, res) => {
+  await ensureDb(req);
+  const id = safeStr(req.body?.id, 60);
+  const request = (db.payment_requests || []).find((r) => r.id === id);
+  if (!request) return res.status(404).json({ ok: false, error: 'Request not found' });
+  if (request.status !== 'pending') return res.status(400).json({ ok: false, error: 'Already processed' });
+  request.status = 'rejected';
+  request.updated = nowS();
+  request.reason = safeStr(req.body?.reason, 300).trim() || null;
+  logEvent({ email: request.email, event: 'payment_rejected' });
+  if (!(await persist())) return res.status(500).json({ ok: false, error: 'Save failed.' });
+  res.json({ ok: true, request });
+});
+
 app.get(['/api/admin/support/conversations', '/admin/support/conversations'], requireAdmin, async (req, res) => { await ensureDb(req); res.json({ ok: true, conversations: (db.tickets || []).slice().sort((a, b) => (b.updated || 0) - (a.updated || 0)) }); });
 app.post(['/api/admin/support/reply', '/admin/support/reply'], requireAdmin, async (req, res) => {
   await ensureDb(req);
@@ -1403,10 +1654,7 @@ app.get('/api/bridge/download', async (req, res) => {
   await archive.finalize();
 });
 
-/* ============================================================
-   LEGAL PAGES — /tos and /privacy-policy
-   Self-contained, no extra files, no DB needed.
-   ============================================================ */
+/* LEGAL PAGES */
 const LEGAL_STYLE = `
   *{box-sizing:border-box}
   html,body{margin:0;padding:0}
@@ -1448,103 +1696,70 @@ ${bodyHtml}
 const TOS_BODY = `
 <p class="updated">Last updated: January 2025</p>
 <p>Welcome to MiroxAI. These Terms of Service (“Terms”) govern your access to and use of the MiroxAI website, applications, API, and Discord bot (collectively, the “Service”), operated by OpenSurr (“we”, “us”, or “our”). By accessing or using the Service, you agree to be bound by these Terms. If you do not agree, please do not use the Service.</p>
-
 <h2>1. Acceptance of Terms</h2>
 <p>By creating an account, signing in, using an API key, or accessing the Service in any way, you confirm that you are at least 13 years old (or the minimum age required in your jurisdiction) and that you agree to these Terms.</p>
-
 <h2>2. Description of Service</h2>
 <p>MiroxAI provides AI-powered chat, web search, vision analysis, image generation, API access, and related tools. We may add, change, or remove features at any time without notice.</p>
-
 <h2>3. Accounts</h2>
-<p>You are responsible for maintaining the confidentiality of your account credentials and any API keys. You agree to provide accurate information and to notify us promptly of any unauthorized use of your account. You may not share accounts in a way that violates these Terms.</p>
-
+<p>You are responsible for maintaining the confidentiality of your account credentials and any API keys. You agree to provide accurate information and to notify us promptly of any unauthorized use of your account.</p>
 <h2>4. Acceptable Use</h2>
-<p>You agree not to use the Service to:</p>
-<ul>
-<li>Violate any applicable law or regulation;</li>
-<li>Infringe the intellectual property or privacy rights of others;</li>
-<li>Generate, store, or distribute harmful, abusive, harassing, hateful, or illegal content;</li>
-<li>Attempt to bypass rate limits, security measures, or access controls;</li>
-<li>Reverse-engineer, scrape, or resell the Service without prior written permission;</li>
-<li>Interfere with the operation of the Service or other users’ access;</li>
-<li>Use the Service for spam, phishing, malware distribution, or automated abuse.</li>
-</ul>
-
+<p>You agree not to use the Service to violate laws, infringe rights, generate harmful content, bypass limits, reverse-engineer, spam, or abuse the service.</p>
 <h2>5. API Keys</h2>
-<p>API keys are personal credentials issued to your account. You are solely responsible for all activity performed with your keys. If a key is compromised, revoke it immediately from your dashboard. We may revoke keys that violate these Terms or that appear to be compromised.</p>
-
+<p>API keys are personal credentials. You are responsible for all activity with your keys. Revoke compromised keys immediately.</p>
 <h2>6. Plans and Payments</h2>
-<p>Some features require a paid plan (Pro or Ultimate). Prices are displayed in USD at checkout. Except where required by applicable law, payments are non-refundable. We may change prices with reasonable notice; your continued use after a price change constitutes acceptance.</p>
-
+<p>Some features require a paid plan (Pro or Ultimate). Payments are non-refundable except where required by law. Admin-approved upgrades take effect immediately.</p>
 <h2>7. Your Content</h2>
-<p>You retain ownership of the prompts, files, and other content you submit. You grant us a limited license to process your content solely to provide the Service. AI-generated output may not be unique and may be inaccurate; you are responsible for how you use it.</p>
-
+<p>You retain ownership of prompts, files, and other content. You grant us a limited license to process your content to provide the Service.</p>
 <h2>8. AI Output Disclaimer</h2>
-<p>The Service generates content using artificial intelligence. Output may be incorrect, incomplete, outdated, or offensive. Do not rely on it for legal, medical, financial, or other professional advice. Always verify important information independently.</p>
-
+<p>AI output may be incorrect, incomplete, or offensive. Do not rely on it for legal, medical, financial, or other professional advice.</p>
 <h2>9. Availability and Changes</h2>
-<p>We aim to keep the Service available but do not guarantee uninterrupted access. We may suspend, modify, or discontinue any part of the Service at any time without liability.</p>
-
+<p>We aim to keep the Service available but do not guarantee uninterrupted access.</p>
 <h2>10. Termination</h2>
-<p>We may suspend or terminate your access if you violate these Terms or if required by law. You may stop using the Service at any time. Upon termination, sections that by their nature should survive (such as disclaimers and limitation of liability) will continue to apply.</p>
-
+<p>We may suspend or terminate your access if you violate these Terms or if required by law.</p>
 <h2>11. Limitation of Liability</h2>
-<p>To the maximum extent permitted by law, the Service is provided “as is” and “as available” without warranties of any kind, express or implied. OpenSurr is not liable for indirect, incidental, special, consequential, or punitive damages, or for any loss of data, revenue, or profits arising from your use of the Service.</p>
-
+<p>To the maximum extent permitted by law, the Service is provided “as is” without warranties. OpenSurr is not liable for indirect or consequential damages.</p>
 <h2>12. Changes to These Terms</h2>
-<p>We may update these Terms from time to time. Material changes will be reflected by an updated date at the top of this page. Continued use of the Service after changes take effect constitutes acceptance of the updated Terms.</p>
-
+<p>We may update these Terms. Continued use after changes constitutes acceptance.</p>
 <h2>13. Contact</h2>
-<p>Questions about these Terms? Email <a href="mailto:support@miroxai.org">support@miroxai.org</a>.</p>
+<p>Questions? Email <a href="mailto:support@miroxai.org">support@miroxai.org</a>.</p>
 `;
 
 const PRIVACY_BODY = `
 <p class="updated">Last updated: January 2025</p>
-<p>This Privacy Policy explains how OpenSurr (“we”, “us”) collects, uses, and protects your information when you use MiroxAI (the “Service”). By using the Service, you consent to the practices described here.</p>
-
+<p>This Privacy Policy explains how OpenSurr collects, uses, and protects your information when you use MiroxAI.</p>
 <h2>1. Information We Collect</h2>
 <ul>
-<li><strong>Account information:</strong> name, email address, and login provider.</li>
-<li><strong>Usage data:</strong> messages sent to the AI, prompts, model selections, and feature usage (e.g., image generations, web searches).</li>
-<li><strong>API data:</strong> API keys and request metadata such as timestamps and model names.</li>
-<li><strong>Technical data:</strong> IP address, browser type, and basic device information used for security and diagnostics.</li>
+<li><strong>Account information:</strong> name, email, login provider.</li>
+<li><strong>Usage data:</strong> messages, prompts, model selections, feature usage.</li>
+<li><strong>API data:</strong> API keys and request metadata.</li>
+<li><strong>Technical data:</strong> IP address, browser type, device info.</li>
 </ul>
-
 <h2>2. How We Use Your Information</h2>
 <ul>
 <li>To provide and improve the Service;</li>
 <li>To process your requests, prompts, and searches;</li>
 <li>To manage accounts, API keys, and subscription plans;</li>
-<li>To detect abuse, enforce limits, and maintain security;</li>
-<li>To respond to support requests and communicate service updates.</li>
+<li>To detect abuse and maintain security;</li>
+<li>To respond to support requests.</li>
 </ul>
-
 <h2>3. Cookies and Sessions</h2>
-<p>We use a small number of cookies to keep you signed in (a secure session cookie) and to protect against cross-site request forgery. We do not use advertising cookies.</p>
-
+<p>We use a small number of cookies to keep you signed in and protect against CSRF. We do not use advertising cookies.</p>
 <h2>4. Third-Party Services</h2>
-<p>To operate the Service, we may send your prompts to third-party AI model providers and search services so that results can be returned to you. These providers process data on our behalf and are bound by their own terms and privacy policies. We do not sell your personal information.</p>
-
+<p>We may send your prompts to third-party AI model providers and search services. We do not sell your personal information.</p>
 <h2>5. Data Retention</h2>
-<p>We retain account data and chat history for as long as your account is active or as needed to provide the Service. You may request deletion of your account data at any time by contacting us.</p>
-
+<p>We retain account data and chat history for as long as your account is active or as needed to provide the Service.</p>
 <h2>6. Your Rights</h2>
-<p>Depending on your jurisdiction, you may have the right to access, correct, export, or delete your personal data. To exercise these rights, email <a href="mailto:support@miroxai.org">support@miroxai.org</a>. We aim to respond within a reasonable timeframe.</p>
-
+<p>You may request access, correction, export, or deletion of your data by emailing <a href="mailto:support@miroxai.org">support@miroxai.org</a>.</p>
 <h2>7. Children’s Privacy</h2>
-<p>The Service is not directed to children under 13. We do not knowingly collect personal information from children. If you believe a child has provided us information, please contact us and we will delete it.</p>
-
+<p>The Service is not directed to children under 13.</p>
 <h2>8. Security</h2>
-<p>We use reasonable technical and organizational measures to protect your data, including encrypted connections and signed session tokens. No system is completely secure, so please use strong credentials and keep your API keys private.</p>
-
+<p>We use reasonable technical measures including encrypted connections and signed session tokens. Keep your API keys private.</p>
 <h2>9. International Transfers</h2>
-<p>Your information may be processed in countries other than your own. We take steps to ensure appropriate safeguards are in place when data is transferred internationally.</p>
-
+<p>Your information may be processed in countries other than your own. We ensure appropriate safeguards when transferring internationally.</p>
 <h2>10. Changes to This Policy</h2>
-<p>We may update this Privacy Policy from time to time. Material changes will be reflected by an updated date at the top of this page.</p>
-
+<p>We may update this Privacy Policy from time to time. Material changes will be reflected by an updated date.</p>
 <h2>11. Contact</h2>
-<p>Questions about privacy? Email <a href="mailto:support@miroxai.org">support@miroxai.org</a>.</p>
+<p>Questions? Email <a href="mailto:support@miroxai.org">support@miroxai.org</a>.</p>
 `;
 
 app.get(['/tos', '/terms', '/terms-of-service'], (req, res) => {
@@ -1570,19 +1785,19 @@ app.use((err, req, res, next) => {
   if (!res.headersSent) res.status(500).json({ ok: false, error: GENERIC_ERR });
 });
 
-console.log('[Mirox] v114 · flagship: Tail r1 (FREE) · api_thinking: OFF');
+console.log('[Mirox] v115 · flagship: Tail r1 (FREE) · api_thinking: OFF');
+console.log('[Mirox] storage:', VPS_ON ? `VPS (${VPS_USER}@${VPS_IP}:${VPS_DB_PATH})` : KV_ON ? 'Upstash KV' : DATA_FILE);
 console.log('[Mirox] bot endpoint: /v1/bot/chat · thinking: OFF (forced)');
 console.log('[Mirox] search provider:', KS_KEY ? 'kensearch' : 'duckduckgo');
 console.log('[Mirox] discord bot:', DISCORD_BOT_TOKEN ? 'enabled' : 'disabled');
+console.log('[Mirox] payments: manual admin approval enabled');
 console.log('[Mirox] legal pages: /tos · /privacy-policy');
 
 if (!process.env.VERCEL) {
   app.listen(PORT, () => console.log('[Mirox] Server at http://localhost:' + PORT));
 }
 
-/* ============================================================
-   DISCORD BOT — M_KEY only, hardcoded channels, ? prefix
-   ============================================================ */
+/* DISCORD BOT */
 if (DISCORD_BOT_TOKEN) {
   startDiscordBot().catch((e) => console.error('[discord]', e?.message || e));
 }
@@ -1597,9 +1812,6 @@ async function startDiscordBot() {
     ],
   });
 
-  // per-guild persistent setup marker
-  const setupMark = new Map();
-
   client.once(Events.ClientReady, (c) => {
     console.log(`[discord] logged in as ${c.user.tag}`);
     c.user.setPresence({
@@ -1608,15 +1820,11 @@ async function startDiscordBot() {
     });
   });
 
-  // ---------- helpers ----------
   const isChatChannel   = (id) => id === DISCORD_CHAT_CHANNEL;
   const isImageChannel  = (id) => id === DISCORD_IMAGE_CHANNEL;
   const isStatusChannel = (id) => id === DISCORD_STATUS_CHANNEL;
 
-  function bubble(content) {
-    // "Custom bubble" — small unicode frame around state text
-    return `▎${content}▕`;
-  }
+  function bubble(content) { return `▎${content}▕`; }
 
   async function safeReply(msg, text, opts = {}) {
     try { return await msg.reply({ content: text, ...opts }); }
@@ -1628,23 +1836,13 @@ async function startDiscordBot() {
     catch (e) { console.warn('[discord] send failed:', e.message); return null; }
   }
 
-  async function editOrSend(msg, content, embed = null) {
-    const payload = embed ? { content: content || '', embeds: [embed] } : { content: content || '' };
-    try {
-      if (msg && msg.editable) return await msg.edit(payload);
-    } catch {}
-    return safeSend(msg.channel, payload);
-  }
-
   function truncate(text, n = 1900) {
     const s = String(text || '');
     if (s.length <= n) return s;
     return s.slice(0, n - 20) + '\n…*(truncated)*';
   }
 
-  // ---------- animated bubble ----------
   async function animateBubble(channel, frames, interval = 900) {
-    // frames: array of strings
     let msg = null;
     try {
       msg = await channel.send({ content: bubble(frames[0]) });
@@ -1671,7 +1869,6 @@ async function startDiscordBot() {
     }
   }
 
-  // ---------- AI chat helpers ----------
   async function runAiChat(userText, username, { deepThink = false, search = false } = {}) {
     const cfg = MIROX_MODELS['mirox-tail-r1'];
     const msgs = [
@@ -1700,48 +1897,6 @@ async function startDiscordBot() {
     return reply;
   }
 
-  // ---------- setup roles ----------
-  async function autoSetupRoles(guild) {
-    const created = [];
-    const findOrCreate = async (def) => {
-      let role = guild.roles.cache.find((r) => r.name === def.name);
-      if (!role) {
-        try {
-          role = await guild.roles.create({
-            name: def.name,
-            color: def.color,
-            reason: 'MiroxAI auto-setup',
-          });
-          created.push(role.name);
-        } catch (e) {
-          console.warn('[discord] role create failed:', e.message);
-        }
-      } else if (role.color !== def.color) {
-        try { await role.setColor(def.color, 'MiroxAI auto-setup'); } catch {}
-      }
-      return role;
-    };
-
-    const ownerRole = await findOrCreate(DISCORD_ROLE_OWNER);
-    const botRole = await findOrCreate(DISCORD_ROLE_BOT);
-    const memberRole = await findOrCreate(DISCORD_ROLE_MEMBER);
-
-    // Rename roles with emoji prefix
-    const renameWithEmoji = async (role, emoji) => {
-      if (!role) return;
-      const targetName = `${emoji} ${role.name.replace(/^[^\w]+/, '').trim()}`;
-      if (role.name !== targetName) {
-        try { await role.setName(targetName, 'MiroxAI auto-setup emoji'); } catch {}
-      }
-    };
-    await renameWithEmoji(ownerRole, DISCORD_ROLE_OWNER.emoji);
-    await renameWithEmoji(botRole, DISCORD_ROLE_BOT.emoji);
-    await renameWithEmoji(memberRole, DISCORD_ROLE_MEMBER.emoji);
-
-    return { ownerRole, botRole, memberRole, created };
-  }
-
-  // ---------- commands ----------
   const commands = {
     help: {
       desc: 'Show available commands',
@@ -1749,20 +1904,17 @@ async function startDiscordBot() {
         const embed = new EmbedBuilder()
           .setColor(0x4d6bfe)
           .setTitle('🤖 Mirox Bot — Commands')
-          .setDescription(`Prefix: \`${DISCORD_CMD_PREFIX}\`  ·  Channels: <#${DISCORD_CHAT_CHANNEL}> · <#${DISCORD_IMAGE_CHANNEL}> · <#${DISCORD_STATUS_CHANNEL}>`)
+          .setDescription(`Prefix: \`${DISCORD_CMD_PREFIX}\``)
           .addFields(
             { name: '💬 Chat', value: '`?ask <msg>` — ask the AI\n`?think <msg>` — deep think\n`?search <q>` — web search + answer', inline: false },
             { name: '🎨 Images', value: '`?image <prompt>` — generate image', inline: false },
             { name: '📊 Info', value: '`?status` — bot & API status\n`?models` — list models\n`?ping` — latency', inline: false },
-            { name: '🛠 Setup', value: '`?setup` — create roles + emojis', inline: false },
-            { name: '🧹 Utility', value: '`?userinfo [@user]` — user card\n`?serverinfo` — guild card\n`?avatar [@user]` — avatar', inline: false },
             { name: '📄 Legal', value: `[Terms](${PUBLIC_ORIGIN}/tos) · [Privacy](${PUBLIC_ORIGIN}/privacy-policy)`, inline: false },
           )
           .setFooter({ text: 'MiroxAI · by OpenSurr' });
         return safeSend(msg.channel, { embeds: [embed] });
       },
     },
-
     ping: {
       desc: 'Latency',
       run: async (msg) => {
@@ -1773,7 +1925,6 @@ async function startDiscordBot() {
         return m.edit({ content: bubble(`🏓 Pong · gateway ${client.ws.ping}ms · roundtrip ${latency}ms`) });
       },
     },
-
     status: {
       desc: 'Bot + API status',
       run: async (msg) => {
@@ -1783,148 +1934,62 @@ async function startDiscordBot() {
           .addFields(
             { name: '🟢 Discord', value: `Online · ${client.ws.ping}ms`, inline: true },
             { name: '🌐 Web app', value: `[miroxai.org](${PUBLIC_ORIGIN})`, inline: true },
-            { name: '🧠 Chat models', value: `Tail r1 · Luna · Gen\nPro · Ultra · Eclipse`, inline: false },
-            { name: '🔍 Search', value: KS_KEY ? 'KenSearch ✅' : 'DuckDuckGo (fallback)', inline: true },
-            { name: '🎨 Images', value: HF_API_KEY ? 'HuggingFace ✅' : (AIROUTE_KEY ? 'Airoute ✅' : 'disabled'), inline: true },
-            { name: '🗄 Storage', value: KV_ON ? 'Durable (KV)' : 'Filesystem', inline: true },
+            { name: '🗄 Storage', value: VPS_ON ? 'VPS (durable)' : KV_ON ? 'Upstash KV' : 'Filesystem', inline: true },
           )
           .setFooter({ text: 'MiroxAI · ' + new Date().toISOString() });
         return safeSend(msg.channel, { embeds: [embed] });
       },
     },
-
     models: {
       desc: 'List models',
       run: async (msg) => {
         const lines = Object.entries(MIROX_MODELS).map(([id, m]) =>
-          `${m.flagship ? '👑' : m.tier === 'free' ? '🆓' : '💎'} **${m.label}** \`${id}\` — *${m.tagline || ''}*`);
+          `${m.flagship ? '👑' : m.tier === 'free' ? '🆓' : '💎'} **${m.label}** \`${id}\``);
         const embed = new EmbedBuilder()
           .setColor(0x4d6bfe)
           .setTitle('🧠 Available models')
-          .setDescription(lines.join('\n'))
-          .setFooter({ text: 'API-accessible: mirox-tail-r1, mirox-luna-1.2, mirox-gen-1' });
+          .setDescription(lines.join('\n'));
         return safeSend(msg.channel, { embeds: [embed] });
       },
     },
-
-    setup: {
-      desc: 'Create roles with emojis',
-      run: async (msg) => {
-        if (!msg.guild) return safeReply(msg, '❌ This command only works in a server.');
-        if (!msg.member.permissions.has(PermissionFlagsBits.ManageRoles)) {
-          return safeReply(msg, '🚫 You need **Manage Roles** to run setup.');
-        }
-        const anim = await animateBubble(msg.channel, [
-          '⚙️ Checking roles…',
-          '👑 Creating owner role…',
-          '🤖 Creating bot role…',
-          '🌱 Creating member role…',
-          '✨ Assigning emojis…',
-        ]);
-        try {
-          const res = await autoSetupRoles(msg.guild);
-          // Ensure command author becomes owner
-          try {
-            if (msg.guild.ownerId === msg.author.id || msg.member.permissions.has(PermissionFlagsBits.Administrator)) {
-              await msg.member.roles.add(res.ownerRole, 'MiroxAI setup — server owner');
-            }
-          } catch {}
-          // Give bot its role
-          try {
-            const me = msg.guild.members.me;
-            if (me && res.botRole) await me.roles.add(res.botRole, 'MiroxAI setup — bot role');
-          } catch {}
-
-          const embed = new EmbedBuilder()
-            .setColor(0x16a34a)
-            .setTitle('✅ Setup complete')
-            .addFields(
-              { name: `${DISCORD_ROLE_OWNER.emoji} Owner`, value: res.ownerRole ? `<@&${res.ownerRole.id}>` : '—', inline: true },
-              { name: `${DISCORD_ROLE_BOT.emoji} Bot`, value: res.botRole ? `<@&${res.botRole.id}>` : '—', inline: true },
-              { name: `${DISCORD_ROLE_MEMBER.emoji} Member`, value: res.memberRole ? `<@&${res.memberRole.id}>` : '—', inline: true },
-              { name: '➕ Created', value: res.created.length ? res.created.join(', ') : 'Nothing new', inline: false },
-            )
-            .setFooter({ text: 'MiroxAI · roles ready' });
-          await anim.stop('', embed);
-        } catch (e) {
-          await anim.stop(`❌ Setup failed: ${e.message}`);
-        }
-      },
-    },
-
     ask: {
       desc: 'Ask the AI',
       run: async (msg, args) => {
         const text = args.join(' ').trim();
         if (!text) return safeReply(msg, '❓ Usage: `?ask <your question>`');
-        const anim = await animateBubble(msg.channel, [
-          '💭 Thinking…',
-          '🧠 Reasoning…',
-          '✍️ Writing…',
-        ], 800);
-        try {
-          const reply = await runAiChat(text, msg.author.username, { deepThink: false, search: false });
-          await anim.stop(truncate(reply));
-        } catch (e) {
-          await anim.stop(`❌ ${e.message}`);
-        }
+        const anim = await animateBubble(msg.channel, ['💭 Thinking…', '🧠 Reasoning…', '✍️ Writing…'], 800);
+        try { const reply = await runAiChat(text, msg.author.username, { deepThink: false, search: false }); await anim.stop(truncate(reply)); }
+        catch (e) { await anim.stop(`❌ ${e.message}`); }
       },
     },
-
     think: {
       desc: 'Deep think',
       run: async (msg, args) => {
         const text = args.join(' ').trim();
         if (!text) return safeReply(msg, '❓ Usage: `?think <your question>`');
-        const anim = await animateBubble(msg.channel, [
-          '🧠 Deep thinking…',
-          '🔬 Verifying…',
-          '🧩 Cross-checking…',
-          '✍️ Writing…',
-        ], 900);
-        try {
-          const reply = await runAiChat(text, msg.author.username, { deepThink: true, search: false });
-          await anim.stop(truncate(reply));
-        } catch (e) {
-          await anim.stop(`❌ ${e.message}`);
-        }
+        const anim = await animateBubble(msg.channel, ['🧠 Deep thinking…', '🔬 Verifying…', '✍️ Writing…'], 900);
+        try { const reply = await runAiChat(text, msg.author.username, { deepThink: true, search: false }); await anim.stop(truncate(reply)); }
+        catch (e) { await anim.stop(`❌ ${e.message}`); }
       },
     },
-
     search: {
       desc: 'Web search + answer',
       run: async (msg, args) => {
         const q = args.join(' ').trim();
         if (!q) return safeReply(msg, '❓ Usage: `?search <query>`');
-        const anim = await animateBubble(msg.channel, [
-          '🔍 Searching the web…',
-          '📖 Reading sources…',
-          '🧠 Summarising…',
-          '✍️ Writing…',
-        ], 900);
-        try {
-          const reply = await runAiChat(q, msg.author.username, { deepThink: false, search: true });
-          await anim.stop(truncate(reply));
-        } catch (e) {
-          await anim.stop(`❌ ${e.message}`);
-        }
+        const anim = await animateBubble(msg.channel, ['🔍 Searching…', '📖 Reading sources…', '✍️ Writing…'], 900);
+        try { const reply = await runAiChat(q, msg.author.username, { deepThink: false, search: true }); await anim.stop(truncate(reply)); }
+        catch (e) { await anim.stop(`❌ ${e.message}`); }
       },
     },
-
     image: {
       desc: 'Generate an image',
       run: async (msg, args) => {
         const prompt = args.join(' ').trim();
         if (!prompt) return safeReply(msg, '❓ Usage: `?image <prompt>`');
-        const anim = await animateBubble(msg.channel, [
-          '🎨 Preparing canvas…',
-          '🖌️ Painting…',
-          '✨ Refining details…',
-          '💧 Watermarking…',
-        ], 1000);
+        const anim = await animateBubble(msg.channel, ['🎨 Preparing canvas…', '🖌️ Painting…', '✨ Refining details…'], 1000);
         try {
           const dataUrl = await generateImage(prompt);
-          // Extract base64
           const [meta, b64] = dataUrl.split(',');
           const mime = (meta.match(/data:([^;]+)/) || [, 'image/png'])[1];
           const buf = Buffer.from(b64, 'base64');
@@ -1939,101 +2004,35 @@ async function startDiscordBot() {
             .setFooter({ text: `Requested by ${msg.author.username}` });
           await anim.stop('', embed);
           await safeSend(msg.channel, { files: [file] });
-        } catch (e) {
-          await anim.stop(`❌ Image generation failed: ${e.message}`);
-        }
-      },
-    },
-
-    userinfo: {
-      desc: 'User info card',
-      run: async (msg) => {
-        const target = msg.mentions.members.first() || msg.member;
-        const embed = new EmbedBuilder()
-          .setColor(0x4d6bfe)
-          .setTitle(`👤 ${target.user.username}`)
-          .setThumbnail(target.user.displayAvatarURL({ size: 256 }))
-          .addFields(
-            { name: '🆔 ID', value: target.id, inline: true },
-            { name: '📅 Joined', value: target.joinedAt ? `<t:${Math.floor(target.joinedAt.getTime() / 1000)}:R>` : '—', inline: true },
-            { name: '🎂 Account', value: `<t:${Math.floor(target.user.createdTimestamp / 1000)}:R>`, inline: true },
-            { name: '🎭 Roles', value: target.roles.cache.filter((r) => r.name !== '@everyone').map((r) => `<@&${r.id}>`).slice(0, 10).join(', ') || '—', inline: false },
-          )
-          .setFooter({ text: 'MiroxAI' });
-        return safeSend(msg.channel, { embeds: [embed] });
-      },
-    },
-
-    serverinfo: {
-      desc: 'Server info card',
-      run: async (msg) => {
-        if (!msg.guild) return safeReply(msg, '❌ Server-only command.');
-        const g = msg.guild;
-        const embed = new EmbedBuilder()
-          .setColor(0x16a34a)
-          .setTitle(`🏠 ${g.name}`)
-          .setThumbnail(g.iconURL({ size: 256 }) || '')
-          .addFields(
-            { name: '🆔 ID', value: g.id, inline: true },
-            { name: '👥 Members', value: String(g.memberCount), inline: true },
-            { name: '📅 Created', value: `<t:${Math.floor(g.createdTimestamp / 1000)}:R>`, inline: true },
-            { name: '👑 Owner', value: `<@${g.ownerId}>`, inline: true },
-            { name: '💠 Roles', value: String(g.roles.cache.size), inline: true },
-            { name: '📺 Channels', value: String(g.channels.cache.size), inline: true },
-          )
-          .setFooter({ text: 'MiroxAI' });
-        return safeSend(msg.channel, { embeds: [embed] });
-      },
-    },
-
-    avatar: {
-      desc: 'Show avatar',
-      run: async (msg) => {
-        const target = msg.mentions.users.first() || msg.author;
-        const embed = new EmbedBuilder()
-          .setColor(0xd97757)
-          .setTitle(`🖼️ ${target.username}'s avatar`)
-          .setImage(target.displayAvatarURL({ size: 512 }))
-          .setFooter({ text: 'MiroxAI' });
-        return safeSend(msg.channel, { embeds: [embed] });
+        } catch (e) { await anim.stop(`❌ Image generation failed: ${e.message}`); }
       },
     },
   };
 
-  // ---------- message handler ----------
   client.on(Events.MessageCreate, async (msg) => {
     if (msg.author.bot) return;
     if (!msg.guild) return;
-
     const content = (msg.content || '').trim();
     const chId = msg.channel.id;
 
-    // Status channel: allow commands but no free chat
     if (isStatusChannel(chId)) {
       if (!content.startsWith(DISCORD_CMD_PREFIX)) return;
       const [cmdName, ...args] = content.slice(DISCORD_CMD_PREFIX.length).trim().split(/\s+/);
       const cmd = commands[cmdName.toLowerCase()];
-      if (cmd) {
-        try { await cmd.run(msg, args); } catch (e) { console.warn('[discord] cmd error:', e.message); }
-      }
+      if (cmd) { try { await cmd.run(msg, args); } catch (e) { console.warn('[discord] cmd error:', e.message); } }
       return;
     }
 
-    // Image channel: only ?image / ?help / ?status etc.
     if (isImageChannel(chId)) {
       if (content.startsWith(DISCORD_CMD_PREFIX)) {
         const [cmdName, ...args] = content.slice(DISCORD_CMD_PREFIX.length).trim().split(/\s+/);
         const cmd = commands[cmdName.toLowerCase()];
         if (cmd) { try { await cmd.run(msg, args); } catch (e) { console.warn('[discord] cmd error:', e.message); } return; }
       }
-      // Treat plain text in image channel as ?image shortcut
-      if (content) {
-        try { await commands.image.run(msg, content.split(/\s+/)); } catch (e) { console.warn('[discord] image shortcut error:', e.message); }
-      }
+      if (content) { try { await commands.image.run(msg, content.split(/\s+/)); } catch (e) { console.warn('[discord] image shortcut error:', e.message); } }
       return;
     }
 
-    // Chat channel
     if (isChatChannel(chId)) {
       if (content.startsWith(DISCORD_CMD_PREFIX)) {
         const [cmdName, ...args] = content.slice(DISCORD_CMD_PREFIX.length).trim().split(/\s+/);
@@ -2041,24 +2040,13 @@ async function startDiscordBot() {
         if (cmd) { try { await cmd.run(msg, args); } catch (e) { console.warn('[discord] cmd error:', e.message); } return; }
       }
       if (!content) return;
-      // Free chat → AI
-      const anim = await animateBubble(msg.channel, [
-        '💭 Thinking…',
-        '🧠 Reasoning…',
-        '✍️ Writing…',
-      ], 800);
-      try {
-        const reply = await runAiChat(content, msg.author.username, { deepThink: false, search: false });
-        await anim.stop(truncate(reply));
-      } catch (e) {
-        await anim.stop(`❌ ${e.message}`);
-      }
+      const anim = await animateBubble(msg.channel, ['💭 Thinking…', '🧠 Reasoning…', '✍️ Writing…'], 800);
+      try { const reply = await runAiChat(content, msg.author.username, { deepThink: false, search: false }); await anim.stop(truncate(reply)); }
+      catch (e) { await anim.stop(`❌ ${e.message}`); }
       return;
     }
-    // Other channels: ignore
   });
 
-  // ---------- error handling ----------
   client.on(Events.Error, (e) => console.error('[discord] error:', e?.message || e));
   client.on(Events.Warn, (e) => console.warn('[discord] warn:', e?.message || e));
 
