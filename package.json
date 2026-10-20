@@ -1,20 +1,19 @@
 {
-  "name": "mirox-ai",
-  "version": "1.0.0",
-  "private": true,
+  "name": "miroxai",
+  "version": "114.0.0",
   "type": "module",
-  "engines": {
-    "node": ">=20 <25"
-  },
+  "main": "index.js",
   "scripts": {
-    "start": "node api/index.js",
-    "dev": "node --watch api/index.js"
+    "start": "node index.js"
   },
   "dependencies": {
-    "adm-zip": "^0.5.16",
     "archiver": "^7.0.1",
     "cors": "^2.8.5",
     "discord.js": "^14.16.3",
-    "express": "^4.21.2"
+    "express": "^4.21.1",
+    "ssh2": "^1.16.0"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
