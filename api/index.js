@@ -5,6 +5,8 @@
    · Animated thinking/searching/generating bubble
    · /tos and /privacy-policy pages (raw HTML)
    · VPS storage via SSH (VPS_IP, VPS_USER, VPS_PASSWORD, VPS_PORT)
+     - Probed once at startup. If VPS is unreachable, disabled for
+       the whole process so requests never hang on SSH.
    ============================================================ */
 import express from 'express';
 import cors from 'cors';
@@ -49,16 +51,19 @@ const DISCORD_CMD_PREFIX  = '?';
 /* ============================================================
    VPS STORAGE — SSH persistence
    Env: VPS_IP, VPS_USER, VPS_PASSWORD, VPS_PORT
+   Probed once at startup; disabled if unreachable.
    ============================================================ */
 const VPS_IP       = env('VPS_IP');
 const VPS_USER     = env('VPS_USER', 'root');
 const VPS_PASSWORD = env('VPS_PASSWORD');
 const VPS_PORT     = parseInt(env('VPS_PORT', '22'), 10) || 22;
 const VPS_DB_PATH  = '/var/lib/mirox/mirox-db.json';
-const VPS_CONFIGURED = !!(VPS_IP && VPS_PASSWORD);
+let   VPS_CONFIGURED = !!(VPS_IP && VPS_PASSWORD);   // flips to false if probe fails
+let   VPS_STATUS     = VPS_CONFIGURED ? 'pending' : 'off';  // pending | ok | off
 
 let _ssh2 = null;
 let _ssh2Promise = null;
+let _ssh2Broken = false;
 let _sshConn = null;
 let _sshConnPromise = null;
 let _vpsBreakerUntil = 0;
@@ -66,14 +71,19 @@ const VPS_BREAKER_MS = 30_000;
 
 async function loadSSH2() {
   if (_ssh2) return _ssh2;
+  if (_ssh2Broken) return null;
   if (_ssh2Promise) return _ssh2Promise;
   _ssh2Promise = (async () => {
     try {
-      const mod = await import('ssh2');
+      const mod = await Promise.race([
+        import('ssh2'),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('import_timeout')), 5000)),
+      ]);
       _ssh2 = mod.default || mod;
       return _ssh2;
     } catch (e) {
-      console.warn('[vps] ssh2 module not installed — run: npm install ssh2');
+      console.warn('[vps] ssh2 module failed to load:', e.message);
+      _ssh2Broken = true;
       _ssh2Promise = null;
       return null;
     }
@@ -82,6 +92,7 @@ async function loadSSH2() {
 }
 
 async function getSSHConn() {
+  if (!VPS_CONFIGURED) throw new Error('vps_disabled');
   if (Date.now() < _vpsBreakerUntil) throw new Error('vps_breaker_open');
   if (_sshConn && _sshConn._ready) return _sshConn;
   if (_sshConnPromise) return _sshConnPromise;
@@ -96,7 +107,7 @@ async function getSSHConn() {
         _sshConnPromise = null;
         _vpsBreakerUntil = Date.now() + VPS_BREAKER_MS;
         reject(new Error('ssh_connect_timeout'));
-      }, 10000);
+      }, 5000);
       conn.on('ready', () => {
         clearTimeout(timer);
         conn._ready = true;
@@ -117,7 +128,7 @@ async function getSSHConn() {
         port: VPS_PORT,
         username: VPS_USER,
         password: VPS_PASSWORD,
-        readyTimeout: 10000,
+        readyTimeout: 5000,
       });
     });
   })();
@@ -125,7 +136,7 @@ async function getSSHConn() {
   catch (e) { _sshConnPromise = null; throw e; }
 }
 
-async function vpsExec(cmd, ms = 15000) {
+async function vpsExec(cmd, ms = 5000) {
   const conn = await getSSHConn();
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('ssh_exec_timeout')), ms);
@@ -143,7 +154,7 @@ async function vpsExec(cmd, ms = 15000) {
 async function vpsRead() {
   const conn = await getSSHConn();
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('ssh_sftp_read_timeout')), 15000);
+    const timer = setTimeout(() => reject(new Error('ssh_sftp_read_timeout')), 5000);
     conn.sftp((err, sftp) => {
       if (err) { clearTimeout(timer); return reject(err); }
       const chunks = [];
@@ -157,10 +168,9 @@ async function vpsRead() {
 
 async function vpsWrite(content) {
   const conn = await getSSHConn();
-  // Ensure dir + file exist with proper perms
-  await vpsExec(`mkdir -p /var/lib/mirox && chmod 700 /var/lib/mirox && touch ${VPS_DB_PATH} && chmod 600 ${VPS_DB_PATH}`, 10000);
+  await vpsExec(`mkdir -p /var/lib/mirox && chmod 700 /var/lib/mirox && touch ${VPS_DB_PATH} && chmod 600 ${VPS_DB_PATH}`, 5000);
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('ssh_sftp_write_timeout')), 15000);
+    const timer = setTimeout(() => reject(new Error('ssh_sftp_write_timeout')), 5000);
     conn.sftp((err, sftp) => {
       if (err) { clearTimeout(timer); return reject(err); }
       const stream = sftp.createWriteStream(VPS_DB_PATH);
@@ -176,11 +186,11 @@ async function vpsReadSafe() {
   try {
     const content = await Promise.race([
       vpsRead(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('vps_read_timeout_8s')), 8000)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('vps_read_timeout')), 2500)),
     ]);
     return content;
   } catch (e) {
-    console.warn('[db] VPS read skipped:', e.message);
+    // silent — fall back to filesystem
     return null;
   }
 }
@@ -190,24 +200,55 @@ async function vpsWriteSafe(content) {
   try {
     await Promise.race([
       vpsWrite(content),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('vps_write_timeout_10s')), 10000)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('vps_write_timeout')), 3000)),
     ]);
     return true;
   } catch (e) {
-    console.warn('[db] VPS write skipped:', e.message);
+    // silent — fall back to filesystem
     return false;
   }
 }
 
-// Startup log — non-blocking
+// Startup probe — runs once, disables VPS if not reachable within a few seconds.
 if (VPS_CONFIGURED) {
-  console.log(`[Mirox] VPS storage configured → ${VPS_USER}@${VPS_IP}:${VPS_PORT} (path: ${VPS_DB_PATH})`);
-  loadSSH2().then((m) => {
-    if (m) console.log('[Mirox] VPS: ssh2 loaded OK');
-    else console.error('[Mirox] VPS: ssh2 missing — VPS storage will be skipped, using filesystem only');
-  }).catch(() => {});
+  console.log(`[Mirox] VPS configured: ${VPS_USER}@${VPS_IP}:${VPS_PORT}`);
+  setTimeout(() => {
+    (async () => {
+      try {
+        const ok = await Promise.race([
+          (async () => {
+            const m = await loadSSH2();
+            if (!m) return false;
+            try {
+              const r = await vpsExec('echo __mirox_alive__', 4000);
+              return r.code === 0 && r.stdout.includes('__mirox_alive__');
+            } catch (e) {
+              console.warn('[Mirox] VPS probe: SSH exec failed:', e.message);
+              return false;
+            }
+          })(),
+          new Promise((resolve) => setTimeout(() => resolve(false), 6000)),
+        ]);
+        if (ok) {
+          VPS_STATUS = 'ok';
+          console.log('[Mirox] VPS storage: ONLINE — will persist to', VPS_DB_PATH);
+        } else {
+          VPS_STATUS = 'off';
+          VPS_CONFIGURED = false;
+          try { if (_sshConn) _sshConn.end(); } catch {}
+          _sshConn = null;
+          _sshConnPromise = null;
+          console.error('[Mirox] VPS storage: OFFLINE — disabled for this process. Falling back to filesystem.');
+        }
+      } catch (e) {
+        VPS_STATUS = 'off';
+        VPS_CONFIGURED = false;
+        console.error('[Mirox] VPS storage: PROBE ERROR — disabled:', e.message);
+      }
+    })();
+  }, 500);
 } else {
-  console.log('[Mirox] VPS storage: not configured (set VPS_IP, VPS_USER, VPS_PASSWORD, VPS_PORT to enable)');
+  console.log('[Mirox] VPS storage: not configured (set VPS_IP, VPS_USER, VPS_PASSWORD, VPS_PORT)');
 }
 
 /* ---------- Data file resolution ---------- */
@@ -215,6 +256,7 @@ function resolveDataFile() {
   const candidates = [];
   const explicit = env('DB_FILE');
   if (explicit) candidates.push(explicit);
+  candidates.push('/var/lib/mirox/mirox-db.json');
   candidates.push('/var/data/mirox-db.json');
   candidates.push('/data/mirox-db.json');
   try { candidates.push(path.join(process.cwd(), 'mirox-db.json')); } catch {}
@@ -417,7 +459,6 @@ async function readMain() {
   if (KV_ON) {
     try { return await kv(['GET', KV_DB_KEY]); } catch (e) { console.warn('[db] KV read failed:', e.message); }
   }
-  // Try VPS
   if (VPS_CONFIGURED) {
     const content = await vpsReadSafe();
     if (content && content.trim().length > 2) {
@@ -425,7 +466,6 @@ async function readMain() {
       return content;
     }
   }
-  // Filesystem
   for (const f of DATA_FILES) {
     try {
       const raw = await fs.readFile(f, 'utf8');
@@ -962,6 +1002,7 @@ app.get(['/api/health', '/health', '/ping'], (req, res) => {
       durable: KV_ON || VPS_CONFIGURED,
       kv_enabled: KV_ON,
       vps_configured: VPS_CONFIGURED,
+      vps_status: VPS_STATUS,
       vps_info: VPS_CONFIGURED ? `${VPS_USER}@${VPS_IP}:${VPS_PORT}` : null,
       vps_db_path: VPS_CONFIGURED ? VPS_DB_PATH : null,
       primary_path: VPS_CONFIGURED ? VPS_DB_PATH : DATA_FILE,
@@ -1489,7 +1530,7 @@ app.post(CHAT_PATHS, async (req, res) => {
     await finishUsage();
     res.end();
   } catch (e) {
-    console.warn('[chat]', e.message);
+    console.error('[chat]', e?.stack || e?.message || e);
     if (res.headersSent) { if (wantStream) { sseWrite(res, { error: { message: GENERIC_ERR } }); sseDone(res); } try { res.end(); } catch {} }
     else res.status(502).json({ error: { message: GENERIC_ERR } });
   }
@@ -1515,11 +1556,11 @@ app.get(['/api/admin/stats', '/admin/stats'], requireAdmin, async (req, res) => 
   const imgEvents = db.events.filter((e) => /image_(generated|edited)/.test(e.event || '')).slice(-60).reverse().map((e) => ({ ts: e.ts, email: e.email || '—', prompt: e.prompt || '' }));
   const openTickets = (db.tickets || []).filter((t) => t.status === 'open').length;
   const unreadSupport = (db.tickets || []).reduce((s, t) => s + (t.unread_for_agent || 0), 0);
-  res.json({ ok: true, durable: KV_ON || VPS_CONFIGURED, kv: KV_ON, vps: VPS_CONFIGURED,
+  res.json({ ok: true, durable: KV_ON || VPS_CONFIGURED, kv: KV_ON, vps: VPS_CONFIGURED, vps_status: VPS_STATUS,
     vps_info: VPS_CONFIGURED ? `${VPS_USER}@${VPS_IP}:${VPS_PORT}` : null,
     vps_db_path: VPS_CONFIGURED ? VPS_DB_PATH : null,
     db_writable: dbOk,
-    warning: (KV_ON || VPS_CONFIGURED) ? null : 'No durable store configured. Set VPS_IP + VPS_PASSWORD + VPS_USER + VPS_PORT, or Upstash, for persistent data.',
+    warning: (KV_ON || VPS_CONFIGURED) ? null : 'No durable store configured. Set VPS_IP + VPS_USER + VPS_PASSWORD + VPS_PORT, or Upstash, for persistent data.',
     storage_paths: DATA_FILES, users: users.length, chats: db.chats.length, events: db.events.length, images: imgEvents.length, open_tickets: openTickets, unread_support: unreadSupport, users_data: Object.fromEntries(users.map((u) => [u.email, { name: u.name, tier: u.tier, daily_used: u.daily_used, image_used: u.image_used, eclipse_used: u.eclipse_used, last_login: u.last_login, keys: (u.keys || []).length }])), chats_data: db.chats.slice(-100).reverse(), events_data: db.events.slice(-100).reverse(), images_data: imgEvents });
 });
 app.post(['/api/admin/set-tier', '/admin/set-tier'], requireAdmin, async (req, res) => {
@@ -1539,15 +1580,13 @@ app.post(['/api/admin/set-tier', '/admin/set-tier'], requireAdmin, async (req, r
 /* VPS diagnostic — admin only */
 app.get(['/api/admin/vps-test', '/admin/vps-test'], requireAdmin, async (req, res) => {
   if (!VPS_CONFIGURED) {
-    return res.json({ ok: false, error: 'VPS not configured. Set VPS_IP, VPS_USER, VPS_PASSWORD, VPS_PORT.' });
+    return res.json({ ok: false, error: 'VPS not configured or disabled.', status: VPS_STATUS });
   }
   try {
-    const ssh2 = await loadSSH2();
-    if (!ssh2) return res.json({ ok: false, error: 'ssh2 not installed. Run: npm install ssh2' });
-    const probe = await vpsExec(`hostname && echo "---" && ls -la /var/lib/mirox 2>&1 || true && echo "---" && wc -c ${VPS_DB_PATH} 2>&1 || true`, 15000);
-    res.json({ ok: true, config: { ip: VPS_IP, user: VPS_USER, port: VPS_PORT, db_path: VPS_DB_PATH }, code: probe.code, stdout: probe.stdout, stderr: probe.stderr });
+    const probe = await vpsExec(`hostname && echo "---" && ls -la /var/lib/mirox 2>&1 || true && echo "---" && wc -c ${VPS_DB_PATH} 2>&1 || true`, 8000);
+    res.json({ ok: true, status: VPS_STATUS, config: { ip: VPS_IP, user: VPS_USER, port: VPS_PORT, db_path: VPS_DB_PATH }, code: probe.code, stdout: probe.stdout, stderr: probe.stderr });
   } catch (e) {
-    res.json({ ok: false, error: e.message, config: { ip: VPS_IP, user: VPS_USER, port: VPS_PORT } });
+    res.json({ ok: false, error: e.message, status: VPS_STATUS, config: { ip: VPS_IP, user: VPS_USER, port: VPS_PORT } });
   }
 });
 
@@ -1608,9 +1647,7 @@ app.get('/api/bridge/download', async (req, res) => {
   await archive.finalize();
 });
 
-/* ============================================================
-   LEGAL PAGES — /tos and /privacy-policy
-   ============================================================ */
+/* LEGAL PAGES */
 const LEGAL_STYLE = `
   *{box-sizing:border-box}
   html,body{margin:0;padding:0}
@@ -1652,103 +1689,70 @@ ${bodyHtml}
 const TOS_BODY = `
 <p class="updated">Last updated: January 2025</p>
 <p>Welcome to MiroxAI. These Terms of Service (“Terms”) govern your access to and use of the MiroxAI website, applications, API, and Discord bot (collectively, the “Service”), operated by OpenSurr (“we”, “us”, or “our”). By accessing or using the Service, you agree to be bound by these Terms. If you do not agree, please do not use the Service.</p>
-
 <h2>1. Acceptance of Terms</h2>
 <p>By creating an account, signing in, using an API key, or accessing the Service in any way, you confirm that you are at least 13 years old (or the minimum age required in your jurisdiction) and that you agree to these Terms.</p>
-
 <h2>2. Description of Service</h2>
 <p>MiroxAI provides AI-powered chat, web search, vision analysis, image generation, API access, and related tools. We may add, change, or remove features at any time without notice.</p>
-
 <h2>3. Accounts</h2>
-<p>You are responsible for maintaining the confidentiality of your account credentials and any API keys. You agree to provide accurate information and to notify us promptly of any unauthorized use of your account. You may not share accounts in a way that violates these Terms.</p>
-
+<p>You are responsible for maintaining the confidentiality of your account credentials and any API keys. You agree to provide accurate information and to notify us promptly of any unauthorized use of your account.</p>
 <h2>4. Acceptable Use</h2>
-<p>You agree not to use the Service to:</p>
-<ul>
-<li>Violate any applicable law or regulation;</li>
-<li>Infringe the intellectual property or privacy rights of others;</li>
-<li>Generate, store, or distribute harmful, abusive, harassing, hateful, or illegal content;</li>
-<li>Attempt to bypass rate limits, security measures, or access controls;</li>
-<li>Reverse-engineer, scrape, or resell the Service without prior written permission;</li>
-<li>Interfere with the operation of the Service or other users’ access;</li>
-<li>Use the Service for spam, phishing, malware distribution, or automated abuse.</li>
-</ul>
-
+<p>You agree not to use the Service to violate laws, infringe rights, generate harmful content, bypass limits, reverse-engineer, spam, or abuse the service.</p>
 <h2>5. API Keys</h2>
-<p>API keys are personal credentials issued to your account. You are solely responsible for all activity performed with your keys. If a key is compromised, revoke it immediately from your dashboard. We may revoke keys that violate these Terms or that appear to be compromised.</p>
-
+<p>API keys are personal credentials. You are responsible for all activity with your keys. Revoke compromised keys immediately.</p>
 <h2>6. Plans and Payments</h2>
-<p>Some features require a paid plan (Pro or Ultimate). Prices are displayed in USD at checkout. Except where required by applicable law, payments are non-refundable. We may change prices with reasonable notice; your continued use after a price change constitutes acceptance.</p>
-
+<p>Some features require a paid plan (Pro or Ultimate). Payments are non-refundable except where required by law.</p>
 <h2>7. Your Content</h2>
-<p>You retain ownership of the prompts, files, and other content you submit. You grant us a limited license to process your content solely to provide the Service. AI-generated output may not be unique and may be inaccurate; you are responsible for how you use it.</p>
-
+<p>You retain ownership of prompts, files, and other content. You grant us a limited license to process your content to provide the Service.</p>
 <h2>8. AI Output Disclaimer</h2>
-<p>The Service generates content using artificial intelligence. Output may be incorrect, incomplete, outdated, or offensive. Do not rely on it for legal, medical, financial, or other professional advice. Always verify important information independently.</p>
-
+<p>AI output may be incorrect, incomplete, or offensive. Do not rely on it for legal, medical, financial, or other professional advice.</p>
 <h2>9. Availability and Changes</h2>
-<p>We aim to keep the Service available but do not guarantee uninterrupted access. We may suspend, modify, or discontinue any part of the Service at any time without liability.</p>
-
+<p>We aim to keep the Service available but do not guarantee uninterrupted access.</p>
 <h2>10. Termination</h2>
-<p>We may suspend or terminate your access if you violate these Terms or if required by law. You may stop using the Service at any time. Upon termination, sections that by their nature should survive (such as disclaimers and limitation of liability) will continue to apply.</p>
-
+<p>We may suspend or terminate your access if you violate these Terms or if required by law.</p>
 <h2>11. Limitation of Liability</h2>
-<p>To the maximum extent permitted by law, the Service is provided “as is” and “as available” without warranties of any kind, express or implied. OpenSurr is not liable for indirect, incidental, special, consequential, or punitive damages, or for any loss of data, revenue, or profits arising from your use of the Service.</p>
-
+<p>To the maximum extent permitted by law, the Service is provided “as is” without warranties. OpenSurr is not liable for indirect or consequential damages.</p>
 <h2>12. Changes to These Terms</h2>
-<p>We may update these Terms from time to time. Material changes will be reflected by an updated date at the top of this page. Continued use of the Service after changes take effect constitutes acceptance of the updated Terms.</p>
-
+<p>We may update these Terms. Continued use after changes constitutes acceptance.</p>
 <h2>13. Contact</h2>
-<p>Questions about these Terms? Email <a href="mailto:support@miroxai.org">support@miroxai.org</a>.</p>
+<p>Questions? Email <a href="mailto:support@miroxai.org">support@miroxai.org</a>.</p>
 `;
 
 const PRIVACY_BODY = `
 <p class="updated">Last updated: January 2025</p>
-<p>This Privacy Policy explains how OpenSurr (“we”, “us”) collects, uses, and protects your information when you use MiroxAI (the “Service”). By using the Service, you consent to the practices described here.</p>
-
+<p>This Privacy Policy explains how OpenSurr collects, uses, and protects your information when you use MiroxAI.</p>
 <h2>1. Information We Collect</h2>
 <ul>
-<li><strong>Account information:</strong> name, email address, and login provider.</li>
-<li><strong>Usage data:</strong> messages sent to the AI, prompts, model selections, and feature usage (e.g., image generations, web searches).</li>
-<li><strong>API data:</strong> API keys and request metadata such as timestamps and model names.</li>
-<li><strong>Technical data:</strong> IP address, browser type, and basic device information used for security and diagnostics.</li>
+<li><strong>Account information:</strong> name, email, login provider.</li>
+<li><strong>Usage data:</strong> messages, prompts, model selections, feature usage.</li>
+<li><strong>API data:</strong> API keys and request metadata.</li>
+<li><strong>Technical data:</strong> IP address, browser type, device info.</li>
 </ul>
-
 <h2>2. How We Use Your Information</h2>
 <ul>
 <li>To provide and improve the Service;</li>
 <li>To process your requests, prompts, and searches;</li>
 <li>To manage accounts, API keys, and subscription plans;</li>
-<li>To detect abuse, enforce limits, and maintain security;</li>
-<li>To respond to support requests and communicate service updates.</li>
+<li>To detect abuse and maintain security;</li>
+<li>To respond to support requests.</li>
 </ul>
-
 <h2>3. Cookies and Sessions</h2>
-<p>We use a small number of cookies to keep you signed in (a secure session cookie) and to protect against cross-site request forgery. We do not use advertising cookies.</p>
-
+<p>We use a small number of cookies to keep you signed in and protect against CSRF. We do not use advertising cookies.</p>
 <h2>4. Third-Party Services</h2>
-<p>To operate the Service, we may send your prompts to third-party AI model providers and search services so that results can be returned to you. These providers process data on our behalf and are bound by their own terms and privacy policies. We do not sell your personal information.</p>
-
+<p>We may send your prompts to third-party AI model providers and search services. We do not sell your personal information.</p>
 <h2>5. Data Retention</h2>
-<p>We retain account data and chat history for as long as your account is active or as needed to provide the Service. You may request deletion of your account data at any time by contacting us.</p>
-
+<p>We retain account data and chat history for as long as your account is active or as needed to provide the Service.</p>
 <h2>6. Your Rights</h2>
-<p>Depending on your jurisdiction, you may have the right to access, correct, export, or delete your personal data. To exercise these rights, email <a href="mailto:support@miroxai.org">support@miroxai.org</a>. We aim to respond within a reasonable timeframe.</p>
-
+<p>You may request access, correction, export, or deletion of your data by emailing <a href="mailto:support@miroxai.org">support@miroxai.org</a>.</p>
 <h2>7. Children’s Privacy</h2>
-<p>The Service is not directed to children under 13. We do not knowingly collect personal information from children. If you believe a child has provided us information, please contact us and we will delete it.</p>
-
+<p>The Service is not directed to children under 13.</p>
 <h2>8. Security</h2>
-<p>We use reasonable technical and organizational measures to protect your data, including encrypted connections and signed session tokens. No system is completely secure, so please use strong credentials and keep your API keys private.</p>
-
+<p>We use reasonable technical measures including encrypted connections and signed session tokens. Keep your API keys private.</p>
 <h2>9. International Transfers</h2>
-<p>Your information may be processed in countries other than your own. We take steps to ensure appropriate safeguards are in place when data is transferred internationally.</p>
-
+<p>Your information may be processed in countries other than your own. We ensure appropriate safeguards when transferring internationally.</p>
 <h2>10. Changes to This Policy</h2>
-<p>We may update this Privacy Policy from time to time. Material changes will be reflected by an updated date at the top of this page.</p>
-
+<p>We may update this Privacy Policy from time to time. Material changes will be reflected by an updated date.</p>
 <h2>11. Contact</h2>
-<p>Questions about privacy? Email <a href="mailto:support@miroxai.org">support@miroxai.org</a>.</p>
+<p>Questions? Email <a href="mailto:support@miroxai.org">support@miroxai.org</a>.</p>
 `;
 
 app.get(['/tos', '/terms', '/terms-of-service'], (req, res) => {
@@ -1768,9 +1772,12 @@ app.use((req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, 'index.html'), (err) => { if (err) res.status(404).send('Not found'); });
 });
 app.use((err, req, res, next) => {
-  if (err && err.type === 'entity.parse.failed') return res.status(400).json({ ok: false, error: 'Invalid JSON body' });
-  if (err && err.type === 'entity.too.large') return res.status(413).json({ ok: false, error: 'Request too large' });
-  console.error('[express]', err?.message || err);
+  if (!err) return next();
+  if (err.type === 'entity.parse.failed') return res.status(400).json({ ok: false, error: 'Invalid JSON body' });
+  if (err.type === 'entity.too.large') return res.status(413).json({ ok: false, error: 'Request too large' });
+  if (err.type === 'request.aborted') { try { res.end(); } catch {} return; }
+  if (err.type === 'encoding.unsupported') return res.status(415).json({ ok: false, error: 'Unsupported encoding' });
+  console.error('[express]', err?.stack || err?.message || err);
   if (!res.headersSent) res.status(500).json({ ok: false, error: GENERIC_ERR });
 });
 
@@ -1778,6 +1785,7 @@ console.log('[Mirox] v114 · flagship: Tail r1 (FREE) · api_thinking: OFF');
 console.log('[Mirox] bot endpoint: /v1/bot/chat · thinking: OFF (forced)');
 console.log('[Mirox] search provider:', KS_KEY ? 'kensearch' : 'duckduckgo');
 console.log('[Mirox] discord bot:', DISCORD_BOT_TOKEN ? 'enabled' : 'disabled');
+console.log('[Mirox] storage:', VPS_CONFIGURED ? `VPS (${VPS_USER}@${VPS_IP}:${VPS_PORT})` : (KV_ON ? 'Upstash KV' : DATA_FILE));
 console.log('[Mirox] legal pages: /tos · /privacy-policy');
 
 if (!process.env.VERCEL) {
@@ -1785,7 +1793,7 @@ if (!process.env.VERCEL) {
 }
 
 /* ============================================================
-   DISCORD BOT — M_KEY only, hardcoded channels, ? prefix
+   DISCORD BOT
    ============================================================ */
 if (DISCORD_BOT_TOKEN) {
   startDiscordBot().catch((e) => console.error('[discord]', e?.message || e));
