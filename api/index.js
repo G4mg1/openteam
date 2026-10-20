@@ -1,10 +1,8 @@
 /* ============================================================
-   MiroxAI Backend v115 — VPS-backed storage + payments
-   · KenSearch web search
-   · Discord bot
-   · NEW: Persistent storage via SSH to your VPS (VPS_IP/VPS_KEY)
-   · NEW: Manual payment requests + admin approval
-   · /tos and /privacy-policy pages (raw HTML)
+   MiroxAI Backend v115 — VPS storage fix
+   · All original env names unchanged
+   · NEW: persistent storage via SSH using VPS_IP + VPS_KEY
+   · Everything else identical to v114
    ============================================================ */
 import express from 'express';
 import cors from 'cors';
@@ -47,15 +45,14 @@ const DISCORD_ROLE_MEMBER = { name: 'Mirox Member', color: 0x16a34a, emoji: '�
 const DISCORD_CMD_PREFIX  = '?';
 
 /* ============================================================
-   NEW: VPS STORAGE via SSH
-   Configure VPS_IP + VPS_KEY to persist the DB to your VPS.
+   VPS STORAGE (SSH) — only needs VPS_IP + VPS_KEY
    ============================================================ */
-const VPS_IP       = env('VPS_IP');
-const VPS_KEY      = env('VPS_KEY', 'root');   // SSH password (per your setup)
-const VPS_USER     = env('VPS_USER', 'root');
-const VPS_PORT     = Number(env('VPS_PORT', '22'));
-const VPS_DB_PATH  = env('VPS_DB_PATH', '/var/lib/mirox/mirox-db.json');
-let   VPS_ON       = !!(VPS_IP && VPS_KEY);
+const VPS_IP        = env('VPS_IP');
+const VPS_KEY       = env('VPS_KEY', 'root');
+const VPS_USER      = 'root';
+const VPS_PORT      = 22;
+const VPS_DB_PATH   = '/var/lib/mirox/mirox-db.json';
+let   VPS_ON        = !!(VPS_IP && VPS_KEY);
 
 let _ssh2Mod = null;
 let _sshClient = null;
@@ -92,13 +89,7 @@ async function getSSHClient() {
         _vpsBreakerUntil = Date.now() + VPS_BREAKER_MS;
         reject(e);
       });
-      conn.connect({
-        host: VPS_IP,
-        port: VPS_PORT,
-        username: VPS_USER,
-        password: VPS_KEY,
-        readyTimeout: 20_000,
-      });
+      conn.connect({ host: VPS_IP, port: VPS_PORT, username: VPS_USER, password: VPS_KEY, readyTimeout: 20_000 });
     });
   })();
   try { return await _sshReady; } catch (e) { _sshReady = null; throw e; }
@@ -149,9 +140,8 @@ async function vpsWriteFile(content) {
 async function vpsEnsure() {
   if (!VPS_ON) return false;
   try {
-    const dir = path.posix.dirname(VPS_DB_PATH);
     const { code, stderr } = await vpsExec(
-      `mkdir -p ${JSON.stringify(dir)} && touch ${JSON.stringify(VPS_DB_PATH)} && chmod 700 ${JSON.stringify(dir)} && chmod 600 ${JSON.stringify(VPS_DB_PATH)}`
+      `mkdir -p /var/lib/mirox && chmod 700 /var/lib/mirox && touch ${VPS_DB_PATH} && chmod 600 ${VPS_DB_PATH}`
     );
     if (code !== 0) throw new Error(stderr || 'mkdir_failed');
     return true;
@@ -161,18 +151,17 @@ async function vpsEnsure() {
   }
 }
 
-// Probe ssh2 availability once at boot
 if (VPS_ON) {
-  try { await getSSH2(); }
+  try { await import('ssh2'); }
   catch {
-    console.error('[vps] ssh2 is not installed — run: npm install ssh2');
-    console.error('[vps] VPS storage disabled. Falling back to filesystem.');
+    console.error('[vps] ssh2 not installed — run: npm install ssh2');
+    console.error('[vps] VPS storage disabled, falling back to filesystem.');
     VPS_ON = false;
   }
-  if (VPS_ON) console.log(`[vps] storage enabled → ${VPS_USER}@${VPS_IP}:${VPS_DB_PATH}`);
+  if (VPS_ON) console.log(`[vps] enabled → ${VPS_USER}@${VPS_IP}:${VPS_DB_PATH}`);
 }
 
-/* ---------- Data file resolution (fallback only) ---------- */
+/* ---------- Data file resolution (fallback) ---------- */
 function resolveDataFile() {
   const candidates = [];
   const explicit = env('DB_FILE');
@@ -393,9 +382,7 @@ async function readMain() {
           return content;
         }
       }
-    } catch (e) {
-      console.warn('[db] VPS read failed:', e.message);
-    }
+    } catch (e) { console.warn('[db] VPS read failed:', e.message); }
   }
   for (const f of DATA_FILES) {
     try {
@@ -1089,9 +1076,7 @@ app.post('/api/settings', async (req, res) => {
   res.json({ ok: true, settings: getSettings(u) });
 });
 
-/* ============================================================
-   NEW: PAYMENT REQUESTS (manual admin approval)
-   ============================================================ */
+/* PAYMENT REQUESTS (manual admin approval) */
 app.post(['/api/payment/request-upgrade', '/payment/request-upgrade'], async (req, res) => {
   const u = await currentUser(req);
   if (!u) return res.status(401).json({ ok: false, error: 'Sign in to upgrade.' });
@@ -1550,19 +1535,17 @@ app.post(['/api/admin/set-tier', '/admin/set-tier'], requireAdmin, async (req, r
   if (!(await persist())) return res.status(500).json({ ok: false, error: 'Save failed.' });
   res.json({ ok: true, email, tier });
 });
-
-/* NEW: VPS connectivity test for admin */
 app.get(['/api/admin/vps-test', '/admin/vps-test'], requireAdmin, async (req, res) => {
   if (!VPS_ON) return res.json({ ok: false, error: 'VPS not configured (set VPS_IP + VPS_KEY).' });
   try {
-    const probe = await vpsExec(`ls -la ${JSON.stringify(path.posix.dirname(VPS_DB_PATH))} && echo '---' && wc -c ${JSON.stringify(VPS_DB_PATH)} 2>/dev/null || true`);
+    const probe = await vpsExec(`ls -la /var/lib/mirox && echo '---' && wc -c ${VPS_DB_PATH} 2>/dev/null || true`);
     res.json({ ok: true, vps_ip: VPS_IP, user: VPS_USER, db_path: VPS_DB_PATH, output: probe.stdout });
   } catch (e) {
     res.json({ ok: false, error: e.message });
   }
 });
 
-/* NEW: Payment management endpoints */
+/* Payment management */
 app.get(['/api/admin/payment-requests', '/admin/payment-requests'], requireAdmin, async (req, res) => {
   await ensureDb(req);
   const list = (db.payment_requests || []).slice().sort((a, b) => b.created - a.created);
@@ -1790,7 +1773,6 @@ console.log('[Mirox] storage:', VPS_ON ? `VPS (${VPS_USER}@${VPS_IP}:${VPS_DB_PA
 console.log('[Mirox] bot endpoint: /v1/bot/chat · thinking: OFF (forced)');
 console.log('[Mirox] search provider:', KS_KEY ? 'kensearch' : 'duckduckgo');
 console.log('[Mirox] discord bot:', DISCORD_BOT_TOKEN ? 'enabled' : 'disabled');
-console.log('[Mirox] payments: manual admin approval enabled');
 console.log('[Mirox] legal pages: /tos · /privacy-policy');
 
 if (!process.env.VERCEL) {
