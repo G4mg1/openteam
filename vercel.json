@@ -1,31 +1,23 @@
 {
   "version": 2,
   "rewrites": [
-    { "source": "/v1/api/chat", "destination": "/api/index" },
-    { "source": "/v1/api/chat/completions", "destination": "/api/index" },
-    { "source": "/v1/api/images", "destination": "/api/index" },
-    { "source": "/v1/api/models", "destination": "/api/index" },
-    { "source": "/v1/api/models/:path*", "destination": "/api/index" },
-    { "source": "/v1/api/:path*", "destination": "/api/index" },
+    { "source": "/admin", "destination": "/admin.html" },
+    { "source": "/admin/:path*", "destination": "/admin.html" },
+    { "source": "/developers", "destination": "/developers/index.html" },
+    { "source": "/developers/:path*", "destination": "/developers/index.html" },
 
-    { "source": "/v1/chat/completions", "destination": "/api/index" },
-    { "source": "/v1/chat/completions/models", "destination": "/api/index" },
-    { "source": "/v1/chat/:path*", "destination": "/api/index" },
-
-    { "source": "/v1/models", "destination": "/api/index" },
-    { "source": "/v1/models/:path*", "destination": "/api/index" },
-    { "source": "/v1/images/generations", "destination": "/api/index" },
-    { "source": "/v1/images/:path*", "destination": "/api/index" },
-
-    { "source": "/chat/completions", "destination": "/api/index" },
-    { "source": "/openai/v1/:path*", "destination": "/api/index" },
-    { "source": "/api/v1/:path*", "destination": "/api/index" },
-
-    { "source": "/v1", "destination": "/api/index" },
-    { "source": "/v1/:path*", "destination": "/api/index" },
-
-    { "source": "/api", "destination": "/api/index" },
-    { "source": "/api/:path*", "destination": "/api/index" },
+    { "source": "/tos", "destination": "/api/index" },
+    { "source": "/tos/", "destination": "/api/index" },
+    { "source": "/terms", "destination": "/api/index" },
+    { "source": "/terms/", "destination": "/api/index" },
+    { "source": "/terms-of-service", "destination": "/api/index" },
+    { "source": "/terms-of-service/", "destination": "/api/index" },
+    { "source": "/privacy-policy", "destination": "/api/index" },
+    { "source": "/privacy-policy/", "destination": "/api/index" },
+    { "source": "/privacy", "destination": "/api/index" },
+    { "source": "/privacy/", "destination": "/api/index" },
+    { "source": "/privacyPolicy", "destination": "/api/index" },
+    { "source": "/privacyPolicy/", "destination": "/api/index" },
 
     { "source": "/health", "destination": "/api/index" },
     { "source": "/ping", "destination": "/api/index" },
@@ -37,44 +29,23 @@
     { "source": "/logout", "destination": "/api/index" },
     { "source": "/search", "destination": "/api/index" },
     { "source": "/persona", "destination": "/api/index" },
-
     { "source": "/models", "destination": "/api/index" },
     { "source": "/models/:path*", "destination": "/api/index" },
     { "source": "/images/history", "destination": "/api/index" },
+    { "source": "/images/delete", "destination": "/api/index" },
+    { "source": "/images/clear", "destination": "/api/index" },
 
-    { "source": "/tos", "destination": "/api/index" },
-    { "source": "/tos/", "destination": "/api/index" },
-    { "source": "/terms", "destination": "/api/index" },
-    { "source": "/terms/", "destination": "/api/index" },
-    { "source": "/terms-of-service", "destination": "/api/index" },
-    { "source": "/terms-of-service/", "destination": "/api/index" },
-
-    { "source": "/privacy-policy", "destination": "/api/index" },
-    { "source": "/privacy-policy/", "destination": "/api/index" },
-    { "source": "/privacy", "destination": "/api/index" },
-    { "source": "/privacy/", "destination": "/api/index" },
-    { "source": "/privacyPolicy", "destination": "/api/index" },
-    { "source": "/privacyPolicy/", "destination": "/api/index" },
-
-    { "source": "/admin", "destination": "/admin.html" },
-    { "source": "/admin/", "destination": "/admin.html" },
-    { "source": "/admin/console", "destination": "/admin.html" },
-    { "source": "/admin/console/", "destination": "/admin.html" },
-
-    { "source": "/developers", "destination": "/developers/index.html" },
-    { "source": "/developers/", "destination": "/developers/index.html" },
-    { "source": "/developers/:path*", "destination": "/developers/index.html" }
+    { "source": "/v1", "destination": "/api/index" },
+    { "source": "/v1/:path*", "destination": "/api/index" },
+    { "source": "/chat/completions", "destination": "/api/index" },
+    { "source": "/chat/:path*", "destination": "/api/index" },
+    { "source": "/openai/:path*", "destination": "/api/index" },
+    { "source": "/api", "destination": "/api/index" },
+    { "source": "/api/:path*", "destination": "/api/index" }
   ],
   "headers": [
     {
-      "source": "/v1/(.*)",
-      "headers": [
-        { "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate" },
-        { "key": "Pragma", "value": "no-cache" }
-      ]
-    },
-    {
-      "source": "/api/(.*)",
+      "source": "/(v1|api|chat|openai)/(.*)",
       "headers": [
         { "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate" },
         { "key": "Pragma", "value": "no-cache" }
@@ -82,22 +53,18 @@
     },
     {
       "source": "/tos",
-      "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=3600" }
-      ]
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=3600" }]
     },
     {
       "source": "/privacy-policy",
-      "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=3600" }
-      ]
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=3600" }]
     }
   ],
   "functions": {
     "api/index.js": {
-      "memory": 1024,
+      "memory": 3008,
       "maxDuration": 60,
-      "includeFiles": "api/mirox_client_bridge/**"
+      "includeFiles": "api/**/*"
     }
   }
 }
