@@ -524,69 +524,7 @@
     <h2 class="modal-title">Lumenal 1.0</h2>
     <p class="modal-sub">Strong image generation for Mirox.</p>
     <div class="image-studio">
-      <textarea id="imagePrompt" class="modal-textarea" rows="3" placeholder="Describe an image…"></textarea>
-      <button id="generateImageBtn" class="modal-btn primary" type="button"><i class="ri-image-add-line"></i> <span>Generate</span></button>
-      <div id="imageResult" class="image-result"></div>
-    </div>
-  </div>
-</div>
-
-<div id="supportModal" class="modal-overlay">
-  <div class="modal modal-support">
-    <button class="icon-btn modal-close" type="button" data-close="supportModal"><i class="ri-close-line"></i></button>
-    <div class="support-head">
-      <div class="support-head-icon"><i class="ri-customer-service-2-line"></i></div>
-      <div class="support-head-text"><div class="support-head-title">Support</div><div class="support-head-sub" id="supportHeadSub">Live chat with our team</div></div>
-      <button id="supportResolveBtn" class="support-resolve-btn" type="button" style="display:none;"><i class="ri-check-double-line"></i> <span>Resolve</span></button>
-    </div>
-    <div class="support-chat-body"><div class="support-chat-messages" id="supportChatMessages"><div class="support-chat-empty"><div class="support-chat-empty-icon"><i class="ri-chat-smile-2-line"></i></div><div class="support-chat-empty-title">How can we help?</div><div class="support-chat-empty-sub">Send us a message and a member of our team will reply right here.</div></div></div></div>
-    <div class="support-compose">
-      <div class="support-cat-row" id="supportCatRow">
-        <label class="support-cat-label">Category</label>
-        <select id="supportCategory" class="modal-select">
-          <option value="bug">Bug report</option><option value="feedback">Feedback</option><option value="billing">Billing</option>
-          <option value="abuse">Report abuse</option><option value="other">Other</option>
-        </select>
-      </div>
-      <div class="support-input-row"><textarea id="supportInput" rows="1" placeholder="Type your message…"></textarea><button id="supportSendBtn" class="send-btn is-disabled" type="button" aria-disabled="true"><i class="ri-arrow-up-line"></i></button></div>
-      <div class="support-input-hint" id="supportInputHint">Enter to send · Shift+Enter for a new line</div>
-    </div>
-    <div class="support-foot">
-      <span>Prefer email? <a href="mailto:support@miroxai.org">support@miroxai.org</a></span>
-      <a href="/developers" class="support-dev-link" target="_blank" rel="noopener"><i class="ri-code-s-slash-line"></i> Developers</a>
-    </div>
-  </div>
-</div>
-
-<div id="imageViewer" class="image-viewer">
-  <div class="image-viewer-backdrop" data-iv-close></div>
-  <div class="image-viewer-panel">
-    <div class="image-viewer-top"><div class="image-viewer-title">Generated image</div><button class="icon-btn" type="button" data-iv-close><i class="ri-close-line"></i></button></div>
-    <div class="image-viewer-canvas-wrap"><canvas id="ivCanvas"></canvas></div>
-    <div class="image-viewer-actions"><button class="iv-btn" type="button" id="ivDownload"><i class="ri-download-2-line"></i> <span>Download</span></button></div>
-  </div>
-</div>
-
-<div id="tailPromoModal" class="modal-overlay tail-promo-overlay">
-  <div class="modal modal-tail-promo">
-    <button class="icon-btn modal-close" type="button" data-close="tailPromoModal"><i class="ri-close-line"></i></button>
-    <div class="tail-promo-glow" aria-hidden="true"></div>
-    <div class="tail-promo-badge"><i class="ri-star-smile-fill"></i> <span>NEW FLAGSHIP · FREE</span></div>
-    <div class="tail-offer-deadline">This offer will end on 30 November.</div>
-    <h2 class="tail-promo-title">Meet <em>Tail&nbsp;r1</em></h2>
-    <p class="tail-promo-sub">Our most powerful model yet. Smarter reasoning, longer context, sharper answers — and it's completely free for everyone.</p>
-    <div class="tail-promo-stats">
-      <div class="tail-stat"><div class="tail-stat-num">350K+</div><div class="tail-stat-lbl">token context</div></div>
-      <div class="tail-stat"><div class="tail-stat-num">#1</div><div class="tail-stat-lbl">reasoning benchmark</div></div>
-      <div class="tail-stat"><div class="tail-stat-num">Free</div><div class="tail-stat-lbl">for all users</div></div>
-    </div>
-    <div class="tail-promo-actions">
-      <button type="button" class="tail-promo-try" id="tailPromoTryBtn"><i class="ri-rocket-2-fill"></i> <span>Try Tail r1</span></button>
-      <button type="button" class="tail-promo-later" id="tailPromoLaterBtn">Maybe later</button>
-    </div>
-    <div class="tail-promo-foot">Tip: click the model picker anytime to switch back.</div>
-  </div>
-</div>
+ 
 
 <script src="/script.js" defer></script>
 </body>
